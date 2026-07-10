@@ -41,6 +41,7 @@ function adjServe(who, delta){
   else if(who === 'andrea'){ svM = Math.min(3, Math.max(0.5, +(svM + delta).toFixed(1))); }
   else { svS = Math.min(4, Math.max(0.5, +(svS + delta).toFixed(1))); }
   updateServings();
+  persist();
 }
 
 function updateServings(){
@@ -146,7 +147,23 @@ function openShopping(){
   document.getElementById('sheet').classList.add('show');
 }
 
-function toggleShop(id){ document.getElementById(id).classList.toggle('done'); }
+// Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list
+// recomputes (different week, different servings), so checked state is tracked and
+// persisted by ingredient NAME (checkedShopNames, state.js) — the DOM class is just
+// this render's presentation of that.
+function toggleShop(id, name){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.toggle('done');
+  if(name){
+    if(el.classList.contains('done')) checkedShopNames[name] = true;
+    else delete checkedShopNames[name];
+    persist();
+  }
+}
+
+// Escapes a name for safe embedding inside a single-quoted inline-JS attribute.
+function jsAttr(s){ return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 
 function buildShopSheet(){
   const list = computeShoppingList();
@@ -166,7 +183,8 @@ function buildShopSheet(){
     names.forEach(function(name){
       const t = list.totals[name];
       const id = 'sh-' + (idx++);
-      html += '<div class="shop-item" id="'+id+'" onclick="toggleShop(\''+id+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      const done = checkedShopNames[name] ? ' done' : '';
+      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
     });
   });
   const stapleNames = Object.keys(list.staples).sort();
@@ -174,7 +192,8 @@ function buildShopSheet(){
     html += '<div class="shop-cat">Pantry staples — check you have these</div>';
     stapleNames.forEach(function(name){
       const id = 'sh-' + (idx++);
-      html += '<div class="shop-item" id="'+id+'" onclick="toggleShop(\''+id+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div></div>';
+      const done = checkedShopNames[name] ? ' done' : '';
+      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div></div>';
     });
   }
   return html;
@@ -214,7 +233,10 @@ function applyRebalance(){
 }
 
 /* ---------------- log / plan-first confirm ---------------- */
-function logConfirm(key){
+// `silent` is used only by restoreTodayLog() (app.js) replaying a persisted
+// confirm/skip at boot, so reload doesn't re-fire the toast for something the
+// user already actioned in a previous session.
+function logConfirm(key, silent){
   const card = document.getElementById('log-' + key);
   if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
   card.classList.add('done');
@@ -233,10 +255,13 @@ function logConfirm(key){
 
   logTotal += LOGKCAL[key];
   document.getElementById('logTotalPill').textContent = logTotal + ' kcal';
-  toast('✓ Logged to today');
+  if(!silent) toast('✓ Logged to today');
+
+  todayLog.slots[key] = {status:'confirmed', title:TITLES[key], emoji:EMOJI[key], kcal:LOGKCAL[key]};
+  persist();
 }
 
-function logSkip(key){
+function logSkip(key, silent){
   const card = document.getElementById('log-' + key);
   if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
   card.classList.add('skipped');
@@ -246,7 +271,10 @@ function logSkip(key){
   tag.className = 'skipped-tag';
   tag.textContent = 'Skipped for today';
   info.appendChild(tag);
-  toast('Skipped — your plan stays balanced');
+  if(!silent) toast('Skipped — your plan stays balanced');
+
+  todayLog.slots[key] = {status:'skipped'};
+  persist();
 }
 
 // Builds the four "Today's plan" cards on the Log screen from the active menu.
@@ -307,6 +335,7 @@ function toggleShared(slot, el){
   renderTogetherPills();
   renderWeek();
   if(document.getElementById('recipe').classList.contains('active')) updateServings();
+  persist();
 }
 
 function renderTogetherPills(){
@@ -607,6 +636,21 @@ function applyProf(key){
   renderLogPlan();
   renderWeek();
   syncServeHighlight();
+  syncProfileToggle(key);
+  persist();
+}
+
+// Keeps both "whose plan" segmented controls (top tabbar and Profile screen) in sync
+// with currentProf — needed on top of the click handlers' own toggling because
+// loadState() can restore a non-default currentProf before any click ever happens.
+function syncProfileToggle(key){
+  document.querySelectorAll('#profSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.prof === key); });
+  const whoSeg = document.getElementById('profWhoSeg');
+  if(whoSeg){
+    const btns = whoSeg.querySelectorAll('button');
+    if(btns[0]) btns[0].classList.toggle('on', key === 'elena');
+    if(btns[1]) btns[1].classList.toggle('on', key === 'partner');
+  }
 }
 
 // profile screen switch

@@ -76,7 +76,7 @@ function obPick(key){
 
 function finishOnboarding(){
   document.getElementById('onboard').classList.add('hidden');
-  try{ localStorage.setItem('mesaOnboarded', '1'); }catch(e){}
+  onboarded = true;               // persisted by applyProf()'s persist() call below
   applyProf(obProfile);
   document.querySelectorAll('#profSeg button').forEach(function(x){ x.classList.toggle('on', x.dataset.prof === obProfile); });
   go('today');
@@ -90,17 +90,41 @@ function replayOnboarding(){
 }
 
 function maybeShowOnboarding(){
-  let seen = false;
-  try{ seen = !!localStorage.getItem('mesaOnboarded'); }catch(e){}
-  if(!seen){
+  if(!onboarded){
     obPick('elena');
     obShow(0);
     document.getElementById('onboard').classList.remove('hidden');
   }
 }
 
+// Replays today's persisted plan-first log status (state.js: todayLog) onto the cards
+// renderLogPlan() just built fresh from the active menu. Runs once at boot, after the
+// first applyProf() — silent:true suppresses the confirm/skip toast for a replay, not a
+// live tap. Breakfast is never replayed: it has no confirm/skip UI, always auto-done.
+function restoreTodayLog(){
+  Object.keys(todayLog.slots).forEach(function(slot){
+    const entry = todayLog.slots[slot];
+    if(!entry || slot === 'breakfast') return;
+    if(entry.status === 'confirmed'){
+      const card = document.getElementById('log-' + slot);
+      if(card){
+        if(entry.title){ const t = card.querySelector('.t'); if(t) t.textContent = entry.title; }
+        if(entry.emoji){ const th = card.querySelector('.thumb'); if(th) th.textContent = entry.emoji; }
+      }
+      if(entry.title) TITLES[slot] = entry.title;
+      if(entry.emoji) EMOJI[slot] = entry.emoji;
+      if(typeof entry.kcal === 'number') LOGKCAL[slot] = entry.kcal;
+      logConfirm(slot, true);
+    } else if(entry.status === 'skipped'){
+      logSkip(slot, true);
+    }
+  });
+}
+
 /* ---------------- init ---------------- */
+loadState();
 applyProf(currentProf);
 renderRecipe('salmon');
 recipeOrigin = 'today';
+restoreTodayLog();
 maybeShowOnboarding();

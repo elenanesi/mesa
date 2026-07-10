@@ -5,8 +5,9 @@
    to the DOM or do the target-engine math live here (see engine.js,
    planner.js, render.js).
 
-   NOTE: persistence (localStorage load/save) is task A2 — everything
-   here is in-memory only for now, same as the mockup.
+   Persistence (task A2): a single versioned localStorage store
+   (STORE_KEY, `mesa.v1`) — see the block at the bottom of this file
+   for loadState()/persist() and everything they read & write.
    =================================================================== */
 
 /* ---------------- recipe data ---------------- */
@@ -214,3 +215,141 @@ const PROF = {
             kP:26, kC:43, kF:31,
             consumed:{p:42,c:58,f:18}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
 };
+
+/* ===================================================================
+   persistence (task A2) — one versioned localStorage store.
+
+   Derived values (age, BMR, recommended calories, macro grams, computed
+   menus, shopping totals) are NEVER stored here — they recompute at
+   boot from the inputs below (deterministic-numbers rule). Only
+   user-editable inputs and selection state are persisted:
+     - both PROF entries' editable fields (not goalAdj — that's a fixed
+       per-person constant, not user-editable)
+     - SHARED slot toggles, svE/svM/svS servings, householdStyle,
+       currentProf
+     - checked shopping-list items, keyed by ingredient NAME (ids are
+       positional and change whenever the list recomputes)
+     - today's plan-first log status (confirmed/skipped + what was
+       actually logged for lunch/dinner/snack — breakfast is always
+       auto-confirmed by design, see renderLogPlan), keyed by ISO date
+       so a new day always starts fresh
+     - the onboarding-seen flag (migrated from the old standalone
+       `mesaOnboarded` key; that key is still read as a fallback for
+       installs that predate this store)
+
+   loadState() runs once at boot, before the first render. persist()
+   is the single write-through call, invoked from the end of every
+   mutating action (see render.js: applyProf, toggleShared, adjServe,
+   toggleShop, logConfirm/logSkip).
+   =================================================================== */
+const STORE_KEY = 'mesa.v1';
+const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
+
+let onboarded = false;
+let checkedShopNames = {};   // ingredient name -> true, for shopping-list checks
+
+function todayISO(){
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+}
+
+// Today's plan-first log status, keyed by slot (lunch/dinner/snack only —
+// breakfast has no confirm/skip/swap actions, see buildLogSlotCard). Reset
+// whenever the stored date isn't today.
+let todayLog = { date: todayISO(), slots: {} };
+
+// Fields copied verbatim between PROF[key] and the store. Deliberately
+// excludes goalAdj (fixed, not user-editable) and everything else on PROF
+// (consumed, targets, ring/bar strings, coach text…) which is recomputed
+// by recomputeProf()/applyProf() every render, never stored.
+const PERSIST_PROFILE_FIELDS = ['sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF'];
+
+function buildSnapshot(){
+  const profiles = {};
+  Object.keys(PROF).forEach(function(key){
+    const p = PROF[key], out = {};
+    PERSIST_PROFILE_FIELDS.forEach(function(f){ out[f] = p[f]; });
+    profiles[key] = out;
+  });
+  return {
+    v: 1,
+    currentProf: currentProf,
+    onboarded: onboarded,
+    householdStyle: householdStyle,
+    shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
+    servings: { svE: svE, svM: svM, svS: svS },
+    profiles: profiles,
+    shopping: { checked: Object.keys(checkedShopNames).filter(function(n){ return checkedShopNames[n]; }) },
+    log: todayLog
+  };
+}
+
+// Single write-through: gathers current values and writes once.
+function persist(){
+  try{ localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot())); }catch(e){ /* storage unavailable/full — no-op */ }
+}
+
+// Deep-merges saved values over the in-code defaults above: only known,
+// well-typed fields are copied, so missing keys keep their in-code default
+// (forward-compatible with fields added in later versions) and unexpected/
+// corrupt values are ignored rather than crashing.
+function loadState(){
+  let saved = null;
+  try{
+    const raw = localStorage.getItem(STORE_KEY);
+    if(raw) saved = JSON.parse(raw);
+  }catch(e){ saved = null; }
+  if(!saved || typeof saved !== 'object') saved = {};
+
+  if(typeof saved.currentProf === 'string' && PROF[saved.currentProf]) currentProf = saved.currentProf;
+  if(typeof saved.householdStyle === 'string' && MEALPLANS[saved.householdStyle]) householdStyle = saved.householdStyle;
+
+  if(saved.shared && typeof saved.shared === 'object'){
+    Object.keys(SHARED).forEach(function(slot){
+      if(typeof saved.shared[slot] === 'boolean') SHARED[slot] = saved.shared[slot];
+    });
+  }
+
+  if(saved.servings && typeof saved.servings === 'object'){
+    if(typeof saved.servings.svE === 'number') svE = saved.servings.svE;
+    if(typeof saved.servings.svM === 'number') svM = saved.servings.svM;
+    if(typeof saved.servings.svS === 'number') svS = saved.servings.svS;
+  }
+
+  // Per-field type check: 'string' fields must be a string, 'number' fields must be a
+  // number, and calCustom is special-cased since null is its valid "no override" value.
+  const PROFILE_FIELD_TYPE = {
+    sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
+    activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number'
+  };
+  if(saved.profiles && typeof saved.profiles === 'object'){
+    Object.keys(PROF).forEach(function(key){
+      const sp = saved.profiles[key];
+      if(!sp || typeof sp !== 'object') return;
+      const p = PROF[key];
+      PERSIST_PROFILE_FIELDS.forEach(function(f){
+        if(!Object.prototype.hasOwnProperty.call(sp, f)) return;
+        const v = sp[f], want = PROFILE_FIELD_TYPE[f];
+        const ok = want === 'number|null' ? (v === null || typeof v === 'number') : (typeof v === want);
+        if(ok) p[f] = v;
+      });
+    });
+  }
+
+  if(saved.shopping && Array.isArray(saved.shopping.checked)){
+    checkedShopNames = {};
+    saved.shopping.checked.forEach(function(name){ if(typeof name === 'string') checkedShopNames[name] = true; });
+  }
+
+  if(saved.log && typeof saved.log === 'object' && saved.log.date === todayISO() && saved.log.slots && typeof saved.log.slots === 'object'){
+    todayLog = { date: saved.log.date, slots: saved.log.slots };
+  } else {
+    todayLog = { date: todayISO(), slots: {} };
+  }
+
+  if(typeof saved.onboarded === 'boolean'){
+    onboarded = saved.onboarded;
+  } else {
+    try{ onboarded = !!localStorage.getItem(LEGACY_ONBOARD_KEY); }catch(e){ onboarded = false; }
+  }
+}
