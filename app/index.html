@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="theme-color" content="#f6f3ec" />
+<title>Mesa — eat well, together</title>
+<link rel="stylesheet" href="css/mesa.css" />
+</head>
+<body>
+
+<div class="phone">
+
+  <div class="app">
+
+    <!-- ============ TODAY ============ -->
+    <section class="screen active" id="today">
+      <div class="topbar">
+        <div>
+          <div class="eyebrow">Monday · 29 Jun</div>
+          <h1 style="margin-top:2px">Good morning</h1>
+        </div>
+        <div class="seg" id="profSeg">
+          <button class="on" data-prof="elena">Elena</button>
+          <button data-prof="partner">Andrea</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ring-wrap">
+          <div class="ring">
+            <svg width="128" height="128">
+              <circle cx="64" cy="64" r="56" fill="none" stroke="#eef0ec" stroke-width="13"/>
+              <circle id="calRing" cx="64" cy="64" r="56" fill="none" stroke="#6f8f76" stroke-width="13" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="120"/>
+            </svg>
+            <div class="center">
+              <span class="big" id="calLeft">1,420</span>
+              <span class="lbl">kcal left of <span id="calGoal">1,820</span></span>
+            </div>
+          </div>
+          <div class="macros">
+            <div class="macro">
+              <div class="mhead"><span>Protein</span><b id="mp">28 / 110 g</b></div>
+              <div class="bar"><i class="b-p" id="bp" style="width:26%"></i></div>
+            </div>
+            <div class="macro">
+              <div class="mhead"><span>Carbs</span><b id="mc">34 / 170 g</b></div>
+              <div class="bar"><i class="b-c" id="bc" style="width:20%"></i></div>
+            </div>
+            <div class="macro">
+              <div class="mhead"><span>Fat</span><b id="mf">12 / 62 g</b></div>
+              <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
+              <div class="sub" id="fatSplit" style="margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
+            </div>
+          </div>
+        </div>
+        <div class="meta-line">
+          <span id="goalTag">🎯 Gentle fat loss</span>
+          <span>🍽️ 4 meals planned</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 16px">
+        <div class="row between" style="margin-bottom:2px"><b style="font-size:13px">Calories by macro</b><span class="chip-computed">✓ computed</span></div>
+        <div class="stackbar" style="margin-top:8px">
+          <i class="b-p" id="ksP" style="width:26%"></i><i class="b-c" id="ksC" style="width:41%"></i><i class="b-f" id="ksF" style="width:33%"></i>
+        </div>
+        <div class="sub" id="kcalSplitLegend" style="margin-top:7px">Protein 26% · Carbs 41% · Fat 33% of calories</div>
+      </div>
+
+      <div class="banner">
+        <div class="ai">Mesa coach <span class="badge-mini">✨ Suggestion</span></div>
+        <div class="bt" id="coachT">Today leans thyroid-friendly 🦋</div>
+        <div class="bd" id="coachD">Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.</div>
+      </div>
+
+      <div class="row between" style="margin-top:22px">
+        <h2 style="margin:0">Today's menu</h2>
+        <span class="pill ghost">Auto-balanced</span>
+      </div>
+
+      <div class="card meal" id="todayBreakfastCard" onclick="openBreakfastRecipe()">
+        <div class="thumb" id="bfEmoji">🥣</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="bfTitle">Greek yogurt & berry bowl</span><span class="kcal" id="bfKcal">320</span></div>
+          <div class="d" id="bfDesc">Breakfast · 24g protein</div>
+          <div class="tags" id="bfTags">
+            <span class="pill">Low-GI</span><span class="pill berry">Skin-supporting</span><span class="pill terra">High protein</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card meal" onclick="openLunchRecipe()">
+        <div class="thumb" id="lunchThumb">🥗</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="lunchTitle">Lentil & roasted veg salad</span><span class="kcal" id="lunchKcal">430</span></div>
+          <div class="d" id="lunchDesc">Lunch · 19g protein</div>
+          <div class="tags" id="lunchTags"></div>
+        </div>
+      </div>
+
+      <div class="card meal" onclick="openDinnerRecipe()">
+        <div class="thumb" id="dinnerThumb">🐟</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="dinnerTitle">Baked salmon, quinoa & greens</span><span class="kcal" id="dinnerKcal">520</span></div>
+          <div class="d" id="dinnerDesc">Dinner · 38g protein</div>
+          <div class="tags" id="dinnerTags"></div>
+        </div>
+      </div>
+
+      <div class="card meal" id="todaySnack" style="cursor:default">
+        <div class="thumb" id="snackThumbEl" style="background:var(--terra-tint)">🌰</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="snackTitleEl">Snack · 2 Brazil nuts + apple</span><span class="kcal" id="snackKcalEl">130</span></div>
+          <div class="d" id="snackDescEl">Covers your daily selenium target</div>
+          <div class="tags" id="snackTags"></div>
+        </div>
+        <button class="swap" onclick="openSwap('snack','todaySnack')">Swap</button>
+      </div>
+
+      <p class="sub" style="margin-top:16px;text-align:center">Plan generated from your profile · adjust anytime in Profile</p>
+    </section>
+
+    <!-- ============ WEEK ============ -->
+    <section class="screen" id="week">
+      <h1>This week</h1>
+      <p class="sub">A balanced 7-day rhythm. Nutrient coverage evens out across days, not just within one.</p>
+
+      <div class="card">
+        <div class="row between"><b style="font-size:14px">Last week in one minute</b><span class="pill ghost">Weekly reflection</span></div>
+        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🎉</div><div class="li-t">Win — protein on target 6 of 7 days<small>Lentil lunches carried the week</small></div></div>
+        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Win — selenium fully covered<small>Brazil nuts + salmon dinners</small></div></div>
+        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">🌤️</div><div class="li-t">Gentle focus — vitamin D dipped<small>Thu & Sat egg additions should help next week</small></div></div>
+        <button class="cta ghostbtn" onclick="toast('📅 Planning next week around this week\'s wins…')">Plan next week</button>
+      </div>
+
+      <div class="card" style="padding:14px">
+        <div class="row between" style="margin-bottom:4px">
+          <b style="font-size:14px">Weekly nutrient coverage <span class="chip-computed">✓ computed</span></b>
+          <span class="pill">On track</span>
+        </div>
+        <div class="nutri" style="margin-top:10px">
+          <div class="n"><div class="nt"><span>Protein</span><b>96%</b></div><div class="nbar"><i style="width:96%"></i></div></div>
+          <div class="n"><div class="nt"><span>Fiber</span><b>88%</b></div><div class="nbar"><i style="width:88%"></i></div></div>
+          <div class="n"><div class="nt"><span>Omega-3</span><b>92%</b></div><div class="nbar"><i style="width:92%"></i></div></div>
+          <div class="n"><div class="nt"><span>Selenium</span><b>100%</b></div><div class="nbar"><i style="width:100%"></i></div></div>
+          <div class="n low" id="vitDChip"><div class="nt"><span>Vitamin D</span><b>61%</b></div><div class="nbar"><i style="width:61%"></i></div></div>
+          <div class="n"><div class="nt"><span>Iron</span><b>84%</b></div><div class="nbar"><i style="width:84%"></i></div></div>
+          <div class="n"><div class="nt"><span>Sat. fat</span><b>64% of cap</b></div><div class="nbar"><i style="width:64%"></i></div><div class="cap-note">Keep under — staying below is good</div></div>
+        </div>
+        <div class="why" style="margin-top:12px" id="vitDNote">🦋 <b>Vitamin D is trending low.</b> Mesa added eggs + a fortified option to Thu & Sat. Sunlight helps too — supplement only with your doctor.</div>
+      </div>
+
+      <h2>7-day plan</h2>
+      <div class="week" id="weekList"></div>
+
+      <button class="cta ghostbtn" onclick="openShopping()">🛒 Generate shopping list</button>
+      <button class="cta" onclick="openRebalanceSheet()">✨ Re-balance my week</button>
+    </section>
+
+    <!-- ============ RECIPE DETAIL ============ -->
+    <section class="screen" id="recipe">
+      <button class="backbtn" onclick="go(recipeOrigin)">‹ Back</button>
+      <div class="hero" id="recipeHero">🐟</div>
+      <h1 style="margin-top:14px" id="recipeTitle">Baked salmon, quinoa & greens</h1>
+      <div class="meta-line" style="font-size:12.5px">
+        <span id="rsTime">⏱️ 25 min</span><span id="rsKcal">🔥 520 kcal</span><span id="rsProt">💪 38g protein</span><span id="rsServesMeta">👥 2.5 servings</span>
+      </div>
+      <div class="tags" id="recipeTags" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"></div>
+
+      <h2>Servings</h2>
+      <div class="serve-row" id="serveRowShared">
+        <div class="serve-card" id="serveElena">
+          <div class="sv-name">Elena</div>
+          <div class="sv-stepper">
+            <button onclick="adjServe('elena',-0.5)" aria-label="Decrease Elena's portion">–</button>
+            <span class="sv-val" id="svElenaVal">1×</span>
+            <button onclick="adjServe('elena',0.5)" aria-label="Increase Elena's portion">+</button>
+          </div>
+        </div>
+        <div class="serve-card" id="serveAndrea">
+          <div class="sv-name">Andrea</div>
+          <div class="sv-stepper">
+            <button onclick="adjServe('andrea',-0.5)" aria-label="Decrease Andrea's portion">–</button>
+            <span class="sv-val" id="svAndreaVal">1.5×</span>
+            <button onclick="adjServe('andrea',0.5)" aria-label="Increase Andrea's portion">+</button>
+          </div>
+        </div>
+      </div>
+      <p class="sub" id="sharedCaption" style="margin-top:8px">Shared dinner — cooked once, plated per target</p>
+
+      <div class="serve-row" id="serveRowSolo" style="display:none">
+        <div class="serve-card me" style="flex:1">
+          <div class="sv-name">Servings</div>
+          <div class="sv-stepper">
+            <button onclick="adjServe('solo',-0.5)" aria-label="Decrease servings">–</button>
+            <span class="sv-val" id="svSoloVal">1×</span>
+            <button onclick="adjServe('solo',0.5)" aria-label="Increase servings">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="why" style="margin-top:16px" id="recipeWhy"></div>
+
+      <h2>Nutrition (per serving) <span class="chip-computed">✓ computed</span></h2>
+      <div class="nutri" id="recipeNutri"></div>
+      <p class="sub" id="recipeKcalSplit" style="margin-top:8px"></p>
+
+      <h2 id="ingHeader">Ingredients · scaled for 2.5 servings</h2>
+      <ul class="ing" id="ingList"></ul>
+
+      <h2>Method</h2>
+      <ol class="steps" id="recipeMethod"></ol>
+
+      <button class="cta" onclick="markEatenFromRecipe()">✓ Mark as eaten</button>
+      <button class="cta ghostbtn" onclick="openSwap(currentRecipeKey, null)">🔁 Swap for something similar</button>
+    </section>
+
+    <!-- ============ LOG / ADD ============ -->
+    <section class="screen" id="log">
+      <h1>Log food</h1>
+      <p class="sub">Confirm today's plan in one tap — swap or skip what doesn't fit.</p>
+
+      <h2 style="margin-top:18px">Today's plan</h2>
+
+      <div class="card meal done" id="log-breakfast" style="cursor:default"></div>
+      <div class="card meal" id="log-lunch" style="cursor:default"></div>
+      <div class="card meal" id="log-dinner" style="cursor:default"></div>
+      <div class="card meal" id="log-snack" style="cursor:default"></div>
+
+      <div class="card" style="padding:14px;margin-top:20px">
+        <div class="row between"><b style="font-size:14px">Today so far</b><span class="pill" id="logTotalPill">400 kcal</span></div>
+        <div id="todaySoFar"></div>
+      </div>
+
+      <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
+      <div class="quick">
+        <button onclick="toast('📷 Scan a barcode')"><span class="qi">📷</span>Scan</button>
+        <button onclick="toast('🔎 Search foods')"><span class="qi">🔎</span>Search</button>
+        <button onclick="toast('🍱 Add a meal')"><span class="qi">🍱</span>Meal</button>
+        <button onclick="toast('💧 +250ml water')"><span class="qi">💧</span>Water</button>
+      </div>
+
+      <div class="banner" style="background:linear-gradient(135deg,var(--terra),#b25e35)">
+        <div class="ai">Deterministic engine <span class="badge-mini">✓ computed</span></div>
+        <div class="bt">Counts you can trust</div>
+        <div class="bd">Calories & nutrients are computed by formula from a verified food database. AI only suggests <i>what</i> to eat — it never invents the numbers.</div>
+      </div>
+    </section>
+
+    <!-- ============ INSIGHTS ============ -->
+    <section class="screen" id="insights">
+      <h1>Insights</h1>
+      <p class="sub">How your eating is trending — for you and Andrea.</p>
+
+      <div class="stat">
+        <div class="s"><div class="sv">94%</div><div class="sl">Plan adherence (7d)</div><div class="sd up">▲ 11% vs last week</div></div>
+        <div class="s"><div class="sv">108g</div><div class="sl">Avg protein/day</div><div class="sd up">▲ on target</div></div>
+        <div class="s"><div class="sv">26g</div><div class="sl">Avg fiber/day</div><div class="sd up">▲ heart-smart</div></div>
+        <div class="s"><div class="sv">61%</div><div class="sl">Vitamin D</div><div class="sd dn2">▼ needs attention</div></div>
+        <div class="s"><div class="sv">82%</div><div class="sl">Fats unsaturated</div><div class="sd up">▲ heart & skin smart</div></div>
+      </div>
+
+      <div class="card">
+        <div class="row between"><b style="font-size:14px">Your weekly band <span class="chip-computed">✓ computed</span></b></div>
+        <p class="sub" style="margin-top:6px">5 of 7 days landed inside your target range this week — no streak to lose, just a gentle rhythm.</p>
+        <div class="band">
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">M</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">T</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">W</div></div>
+          <div class="dwrap"><div class="dot soft"></div><div class="dl">T</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">F</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">S</div></div>
+          <div class="dwrap"><div class="dot"></div><div class="dl">S</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row between" style="margin-bottom:6px"><b style="font-size:14px">Calories vs target</b><span class="pill">last 7 days</span></div>
+        <div class="spark">
+          <div class="col" style="height:62%"><b>M</b></div>
+          <div class="col" style="height:70%"><b>T</b></div>
+          <div class="col hi" style="height:88%"><b>W</b></div>
+          <div class="col" style="height:66%"><b>T</b></div>
+          <div class="col" style="height:74%"><b>F</b></div>
+          <div class="col hi" style="height:96%"><b>S</b></div>
+          <div class="col" style="height:58%"><b>S</b></div>
+        </div>
+      </div>
+
+      <h2>What's working</h2>
+      <div class="card" style="padding:14px">
+        <div class="logitem" style="border-bottom:1px solid var(--line)"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Selenium consistently met<small>Brazil nuts + fish doing the work</small></div></div>
+        <div class="logitem" style="border-bottom:1px solid var(--line)"><div class="li-i" style="background:var(--sage-tint)">✨</div><div class="li-t">Low-GI 6 of 7 days<small>Supports skin & steady energy</small></div></div>
+        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">📌</div><div class="li-t">Watch added sugar on weekends<small>Sat spiked — skin-relevant</small></div></div>
+      </div>
+
+      <div class="banner">
+        <div class="ai">Weekly review · powered by Mesa coach <span class="badge-mini">✨ Suggestion</span></div>
+        <div class="bt">Want next week tuned for skin?</div>
+        <div class="bd">I can nudge omega-3 up and dairy/sugar down while keeping your calories and protein identical.</div>
+      </div>
+      <button class="cta" onclick="toast('✨ Tuning next week for skin…')">Tune next week</button>
+    </section>
+
+    <!-- ============ PROFILE ============ -->
+    <section class="screen" id="profile">
+      <div class="row between" style="margin-top:6px">
+        <h1 style="margin:0">Profile</h1>
+        <div class="avatar" id="profAv">E</div>
+      </div>
+      <p class="sub">This is what makes the plans <i>yours</i>. Mesa recalculates whenever you change something here.</p>
+
+      <h2>Whose plan</h2>
+      <div class="seg" style="width:100%">
+        <button class="on" style="flex:1" onclick="setProf('elena',this)">Elena</button>
+        <button style="flex:1" onclick="setProf('partner',this)">Andrea</button>
+      </div>
+
+      <h2>Basics</h2>
+      <p class="sub">Edit anything here — Mesa recomputes your recommended calories and rebuilds your targets. Every number below is formula, not guesswork.</p>
+      <div class="field"><label>Sex</label>
+        <div class="seg" style="width:100%;margin-top:6px">
+          <button id="sexBtnF" class="on" style="flex:1;min-height:38px" onclick="setSex('female')">Female</button>
+          <button id="sexBtnM" style="flex:1;min-height:38px" onclick="setSex('male')">Male</button>
+        </div>
+      </div>
+      <div class="field"><label>Date of birth</label>
+        <div class="inp" style="flex-wrap:wrap;gap:8px">
+          <b id="pfDob">Born May 1997 · 29</b>
+          <span class="row" style="gap:12px">
+            <span class="sv-stepper" style="margin:0">
+              <button onclick="stepDob('m',-1)" aria-label="Earlier birth month">–</button>
+              <span class="sv-val" id="dobMVal" style="min-width:36px">May</span>
+              <button onclick="stepDob('m',1)" aria-label="Later birth month">+</button>
+            </span>
+            <span class="sv-stepper" style="margin:0">
+              <button onclick="stepDob('y',-1)" aria-label="Earlier birth year">–</button>
+              <span class="sv-val" id="dobYVal" style="min-width:42px">1997</span>
+              <button onclick="stepDob('y',1)" aria-label="Later birth year">+</button>
+            </span>
+          </span>
+        </div>
+        <div class="cap-note">Age is computed from your birth date — no need to update it, ever.</div>
+      </div>
+      <div class="field"><label>Height</label>
+        <div class="inp"><span>Height</span>
+          <span class="sv-stepper" style="margin:0">
+            <button onclick="stepBody('height',-1)" aria-label="Decrease height">–</button>
+            <span class="sv-val" id="hVal" style="min-width:62px">168 cm</span>
+            <button onclick="stepBody('height',1)" aria-label="Increase height">+</button>
+          </span>
+        </div>
+      </div>
+      <div class="field"><label>Weight</label>
+        <div class="inp"><span>Weight</span>
+          <span class="sv-stepper" style="margin:0">
+            <button onclick="stepBody('weight',-0.5)" aria-label="Decrease weight">–</button>
+            <span class="sv-val" id="wVal" style="min-width:62px">64 kg</span>
+            <button onclick="stepBody('weight',0.5)" aria-label="Increase weight">+</button>
+          </span>
+        </div>
+      </div>
+      <div class="field"><label>Activity level</label>
+        <div id="actOpts"></div>
+      </div>
+      <div class="field"><label>Daily target <small style="color:var(--muted)">(Mifflin-St Jeor × activity + goal)</small></label>
+        <div class="inp"><span>Calories <span id="calChip" class="chip-computed" style="margin-left:6px">✓ computed</span></span>
+          <span class="sv-stepper" style="margin:0">
+            <button onclick="stepCal(-50)" aria-label="Decrease daily calorie target">–</button>
+            <span class="sv-val" id="pfCals" style="min-width:82px">1,820 kcal</span>
+            <button onclick="stepCal(50)" aria-label="Increase daily calorie target">+</button>
+          </span>
+        </div>
+        <div class="cap-note" id="calFormula"></div>
+        <div class="cap-note" id="calNote" style="color:#b25e35"></div>
+        <button class="pill gold chip-preset" id="calRestoreBtn" style="display:none;margin-top:8px;padding:11px 14px;font-size:12px" onclick="restoreCal()">↺ Restore recommended (1,820)</button>
+      </div>
+
+      <h2>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
+      <p class="sub">Choose where your calories come from — Mesa keeps it adding up to 100% and rebuilds your menu to match.</p>
+      <div class="row" id="macroPresets" style="gap:7px;flex-wrap:wrap;margin-top:6px">
+        <button class="pill ghost chip-preset" onclick="applyPreset('default')">Mesa default</button>
+        <button class="pill ghost chip-preset" onclick="applyPreset('highprotein')">Higher protein</button>
+        <button class="pill ghost chip-preset" onclick="applyPreset('lowcarb')">Lower carb</button>
+      </div>
+      <div class="card" style="padding:6px 16px 14px;margin-top:10px">
+        <div class="split-row">
+          <span class="split-label"><span class="split-dot" style="background:var(--sage)"></span>Protein</span>
+          <div class="sv-stepper" style="margin:0">
+            <button onclick="stepSplit('P',-5)" aria-label="Decrease protein percent">–</button>
+            <span class="sv-val" id="splitPVal">26% · 118g</span>
+            <button onclick="stepSplit('P',5)" aria-label="Increase protein percent">+</button>
+          </div>
+        </div>
+        <div class="split-row">
+          <span class="split-label"><span class="split-dot" style="background:var(--gold)"></span>Carbs</span>
+          <div class="sv-stepper" style="margin:0">
+            <button onclick="stepSplit('C',-5)" aria-label="Decrease carbs percent">–</button>
+            <span class="sv-val" id="splitCVal">41% · 187g</span>
+            <button onclick="stepSplit('C',5)" aria-label="Increase carbs percent">+</button>
+          </div>
+        </div>
+        <div class="split-row">
+          <span class="split-label"><span class="split-dot" style="background:var(--terra)"></span>Fat</span>
+          <div class="sv-stepper" style="margin:0">
+            <button onclick="stepSplit('F',-5)" aria-label="Decrease fat percent">–</button>
+            <span class="sv-val" id="splitFVal">33% · 67g</span>
+            <button onclick="stepSplit('F',5)" aria-label="Increase fat percent">+</button>
+          </div>
+        </div>
+        <div class="cap-note" id="splitNote"></div>
+      </div>
+      <p class="sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Your total calories stay the same — the split changes where they come from.<span class="chip-computed">✓ computed</span></p>
+
+      <h2>Health goals</h2>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Gentle fat loss</div><div class="od">~325 kcal below maintenance</div></div></div>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Muscle & protein</div><div class="od">1.6 g protein / kg bodyweight</div></div></div>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Heart & metabolic</div><div class="od">High fiber, low sodium, Mediterranean base</div></div></div>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Beautiful skin</div><div class="od">Low-GI, omega-3 up, dairy/sugar down</div></div></div>
+      <div class="opt sel" id="hashiOpt" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Hashimoto's-friendly 🦋</div><div class="od">Selenium, moderate iodine, anti-inflammatory</div></div></div>
+
+      <h2>Meals we share</h2>
+      <p class="sub">Shared meals use one recipe with a portion for each of you. Solo meals are planned per person.</p>
+      <div class="opt" id="shareBreakfast" onclick="toggleShared('breakfast',this)"><div class="ck"></div><div><div class="ot">Breakfast</div><div class="od">Solo (default)</div></div></div>
+      <div class="opt" id="shareLunch" onclick="toggleShared('lunch',this)"><div class="ck"></div><div><div class="ot">Lunch</div><div class="od">Solo (default)</div></div></div>
+      <div class="opt sel" id="shareDinner" onclick="toggleShared('dinner',this)"><div class="ck">✓</div><div><div class="ot">Dinner</div><div class="od">Shared (default)</div></div></div>
+      <div class="opt" id="shareSnack" onclick="toggleShared('snack',this)"><div class="ck"></div><div><div class="ot">Snack</div><div class="od">Solo (default)</div></div></div>
+
+      <h2>Foods to avoid</h2>
+      <p class="sub">Add anything you can't or won't eat — intolerances, allergies, dislikes. Mesa will never suggest them.</p>
+      <div class="field"><div class="inp" onclick="toast('➕ Add a food to avoid')"><span style="color:var(--muted)">e.g. lactose, shellfish, cilantro…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
+      <div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">
+        <span class="pill ghost">Lactose ✕</span>
+        <span class="pill ghost">Raw onion ✕</span>
+        <span class="pill ghost">Very spicy ✕</span>
+      </div>
+
+      <h2>Connections</h2>
+      <div class="opt" onclick="toast('Apple Health connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">♥</div><div><div class="ot">Apple Health</div><div class="od">Sync weight, activity & steps → better targets</div></div></div>
+      <div class="opt" onclick="toast('Reminders connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔔</div><div><div class="ot">Notifications</div><div class="od">Meal prep nudges & shopping reminders</div></div></div>
+      <div class="opt" onclick="toast('Calendar connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">📅</div><div><div class="ot">Calendar</div><div class="od">Lighter prep on busy days</div></div></div>
+
+      <h2>About</h2>
+      <div class="opt" onclick="replayOnboarding()"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔄</div><div><div class="ot">Replay intro</div><div class="od">Watch the welcome walkthrough again</div></div></div>
+
+      <button class="cta" onclick="go('today');toast('✓ Plan updated')">Save & rebuild my plan</button>
+      <p class="sub" style="text-align:center;margin-top:14px">Mesa offers general nutrition guidance, not medical advice. For Hashimoto's, check changes with your doctor.</p>
+    </section>
+
+  </div><!-- /app -->
+
+  <!-- bottom sheet (swap / shopping list) -->
+  <div class="sheet-backdrop" id="sheetBackdrop" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <!-- onboarding -->
+  <div class="onboard hidden" id="onboard">
+    <button class="ob-skip" onclick="finishOnboarding()">Skip</button>
+    <div class="ob-slides" id="obSlides">
+      <div class="ob-slide active">
+        <div class="ob-emoji">🥗🍽️</div>
+        <h1>One plan, two targets</h1>
+        <p class="sub" style="text-align:center">Eat well together. Mesa builds one weekly menu that quietly tilts to fit each of you — same table, different needs.</p>
+      </div>
+      <div class="ob-slide">
+        <h1 style="text-align:center">Who's this for?</h1>
+        <p class="sub" style="text-align:center">Pick a profile to preview your starting goals. You can fine-tune everything later.</p>
+        <div class="opt sel" id="obElena" onclick="obPick('elena')"><div class="ck">✓</div><div><div class="ot">I'm Elena</div><div class="od">Female · 29 · gentle fat loss</div></div></div>
+        <div class="opt" id="obAndrea" onclick="obPick('partner')"><div class="ck"></div><div><div class="ot">I'm Andrea</div><div class="od">Male · 31 · muscle & protein</div></div></div>
+        <div class="row" id="obGoalsPreview" style="gap:7px;flex-wrap:wrap;margin-top:14px"></div>
+      </div>
+      <div class="ob-slide">
+        <div class="ob-emoji">✅</div>
+        <h1>Your first week is ready</h1>
+        <p class="sub" style="text-align:center">7 days, balanced meals, one shopping list — tap in any time to see why a meal fits you.</p>
+      </div>
+    </div>
+    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span></div>
+    <button class="cta" id="obNext" onclick="obNext()">Continue</button>
+  </div>
+
+  <!-- toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- bottom nav -->
+  <nav class="tabbar">
+    <button class="tab on" data-tab="today" onclick="go('today',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      <span class="tl">Today</span>
+    </button>
+    <button class="tab" data-tab="week" onclick="go('week',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+      <span class="tl">Week</span>
+    </button>
+    <button class="tab add" data-tab="log" onclick="go('log',this)">
+      <span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
+    </button>
+    <button class="tab" data-tab="insights" onclick="go('insights',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>
+      <span class="tl">Insights</span>
+    </button>
+    <button class="tab" data-tab="profile" onclick="go('profile',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      <span class="tl">Profile</span>
+    </button>
+  </nav>
+</div>
+
+<script src="js/state.js"></script>
+<script src="js/engine.js"></script>
+<script src="js/planner.js"></script>
+<script src="js/render.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
