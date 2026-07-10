@@ -1,0 +1,1955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="default" />
+<meta name="theme-color" content="#f6f3ec" />
+<title>Mesa — eat well, together</title>
+<style>
+  :root{
+    --bg:#f6f3ec;          /* warm cream */
+    --card:#ffffff;
+    --ink:#21302a;         /* deep green-black */
+    --ink-soft:#5c6b63;
+    --muted:#8a978f;
+    --line:#e7e2d6;
+    --sage:#6f8f76;        /* primary */
+    --sage-deep:#4f6f57;
+    --sage-tint:#e8efe7;
+    --terra:#cf7b54;       /* accent */
+    --terra-tint:#f6e6dc;
+    --gold:#d9a441;
+    --berry:#9b5a7a;
+    --shadow:0 10px 30px rgba(33,48,42,.10);
+    --shadow-soft:0 4px 14px rgba(33,48,42,.06);
+    --radius:22px;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, #efe9da 0%, transparent 60%),
+      radial-gradient(900px 500px at -10% 110%, #e9efe7 0%, transparent 55%),
+      #eee8db;
+    color:var(--ink);
+    min-height:100vh;
+    display:flex;align-items:center;justify-content:center;
+    padding:28px 12px;
+  }
+
+  /* ---------- Phone frame (desktop) ---------- */
+  .phone{
+    width:390px;height:844px;
+    background:var(--bg);
+    border-radius:54px;
+    position:relative;
+    box-shadow:0 0 0 13px #11150f, 0 0 0 15px #2a2f27, 0 40px 90px rgba(0,0,0,.45);
+    overflow:hidden;
+    display:flex;flex-direction:column;
+  }
+  .island{
+    position:absolute;top:11px;left:50%;transform:translateX(-50%);
+    width:122px;height:34px;background:#0a0d08;border-radius:20px;z-index:50;
+  }
+  .statusbar{
+    height:54px;flex:0 0 54px;display:flex;align-items:center;justify-content:space-between;
+    padding:0 28px;font-size:14px;font-weight:600;color:var(--ink);z-index:40;
+  }
+  .statusbar .right{display:flex;gap:6px;align-items:center;font-size:13px;}
+
+  /* ---------- App body ---------- */
+  .app{flex:1;position:relative;overflow:hidden;}
+  .screen{
+    position:absolute;inset:0;overflow-y:auto;-webkit-overflow-scrolling:touch;
+    padding:6px 18px 108px;opacity:0;transform:translateY(8px);
+    pointer-events:none;transition:opacity .28s ease, transform .28s ease;
+  }
+  .screen.active{opacity:1;transform:none;pointer-events:auto;}
+  .screen::-webkit-scrollbar{display:none;}
+
+  h1{font-size:26px;line-height:1.15;margin:6px 0 2px;letter-spacing:-.4px;}
+  h2{font-size:18px;margin:22px 0 10px;letter-spacing:-.2px;}
+  .sub{color:var(--muted);font-size:13.5px;margin:0 0 4px;}
+  .eyebrow{font-size:11.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--sage);}
+
+  .card{background:var(--card);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:16px;margin-top:12px;border:1px solid rgba(231,226,214,.7);}
+  .row{display:flex;align-items:center;gap:12px;}
+  .between{justify-content:space-between;}
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;padding:5px 9px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);}
+  .pill.terra{background:var(--terra-tint);color:#b25e35;}
+  .pill.gold{background:#f6edd6;color:#9a7414;}
+  .pill.berry{background:#f1e2ea;color:#7c4360;}
+  .pill.ghost{background:#eef0ec;color:var(--ink-soft);}
+
+  /* top bar with profile switch */
+  .topbar{display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
+  .seg{display:flex;background:#e9e4d7;border-radius:999px;padding:3px;}
+  .seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:7px 13px;border-radius:999px;cursor:pointer;transition:.2s;}
+  .seg button.on{background:#fff;color:var(--ink);box-shadow:var(--shadow-soft);}
+  .avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;font-size:15px;background:linear-gradient(135deg,var(--sage),var(--sage-deep));}
+
+  /* calorie ring */
+  .ring-wrap{display:flex;align-items:center;gap:18px;}
+  .ring{position:relative;width:128px;height:128px;flex:0 0 128px;}
+  .ring svg{transform:rotate(-90deg);}
+  .ring .center{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;}
+  .ring .big{font-size:27px;font-weight:700;letter-spacing:-.5px;}
+  .ring .lbl{font-size:11px;color:var(--muted);margin-top:1px;}
+
+  .macros{flex:1;display:flex;flex-direction:column;gap:11px;}
+  .macro .mhead{display:flex;justify-content:space-between;font-size:12.5px;margin-bottom:5px;}
+  .macro .mhead b{font-weight:600;}
+  .bar{height:8px;border-radius:999px;background:#eef0ec;overflow:hidden;}
+  .bar > i{display:block;height:100%;border-radius:999px;}
+  .b-p{background:var(--sage);}
+  .b-c{background:var(--gold);}
+  .b-f{background:var(--terra);}
+
+  /* meal cards */
+  .meal{display:flex;gap:13px;align-items:center;cursor:pointer;flex-wrap:wrap;}
+  .meal .thumb{width:60px;height:60px;border-radius:16px;flex:0 0 60px;display:grid;place-items:center;font-size:28px;background:var(--sage-tint);}
+  .meal .info{flex:1;min-width:0;}
+  .meal .info .t{font-weight:600;font-size:15px;}
+  .meal .info .d{font-size:12.5px;color:var(--muted);margin-top:2px;}
+  .meal .kcal{font-size:13px;font-weight:700;color:var(--ink);}
+  .meal .tags{display:flex;gap:5px;flex-wrap:wrap;margin-top:7px;}
+  .swap{border:0;background:#eef0ec;color:var(--ink-soft);font:inherit;font-size:11px;font-weight:600;padding:6px 10px;border-radius:999px;cursor:pointer;}
+  .swap:active{transform:scale(.95);}
+  .meal.done{opacity:.62;}
+  .meal.done .thumb{filter:grayscale(.35);}
+  .meal.skipped{opacity:.55;}
+  .confirmed-tag{font-size:12px;font-weight:700;color:var(--sage-deep);margin-top:8px;}
+  .skipped-tag{font-size:12px;font-weight:700;color:var(--muted);margin-top:8px;}
+
+  .meta-line{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap;}
+
+  /* log plan actions */
+  .logactions{display:flex;gap:7px;margin-top:11px;width:100%;}
+  .logactions button{flex:1;border:0;border-radius:12px;padding:10px 4px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;min-height:38px;}
+  .logactions button:active{transform:scale(.96);}
+  .la-confirm{background:var(--sage);color:#fff;}
+  .la-swap{background:#eef0ec;color:var(--ink-soft);}
+  .la-skip{background:#f6e6dc;color:#b25e35;}
+
+  /* nutrient coverage chips */
+  .nutri{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
+  .nutri .n{background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 13px;}
+  .nutri .n .nt{font-size:12px;color:var(--ink-soft);display:flex;justify-content:space-between;}
+  .nutri .n .nbar{height:6px;border-radius:999px;background:#eef0ec;margin-top:8px;overflow:hidden;}
+  .nutri .n .nbar i{display:block;height:100%;border-radius:999px;background:var(--sage);}
+  .nutri .n.low .nbar i{background:var(--terra);}
+
+  /* shared meals + macro-split additions */
+  .pill.together{background:var(--sage-tint);color:var(--sage-deep);}
+  .pill.mini{padding:3px 7px;font-size:9.5px;}
+  .stackbar{height:8px;border-radius:999px;background:#eef0ec;overflow:hidden;display:flex;}
+  .stackbar i{display:block;height:100%;}
+  .cap-note{font-size:10px;color:var(--muted);margin-top:4px;min-height:13px;}
+
+  /* macro split editor */
+  .pill.chip-preset{border:0;-webkit-appearance:none;appearance:none;font:inherit;cursor:pointer;}
+  .pill.chip-preset:active{transform:scale(.96);}
+  .pill.chip-preset.chipsel{background:var(--sage);color:#fff;}
+  .split-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--line);}
+  .split-row:last-of-type{border-bottom:0;}
+  .split-dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:8px;flex:0 0 9px;}
+  .split-label{font-size:13.5px;font-weight:600;display:flex;align-items:center;}
+
+  /* week grid */
+  .week{display:flex;flex-direction:column;gap:10px;}
+  .day{background:#fff;border:1px solid var(--line);border-radius:18px;padding:13px 15px;cursor:pointer;}
+  .day .dh{display:flex;justify-content:space-between;align-items:center;}
+  .day .dn{font-weight:700;font-size:14px;}
+  .day .dk{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:2px;}
+  .day .dmeals{font-size:12.5px;color:var(--ink-soft);margin-top:6px;line-height:1.45;}
+  .day.today{border:1.5px solid var(--sage);background:linear-gradient(180deg,#fff,#f4f8f3);}
+  .day .chev{display:inline-block;font-size:11px;margin-left:2px;transition:transform .2s ease;color:var(--muted);}
+  .day.expanded .chev{transform:rotate(180deg);}
+  .day.expanded .dmeals{display:none;}
+  .day-meals{display:none;flex-direction:column;gap:4px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+  .day.expanded .day-meals{display:flex;}
+  .day-meal-row{display:flex;align-items:center;gap:10px;padding:9px 6px;border-radius:12px;cursor:pointer;min-height:44px;}
+  .day-meal-row:active{background:#f4f2ea;}
+  .day-meal-row .dm-e{font-size:20px;width:26px;text-align:center;flex:0 0 26px;}
+  .day-meal-row .dm-t{flex:1;font-size:13.5px;min-width:0;}
+  .day-meal-row .dm-t small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
+  .day-meal-row .dm-k{font-size:12px;font-weight:700;color:var(--ink-soft);}
+
+  /* recipe detail */
+  .hero{height:170px;border-radius:24px;margin-top:8px;display:grid;place-items:center;font-size:74px;background:linear-gradient(135deg,#e8efe7,#f6e6dc);}
+  .why{background:var(--sage-tint);border-radius:18px;padding:14px;font-size:13px;color:var(--sage-deep);line-height:1.5;}
+  .why b{color:var(--sage-deep);}
+  ul.ing{list-style:none;padding:0;margin:8px 0 0;}
+  ul.ing li{display:flex;justify-content:space-between;padding:11px 2px;border-bottom:1px solid var(--line);font-size:14px;}
+  ul.ing li:last-child{border-bottom:0;}
+  ol.steps{margin:6px 0 0;padding-left:20px;}
+  ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-soft);}
+
+  /* servings / portion scaling */
+  .serve-row{display:flex;gap:10px;margin-top:10px;}
+  .serve-card{flex:1;background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 10px;text-align:center;transition:.2s;}
+  .serve-card.me{border-color:var(--sage);background:var(--sage-tint);}
+  .serve-card .sv-name{font-size:12px;font-weight:700;color:var(--ink-soft);}
+  .sv-stepper{display:flex;align-items:center;justify-content:center;gap:10px;margin-top:8px;}
+  .sv-stepper button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;font-weight:700;color:var(--sage-deep);cursor:pointer;line-height:1;}
+  .sv-stepper button:active{transform:scale(.9);}
+  .sv-stepper .sv-val{font-size:14px;font-weight:700;min-width:34px;}
+
+  /* log screen */
+  .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:6px;}
+  .quick button{border:1px solid var(--line);background:#fff;border-radius:16px;padding:12px 4px;font:inherit;font-size:11px;font-weight:600;color:var(--ink-soft);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;min-height:44px;}
+  .quick button .qi{font-size:22px;}
+  .logitem{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);}
+  #todaySoFar .logitem:last-child{border-bottom:0;}
+  .logitem .li-i{width:42px;height:42px;border-radius:12px;background:var(--terra-tint);display:grid;place-items:center;font-size:20px;flex:0 0 42px;}
+  .logitem .li-t{flex:1;font-size:14px;}
+  .logitem .li-t small{display:block;color:var(--muted);font-size:12px;margin-top:1px;}
+  .logitem .li-k{font-weight:700;font-size:13px;}
+
+  /* insights */
+  .stat{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;}
+  .stat .s{background:#fff;border:1px solid var(--line);border-radius:18px;padding:14px;}
+  .stat .s .sv{font-size:24px;font-weight:700;letter-spacing:-.5px;}
+  .stat .s .sl{font-size:12px;color:var(--muted);margin-top:2px;}
+  .stat .s .sd{font-size:11.5px;font-weight:600;margin-top:6px;}
+  .up{color:var(--sage-deep);} .dn2{color:#b25e35;}
+  .spark{display:flex;align-items:flex-end;gap:6px;height:80px;margin-top:6px;}
+  .spark .col{flex:1;background:var(--sage-tint);border-radius:6px 6px 0 0;position:relative;}
+  .spark .col b{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--muted);font-weight:600;}
+  .spark .col.hi{background:var(--sage);}
+
+  /* weekly adherence band */
+  .band{display:flex;gap:8px;margin-top:14px;}
+  .band .dwrap{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;}
+  .band .dot{width:100%;height:16px;border-radius:999px;background:#eef0ec;}
+  .band .dot.filled{background:var(--sage);}
+  .band .dot.soft{background:var(--sage-tint);}
+  .band .dl{font-size:10px;color:var(--muted);font-weight:600;}
+
+  /* AI vs computed micro-labels */
+  .badge-mini{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(255,255,255,.25);color:#fff;letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
+  .chip-computed{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
+
+  /* profile / onboarding */
+  .opt{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid var(--line);background:#fff;border-radius:16px;margin-top:9px;cursor:pointer;transition:.15s;min-height:44px;}
+  .opt .ck{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:0 0 22px;display:grid;place-items:center;color:#fff;font-size:13px;}
+  .opt.sel{border-color:var(--sage);background:var(--sage-tint);}
+  .opt.sel .ck{background:var(--sage);border-color:var(--sage);}
+  .opt .ot{font-size:14px;font-weight:600;}
+  .opt .od{font-size:12px;color:var(--muted);margin-top:1px;}
+  .field{margin-top:14px;}
+  .field label{font-size:12.5px;font-weight:600;color:var(--ink-soft);}
+  .field .inp{margin-top:6px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 14px;font-size:14px;color:var(--ink);display:flex;justify-content:space-between;align-items:center;}
+  .cta{display:block;width:100%;border:0;background:var(--sage);color:#fff;font:inherit;font-weight:700;font-size:15px;padding:15px;border-radius:16px;margin-top:18px;cursor:pointer;box-shadow:var(--shadow);min-height:44px;}
+  .cta:active{transform:scale(.99);}
+  .ghostbtn{background:#fff;color:var(--sage-deep);border:1.5px solid var(--sage);box-shadow:none;}
+
+  .banner{background:linear-gradient(135deg,var(--sage),var(--sage-deep));color:#fff;border-radius:20px;padding:16px;margin-top:12px;box-shadow:var(--shadow);}
+  .banner .bt{font-weight:700;font-size:15px;}
+  .banner .bd{font-size:12.5px;opacity:.92;margin-top:4px;line-height:1.45;}
+  .banner .ai{font-size:10.5px;letter-spacing:1px;text-transform:uppercase;opacity:.8;font-weight:700;display:flex;align-items:center;}
+
+  /* bottom nav */
+  .tabbar{
+    position:absolute;left:0;right:0;bottom:0;height:88px;
+    background:rgba(255,255,255,.86);backdrop-filter:saturate(180%) blur(18px);
+    border-top:1px solid var(--line);
+    display:flex;align-items:flex-start;justify-content:space-around;padding:10px 6px 0;z-index:30;
+  }
+  .tab{border:0;background:none;font:inherit;display:flex;flex-direction:column;align-items:center;gap:3px;color:var(--muted);cursor:pointer;width:60px;}
+  .tab svg{width:24px;height:24px;}
+  .tab .tl{font-size:10px;font-weight:600;}
+  .tab.on{color:var(--sage-deep);}
+  .tab.add{margin-top:-14px;}
+  .tab.add .fab{width:54px;height:54px;border-radius:50%;background:linear-gradient(135deg,var(--terra),#b25e35);color:#fff;display:grid;place-items:center;box-shadow:0 8px 20px rgba(207,123,84,.45);}
+  .tab.add .fab svg{width:28px;height:28px;}
+
+  .backbtn{display:inline-flex;align-items:center;gap:5px;border:0;background:none;font:inherit;font-size:14px;font-weight:600;color:var(--sage-deep);cursor:pointer;margin-top:4px;padding:6px 0;min-height:44px;}
+
+  /* toast */
+  .toast{position:absolute;left:50%;bottom:104px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font-size:13px;font-weight:600;padding:11px 18px;border-radius:999px;opacity:0;transition:.3s;z-index:80;box-shadow:var(--shadow);pointer-events:none;max-width:82%;text-align:center;}
+  .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
+
+  /* bottom sheet */
+  .sheet-backdrop{position:absolute;inset:0;background:rgba(20,26,20,.42);opacity:0;pointer-events:none;transition:opacity .25s ease;z-index:70;}
+  .sheet-backdrop.show{opacity:1;pointer-events:auto;}
+  .sheet{position:absolute;left:0;right:0;bottom:0;background:var(--bg);border-radius:26px 26px 0 0;box-shadow:0 -10px 40px rgba(0,0,0,.28);transform:translateY(100%);visibility:hidden;transition:transform .32s cubic-bezier(.32,.72,0,1),visibility 0s linear .32s;z-index:71;max-height:75%;display:flex;flex-direction:column;}
+  .sheet.show{transform:translateY(0);visibility:visible;transition:transform .32s cubic-bezier(.32,.72,0,1);}
+  .sheet.tall{max-height:88%;}
+  .sheet-handle{width:38px;height:5px;border-radius:999px;background:var(--line);margin:10px auto 0;flex:0 0 auto;}
+  .sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 18px 30px;}
+
+  /* swap alternatives */
+  .altrow{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid var(--line);border-radius:16px;margin-top:10px;cursor:pointer;background:#fff;min-height:44px;}
+  .altrow:active{transform:scale(.98);}
+  .altrow .ae{font-size:26px;width:40px;text-align:center;flex:0 0 40px;}
+  .altrow .at{flex:1;min-width:0;}
+  .altrow .at .an{font-weight:600;font-size:14px;}
+  .altrow .at .ad{font-size:12px;color:var(--muted);margin-top:2px;}
+  .altrow .at .ad b{color:var(--sage-deep);}
+  .altrow .tags{margin-top:7px;}
+
+  /* shopping list */
+  .shop-cat{font-size:11.5px;font-weight:700;letter-spacing:.9px;text-transform:uppercase;color:var(--muted);margin:18px 0 4px;}
+  .shop-cat:first-child{margin-top:6px;}
+  .shop-item{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--line);cursor:pointer;min-height:44px;}
+  .shop-item .sck{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:0 0 22px;display:grid;place-items:center;color:#fff;font-size:13px;}
+  .shop-item.done .sck{background:var(--sage);border-color:var(--sage);}
+  .shop-item .sname{flex:1;font-size:14px;}
+  .shop-item .sqty{font-size:13px;font-weight:700;color:var(--ink-soft);white-space:nowrap;}
+  .shop-item.done .sname{text-decoration:line-through;color:var(--muted);}
+  .shop-item.done .sqty{color:var(--muted);}
+
+  /* onboarding */
+  .onboard{position:absolute;inset:0;background:var(--bg);z-index:44;display:flex;flex-direction:column;padding:56px 24px 30px;}
+  .onboard.hidden{display:none;}
+  .ob-skip{position:absolute;top:20px;right:20px;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;padding:8px;min-height:44px;}
+  .ob-slides{flex:1;display:flex;flex-direction:column;justify-content:center;}
+  .ob-slide{display:none;text-align:center;}
+  .ob-slide.active{display:block;}
+  .ob-emoji{font-size:56px;text-align:center;margin-bottom:8px;}
+  .ob-dots{display:flex;justify-content:center;gap:7px;margin:18px 0 4px;}
+  .ob-dots .d{width:7px;height:7px;border-radius:50%;background:var(--line);transition:.2s;}
+  .ob-dots .d.on{background:var(--sage);width:20px;border-radius:4px;}
+
+  .hint{text-align:center;color:#9a9384;font-size:12px;margin-top:18px;max-width:390px;}
+
+  /* ---------- Real-phone mode: fill the screen ---------- */
+  @media (max-width:430px){
+    body{padding:0;background:var(--bg);display:block;}
+    .phone{width:100vw;height:100vh;height:100dvh;border-radius:0;box-shadow:none;}
+    .island{display:none;}
+    .statusbar{display:none;}
+    .hint{display:none;}
+  }
+</style>
+</head>
+<body>
+
+<div class="phone">
+  <div class="island"></div>
+  <div class="statusbar">
+    <span>9:41</span>
+    <span class="right">5G &nbsp; ▮▮▮ &nbsp; 🔋</span>
+  </div>
+
+  <div class="app">
+
+    <!-- ============ TODAY ============ -->
+    <section class="screen active" id="today">
+      <div class="topbar">
+        <div>
+          <div class="eyebrow">Monday · 29 Jun</div>
+          <h1 style="margin-top:2px">Good morning</h1>
+        </div>
+        <div class="seg" id="profSeg">
+          <button class="on" data-prof="elena">Elena</button>
+          <button data-prof="partner">Andrea</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ring-wrap">
+          <div class="ring">
+            <svg width="128" height="128">
+              <circle cx="64" cy="64" r="56" fill="none" stroke="#eef0ec" stroke-width="13"/>
+              <circle id="calRing" cx="64" cy="64" r="56" fill="none" stroke="#6f8f76" stroke-width="13" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="120"/>
+            </svg>
+            <div class="center">
+              <span class="big" id="calLeft">1,420</span>
+              <span class="lbl">kcal left of <span id="calGoal">1,820</span></span>
+            </div>
+          </div>
+          <div class="macros">
+            <div class="macro">
+              <div class="mhead"><span>Protein</span><b id="mp">28 / 110 g</b></div>
+              <div class="bar"><i class="b-p" id="bp" style="width:26%"></i></div>
+            </div>
+            <div class="macro">
+              <div class="mhead"><span>Carbs</span><b id="mc">34 / 170 g</b></div>
+              <div class="bar"><i class="b-c" id="bc" style="width:20%"></i></div>
+            </div>
+            <div class="macro">
+              <div class="mhead"><span>Fat</span><b id="mf">12 / 62 g</b></div>
+              <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
+              <div class="sub" id="fatSplit" style="margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
+            </div>
+          </div>
+        </div>
+        <div class="meta-line">
+          <span id="goalTag">🎯 Gentle fat loss</span>
+          <span>🍽️ 4 meals planned</span>
+        </div>
+      </div>
+
+      <div class="card" style="padding:14px 16px">
+        <div class="row between" style="margin-bottom:2px"><b style="font-size:13px">Calories by macro</b><span class="chip-computed">✓ computed</span></div>
+        <div class="stackbar" style="margin-top:8px">
+          <i class="b-p" id="ksP" style="width:26%"></i><i class="b-c" id="ksC" style="width:41%"></i><i class="b-f" id="ksF" style="width:33%"></i>
+        </div>
+        <div class="sub" id="kcalSplitLegend" style="margin-top:7px">Protein 26% · Carbs 41% · Fat 33% of calories</div>
+      </div>
+
+      <div class="banner">
+        <div class="ai">Mesa coach <span class="badge-mini">✨ Suggestion</span></div>
+        <div class="bt" id="coachT">Today leans thyroid-friendly 🦋</div>
+        <div class="bd" id="coachD">Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.</div>
+      </div>
+
+      <div class="row between" style="margin-top:22px">
+        <h2 style="margin:0">Today's menu</h2>
+        <span class="pill ghost">Auto-balanced</span>
+      </div>
+
+      <div class="card meal" id="todayBreakfastCard" onclick="openBreakfastRecipe()">
+        <div class="thumb" id="bfEmoji">🥣</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="bfTitle">Greek yogurt & berry bowl</span><span class="kcal" id="bfKcal">320</span></div>
+          <div class="d" id="bfDesc">Breakfast · 24g protein</div>
+          <div class="tags" id="bfTags">
+            <span class="pill">Low-GI</span><span class="pill berry">Skin-supporting</span><span class="pill terra">High protein</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card meal" onclick="openLunchRecipe()">
+        <div class="thumb" id="lunchThumb">🥗</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="lunchTitle">Lentil & roasted veg salad</span><span class="kcal" id="lunchKcal">430</span></div>
+          <div class="d" id="lunchDesc">Lunch · 19g protein</div>
+          <div class="tags" id="lunchTags"></div>
+        </div>
+      </div>
+
+      <div class="card meal" onclick="openDinnerRecipe()">
+        <div class="thumb" id="dinnerThumb">🐟</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="dinnerTitle">Baked salmon, quinoa & greens</span><span class="kcal" id="dinnerKcal">520</span></div>
+          <div class="d" id="dinnerDesc">Dinner · 38g protein</div>
+          <div class="tags" id="dinnerTags"></div>
+        </div>
+      </div>
+
+      <div class="card meal" id="todaySnack" style="cursor:default">
+        <div class="thumb" id="snackThumbEl" style="background:var(--terra-tint)">🌰</div>
+        <div class="info">
+          <div class="row between"><span class="t" id="snackTitleEl">Snack · 2 Brazil nuts + apple</span><span class="kcal" id="snackKcalEl">130</span></div>
+          <div class="d" id="snackDescEl">Covers your daily selenium target</div>
+          <div class="tags" id="snackTags"></div>
+        </div>
+        <button class="swap" onclick="openSwap('snack','todaySnack')">Swap</button>
+      </div>
+
+      <p class="sub" style="margin-top:16px;text-align:center">Plan generated from your profile · adjust anytime in Profile</p>
+    </section>
+
+    <!-- ============ WEEK ============ -->
+    <section class="screen" id="week">
+      <h1>This week</h1>
+      <p class="sub">A balanced 7-day rhythm. Nutrient coverage evens out across days, not just within one.</p>
+
+      <div class="card">
+        <div class="row between"><b style="font-size:14px">Last week in one minute</b><span class="pill ghost">Weekly reflection</span></div>
+        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🎉</div><div class="li-t">Win — protein on target 6 of 7 days<small>Lentil lunches carried the week</small></div></div>
+        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Win — selenium fully covered<small>Brazil nuts + salmon dinners</small></div></div>
+        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">🌤️</div><div class="li-t">Gentle focus — vitamin D dipped<small>Thu & Sat egg additions should help next week</small></div></div>
+        <button class="cta ghostbtn" onclick="toast('📅 Planning next week around this week\'s wins…')">Plan next week</button>
+      </div>
+
+      <div class="card" style="padding:14px">
+        <div class="row between" style="margin-bottom:4px">
+          <b style="font-size:14px">Weekly nutrient coverage <span class="chip-computed">✓ computed</span></b>
+          <span class="pill">On track</span>
+        </div>
+        <div class="nutri" style="margin-top:10px">
+          <div class="n"><div class="nt"><span>Protein</span><b>96%</b></div><div class="nbar"><i style="width:96%"></i></div></div>
+          <div class="n"><div class="nt"><span>Fiber</span><b>88%</b></div><div class="nbar"><i style="width:88%"></i></div></div>
+          <div class="n"><div class="nt"><span>Omega-3</span><b>92%</b></div><div class="nbar"><i style="width:92%"></i></div></div>
+          <div class="n"><div class="nt"><span>Selenium</span><b>100%</b></div><div class="nbar"><i style="width:100%"></i></div></div>
+          <div class="n low" id="vitDChip"><div class="nt"><span>Vitamin D</span><b>61%</b></div><div class="nbar"><i style="width:61%"></i></div></div>
+          <div class="n"><div class="nt"><span>Iron</span><b>84%</b></div><div class="nbar"><i style="width:84%"></i></div></div>
+          <div class="n"><div class="nt"><span>Sat. fat</span><b>64% of cap</b></div><div class="nbar"><i style="width:64%"></i></div><div class="cap-note">Keep under — staying below is good</div></div>
+        </div>
+        <div class="why" style="margin-top:12px" id="vitDNote">🦋 <b>Vitamin D is trending low.</b> Mesa added eggs + a fortified option to Thu & Sat. Sunlight helps too — supplement only with your doctor.</div>
+      </div>
+
+      <h2>7-day plan</h2>
+      <div class="week" id="weekList"></div>
+
+      <button class="cta ghostbtn" onclick="openShopping()">🛒 Generate shopping list</button>
+      <button class="cta" onclick="openRebalanceSheet()">✨ Re-balance my week</button>
+    </section>
+
+    <!-- ============ RECIPE DETAIL ============ -->
+    <section class="screen" id="recipe">
+      <button class="backbtn" onclick="go(recipeOrigin)">‹ Back</button>
+      <div class="hero" id="recipeHero">🐟</div>
+      <h1 style="margin-top:14px" id="recipeTitle">Baked salmon, quinoa & greens</h1>
+      <div class="meta-line" style="font-size:12.5px">
+        <span id="rsTime">⏱️ 25 min</span><span id="rsKcal">🔥 520 kcal</span><span id="rsProt">💪 38g protein</span><span id="rsServesMeta">👥 2.5 servings</span>
+      </div>
+      <div class="tags" id="recipeTags" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"></div>
+
+      <h2>Servings</h2>
+      <div class="serve-row" id="serveRowShared">
+        <div class="serve-card" id="serveElena">
+          <div class="sv-name">Elena</div>
+          <div class="sv-stepper">
+            <button onclick="adjServe('elena',-0.5)" aria-label="Decrease Elena's portion">–</button>
+            <span class="sv-val" id="svElenaVal">1×</span>
+            <button onclick="adjServe('elena',0.5)" aria-label="Increase Elena's portion">+</button>
+          </div>
+        </div>
+        <div class="serve-card" id="serveAndrea">
+          <div class="sv-name">Andrea</div>
+          <div class="sv-stepper">
+            <button onclick="adjServe('andrea',-0.5)" aria-label="Decrease Andrea's portion">–</button>
+            <span class="sv-val" id="svAndreaVal">1.5×</span>
+            <button onclick="adjServe('andrea',0.5)" aria-label="Increase Andrea's portion">+</button>
+          </div>
+        </div>
+      </div>
+      <p class="sub" id="sharedCaption" style="margin-top:8px">Shared dinner — cooked once, plated per target</p>
+
+      <div class="serve-row" id="serveRowSolo" style="display:none">
+        <div class="serve-card me" style="flex:1">
+          <div class="sv-name">Servings</div>
+          <div class="sv-stepper">
+            <button onclick="adjServe('solo',-0.5)" aria-label="Decrease servings">–</button>
+            <span class="sv-val" id="svSoloVal">1×</span>
+            <button onclick="adjServe('solo',0.5)" aria-label="Increase servings">+</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="why" style="margin-top:16px" id="recipeWhy"></div>
+
+      <h2>Nutrition (per serving) <span class="chip-computed">✓ computed</span></h2>
+      <div class="nutri" id="recipeNutri"></div>
+      <p class="sub" id="recipeKcalSplit" style="margin-top:8px"></p>
+
+      <h2 id="ingHeader">Ingredients · scaled for 2.5 servings</h2>
+      <ul class="ing" id="ingList"></ul>
+
+      <h2>Method</h2>
+      <ol class="steps" id="recipeMethod"></ol>
+
+      <button class="cta" onclick="markEatenFromRecipe()">✓ Mark as eaten</button>
+      <button class="cta ghostbtn" onclick="openSwap(currentRecipeKey, null)">🔁 Swap for something similar</button>
+    </section>
+
+    <!-- ============ LOG / ADD ============ -->
+    <section class="screen" id="log">
+      <h1>Log food</h1>
+      <p class="sub">Confirm today's plan in one tap — swap or skip what doesn't fit.</p>
+
+      <h2 style="margin-top:18px">Today's plan</h2>
+
+      <div class="card meal done" id="log-breakfast" style="cursor:default"></div>
+      <div class="card meal" id="log-lunch" style="cursor:default"></div>
+      <div class="card meal" id="log-dinner" style="cursor:default"></div>
+      <div class="card meal" id="log-snack" style="cursor:default"></div>
+
+      <div class="card" style="padding:14px;margin-top:20px">
+        <div class="row between"><b style="font-size:14px">Today so far</b><span class="pill" id="logTotalPill">400 kcal</span></div>
+        <div id="todaySoFar"></div>
+      </div>
+
+      <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
+      <div class="quick">
+        <button onclick="toast('📷 Scan a barcode')"><span class="qi">📷</span>Scan</button>
+        <button onclick="toast('🔎 Search foods')"><span class="qi">🔎</span>Search</button>
+        <button onclick="toast('🍱 Add a meal')"><span class="qi">🍱</span>Meal</button>
+        <button onclick="toast('💧 +250ml water')"><span class="qi">💧</span>Water</button>
+      </div>
+
+      <div class="banner" style="background:linear-gradient(135deg,var(--terra),#b25e35)">
+        <div class="ai">Deterministic engine <span class="badge-mini">✓ computed</span></div>
+        <div class="bt">Counts you can trust</div>
+        <div class="bd">Calories & nutrients are computed by formula from a verified food database. AI only suggests <i>what</i> to eat — it never invents the numbers.</div>
+      </div>
+    </section>
+
+    <!-- ============ INSIGHTS ============ -->
+    <section class="screen" id="insights">
+      <h1>Insights</h1>
+      <p class="sub">How your eating is trending — for you and Andrea.</p>
+
+      <div class="stat">
+        <div class="s"><div class="sv">94%</div><div class="sl">Plan adherence (7d)</div><div class="sd up">▲ 11% vs last week</div></div>
+        <div class="s"><div class="sv">108g</div><div class="sl">Avg protein/day</div><div class="sd up">▲ on target</div></div>
+        <div class="s"><div class="sv">26g</div><div class="sl">Avg fiber/day</div><div class="sd up">▲ heart-smart</div></div>
+        <div class="s"><div class="sv">61%</div><div class="sl">Vitamin D</div><div class="sd dn2">▼ needs attention</div></div>
+        <div class="s"><div class="sv">82%</div><div class="sl">Fats unsaturated</div><div class="sd up">▲ heart & skin smart</div></div>
+      </div>
+
+      <div class="card">
+        <div class="row between"><b style="font-size:14px">Your weekly band <span class="chip-computed">✓ computed</span></b></div>
+        <p class="sub" style="margin-top:6px">5 of 7 days landed inside your target range this week — no streak to lose, just a gentle rhythm.</p>
+        <div class="band">
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">M</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">T</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">W</div></div>
+          <div class="dwrap"><div class="dot soft"></div><div class="dl">T</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">F</div></div>
+          <div class="dwrap"><div class="dot filled"></div><div class="dl">S</div></div>
+          <div class="dwrap"><div class="dot"></div><div class="dl">S</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="row between" style="margin-bottom:6px"><b style="font-size:14px">Calories vs target</b><span class="pill">last 7 days</span></div>
+        <div class="spark">
+          <div class="col" style="height:62%"><b>M</b></div>
+          <div class="col" style="height:70%"><b>T</b></div>
+          <div class="col hi" style="height:88%"><b>W</b></div>
+          <div class="col" style="height:66%"><b>T</b></div>
+          <div class="col" style="height:74%"><b>F</b></div>
+          <div class="col hi" style="height:96%"><b>S</b></div>
+          <div class="col" style="height:58%"><b>S</b></div>
+        </div>
+      </div>
+
+      <h2>What's working</h2>
+      <div class="card" style="padding:14px">
+        <div class="logitem" style="border-bottom:1px solid var(--line)"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Selenium consistently met<small>Brazil nuts + fish doing the work</small></div></div>
+        <div class="logitem" style="border-bottom:1px solid var(--line)"><div class="li-i" style="background:var(--sage-tint)">✨</div><div class="li-t">Low-GI 6 of 7 days<small>Supports skin & steady energy</small></div></div>
+        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">📌</div><div class="li-t">Watch added sugar on weekends<small>Sat spiked — skin-relevant</small></div></div>
+      </div>
+
+      <div class="banner">
+        <div class="ai">Weekly review · powered by Mesa coach <span class="badge-mini">✨ Suggestion</span></div>
+        <div class="bt">Want next week tuned for skin?</div>
+        <div class="bd">I can nudge omega-3 up and dairy/sugar down while keeping your calories and protein identical.</div>
+      </div>
+      <button class="cta" onclick="toast('✨ Tuning next week for skin…')">Tune next week</button>
+    </section>
+
+    <!-- ============ PROFILE ============ -->
+    <section class="screen" id="profile">
+      <div class="row between" style="margin-top:6px">
+        <h1 style="margin:0">Profile</h1>
+        <div class="avatar" id="profAv">E</div>
+      </div>
+      <p class="sub">This is what makes the plans <i>yours</i>. Mesa recalculates whenever you change something here.</p>
+
+      <h2>Whose plan</h2>
+      <div class="seg" style="width:100%">
+        <button class="on" style="flex:1" onclick="setProf('elena',this)">Elena</button>
+        <button style="flex:1" onclick="setProf('partner',this)">Andrea</button>
+      </div>
+
+      <h2>Basics</h2>
+      <p class="sub">Edit anything here — Mesa recomputes your recommended calories and rebuilds your targets. Every number below is formula, not guesswork.</p>
+      <div class="field"><label>Sex</label>
+        <div class="seg" style="width:100%;margin-top:6px">
+          <button id="sexBtnF" class="on" style="flex:1;min-height:38px" onclick="setSex('female')">Female</button>
+          <button id="sexBtnM" style="flex:1;min-height:38px" onclick="setSex('male')">Male</button>
+        </div>
+      </div>
+      <div class="field"><label>Date of birth</label>
+        <div class="inp" style="flex-wrap:wrap;gap:8px">
+          <b id="pfDob">Born May 1997 · 29</b>
+          <span class="row" style="gap:12px">
+            <span class="sv-stepper" style="margin:0">
+              <button onclick="stepDob('m',-1)" aria-label="Earlier birth month">–</button>
+              <span class="sv-val" id="dobMVal" style="min-width:36px">May</span>
+              <button onclick="stepDob('m',1)" aria-label="Later birth month">+</button>
+            </span>
+            <span class="sv-stepper" style="margin:0">
+              <button onclick="stepDob('y',-1)" aria-label="Earlier birth year">–</button>
+              <span class="sv-val" id="dobYVal" style="min-width:42px">1997</span>
+              <button onclick="stepDob('y',1)" aria-label="Later birth year">+</button>
+            </span>
+          </span>
+        </div>
+        <div class="cap-note">Age is computed from your birth date — no need to update it, ever.</div>
+      </div>
+      <div class="field"><label>Height</label>
+        <div class="inp"><span>Height</span>
+          <span class="sv-stepper" style="margin:0">
+            <button onclick="stepBody('height',-1)" aria-label="Decrease height">–</button>
+            <span class="sv-val" id="hVal" style="min-width:62px">168 cm</span>
+            <button onclick="stepBody('height',1)" aria-label="Increase height">+</button>
+          </span>
+        </div>
+      </div>
+      <div class="field"><label>Weight</label>
+        <div class="inp"><span>Weight</span>
+          <span class="sv-stepper" style="margin:0">
+            <button onclick="stepBody('weight',-0.5)" aria-label="Decrease weight">–</button>
+            <span class="sv-val" id="wVal" style="min-width:62px">64 kg</span>
+            <button onclick="stepBody('weight',0.5)" aria-label="Increase weight">+</button>
+          </span>
+        </div>
+      </div>
+      <div class="field"><label>Activity level</label>
+        <div id="actOpts"></div>
+      </div>
+      <div class="field"><label>Daily target <small style="color:var(--muted)">(Mifflin-St Jeor × activity + goal)</small></label>
+        <div class="inp"><span>Calories <span id="calChip" class="chip-computed" style="margin-left:6px">✓ computed</span></span>
+          <span class="sv-stepper" style="margin:0">
+            <button onclick="stepCal(-50)" aria-label="Decrease daily calorie target">–</button>
+            <span class="sv-val" id="pfCals" style="min-width:82px">1,820 kcal</span>
+            <button onclick="stepCal(50)" aria-label="Increase daily calorie target">+</button>
+          </span>
+        </div>
+        <div class="cap-note" id="calFormula"></div>
+        <div class="cap-note" id="calNote" style="color:#b25e35"></div>
+        <button class="pill gold chip-preset" id="calRestoreBtn" style="display:none;margin-top:8px;padding:11px 14px;font-size:12px" onclick="restoreCal()">↺ Restore recommended (1,820)</button>
+      </div>
+
+      <h2>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
+      <p class="sub">Choose where your calories come from — Mesa keeps it adding up to 100% and rebuilds your menu to match.</p>
+      <div class="row" id="macroPresets" style="gap:7px;flex-wrap:wrap;margin-top:6px">
+        <button class="pill ghost chip-preset" onclick="applyPreset('default')">Mesa default</button>
+        <button class="pill ghost chip-preset" onclick="applyPreset('highprotein')">Higher protein</button>
+        <button class="pill ghost chip-preset" onclick="applyPreset('lowcarb')">Lower carb</button>
+      </div>
+      <div class="card" style="padding:6px 16px 14px;margin-top:10px">
+        <div class="split-row">
+          <span class="split-label"><span class="split-dot" style="background:var(--sage)"></span>Protein</span>
+          <div class="sv-stepper" style="margin:0">
+            <button onclick="stepSplit('P',-5)" aria-label="Decrease protein percent">–</button>
+            <span class="sv-val" id="splitPVal">26% · 118g</span>
+            <button onclick="stepSplit('P',5)" aria-label="Increase protein percent">+</button>
+          </div>
+        </div>
+        <div class="split-row">
+          <span class="split-label"><span class="split-dot" style="background:var(--gold)"></span>Carbs</span>
+          <div class="sv-stepper" style="margin:0">
+            <button onclick="stepSplit('C',-5)" aria-label="Decrease carbs percent">–</button>
+            <span class="sv-val" id="splitCVal">41% · 187g</span>
+            <button onclick="stepSplit('C',5)" aria-label="Increase carbs percent">+</button>
+          </div>
+        </div>
+        <div class="split-row">
+          <span class="split-label"><span class="split-dot" style="background:var(--terra)"></span>Fat</span>
+          <div class="sv-stepper" style="margin:0">
+            <button onclick="stepSplit('F',-5)" aria-label="Decrease fat percent">–</button>
+            <span class="sv-val" id="splitFVal">33% · 67g</span>
+            <button onclick="stepSplit('F',5)" aria-label="Increase fat percent">+</button>
+          </div>
+        </div>
+        <div class="cap-note" id="splitNote"></div>
+      </div>
+      <p class="sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Your total calories stay the same — the split changes where they come from.<span class="chip-computed">✓ computed</span></p>
+
+      <h2>Health goals</h2>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Gentle fat loss</div><div class="od">~325 kcal below maintenance</div></div></div>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Muscle & protein</div><div class="od">1.6 g protein / kg bodyweight</div></div></div>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Heart & metabolic</div><div class="od">High fiber, low sodium, Mediterranean base</div></div></div>
+      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Beautiful skin</div><div class="od">Low-GI, omega-3 up, dairy/sugar down</div></div></div>
+      <div class="opt sel" id="hashiOpt" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Hashimoto's-friendly 🦋</div><div class="od">Selenium, moderate iodine, anti-inflammatory</div></div></div>
+
+      <h2>Meals we share</h2>
+      <p class="sub">Shared meals use one recipe with a portion for each of you. Solo meals are planned per person.</p>
+      <div class="opt" id="shareBreakfast" onclick="toggleShared('breakfast',this)"><div class="ck"></div><div><div class="ot">Breakfast</div><div class="od">Solo (default)</div></div></div>
+      <div class="opt" id="shareLunch" onclick="toggleShared('lunch',this)"><div class="ck"></div><div><div class="ot">Lunch</div><div class="od">Solo (default)</div></div></div>
+      <div class="opt sel" id="shareDinner" onclick="toggleShared('dinner',this)"><div class="ck">✓</div><div><div class="ot">Dinner</div><div class="od">Shared (default)</div></div></div>
+      <div class="opt" id="shareSnack" onclick="toggleShared('snack',this)"><div class="ck"></div><div><div class="ot">Snack</div><div class="od">Solo (default)</div></div></div>
+
+      <h2>Foods to avoid</h2>
+      <p class="sub">Add anything you can't or won't eat — intolerances, allergies, dislikes. Mesa will never suggest them.</p>
+      <div class="field"><div class="inp" onclick="toast('➕ Add a food to avoid')"><span style="color:var(--muted)">e.g. lactose, shellfish, cilantro…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
+      <div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">
+        <span class="pill ghost">Lactose ✕</span>
+        <span class="pill ghost">Raw onion ✕</span>
+        <span class="pill ghost">Very spicy ✕</span>
+      </div>
+
+      <h2>Connections</h2>
+      <div class="opt" onclick="toast('Apple Health connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">♥</div><div><div class="ot">Apple Health</div><div class="od">Sync weight, activity & steps → better targets</div></div></div>
+      <div class="opt" onclick="toast('Reminders connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔔</div><div><div class="ot">Notifications</div><div class="od">Meal prep nudges & shopping reminders</div></div></div>
+      <div class="opt" onclick="toast('Calendar connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">📅</div><div><div class="ot">Calendar</div><div class="od">Lighter prep on busy days</div></div></div>
+
+      <h2>About</h2>
+      <div class="opt" onclick="replayOnboarding()"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔄</div><div><div class="ot">Replay intro</div><div class="od">Watch the welcome walkthrough again</div></div></div>
+
+      <button class="cta" onclick="go('today');toast('✓ Plan updated')">Save & rebuild my plan</button>
+      <p class="sub" style="text-align:center;margin-top:14px">Mesa offers general nutrition guidance, not medical advice. For Hashimoto's, check changes with your doctor.</p>
+    </section>
+
+  </div><!-- /app -->
+
+  <!-- bottom sheet (swap / shopping list) -->
+  <div class="sheet-backdrop" id="sheetBackdrop" onclick="closeSheet()"></div>
+  <div class="sheet" id="sheet">
+    <div class="sheet-handle"></div>
+    <div class="sheet-body" id="sheetBody"></div>
+  </div>
+
+  <!-- onboarding -->
+  <div class="onboard hidden" id="onboard">
+    <button class="ob-skip" onclick="finishOnboarding()">Skip</button>
+    <div class="ob-slides" id="obSlides">
+      <div class="ob-slide active">
+        <div class="ob-emoji">🥗🍽️</div>
+        <h1>One plan, two targets</h1>
+        <p class="sub" style="text-align:center">Eat well together. Mesa builds one weekly menu that quietly tilts to fit each of you — same table, different needs.</p>
+      </div>
+      <div class="ob-slide">
+        <h1 style="text-align:center">Who's this for?</h1>
+        <p class="sub" style="text-align:center">Pick a profile to preview your starting goals. You can fine-tune everything later.</p>
+        <div class="opt sel" id="obElena" onclick="obPick('elena')"><div class="ck">✓</div><div><div class="ot">I'm Elena</div><div class="od">Female · 29 · gentle fat loss</div></div></div>
+        <div class="opt" id="obAndrea" onclick="obPick('partner')"><div class="ck"></div><div><div class="ot">I'm Andrea</div><div class="od">Male · 31 · muscle & protein</div></div></div>
+        <div class="row" id="obGoalsPreview" style="gap:7px;flex-wrap:wrap;margin-top:14px"></div>
+      </div>
+      <div class="ob-slide">
+        <div class="ob-emoji">✅</div>
+        <h1>Your first week is ready</h1>
+        <p class="sub" style="text-align:center">7 days, balanced meals, one shopping list — tap in any time to see why a meal fits you.</p>
+      </div>
+    </div>
+    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span></div>
+    <button class="cta" id="obNext" onclick="obNext()">Continue</button>
+  </div>
+
+  <!-- toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- bottom nav -->
+  <nav class="tabbar">
+    <button class="tab on" data-tab="today" onclick="go('today',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>
+      <span class="tl">Today</span>
+    </button>
+    <button class="tab" data-tab="week" onclick="go('week',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
+      <span class="tl">Week</span>
+    </button>
+    <button class="tab add" data-tab="log" onclick="go('log',this)">
+      <span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
+    </button>
+    <button class="tab" data-tab="insights" onclick="go('insights',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>
+      <span class="tl">Insights</span>
+    </button>
+    <button class="tab" data-tab="profile" onclick="go('profile',this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
+      <span class="tl">Profile</span>
+    </button>
+  </nav>
+</div>
+
+<p class="hint">Mesa — interactive mockup. Tap the bottom tabs, the profile switch, or any meal card. On a phone it fills the screen like a real app.</p>
+
+<script>
+  /* ---------------- navigation ---------------- */
+  function go(id, el){
+    document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    document.querySelector('.app').scrollTop = 0;
+    var scr = document.getElementById(id); if(scr) scr.scrollTop = 0;
+    // sync tabbar highlight
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+    var tab = el && el.dataset.tab ? el : document.querySelector('.tab[data-tab="'+id+'"]');
+    if(tab) tab.classList.add('on');
+  }
+
+  // toast helper
+  let tT;
+  function toast(msg){
+    const t=document.getElementById('toast');
+    t.textContent=msg; t.classList.add('show');
+    clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
+  }
+
+  // goal toggles
+  function tog(el){ el.classList.toggle('sel'); el.querySelector('.ck').textContent = el.classList.contains('sel')?'✓':''; }
+
+  /* ---------------- recipe data ---------------- */
+  const RECIPES = {
+    yogurt: {
+      emoji:'🥣', title:'Greek yogurt & berry bowl', time:'8 min', kcal:320, protein:24,
+      tags:[['','Low-GI'],['berry','Skin-supporting'],['terra','High protein']],
+      why:'Greek yogurt brings casein and whey protein plus gut-friendly probiotics; berries add skin-supporting antioxidants at a low glycemic load. Naturally low in iodine — an easy fit alongside a Hashimoto\'s-aware day. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','320'],['Protein','24 g'],['Carbs','34 g'],['Fat','9 g'],['Good fats (unsat.)','6 g'],['Sat. fat','3 g'],['Fiber','5 g'],['Calcium','22% DV']],
+      kcalSplit:'protein 31% · carbs 43% · fat 26%',
+      ingredients:[['Greek yogurt, plain',150,'g'],['Mixed berries',80,'g'],['Granola',20,'g'],['Honey',8,'g'],['Chia seeds',6,'g']],
+      method:['Spoon yogurt into a bowl.','Top with berries, granola and chia seeds.','Finish with a drizzle of honey.']
+    },
+    omelette: {
+      emoji:'🍳', title:'Veggie omelette & rye toast', time:'12 min', kcal:450, protein:32,
+      tags:[['terra','High protein'],['','Iron + folate'],['gold','Selenium']],
+      why:'Eggs bring complete protein plus choline and selenium; rye toast adds fiber and slow-release carbs to start Andrea\'s day with steady energy for training. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','450'],['Protein','32 g'],['Carbs','30 g'],['Fat','22 g'],['Good fats (unsat.)','13 g'],['Sat. fat','9 g'],['Fiber','4 g'],['Iron','15% DV']],
+      kcalSplit:'protein 29% · carbs 27% · fat 44%',
+      ingredients:[['Eggs',3,''],['Mixed peppers & spinach',80,'g'],['Rye bread',60,'g'],['Olive oil',5,'g'],['Herbs & black pepper',null,'to taste']],
+      method:['Whisk eggs; sauté peppers and spinach in olive oil.','Pour eggs over the veg and cook gently until just set.','Toast the rye bread and plate alongside the omelette.']
+    },
+    lentil: {
+      emoji:'🥗', title:'Lentil & roasted veg salad', time:'20 min', kcal:430, protein:19,
+      tags:[['','Heart-smart'],['','High fiber'],['gold','Iron + B12']],
+      why:'Lentils bring plant-based iron, B-vitamins and slow-release carbs; roasted veg add fiber and polyphenols, while a little feta gives calcium without loading up on dairy. A heart-smart, high-fiber midday reset. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','430'],['Protein','19 g'],['Carbs','52 g'],['Fat','14 g'],['Good fats (unsat.)','10 g'],['Sat. fat','4 g'],['Fiber','14 g'],['Iron','35% DV']],
+      kcalSplit:'protein 18% · carbs 51% · fat 31%',
+      ingredients:[['Cooked lentils',100,'g'],['Roasted mixed veg',150,'g'],['Feta cheese',30,'g'],['Rocket / arugula',20,'g'],['Olive oil & lemon dressing',null,'to taste']],
+      method:['Toss the warm roasted veg with the lentils.','Crumble feta over the top.','Add rocket and dress with olive oil & lemon just before serving.']
+    },
+    salmon: {
+      emoji:'🐟', title:'Baked salmon, quinoa & greens', time:'25 min', kcal:520, protein:38,
+      tags:[['berry','Thyroid-friendly'],['','Omega-3'],['gold','Selenium'],['','Low-GI'],['terra','High protein']],
+      why:'Salmon delivers omega-3 and vitamin D for skin and thyroid; quinoa is a gluten-free, lower-GI carb; leafy greens add iron + folate. Iodine stays moderate — good for Hashimoto\'s balance. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','520'],['Protein','38 g'],['Carbs','41 g'],['Fat','21 g'],['Good fats (unsat.)','16 g'],['Sat. fat','5 g'],['Fiber','7 g'],['Selenium','78% DV']],
+      kcalSplit:'protein 30% · carbs 33% · fat 37%',
+      ingredients:[['Salmon fillet',140,'g'],['Quinoa, dry',60,'g'],['Baby spinach',40,'g'],['Broccoli',100,'g'],['Olive oil, lemon, garlic',null,'to taste']],
+      method:['Rinse quinoa, simmer in 2× water for 15 min until fluffy.','Rub salmon with olive oil, lemon, garlic. Bake at 200°C for 12–14 min.','Steam broccoli; wilt spinach in the warm pan.','Plate quinoa, greens, salmon. Finish with lemon and olive oil.']
+    },
+    skyrbowl: {
+      emoji:'🥣', title:'Skyr bowl, berries & seeds', time:'6 min', kcal:340, protein:30,
+      tags:[['terra','High protein'],['','Low-GI'],['berry','Skin-supporting']],
+      why:'Skyr packs even more protein than Greek yogurt for barely any fat; mixed seeds add omega-3 and a little crunch. Naturally low in iodine — an easy fit for a higher-protein, thyroid-aware morning. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','340'],['Protein','30 g'],['Carbs','28 g'],['Fat','9 g'],['Good fats (unsat.)','6 g'],['Sat. fat','3 g'],['Fiber','5 g'],['Calcium','25% DV']],
+      kcalSplit:'protein 35% · carbs 33% · fat 24%',
+      ingredients:[['Skyr, plain',180,'g'],['Mixed berries',80,'g'],['Pumpkin & chia seeds',15,'g'],['Honey',6,'g']],
+      method:['Spoon skyr into a bowl.','Top with berries and seeds.','Finish with a light drizzle of honey.']
+    },
+    eggsturkey: {
+      emoji:'🍳', title:'Eggs, turkey & rye', time:'10 min', kcal:470, protein:38,
+      tags:[['terra','High protein'],['gold','Selenium'],['','Iron + B12']],
+      why:'Eggs and lean turkey stack complete protein to fuel training; rye brings fiber and slow-release carbs. A higher-protein spin on Andrea\'s usual morning. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','470'],['Protein','38 g'],['Carbs','32 g'],['Fat','20 g'],['Good fats (unsat.)','12 g'],['Sat. fat','8 g'],['Fiber','5 g'],['Iron','18% DV']],
+      kcalSplit:'protein 32% · carbs 27% · fat 38%',
+      ingredients:[['Eggs',2,''],['Sliced turkey breast',80,'g'],['Rye bread',60,'g'],['Olive oil',5,'g'],['Herbs & black pepper',null,'to taste']],
+      method:['Scramble or fry the eggs in olive oil.','Warm the turkey slices briefly in the same pan.','Toast the rye and plate everything together.']
+    },
+    chickenfarro: {
+      emoji:'🍲', title:'Chicken & farro bowl', time:'22 min', kcal:480, protein:42,
+      tags:[['terra','High protein'],['','High fiber'],['gold','Iron + B12']],
+      why:'Grilled chicken breast is a lean, high-protein anchor; farro adds fiber and a nutty bite with a lower glycemic load than white grains. A satisfying, muscle-supporting midday reset. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','480'],['Protein','42 g'],['Carbs','44 g'],['Fat','14 g'],['Good fats (unsat.)','10 g'],['Sat. fat','4 g'],['Fiber','8 g'],['Iron','20% DV']],
+      kcalSplit:'protein 35% · carbs 37% · fat 26%',
+      ingredients:[['Grilled chicken breast',150,'g'],['Cooked farro',120,'g'],['Roasted mixed veg',100,'g'],['Olive oil & lemon dressing',null,'to taste']],
+      method:['Grill or pan-sear the chicken until cooked through.','Toss warm farro with roasted veg.','Slice chicken over the bowl and dress with olive oil & lemon.']
+    },
+    chiapudding: {
+      emoji:'🍮', title:'Chia pudding, coconut & berries', time:'5 min + overnight', kcal:300, protein:12,
+      tags:[['','Low-carb'],['berry','Skin-supporting'],['','Omega-3']],
+      why:'Chia seeds soak up coconut milk into a creamy, low-carb pudding rich in omega-3 and fiber; berries keep it low-GI and skin-supporting. A gentle, thyroid-friendly start with steady energy. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','300'],['Protein','12 g'],['Carbs','18 g'],['Fat','20 g'],['Good fats (unsat.)','14 g'],['Sat. fat','6 g'],['Fiber','11 g'],['Calcium','15% DV']],
+      kcalSplit:'protein 16% · carbs 24% · fat 60%',
+      ingredients:[['Chia seeds',30,'g'],['Coconut milk',150,'ml'],['Mixed berries',60,'g'],['Vanilla or cinnamon',null,'to taste']],
+      method:['Stir chia seeds into coconut milk and chill overnight.','Stir again before serving to loosen the texture.','Top with berries and a touch of vanilla or cinnamon.']
+    },
+    tunasalad: {
+      emoji:'🥗', title:'Tuna & avocado chopped salad', time:'12 min', kcal:420, protein:34,
+      tags:[['','Low-carb'],['terra','High protein'],['','Omega-3']],
+      why:'Tuna is lean, high-protein and rich in omega-3; avocado swaps in healthy fat for starchy carbs, keeping this lunch low-carb without losing staying power. Heart-smart with moderate iodine — Hashimoto\'s-friendly. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','420'],['Protein','34 g'],['Carbs','14 g'],['Fat','25 g'],['Good fats (unsat.)','18 g'],['Sat. fat','6 g'],['Fiber','8 g'],['Potassium','18% DV']],
+      kcalSplit:'protein 32% · carbs 13% · fat 54%',
+      ingredients:[['Tuna in olive oil, drained',120,'g'],['Avocado',80,'g'],['Cherry tomatoes & cucumber',150,'g'],['Olive oil & lemon dressing',null,'to taste']],
+      method:['Chop tomatoes, cucumber and avocado.','Flake the tuna over the top.','Dress with olive oil and lemon just before serving.']
+    },
+    salmongreens: {
+      emoji:'🐟', title:'Salmon & greens, no quinoa', time:'20 min', kcal:430, protein:36,
+      tags:[['berry','Thyroid-friendly'],['','Omega-3'],['','Low-carb'],['gold','Selenium']],
+      why:'Same salmon, same omega-3 and selenium — just without the quinoa, so carbs stay low while protein and healthy fat carry the meal. Iodine stays moderate for Hashimoto\'s balance. <i>General guidance, not medical advice.</i>',
+      nutrition:[['Calories','430'],['Protein','36 g'],['Carbs','10 g'],['Fat','27 g'],['Good fats (unsat.)','21 g'],['Sat. fat','6 g'],['Fiber','4 g'],['Selenium','75% DV']],
+      kcalSplit:'protein 33% · carbs 9% · fat 57%',
+      ingredients:[['Salmon fillet',150,'g'],['Baby spinach',60,'g'],['Broccoli & courgette',150,'g'],['Olive oil, lemon, garlic',null,'to taste']],
+      method:['Rub salmon with olive oil, lemon and garlic; bake at 200°C for 12–14 min.','Steam broccoli and courgette; wilt spinach in the warm pan.','Plate the greens with salmon on top, finished with lemon and olive oil.']
+    }
+  };
+
+  /* meal-slot lookup for shared-meals logic */
+  const RECIPE_SLOT = {
+    yogurt:'breakfast', omelette:'breakfast', lentil:'lunch', salmon:'dinner',
+    skyrbowl:'breakfast', eggsturkey:'breakfast', chickenfarro:'lunch',
+    chiapudding:'breakfast', tunasalad:'lunch', salmongreens:'dinner'
+  };
+  function isShared(key){ return !!SHARED[RECIPE_SLOT[key]]; }
+
+  // Swap alternatives are kept generic per slot (breakfast/lunch/dinner/snack) rather than
+  // per-dish, since the active dish in each slot now depends on the macro-split style.
+  const SWAPS = {
+    breakfast:[
+      {title:'Overnight oats & berries', emoji:'🥣', kcalDelta:-40, proteinDelta:6, tags:['Low-GI','High protein']},
+      {title:'Cottage cheese & peach', emoji:'🍑', kcalDelta:-60, proteinDelta:10, tags:['High protein','Low-GI']},
+      {title:'Skyr & granola cup', emoji:'🥛', kcalDelta:10, proteinDelta:8, tags:['High protein']}
+    ],
+    lunch:[
+      {title:'Chickpea & quinoa tabbouleh', emoji:'🥙', kcalDelta:-20, proteinDelta:2, tags:['High fiber','Heart-smart']},
+      {title:'Tuna & white bean salad', emoji:'🥗', kcalDelta:15, proteinDelta:12, tags:['High protein','Omega-3']},
+      {title:'Roasted veg & farro bowl', emoji:'🍲', kcalDelta:-35, proteinDelta:-3, tags:['High fiber']}
+    ],
+    dinner:[
+      {title:'Baked cod, quinoa & greens', emoji:'🐠', kcalDelta:-60, proteinDelta:-4, tags:['Low-GI','Selenium']},
+      {title:'Sea bass & white beans', emoji:'🐟', kcalDelta:-30, proteinDelta:2, tags:['Omega-3','Heart-smart']},
+      {title:'Tofu & greens stir-fry', emoji:'🥘', kcalDelta:-90, proteinDelta:-10, tags:['Plant-based','Low-GI']}
+    ],
+    snack:[
+      {title:'Pumpkin seeds & orange', emoji:'🍊', kcalDelta:-10, proteinDelta:1, tags:['Selenium','Vitamin C']},
+      {title:'Walnuts & pear', emoji:'🍐', kcalDelta:5, proteinDelta:0, tags:['Omega-3']}
+    ]
+  };
+
+  /* ---------------- macro-split-driven meal plans ---------------- */
+  const MEALPLANS = {
+    balanced: {
+      breakfast:{elena:'yogurt', partner:'omelette'},
+      lunch:'lentil', dinner:'salmon',
+      snack:{title:'Snack · 2 Brazil nuts + apple', emoji:'🌰', kcal:130, desc:'Covers your daily selenium target', tags:[]}
+    },
+    protein: {
+      breakfast:{elena:'skyrbowl', partner:'eggsturkey'},
+      lunch:'chickenfarro', dinner:'salmon',
+      snack:{title:'Snack · Cottage cheese & walnuts', emoji:'🧀', kcal:190, desc:'Extra protein between meals', tags:[['terra','High protein']]}
+    },
+    lowcarb: {
+      breakfast:{elena:'chiapudding', partner:'omelette'},
+      lunch:'tunasalad', dinner:'salmongreens',
+      snack:{title:'Snack · Almonds & cheese cubes', emoji:'🥜', kcal:170, desc:'Low-carb, keeps protein steady', tags:[['','Low-carb']]}
+    }
+  };
+  function styleOf(p){ return p.kP >= 32 ? 'protein' : (p.kC <= 32 ? 'lowcarb' : 'balanced'); }
+  let householdStyle = 'balanced';
+  let activeMenu = null;
+  function computeActiveMenu(){
+    const m = MEALPLANS[householdStyle];
+    return {style:householdStyle, breakfastKey:m.breakfast[currentProf], lunchKey:m.lunch, dinnerKey:m.dinner, snack:m.snack};
+  }
+
+  let recipeOrigin = 'today';
+  let currentRecipeKey = 'salmon';
+  let svE = 1, svM = 1.5, svS = 1;
+
+  function openRecipe(key, origin){
+    recipeOrigin = origin || 'today';
+    renderRecipe(key);
+    go('recipe');
+  }
+
+  function openBreakfastRecipe(){
+    openRecipe(activeMenu.breakfastKey, 'today');
+  }
+  function openLunchRecipe(){
+    openRecipe(activeMenu.lunchKey, 'today');
+  }
+  function openDinnerRecipe(){
+    openRecipe(activeMenu.dinnerKey, 'today');
+  }
+
+  function renderRecipe(key){
+    const r = RECIPES[key] || RECIPES.salmon;
+    currentRecipeKey = RECIPES[key] ? key : 'salmon';
+    svE = 1; svM = 1.5; svS = 1;
+    document.getElementById('recipeHero').textContent = r.emoji;
+    document.getElementById('recipeTitle').textContent = r.title;
+    document.getElementById('rsTime').textContent = '⏱️ ' + r.time;
+    document.getElementById('rsKcal').textContent = '🔥 ' + r.kcal + ' kcal';
+    document.getElementById('rsProt').textContent = '💪 ' + r.protein + 'g protein';
+    document.getElementById('recipeTags').innerHTML = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+    document.getElementById('recipeWhy').innerHTML = '<b>Why this fits you</b><br>' + r.why;
+    document.getElementById('recipeNutri').innerHTML = r.nutrition.map(function(n){ return '<div class="n"><div class="nt"><span>'+n[0]+'</span><b>'+n[1]+'</b></div></div>'; }).join('');
+    document.getElementById('recipeKcalSplit').textContent = 'kcal from: ' + r.kcalSplit;
+    document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+s+'</li>'; }).join('');
+    updateServings();
+  }
+
+  function adjServe(who, delta){
+    if(who === 'elena'){ svE = Math.min(3, Math.max(0.5, +(svE + delta).toFixed(1))); }
+    else if(who === 'andrea'){ svM = Math.min(3, Math.max(0.5, +(svM + delta).toFixed(1))); }
+    else { svS = Math.min(4, Math.max(0.5, +(svS + delta).toFixed(1))); }
+    updateServings();
+  }
+
+  function updateServings(){
+    const shared = isShared(currentRecipeKey);
+    document.getElementById('serveRowShared').style.display = shared ? 'flex' : 'none';
+    document.getElementById('sharedCaption').style.display = shared ? 'block' : 'none';
+    document.getElementById('serveRowSolo').style.display = shared ? 'none' : 'flex';
+    let total;
+    if(shared){
+      document.getElementById('svElenaVal').textContent = svE + '×';
+      document.getElementById('svAndreaVal').textContent = svM + '×';
+      total = +(svE + svM).toFixed(1);
+      document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
+      document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' servings';
+      const slot = RECIPE_SLOT[currentRecipeKey] || 'meal';
+      document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once, plated per target';
+    } else {
+      document.getElementById('svSoloVal').textContent = svS + '×';
+      total = svS;
+      const label = total === 1 ? 'serving' : 'servings';
+      document.getElementById('rsServesMeta').textContent = '🍽️ ' + total + ' ' + label;
+      document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' ' + label;
+    }
+    const r = RECIPES[currentRecipeKey];
+    document.getElementById('ingList').innerHTML = r.ingredients.map(function(ing){
+      const name = ing[0], qty = ing[1], unit = ing[2];
+      if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
+      const scaled = +(qty * total).toFixed(1);
+      return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
+    }).join('');
+    syncServeHighlight();
+  }
+
+  function syncServeHighlight(){
+    const se = document.getElementById('serveElena'), sm = document.getElementById('serveAndrea');
+    if(!se || !sm) return;
+    se.classList.toggle('me', currentProf === 'elena');
+    sm.classList.toggle('me', currentProf === 'partner');
+  }
+
+  function markEatenFromRecipe(){
+    const k = currentRecipeKey;
+    const card = document.getElementById('log-' + k);
+    if(card && !card.classList.contains('done') && !card.classList.contains('skipped')){
+      logConfirm(k);
+    } else {
+      toast('✓ Logged to today');
+    }
+  }
+
+  /* ---------------- week screen ---------------- */
+  const WEEK = [
+    {d:'Mon · Today', kcal:1800, today:true, meals:[
+      {slot:'Breakfast', emoji:'🥣', name:'Yogurt bowl', kcal:320, key:'yogurt'},
+      {slot:'Lunch', emoji:'🥗', name:'Lentil salad', kcal:430, key:'lentil'},
+      {slot:'Dinner', emoji:'🐟', name:'Salmon & quinoa', kcal:520, key:'salmon'}
+    ]},
+    {d:'Tue', kcal:1790, meals:[
+      {slot:'Breakfast', emoji:'🍳', name:'Veggie omelette', kcal:310, key:'yogurt'},
+      {slot:'Lunch', emoji:'🍲', name:'Chicken & farro bowl', kcal:460, key:'lentil'},
+      {slot:'Dinner', emoji:'🐠', name:'Sea bass, white beans', kcal:500, key:'salmon'}
+    ]},
+    {d:'Wed', kcal:1810, meals:[
+      {slot:'Breakfast', emoji:'🍮', name:'Chia pudding', kcal:300, key:'yogurt'},
+      {slot:'Lunch', emoji:'🥙', name:'Tuna & chickpea salad', kcal:450, key:'lentil'},
+      {slot:'Dinner', emoji:'🍗', name:'Turkey & roasted veg', kcal:520, key:'salmon'}
+    ]},
+    {d:'Thu', kcal:1800, meals:[
+      {slot:'Breakfast', emoji:'🥑', name:'Eggs & avocado toast (GF)', kcal:330, key:'yogurt'},
+      {slot:'Lunch', emoji:'🍲', name:'Minestrone + sardines', kcal:420, key:'lentil'},
+      {slot:'Dinner', emoji:'🥘', name:'Tofu stir-fry', kcal:490, key:'salmon'}
+    ]},
+    {d:'Fri', kcal:1830, meals:[
+      {slot:'Breakfast', emoji:'🥤', name:'Berry smoothie', kcal:310, key:'yogurt'},
+      {slot:'Lunch', emoji:'🍣', name:'Salmon poke bowl', kcal:470, key:'salmon'},
+      {slot:'Dinner', emoji:'🥩', name:'Lean beef & greens', kcal:530, key:'lentil'}
+    ]},
+    {d:'Sat', kcal:1950, meals:[
+      {slot:'Breakfast', emoji:'🍳', name:'Shakshuka', kcal:340, key:'yogurt'},
+      {slot:'Lunch', emoji:'🥗', name:'Big Greek salad', kcal:480, key:'lentil'},
+      {slot:'Dinner', emoji:'🍗', name:'Slow-roast chicken', kcal:560, key:'salmon'}
+    ]},
+    {d:'Sun', kcal:1880, meals:[
+      {slot:'Breakfast', emoji:'🥣', name:'Oats & walnuts', kcal:320, key:'yogurt'},
+      {slot:'Lunch', emoji:'🍳', name:'Roast veg frittata', kcal:440, key:'lentil'},
+      {slot:'Dinner', emoji:'🦪', name:'Mussels & tomato', kcal:520, key:'salmon'}
+    ]}
+  ];
+
+  function renderWeek(){
+    // Regenerate every day's meal row to match the active style — simplest deterministic
+    // approach; a fuller version would vary specific dishes per day, but this keeps the
+    // whole week visibly consistent with the current split at a fraction of the data.
+    if(activeMenu){
+      const bf = RECIPES[activeMenu.breakfastKey], lu = RECIPES[activeMenu.lunchKey], di = RECIPES[activeMenu.dinnerKey];
+      WEEK.forEach(function(day){
+        day.meals[0] = {slot:'Breakfast', emoji:bf.emoji, name:bf.title, kcal:bf.kcal, key:activeMenu.breakfastKey};
+        day.meals[1] = {slot:'Lunch', emoji:lu.emoji, name:lu.title, kcal:lu.kcal, key:activeMenu.lunchKey};
+        day.meals[2] = {slot:'Dinner', emoji:di.emoji, name:di.title, kcal:di.kcal, key:activeMenu.dinnerKey};
+      });
+    }
+    const el = document.getElementById('weekList');
+    el.innerHTML = WEEK.map(function(day, di){
+      const rows = day.meals.map(function(m){
+        const slotKey = m.slot.toLowerCase();
+        const together = SHARED[slotKey] ? ' <span class="pill together mini">👥 Together</span>' : '';
+        return '<div class="day-meal-row" onclick="event.stopPropagation();openRecipe(\''+m.key+'\',\'week\')">'
+          + '<div class="dm-e">'+m.emoji+'</div>'
+          + '<div class="dm-t">'+m.name+'<small>'+m.slot+together+'</small></div>'
+          + '<div class="dm-k">'+m.kcal+'</div></div>';
+      }).join('');
+      return '<div class="day'+(day.today?' today':'')+'" id="wd'+di+'" onclick="toggleDay('+di+')">'
+        + '<div class="dh"><span class="dn">'+day.d+'</span><span class="dk">~'+day.kcal+' kcal <span class="chev">⌄</span></span></div>'
+        + '<div class="dmeals">'+day.meals.map(function(m){return m.name;}).join(' · ')+'</div>'
+        + '<div class="day-meals">'+rows+'</div></div>';
+    }).join('');
+  }
+
+  function toggleDay(i){
+    document.getElementById('wd'+i).classList.toggle('expanded');
+  }
+
+  /* ---------------- bottom sheet ---------------- */
+  let swapCtx = null;
+
+  function buildSwapSheet(mealKey){
+    // mealKey may already be a slot name (breakfast/lunch/dinner/snack, e.g. from the
+    // Log screen) or a recipe key (e.g. from a recipe detail page) — resolve to a slot.
+    const slot = SWAPS[mealKey] ? mealKey : (RECIPE_SLOT[mealKey] || mealKey);
+    const alts = SWAPS[slot] || SWAPS.snack;
+    let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Same slot, similar targets. Pick an alternative — your plan stays balanced.</p>';
+    alts.forEach(function(a, i){
+      const kd = (a.kcalDelta > 0 ? '+' : '') + a.kcalDelta + ' kcal';
+      const pd = (a.proteinDelta > 0 ? '+' : '') + a.proteinDelta + 'g protein';
+      html += '<div class="altrow" onclick="chooseSwap('+i+')">'
+        + '<div class="ae">'+a.emoji+'</div>'
+        + '<div class="at"><div class="an">'+a.title+'</div>'
+        + '<div class="ad"><b>'+kd+'</b> · <b>'+pd+'</b></div>'
+        + '<div class="tags">'+a.tags.map(function(t){return '<span class="pill ghost">'+t+'</span>';}).join('')+'</div>'
+        + '</div></div>';
+    });
+    return html;
+  }
+
+  function openSwap(mealKey, targetElId){
+    swapCtx = {mealKey: mealKey, targetElId: targetElId};
+    document.getElementById('sheetBody').innerHTML = buildSwapSheet(mealKey);
+    document.getElementById('sheet').classList.remove('tall');
+    document.getElementById('sheetBackdrop').classList.add('show');
+    document.getElementById('sheet').classList.add('show');
+  }
+
+  function chooseSwap(i){
+    const slot = SWAPS[swapCtx.mealKey] ? swapCtx.mealKey : (RECIPE_SLOT[swapCtx.mealKey] || swapCtx.mealKey);
+    const alts = SWAPS[slot] || SWAPS.snack;
+    const a = alts[i];
+    if(swapCtx.targetElId){
+      const el = document.getElementById(swapCtx.targetElId);
+      if(el){
+        const t = el.querySelector('.t'); if(t) t.textContent = a.title;
+        const th = el.querySelector('.thumb'); if(th) th.textContent = a.emoji;
+        const tagsEl = el.querySelector('.tags');
+        if(tagsEl){
+          tagsEl.innerHTML = a.tags.map(function(t){return '<span class="pill">'+t+'</span>';}).join('');
+          // preserve the "Together" pill placeholder if this card tracks one (e.g. today's snack)
+          if(swapCtx.targetElId === 'todaySnack'){
+            tagsEl.insertAdjacentHTML('beforeend', '<span class="pill together mini" id="pillSnack" style="display:'+(SHARED.snack?'inline-flex':'none')+'">👥 Together</span>');
+          }
+        }
+      }
+      if(swapCtx.targetElId.indexOf('log-') === 0){
+        const k = swapCtx.mealKey;
+        TITLES[k] = a.title; EMOJI[k] = a.emoji;
+        LOGKCAL[k] = LOGKCAL[k] + a.kcalDelta;
+      }
+    }
+    closeSheet();
+    toast('🔁 Swapped to ' + a.title);
+  }
+
+  function closeSheet(){
+    document.getElementById('sheetBackdrop').classList.remove('show');
+    document.getElementById('sheet').classList.remove('show');
+  }
+
+  /* ---------------- shopping list (computed from the week plan) ---------------- */
+  // Fixed ingredient → aisle map. Every quantified ingredient in RECIPES lands in
+  // exactly one category; anything unmapped falls back to Pantry.
+  const SHOP_CATEGORY = {
+    'Mixed berries':'Produce', 'Mixed peppers & spinach':'Produce', 'Roasted mixed veg':'Produce',
+    'Rocket / arugula':'Produce', 'Baby spinach':'Produce', 'Broccoli':'Produce',
+    'Broccoli & courgette':'Produce', 'Avocado':'Produce', 'Cherry tomatoes & cucumber':'Produce',
+    'Eggs':'Protein', 'Salmon fillet':'Protein', 'Sliced turkey breast':'Protein',
+    'Grilled chicken breast':'Protein', 'Tuna in olive oil, drained':'Protein', 'Cooked lentils':'Protein',
+    'Greek yogurt, plain':'Dairy', 'Skyr, plain':'Dairy', 'Feta cheese':'Dairy',
+    'Granola':'Pantry', 'Honey':'Pantry', 'Chia seeds':'Pantry', 'Pumpkin & chia seeds':'Pantry',
+    'Rye bread':'Pantry', 'Olive oil':'Pantry', 'Quinoa, dry':'Pantry', 'Cooked farro':'Pantry',
+    'Coconut milk':'Pantry'
+  };
+  const SHOP_CAT_ORDER = ['Produce','Protein','Dairy','Pantry'];
+
+  // Walks the 7-day plan for BOTH people and aggregates identical ingredient names.
+  // Shared slots: one recipe at Elena's + Andrea's portions (cooked once, counted once).
+  // Solo breakfasts: each person's own recipe at their own portion. Lunch/dinner use one
+  // planned dish either way, so the total is the same sum of both portions.
+  // Day-meals with no recipe entry (e.g. snacks) are skipped silently.
+  function computeShoppingList(){
+    const m = MEALPLANS[householdStyle];
+    const totals = {};   // name -> {qty, unit}
+    const staples = {};  // name -> true (qty null / 'to taste')
+    function add(recipeKey, servings){
+      const r = RECIPES[recipeKey];
+      if(!r) return;
+      r.ingredients.forEach(function(ing){
+        const name = ing[0], qty = ing[1], unit = ing[2];
+        if(qty === null){ staples[name] = true; return; }
+        if(!totals[name]) totals[name] = {qty:0, unit:unit};
+        totals[name].qty += qty * servings;
+      });
+    }
+    WEEK.forEach(function(day){
+      day.meals.forEach(function(meal){
+        const slot = meal.slot.toLowerCase();
+        if(slot === 'breakfast' && !SHARED.breakfast){
+          add(m.breakfast.elena, svE);
+          add(m.breakfast.partner, svM);
+        } else {
+          add(meal.key, +(svE + svM).toFixed(1));
+        }
+      });
+    });
+    return {totals: totals, staples: staples};
+  }
+
+  // Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs),
+  // and ≥1000 g/ml promoted to kg/L for readability.
+  function fmtShopQty(qty, unit){
+    if(unit === '') return '' + Math.ceil(qty);
+    const g = Math.round(qty);
+    if(g >= 1000) return (Math.round(g/10)/100) + (unit === 'ml' ? ' L' : ' kg');
+    return g + ' ' + unit;
+  }
+
+  function buildShopSheet(){
+    const list = computeShoppingList();
+    const byCat = {};
+    Object.keys(list.totals).forEach(function(name){
+      const cat = SHOP_CATEGORY[name] || 'Pantry';
+      (byCat[cat] = byCat[cat] || []).push(name);
+    });
+    let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Shopping list <span class="chip-computed">✓ computed</span></h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+      + '<p class="sub">For both of you · 7 days · totals summed from this week\'s plan at your portions (Elena '+svE+'× · Andrea '+svM+'×). Shared meals are counted once. Snacks are pantry-level and not listed.</p>';
+    let idx = 0;
+    SHOP_CAT_ORDER.forEach(function(cat){
+      const names = byCat[cat];
+      if(!names || !names.length) return;
+      names.sort();
+      html += '<div class="shop-cat">'+cat+'</div>';
+      names.forEach(function(name){
+        const t = list.totals[name];
+        const id = 'sh-' + (idx++);
+        html += '<div class="shop-item" id="'+id+'" onclick="toggleShop(\''+id+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      });
+    });
+    const stapleNames = Object.keys(list.staples).sort();
+    if(stapleNames.length){
+      html += '<div class="shop-cat">Pantry staples — check you have these</div>';
+      stapleNames.forEach(function(name){
+        const id = 'sh-' + (idx++);
+        html += '<div class="shop-item" id="'+id+'" onclick="toggleShop(\''+id+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div></div>';
+      });
+    }
+    return html;
+  }
+
+  function openShopping(){
+    document.getElementById('sheetBody').innerHTML = buildShopSheet();
+    document.getElementById('sheet').classList.add('tall');
+    document.getElementById('sheetBackdrop').classList.add('show');
+    document.getElementById('sheet').classList.add('show');
+  }
+
+  function toggleShop(id){ document.getElementById(id).classList.toggle('done'); }
+
+  /* ---------------- re-balance week ---------------- */
+  function buildRebalanceSheet(){
+    return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance this week</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+      + '<p class="sub">Keeps fixed: your daily calories & protein, foods you avoid, shared dinners. Optimises: closes weekly nutrient gaps (right now: Vitamin D 61%), adds variety where meals repeat. Changes as few meals as possible.</p>'
+      + '<div class="card" style="padding:14px">'
+      + '<b style="font-size:13px">Would change 2 meals</b>'
+      + '<div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🐟</div><div class="li-t">Thu lunch → Sardine & white bean salad<small>+ Vitamin D</small></div></div>'
+      + '<div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--sage-tint)">🍳</div><div class="li-t">Sat breakfast → Shakshuka with fortified feta<small>+ Vitamin D</small></div></div>'
+      + '</div>'
+      + '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+  }
+
+  function openRebalanceSheet(){
+    document.getElementById('sheetBody').innerHTML = buildRebalanceSheet();
+    document.getElementById('sheet').classList.remove('tall');
+    document.getElementById('sheetBackdrop').classList.add('show');
+    document.getElementById('sheet').classList.add('show');
+  }
+
+  function applyRebalance(){
+    closeSheet();
+    toast('✓ Week re-balanced — Vitamin D now 89%');
+    const chip = document.getElementById('vitDChip');
+    if(chip){
+      chip.classList.remove('low');
+      const b = chip.querySelector('.nt b'); if(b) b.textContent = '89%';
+      const bar = chip.querySelector('.nbar i'); if(bar) bar.style.width = '89%';
+    }
+    const note = document.getElementById('vitDNote');
+    if(note) note.innerHTML = '✅ <b>Vitamin D re-balanced to 89%.</b> Thu & Sat swaps added fortified options — nicely varied for the rest of the week.';
+  }
+
+  /* ---------------- log / plan-first confirm ---------------- */
+  // Keyed by slot name (breakfast/lunch/dinner/snack), not recipe key — rebuilt by
+  // renderLogPlan() each time the active menu (profile or split) changes.
+  const EMOJI = {};
+  const TITLES = {};
+  const LOGKCAL = {};
+  let logTotal = 0;
+
+  function logConfirm(key){
+    const card = document.getElementById('log-' + key);
+    if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
+    card.classList.add('done');
+    const actions = card.querySelector('.logactions'); if(actions) actions.remove();
+    const info = card.querySelector('.info');
+    const tag = document.createElement('div');
+    tag.className = 'confirmed-tag';
+    tag.textContent = '✓ Logged · just now';
+    info.appendChild(tag);
+
+    const list = document.getElementById('todaySoFar');
+    const div = document.createElement('div');
+    div.className = 'logitem';
+    div.innerHTML = '<div class="li-i">'+EMOJI[key]+'</div><div class="li-t">'+TITLES[key]+'<small>'+SLOT_LABEL[key]+' · just now</small></div><div class="li-k">'+LOGKCAL[key]+'</div>';
+    list.appendChild(div);
+
+    logTotal += LOGKCAL[key];
+    document.getElementById('logTotalPill').textContent = logTotal + ' kcal';
+    toast('✓ Logged to today');
+  }
+
+  function logSkip(key){
+    const card = document.getElementById('log-' + key);
+    if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
+    card.classList.add('skipped');
+    const actions = card.querySelector('.logactions'); if(actions) actions.remove();
+    const info = card.querySelector('.info');
+    const tag = document.createElement('div');
+    tag.className = 'skipped-tag';
+    tag.textContent = 'Skipped for today';
+    info.appendChild(tag);
+    toast('Skipped — your plan stays balanced');
+  }
+
+  // Builds the four "Today's plan" cards on the Log screen from the active menu.
+  // Re-running this (e.g. after a macro-split rebuild) resets any confirm/skip taps —
+  // acceptable per spec, since the underlying plan itself just changed.
+  function renderLogPlan(){
+    if(!activeMenu) return;
+    const bf = RECIPES[activeMenu.breakfastKey];
+    EMOJI.breakfast = bf.emoji; TITLES.breakfast = bf.title; LOGKCAL.breakfast = bf.kcal;
+    const bfCard = document.getElementById('log-breakfast');
+    bfCard.className = 'card meal done';
+    bfCard.style.cursor = 'default';
+    bfCard.innerHTML = '<div class="thumb">'+bf.emoji+'</div><div class="info">'
+      + '<div class="row between"><span class="t">'+bf.title+'</span><span class="kcal">'+bf.kcal+'</span></div>'
+      + '<div class="d">Breakfast · '+bf.protein+'g protein</div>'
+      + '<div class="confirmed-tag">✓ Logged · earlier today</div></div>';
+
+    const lu = RECIPES[activeMenu.lunchKey];
+    buildLogSlotCard('lunch', lu.emoji, lu.title, lu.kcal, 'Lunch · '+lu.protein+'g protein');
+
+    const di = RECIPES[activeMenu.dinnerKey];
+    buildLogSlotCard('dinner', di.emoji, di.title, di.kcal, 'Dinner · '+di.protein+'g protein');
+
+    const sn = activeMenu.snack;
+    buildLogSlotCard('snack', sn.emoji, sn.title, sn.kcal, sn.desc);
+
+    logTotal = bf.kcal;
+    document.getElementById('logTotalPill').textContent = logTotal + ' kcal';
+    document.getElementById('todaySoFar').innerHTML = '<div class="logitem"><div class="li-i">'+bf.emoji+'</div>'
+      + '<div class="li-t">'+bf.title+'<small>Breakfast · earlier today</small></div><div class="li-k">'+bf.kcal+'</div></div>';
+  }
+
+  function buildLogSlotCard(slot, emoji, title, kcal, desc){
+    EMOJI[slot] = emoji; TITLES[slot] = title; LOGKCAL[slot] = kcal;
+    const card = document.getElementById('log-' + slot);
+    card.className = 'card meal';
+    card.style.cursor = 'default';
+    card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
+      + '<div class="row between"><span class="t">'+title+'</span><span class="kcal">'+kcal+'</span></div>'
+      + '<div class="d">'+desc+'</div>'
+      + '<div class="logactions">'
+      + '<button class="la-confirm" onclick="logConfirm(\''+slot+'\')">Confirm</button>'
+      + '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>'
+      + '<button class="la-skip" onclick="logSkip(\''+slot+'\')">Skip</button>'
+      + '</div></div>';
+  }
+
+  /* ---------------- profile data ---------------- */
+  // Body stats are the source of truth; age, BMR, maintenance and the recommended daily
+  // target are all derived from them (Mifflin-St Jeor × activity + goalAdj, rounded to 10).
+  // goalAdj is each person's goal offset from maintenance: Elena −325 (gentle deficit),
+  // Andrea +60 (small muscle-gain surplus) — chosen so current stats land exactly on the
+  // familiar 1,820 / 2,480 defaults. calCustom is null while following the recommendation.
+  let currentProf = 'elena';
+  const PROF = {
+    elena:   {seg:'Elena', av:'E',
+              sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,
+              activity:1.55, goalAdj:-325, goalName:'gentle fat loss',
+              calCustom:null, calNote:'', consumedKcal:400,
+              goalTag:'🎯 Gentle fat loss · 🦋 Hashimoto',
+              coachT:'Today leans thyroid-friendly 🦋', hashi:true,
+              coachD:'Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.',
+              kP:26, kC:41, kF:33,
+              consumed:{p:28,c:34,f:12}, defaultSplit:{P:26,C:41,F:33}, splitNote:'', coachOverrideT:null, coachOverrideD:null},
+    partner: {seg:'Andrea', av:'A',
+              sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
+              activity:1.375, goalAdj:60, goalName:'small muscle-gain surplus',
+              calCustom:null, calNote:'', consumedKcal:470,
+              goalTag:'🎯 Muscle gain · ❤️ Heart-smart',
+              coachT:'Today is built for muscle 💪', hashi:false,
+              coachD:'Higher protein and a small surplus. Same Mediterranean base as Elena, scaled up — shared cooking, two targets.',
+              kP:26, kC:43, kF:31,
+              consumed:{p:42,c:58,f:18}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
+  };
+
+  /* ---------------- deterministic target engine ---------------- */
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const ACTIVITY_LEVELS = [
+    {f:1.2,   t:'Sedentary',         d:'Mostly sitting · ×1.2'},
+    {f:1.375, t:'Lightly active',    d:'Walks or 1–2 workouts a week · ×1.375'},
+    {f:1.55,  t:'Moderately active', d:'Training 3–5 days a week · ×1.55'},
+    {f:1.725, t:'Very active',       d:'Hard training most days · ×1.725'}
+  ];
+  function fmtKcal(n){ return n.toLocaleString('en-US'); }
+  function round10(n){ return Math.round(n / 10) * 10; }
+  function ageOf(p){
+    const now = new Date();
+    let a = now.getFullYear() - p.dobY;
+    if((now.getMonth() + 1) < p.dobM) a--;
+    return a;
+  }
+  // Mifflin-St Jeor: male 10w + 6.25h − 5a + 5 · female 10w + 6.25h − 5a − 161
+  function bmrOf(p){
+    const base = 10 * p.weightKg + 6.25 * p.heightCm - 5 * ageOf(p);
+    return p.sex === 'male' ? base + 5 : base - 161;
+  }
+  function maintenanceOf(p){ return bmrOf(p) * p.activity; }
+  function recommendedCal(p){ return round10(maintenanceOf(p) + p.goalAdj); }
+  // Sane band for manual targets: never below ~110% of BMR, never above maintenance + 600.
+  function calBand(p){ return [round10(bmrOf(p) * 1.1), round10(maintenanceOf(p) + 600)]; }
+
+  /* ---------------- shared-meals model ---------------- */
+  const SHARED = {breakfast:false, lunch:false, dinner:true, snack:false};
+  const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack'};
+
+  function toggleShared(slot, el){
+    SHARED[slot] = !SHARED[slot];
+    el.classList.toggle('sel', SHARED[slot]);
+    el.querySelector('.ck').textContent = SHARED[slot] ? '✓' : '';
+    const sub = el.querySelector('.od');
+    if(sub) sub.textContent = SHARED[slot] ? 'Shared' : 'Solo';
+    toast(SHARED[slot]
+      ? SLOT_LABEL[slot] + ' is now shared — one recipe, two portions'
+      : SLOT_LABEL[slot] + ' is now solo — planned per person');
+    renderTogetherPills();
+    renderWeek();
+    if(document.getElementById('recipe').classList.contains('active')) updateServings();
+  }
+
+  function renderTogetherPills(){
+    renderTodayMeals();
+  }
+
+  // Renders all four Today cards from the active menu (currentProf's breakfast + the
+  // shared lunch/dinner/snack for the household's current plan style).
+  function renderTodayMeals(){
+    activeMenu = computeActiveMenu();
+    const bf = RECIPES[activeMenu.breakfastKey];
+    document.getElementById('bfEmoji').textContent = bf.emoji;
+    document.getElementById('bfTitle').textContent = bf.title;
+    document.getElementById('bfKcal').textContent = bf.kcal;
+    document.getElementById('bfDesc').textContent = 'Breakfast · ' + bf.protein + 'g protein';
+    let bfTags = bf.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+    bfTags += '<span class="pill together mini" id="pillBreakfast" style="display:'+(SHARED.breakfast?'inline-flex':'none')+'">👥 Together</span>';
+    document.getElementById('bfTags').innerHTML = bfTags;
+
+    const lu = RECIPES[activeMenu.lunchKey];
+    document.getElementById('lunchThumb').textContent = lu.emoji;
+    document.getElementById('lunchTitle').textContent = lu.title;
+    document.getElementById('lunchKcal').textContent = lu.kcal;
+    document.getElementById('lunchDesc').textContent = 'Lunch · ' + lu.protein + 'g protein';
+    let luTags = lu.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+    luTags += '<span class="pill together mini" id="pillLunch" style="display:'+(SHARED.lunch?'inline-flex':'none')+'">👥 Together</span>';
+    document.getElementById('lunchTags').innerHTML = luTags;
+
+    const di = RECIPES[activeMenu.dinnerKey];
+    document.getElementById('dinnerThumb').textContent = di.emoji;
+    document.getElementById('dinnerTitle').textContent = di.title;
+    document.getElementById('dinnerKcal').textContent = di.kcal;
+    document.getElementById('dinnerDesc').textContent = 'Dinner · ' + di.protein + 'g protein';
+    let diTags = di.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+    diTags += '<span class="pill together mini" id="pillDinner" style="display:'+(SHARED.dinner?'inline-flex':'none')+'">👥 Together</span>';
+    document.getElementById('dinnerTags').innerHTML = diTags;
+
+    const sn = activeMenu.snack;
+    document.getElementById('snackThumbEl').textContent = sn.emoji;
+    document.getElementById('snackTitleEl').textContent = sn.title;
+    document.getElementById('snackKcalEl').textContent = sn.kcal;
+    document.getElementById('snackDescEl').textContent = sn.desc;
+    let snTags = (sn.tags||[]).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+    snTags += '<span class="pill together mini" id="pillSnack" style="display:'+(SHARED.snack?'inline-flex':'none')+'">👥 Together</span>';
+    document.getElementById('snackTags').innerHTML = snTags;
+  }
+
+  // Recomputes macro gram targets + fat good/sat split from the profile's split % and
+  // daily calories. Consumed grams are fixed (already eaten today); only the target
+  // denominators — and therefore the bar widths — move when the split changes.
+  function recomputeProf(key){
+    const p = PROF[key];
+    // Daily target: the Mifflin-St Jeor recommendation unless a manual override is set.
+    p.recCal = recommendedCal(p);
+    if(p.calCustom !== null && p.calCustom === p.recCal) p.calCustom = null; // drifted back onto the recommendation
+    p.calGoalNum = (p.calCustom !== null) ? p.calCustom : p.recCal;
+    p.calGoal = fmtKcal(p.calGoalNum);
+    p.cals = fmtKcal(p.calGoalNum) + ' kcal';
+    p.calLeft = fmtKcal(Math.max(0, p.calGoalNum - p.consumedKcal));
+    p.off = Math.round(351.8 * Math.min(1, p.consumedKcal / p.calGoalNum)); // ring arc = fraction of kcal still left
+    const kcal = p.calGoalNum;
+    const targetP = Math.round(kcal * p.kP / 100 / 4);
+    const targetC = Math.round(kcal * p.kC / 100 / 4);
+    const targetF = Math.round(kcal * p.kF / 100 / 9);
+    p.targetP = targetP; p.targetC = targetC; p.targetF = targetF;
+    p.mp = p.consumed.p + ' / ' + targetP + ' g';
+    p.mc = p.consumed.c + ' / ' + targetC + ' g';
+    p.mf = p.consumed.f + ' / ' + targetF + ' g';
+    p.bp = Math.min(100, Math.round(p.consumed.p / targetP * 100)) + '%';
+    p.bc = Math.min(100, Math.round(p.consumed.c / targetC * 100)) + '%';
+    p.bff = Math.min(100, Math.round(p.consumed.f / targetF * 100)) + '%';
+    // Good/sat fat line scales with the fat *target* (not the fixed consumed grams) so it
+    // visibly moves with the split, holding roughly a 75/25 good/sat ratio.
+    p.fatGood = Math.round(targetF * 0.75);
+    p.fatSat = targetF - p.fatGood;
+  }
+
+  /* ---------------- editable basics ---------------- */
+  // Renders the Basics section for the current profile: sex segments, DOB + computed age,
+  // height/weight steppers, activity options, and the daily-target row with its
+  // computed/custom state, restore action and transparent formula line.
+  function renderBasics(){
+    const p = PROF[currentProf];
+    document.getElementById('sexBtnF').classList.toggle('on', p.sex === 'female');
+    document.getElementById('sexBtnM').classList.toggle('on', p.sex === 'male');
+    document.getElementById('pfDob').textContent = 'Born ' + MONTHS[p.dobM-1] + ' ' + p.dobY + ' · ' + ageOf(p);
+    document.getElementById('dobMVal').textContent = MONTHS[p.dobM-1];
+    document.getElementById('dobYVal').textContent = p.dobY;
+    document.getElementById('hVal').textContent = p.heightCm + ' cm';
+    document.getElementById('wVal').textContent = p.weightKg + ' kg';
+    document.getElementById('actOpts').innerHTML = ACTIVITY_LEVELS.map(function(a, i){
+      const sel = p.activity === a.f;
+      return '<div class="opt'+(sel ? ' sel' : '')+'" style="margin-top:'+(i===0?'6':'9')+'px" onclick="setActivity('+i+')">'
+        + '<div class="ck">'+(sel ? '✓' : '')+'</div>'
+        + '<div><div class="ot">'+a.t+'</div><div class="od">'+a.d+'</div></div></div>';
+    }).join('');
+    // daily target row
+    document.getElementById('pfCals').textContent = p.cals;
+    const isCustom = p.calCustom !== null;
+    const chip = document.getElementById('calChip');
+    chip.textContent = isCustom ? 'custom' : '✓ computed';
+    chip.className = isCustom ? 'pill gold' : 'chip-computed';
+    const btn = document.getElementById('calRestoreBtn');
+    btn.style.display = isCustom ? 'inline-flex' : 'none';
+    btn.textContent = '↺ Restore recommended (' + fmtKcal(p.recCal) + ')';
+    document.getElementById('calFormula').textContent =
+      'BMR ' + fmtKcal(Math.round(bmrOf(p))) + ' × ' + p.activity + ' activity '
+      + (p.goalAdj >= 0 ? '+ ' : '− ') + Math.abs(p.goalAdj) + ' ' + p.goalName
+      + ' = ' + fmtKcal(p.recCal) + ' kcal recommended';
+    document.getElementById('calNote').textContent = p.calNote || '';
+  }
+
+  // One funnel for every body-stat edit: refresh the recommendation, keep any manual
+  // override untouched (non-destructive nudge instead), cascade through applyProf, and
+  // say exactly what changed.
+  function afterBasicsChange(label){
+    const p = PROF[currentProf];
+    const oldGoal = p.calGoalNum;
+    const newRec = recommendedCal(p);
+    if(p.calCustom !== null && p.calCustom !== newRec){
+      p.calNote = 'Mesa now recommends ' + fmtKcal(newRec) + ' kcal — your custom ' + fmtKcal(p.calCustom) + ' stays until you tap restore.';
+    } else {
+      p.calNote = '';
+    }
+    applyProf(currentProf);
+    if(p.calCustom !== null){
+      toast(label + ' — Mesa now recommends ' + fmtKcal(newRec) + ' kcal');
+    } else if(p.calGoalNum !== oldGoal){
+      toast(label + ' → new target ' + fmtKcal(p.calGoalNum) + ' kcal');
+    } else {
+      toast(label + ' — target unchanged at ' + fmtKcal(p.calGoalNum) + ' kcal');
+    }
+  }
+
+  function setSex(s){
+    const p = PROF[currentProf];
+    if(p.sex === s) return;
+    p.sex = s;
+    afterBasicsChange('Sex ' + (s === 'female' ? 'female' : 'male'));
+  }
+
+  function stepDob(part, delta){
+    const p = PROF[currentProf];
+    if(part === 'm'){
+      p.dobM += delta;
+      if(p.dobM < 1){ p.dobM = 12; p.dobY--; }
+      if(p.dobM > 12){ p.dobM = 1; p.dobY++; }
+    } else {
+      p.dobY += delta;
+    }
+    const maxY = new Date().getFullYear() - 16; // Mesa plans for adults
+    p.dobY = Math.min(maxY, Math.max(1930, p.dobY));
+    afterBasicsChange('Born ' + MONTHS[p.dobM-1] + ' ' + p.dobY + ' (age ' + ageOf(p) + ')');
+  }
+
+  function stepBody(field, delta){
+    const p = PROF[currentProf];
+    if(field === 'height'){
+      p.heightCm = Math.min(220, Math.max(130, p.heightCm + delta));
+      afterBasicsChange('Height ' + p.heightCm + ' cm');
+    } else {
+      p.weightKg = Math.min(200, Math.max(40, +(p.weightKg + delta).toFixed(1)));
+      afterBasicsChange('Weight ' + p.weightKg + ' kg');
+    }
+  }
+
+  function setActivity(i){
+    const p = PROF[currentProf];
+    const a = ACTIVITY_LEVELS[i];
+    if(p.activity === a.f) return;
+    p.activity = a.f;
+    afterBasicsChange(a.t + ' (×' + a.f + ')');
+  }
+
+  // Manual calorie override, ±50 per tap, clamped to a sane band with a friendly note.
+  function stepCal(delta){
+    const p = PROF[currentProf];
+    const band = calBand(p);
+    let next = p.calGoalNum + delta;
+    if(next < band[0]){
+      next = band[0];
+      p.calNote = 'Held at ' + fmtKcal(band[0]) + ' — Mesa won’t plan below ~110% of your BMR. Gentle beats drastic.';
+    } else if(next > band[1]){
+      next = band[1];
+      p.calNote = 'Held at ' + fmtKcal(band[1]) + ' — beyond maintenance + 600 kcal adds fat faster than muscle.';
+    } else {
+      p.calNote = '';
+    }
+    p.calCustom = (next === p.recCal) ? null : next;
+    applyProf(currentProf);
+    if(p.calCustom === null) toast('✓ Back on Mesa’s recommendation');
+  }
+
+  function restoreCal(){
+    const p = PROF[currentProf];
+    p.calCustom = null;
+    p.calNote = '';
+    applyProf(currentProf);
+    toast('↺ Back to recommended ' + fmtKcal(p.recCal) + ' kcal');
+  }
+
+  const SPLIT_BOUNDS = {P:[10,40], C:[20,60], F:[20,45]};
+  const SPLIT_PROP = {P:'kP', C:'kC', F:'kF'};
+  const SPLIT_LABEL = {P:'Protein', C:'Carbs', F:'Fat'};
+
+  function splitGuardNote(macro, dir){
+    const msgs = {
+      P:{min:'Protein stays ≥10% — your body needs a baseline to protect muscle.', max:'Protein stays ≤40% — more than this adds little extra benefit.'},
+      C:{min:'Carbs stay ≥20% — your brain and workouts need fuel.', max:'Carbs stay ≤60% — leaves enough room for protein and fat.'},
+      F:{min:'Fat stays ≥20% — needed for hormones and vitamin absorption.', max:'Fat stays ≤45% — keeps room for enough protein and carbs.'}
+    };
+    return msgs[macro][dir];
+  }
+
+  // Steps one macro by ±5%, then pulls the compensating amount from whichever of the
+  // other two is currently larger — so the three always sum to 100 and the effect on a
+  // second macro is predictable (never split across both).
+  function stepSplit(macro, delta){
+    const p = PROF[currentProf];
+    const [lo, hi] = SPLIT_BOUNDS[macro];
+    const prop = SPLIT_PROP[macro];
+    const old = p[prop];
+    let next = old + delta;
+    let note = null;
+    if(next < lo){ next = lo; note = splitGuardNote(macro, 'min'); }
+    else if(next > hi){ next = hi; note = splitGuardNote(macro, 'max'); }
+    const actualDelta = next - old;
+    if(actualDelta === 0){
+      p.splitNote = note || '';
+      renderSplitEditor();
+      return;
+    }
+    p[prop] = next;
+
+    const others = ['P','C','F'].filter(function(k){ return k !== macro; });
+    const big = p[SPLIT_PROP[others[0]]] >= p[SPLIT_PROP[others[1]]] ? others[0] : others[1];
+    const small = big === others[0] ? others[1] : others[0];
+    const compDelta = -actualDelta;
+    const [bLo, bHi] = SPLIT_BOUNDS[big];
+    const bigWanted = p[SPLIT_PROP[big]] + compDelta;
+    const bigFinal = Math.max(bLo, Math.min(bHi, bigWanted));
+    p[SPLIT_PROP[big]] = bigFinal;
+    const leftover = bigWanted - bigFinal;
+    if(leftover !== 0){
+      const [sLo, sHi] = SPLIT_BOUNDS[small];
+      const smallWanted = p[SPLIT_PROP[small]] + leftover;
+      const smallFinal = Math.max(sLo, Math.min(sHi, smallWanted));
+      p[SPLIT_PROP[small]] = smallFinal;
+      if(!note && smallFinal !== smallWanted) note = splitGuardNote(small, leftover > 0 ? 'max' : 'min');
+    }
+    if(!note && bigFinal !== bigWanted) note = splitGuardNote(big, compDelta > 0 ? 'max' : 'min');
+    p.splitNote = note || '';
+
+    applyProf(currentProf);
+    scheduleMenuRebuild();
+  }
+
+  function applyPreset(name){
+    const p = PROF[currentProf];
+    let target;
+    if(name === 'default') target = p.defaultSplit;
+    else if(name === 'highprotein') target = {P:35, C:35, F:30};
+    else if(name === 'lowcarb') target = {P:30, C:30, F:40};
+    else return;
+    p.kP = target.P; p.kC = target.C; p.kF = target.F;
+    p.splitNote = '';
+    applyProf(currentProf);
+    scheduleMenuRebuild();
+  }
+
+  function renderSplitEditor(){
+    const p = PROF[currentProf];
+    const kcal = p.calGoalNum;
+    const gP = Math.round(kcal * p.kP / 100 / 4);
+    const gC = Math.round(kcal * p.kC / 100 / 4);
+    const gF = Math.round(kcal * p.kF / 100 / 9);
+    document.getElementById('splitPVal').textContent = p.kP + '% · ' + gP + 'g';
+    document.getElementById('splitCVal').textContent = p.kC + '% · ' + gC + 'g';
+    document.getElementById('splitFVal').textContent = p.kF + '% · ' + gF + 'g';
+
+    const chips = document.querySelectorAll('#macroPresets .chip-preset');
+    const matches = function(t){ return p.kP === t.P && p.kC === t.C && p.kF === t.F; };
+    if(chips[0]) chips[0].classList.toggle('chipsel', matches(p.defaultSplit));
+    if(chips[1]) chips[1].classList.toggle('chipsel', matches({P:35,C:35,F:30}));
+    if(chips[2]) chips[2].classList.toggle('chipsel', matches({P:30,C:30,F:40}));
+
+    // Visible custom state: pill by the header + a restore hint, mirroring the calorie row.
+    const customSplit = !matches(p.defaultSplit);
+    const pill = document.getElementById('splitStatePill');
+    if(pill) pill.style.display = customSplit ? 'inline-flex' : 'none';
+    document.getElementById('splitNote').textContent = p.splitNote
+      || (customSplit ? 'Custom split — “Mesa default” restores ' + p.defaultSplit.P + '/' + p.defaultSplit.C + '/' + p.defaultSplit.F + '.' : '');
+  }
+
+  // Debounced ~600ms after the last tap: reclassifies the plan style from the active
+  // profile's split, rebuilds the shared menu, and surfaces a toast + coach note.
+  let splitRebuildTimer = null;
+  function scheduleMenuRebuild(){
+    clearTimeout(splitRebuildTimer);
+    splitRebuildTimer = setTimeout(function(){
+      const p = PROF[currentProf];
+      householdStyle = styleOf(p);
+      const bannerMsgs = {
+        protein:{t:'Rebuilt for more protein 💪', d:'Rebuilt for your ' + p.kP + '/' + p.kC + '/' + p.kF + ' split — protein up, carbs trimmed. Same calories, same avoid-list.'},
+        lowcarb:{t:'Rebuilt lower-carb 🥑', d:'Rebuilt for your ' + p.kP + '/' + p.kC + '/' + p.kF + ' split — carbs down, healthy fat up. Same calories, same avoid-list.'},
+        balanced:{t:'Rebuilt for an even split 🥗', d:'Rebuilt for your ' + p.kP + '/' + p.kC + '/' + p.kF + ' split — an even mix across protein, carbs and fat. Same calories, same avoid-list.'}
+      };
+      const msg = bannerMsgs[householdStyle];
+      p.coachOverrideT = msg.t; p.coachOverrideD = msg.d;
+      applyProf(currentProf);
+      toast('✓ Menu rebuilt for ' + p.kP + '/' + p.kC + '/' + p.kF);
+    }, 600);
+  }
+
+  function applyProf(key){
+    currentProf = key;
+    const p=PROF[key];
+    recomputeProf(key);
+    document.getElementById('calLeft').textContent=p.calLeft;
+    document.getElementById('calGoal').textContent=p.calGoal;
+    document.getElementById('goalTag').textContent=p.goalTag;
+    document.getElementById('coachT').textContent=p.coachOverrideT || p.coachT;
+    document.getElementById('coachD').textContent=p.coachOverrideD || p.coachD;
+    document.getElementById('mp').textContent=p.mp;
+    document.getElementById('mc').textContent=p.mc;
+    document.getElementById('mf').textContent=p.mf;
+    document.getElementById('bp').style.width=p.bp;
+    document.getElementById('bc').style.width=p.bc;
+    document.getElementById('bff').style.width=p.bff;
+    document.getElementById('calRing').style.strokeDashoffset=p.off;
+    document.getElementById('profAv').textContent=p.av;
+    renderBasics();
+    document.getElementById('hashiOpt').style.display = p.hashi ? 'flex':'none';
+    document.getElementById('fatSplit').textContent = '💚 ' + p.fatGood + 'g good fats · ' + p.fatSat + 'g sat.';
+    document.getElementById('ksP').style.width = p.kP + '%';
+    document.getElementById('ksC').style.width = p.kC + '%';
+    document.getElementById('ksF').style.width = p.kF + '%';
+    document.getElementById('kcalSplitLegend').textContent = 'Protein ' + p.kP + '% · Carbs ' + p.kC + '% · Fat ' + p.kF + '% of calories';
+    renderSplitEditor();
+    renderTodayMeals();
+    renderLogPlan();
+    renderWeek();
+    syncServeHighlight();
+  }
+  // top segmented control
+  document.querySelectorAll('#profSeg button').forEach(b=>{
+    b.addEventListener('click',()=>{
+      document.querySelectorAll('#profSeg button').forEach(x=>x.classList.remove('on'));
+      b.classList.add('on'); applyProf(b.dataset.prof);
+    });
+  });
+  // profile screen switch
+  function setProf(key, el){
+    el.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
+    el.classList.add('on'); applyProf(key);
+    // sync top control
+    document.querySelectorAll('#profSeg button').forEach(x=>x.classList.toggle('on', x.dataset.prof===key));
+  }
+
+  /* ---------------- onboarding ---------------- */
+  let obIndex = 0;
+  let obProfile = 'elena';
+
+  function obShow(i){
+    obIndex = i;
+    document.querySelectorAll('.ob-slide').forEach(function(s, idx){ s.classList.toggle('active', idx === i); });
+    document.querySelectorAll('.ob-dots .d').forEach(function(d, idx){ d.classList.toggle('on', idx === i); });
+    document.getElementById('obNext').textContent = i === 2 ? "Let's go →" : 'Continue';
+  }
+
+  function obNext(){
+    if(obIndex < 2){ obShow(obIndex + 1); } else { finishOnboarding(); }
+  }
+
+  function renderObGoals(key){
+    const goals = key === 'elena'
+      ? ['🎯 Gentle fat loss', '🦋 Hashimoto-friendly', '✨ Skin-supporting']
+      : ['💪 Muscle & protein', '❤️ Heart-smart'];
+    document.getElementById('obGoalsPreview').innerHTML = goals.map(function(g){ return '<span class="pill">'+g+'</span>'; }).join('');
+  }
+
+  function obPick(key){
+    obProfile = key;
+    document.getElementById('obElena').classList.toggle('sel', key === 'elena');
+    document.getElementById('obElena').querySelector('.ck').textContent = key === 'elena' ? '✓' : '';
+    document.getElementById('obAndrea').classList.toggle('sel', key === 'partner');
+    document.getElementById('obAndrea').querySelector('.ck').textContent = key === 'partner' ? '✓' : '';
+    renderObGoals(key);
+  }
+
+  function finishOnboarding(){
+    document.getElementById('onboard').classList.add('hidden');
+    try{ localStorage.setItem('mesaOnboarded', '1'); }catch(e){}
+    applyProf(obProfile);
+    document.querySelectorAll('#profSeg button').forEach(function(x){ x.classList.toggle('on', x.dataset.prof === obProfile); });
+    go('today');
+  }
+
+  function replayOnboarding(){
+    obProfile = currentProf;
+    obPick(obProfile);
+    obShow(0);
+    document.getElementById('onboard').classList.remove('hidden');
+  }
+
+  function maybeShowOnboarding(){
+    let seen = false;
+    try{ seen = !!localStorage.getItem('mesaOnboarded'); }catch(e){}
+    if(!seen){
+      obPick('elena');
+      obShow(0);
+      document.getElementById('onboard').classList.remove('hidden');
+    }
+  }
+
+  /* ---------------- init ---------------- */
+  applyProf(currentProf);
+  renderRecipe('salmon');
+  recipeOrigin = 'today';
+  maybeShowOnboarding();
+</script>
+</body>
+</html>
