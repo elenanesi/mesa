@@ -22,9 +22,9 @@
    pills, ingredients as legacy [name,qty,unit] rows, steps, why) — from
    RECIPES_DB so render.js/planner.js/app.js need no broader rewrite.
 
-   Only the 10 original mockup recipes get a compatibility entry (their
-   ids are unchanged in RECIPES_DB, see data/recipes.js). Task C2 swaps
-   these call sites over to the full RECIPES_DB.
+   Since task C2 the planner draws from the FULL RECIPES_DB, so every
+   recipe in the DB gets a compatibility entry (the 10 original mockup
+   ids among them, unchanged).
 
    RECIPES itself starts empty; buildLegacyRecipesCompat() (called once
    from app.js, after data/foods.js + data/recipes.js + engine.js have
@@ -33,6 +33,10 @@
    =================================================================== */
 const RECIPES = {};
 const LEGACY_RECIPE_IDS = ['yogurt', 'omelette', 'lentil', 'salmon', 'skyrbowl', 'eggsturkey', 'chickenfarro', 'chiapudding', 'tunasalad', 'salmongreens'];
+// Task C2: the planner picks from the FULL RECIPES_DB (32-36 recipes), not just the 10
+// legacy ids, so every recipe needs a compat entry — buildLegacyRecipesCompat() below
+// now loops over every RECIPES_DB id. LEGACY_RECIPE_IDS + LEGACY_WHY are kept only for
+// their special-cased hand-written "why" copy on the 10 original mockup recipes.
 
 // The mockup's hand-written "why this fits you" copy, kept verbatim per recipe id so
 // nothing user-visible degrades for the 10 legacy recipes (task C3 replaces this with
@@ -75,7 +79,7 @@ function capitalizeFirst(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
 // computed, never typed in (ground rule #1) — the one exception is LEGACY_WHY (display
 // copy, not a number) and TAG_PILL_MAP (a label lookup, not a number either).
 function buildLegacyRecipesCompat(){
-  LEGACY_RECIPE_IDS.forEach(function(id){
+  Object.keys(RECIPES_DB).forEach(function(id){
     const src = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[id] : undefined;
     if(!src){ console.error('buildLegacyRecipesCompat: "' + id + '" not found in RECIPES_DB'); return; }
 
@@ -104,77 +108,45 @@ function buildLegacyRecipesCompat(){
   });
 }
 
-/* meal-slot lookup for shared-meals logic */
-const RECIPE_SLOT = {
-  yogurt:'breakfast', omelette:'breakfast', lentil:'lunch', salmon:'dinner',
-  skyrbowl:'breakfast', eggsturkey:'breakfast', chickenfarro:'lunch',
-  chiapudding:'breakfast', tunasalad:'lunch', salmongreens:'dinner'
-};
-function isShared(key){ return !!SHARED[RECIPE_SLOT[key]]; }
+/* meal-slot lookup for shared-meals logic — RECIPE_SLOT_DB (data/recipes.js) already
+   covers every id in RECIPES_DB (the 10 legacy ids plus everything added in B2), so it
+   is the single source of truth here; nothing app-specific needs to be re-listed. */
+function isShared(key){ return !!SHARED[RECIPE_SLOT_DB[key]]; }
 
-/* ---------------- macro-split-driven meal plans ---------------- */
-const MEALPLANS = {
-  balanced: {
-    breakfast:{elena:'yogurt', partner:'omelette'},
-    lunch:'lentil', dinner:'salmon',
-    snack:{title:'Snack · 2 Brazil nuts + apple', emoji:'🌰', kcal:130, desc:'Covers your daily selenium target', tags:[]}
-  },
-  protein: {
-    breakfast:{elena:'skyrbowl', partner:'eggsturkey'},
-    lunch:'chickenfarro', dinner:'salmon',
-    snack:{title:'Snack · Cottage cheese & walnuts', emoji:'🧀', kcal:190, desc:'Extra protein between meals', tags:[['terra','High protein']]}
-  },
-  lowcarb: {
-    breakfast:{elena:'chiapudding', partner:'omelette'},
-    lunch:'tunasalad', dinner:'salmongreens',
-    snack:{title:'Snack · Almonds & cheese cubes', emoji:'🥜', kcal:170, desc:'Low-carb, keeps protein steady', tags:[['','Low-carb']]}
-  }
-};
+/* ---------------- household plan style (task C2) ----------------
+   householdStyle drives which recipes the planner (js/planner.js) considers: it's
+   derived from the current profile's macro split (see planner.js:styleOf) and mapped to
+   a RECIPES_DB style tag via planner.js:STYLE_DB_KEY ('protein' -> 'highprotein', the
+   other two keys are spelled the same). MEALPLANS (a hand-typed 3-style x 4-slot table)
+   and the static WEEK/7-day array are gone: js/planner.js:generateWeek() now picks real
+   recipes from RECIPES_DB for every day x slot x person, respecting avoid-lists, style,
+   calorie/protein targets and variety — see planner.js for the algorithm. The generated
+   result lives in `weekPlan` (below), not in a static table. */
+const HOUSEHOLD_STYLES = ['balanced', 'protein', 'lowcarb'];
 let householdStyle = 'balanced';
 let activeMenu = null;
+
+/* ---------------- the week plan (task C2) ----------------
+   Source of truth for every meal both people eat this week. Built by
+   js/planner.js:generateWeek(), kept fresh by js/planner.js:ensureWeekPlan() (regenerates
+   on style/avoid-list/calorie-target changes or when the stored week is from a previous
+   week), and read by renderWeek/renderTodayMeals/renderLogPlan/computeShoppingList
+   (rendering) and buildRebalanceSheet/applyRebalance (nutrient-coverage solver).
+
+   Shape: { v:1, weekStartDate:'YYYY-MM-DD' (the Monday this week starts), signature
+   (opaque string capturing the inputs that should trigger a regen), days: [ {date,
+   meals:{breakfast,lunch,dinner,snack}}, ...7 ] }. Each `meals[slot]` is either
+   {shared:true, recipeId, elena:{recipeId,portion,kcal,protein}, partner:{...}} (one
+   dish, two portions) or {shared:false, elena:{recipeId,portion,kcal,protein},
+   partner:{...}} (two different dishes). portion is the same "servings" unit
+   engine.js:recipeNutrition() scales ingredients by (1 = the recipe as written in
+   RECIPES_DB); kcal/protein are that recipe at that portion, already computed — never
+   re-derived from a static table. null until ensureWeekPlan() first runs (app.js boot). */
+let weekPlan = null;
 
 let recipeOrigin = 'today';
 let currentRecipeKey = 'salmon';
 let svE = 1, svM = 1.5, svS = 1;
-
-/* ---------------- week screen data ---------------- */
-const WEEK = [
-  {d:'Mon · Today', kcal:1800, today:true, meals:[
-    {slot:'Breakfast', emoji:'🥣', name:'Yogurt bowl', kcal:320, key:'yogurt'},
-    {slot:'Lunch', emoji:'🥗', name:'Lentil salad', kcal:430, key:'lentil'},
-    {slot:'Dinner', emoji:'🐟', name:'Salmon & quinoa', kcal:520, key:'salmon'}
-  ]},
-  {d:'Tue', kcal:1790, meals:[
-    {slot:'Breakfast', emoji:'🍳', name:'Veggie omelette', kcal:310, key:'yogurt'},
-    {slot:'Lunch', emoji:'🍲', name:'Chicken & farro bowl', kcal:460, key:'lentil'},
-    {slot:'Dinner', emoji:'🐠', name:'Sea bass, white beans', kcal:500, key:'salmon'}
-  ]},
-  {d:'Wed', kcal:1810, meals:[
-    {slot:'Breakfast', emoji:'🍮', name:'Chia pudding', kcal:300, key:'yogurt'},
-    {slot:'Lunch', emoji:'🥙', name:'Tuna & chickpea salad', kcal:450, key:'lentil'},
-    {slot:'Dinner', emoji:'🍗', name:'Turkey & roasted veg', kcal:520, key:'salmon'}
-  ]},
-  {d:'Thu', kcal:1800, meals:[
-    {slot:'Breakfast', emoji:'🥑', name:'Eggs & avocado toast (GF)', kcal:330, key:'yogurt'},
-    {slot:'Lunch', emoji:'🍲', name:'Minestrone + sardines', kcal:420, key:'lentil'},
-    {slot:'Dinner', emoji:'🥘', name:'Tofu stir-fry', kcal:490, key:'salmon'}
-  ]},
-  {d:'Fri', kcal:1830, meals:[
-    {slot:'Breakfast', emoji:'🥤', name:'Berry smoothie', kcal:310, key:'yogurt'},
-    {slot:'Lunch', emoji:'🍣', name:'Salmon poke bowl', kcal:470, key:'salmon'},
-    {slot:'Dinner', emoji:'🥩', name:'Lean beef & greens', kcal:530, key:'lentil'}
-  ]},
-  {d:'Sat', kcal:1950, meals:[
-    {slot:'Breakfast', emoji:'🍳', name:'Shakshuka', kcal:340, key:'yogurt'},
-    {slot:'Lunch', emoji:'🥗', name:'Big Greek salad', kcal:480, key:'lentil'},
-    {slot:'Dinner', emoji:'🍗', name:'Slow-roast chicken', kcal:560, key:'salmon'}
-  ]},
-  {d:'Sun', kcal:1880, meals:[
-    {slot:'Breakfast', emoji:'🥣', name:'Oats & walnuts', kcal:320, key:'yogurt'},
-    {slot:'Lunch', emoji:'🍳', name:'Roast veg frittata', kcal:440, key:'lentil'},
-    {slot:'Dinner', emoji:'🦪', name:'Mussels & tomato', kcal:520, key:'salmon'}
-  ]}
-];
 
 /* ---------------- log / plan-first state ---------------- */
 // Keyed by slot name (breakfast/lunch/dinner/snack), not recipe key — rebuilt by
@@ -194,6 +166,11 @@ const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack
 // goalAdj is each person's goal offset from maintenance: Elena −325 (gentle deficit),
 // Andrea +60 (small muscle-gain surplus) — chosen so current stats land exactly on the
 // familiar 1,820 / 2,480 defaults. calCustom is null while following the recommendation.
+// avoid: per-person allergen/dislike keys (subset of data/recipes.js VALID_AVOID —
+// lactose, gluten, shellfish, nuts, spicy, raw-onion), read by the planner's hard
+// avoid-list filter (task C2 rule (a)). Elena's defaults match the "Foods to avoid"
+// pills already in the Profile screen mockup (index.html, still static/unwired there —
+// editing them isn't part of this task); Andrea has none today.
 let currentProf = 'elena';
 const PROF = {
   elena:   {seg:'Elena', av:'E',
@@ -203,7 +180,7 @@ const PROF = {
             goalTag:'🎯 Gentle fat loss · 🦋 Hashimoto',
             coachT:'Today leans thyroid-friendly 🦋', hashi:true,
             coachD:'Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.',
-            kP:26, kC:41, kF:33,
+            kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'],
             consumed:{p:28,c:34,f:12}, defaultSplit:{P:26,C:41,F:33}, splitNote:'', coachOverrideT:null, coachOverrideD:null},
   partner: {seg:'Andrea', av:'A',
             sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
@@ -212,7 +189,7 @@ const PROF = {
             goalTag:'🎯 Muscle gain · ❤️ Heart-smart',
             coachT:'Today is built for muscle 💪', hashi:false,
             coachD:'Higher protein and a small surplus. Same Mediterranean base as Elena, scaled up — shared cooking, two targets.',
-            kP:26, kC:43, kF:31,
+            kP:26, kC:43, kF:31, avoid:[],
             consumed:{p:42,c:58,f:18}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
 };
 
@@ -224,9 +201,15 @@ const PROF = {
    boot from the inputs below (deterministic-numbers rule). Only
    user-editable inputs and selection state are persisted:
      - both PROF entries' editable fields (not goalAdj — that's a fixed
-       per-person constant, not user-editable)
+       per-person constant, not user-editable), including each person's
+       avoid-list (task C2)
      - SHARED slot toggles, svE/svM/svS servings, householdStyle,
        currentProf
+     - the generated weekPlan (task C2) — the plan itself IS persisted
+       (unlike other derived values) since regenerating it is a real
+       computation, not a formatting step; js/planner.js:ensureWeekPlan()
+       re-validates it against the live state on every load and
+       regenerates when the inputs that produced it have changed
      - checked shopping-list items, keyed by ingredient NAME (ids are
        positional and change whenever the list recomputes)
      - today's plan-first log status (confirmed/skipped + what was
@@ -261,14 +244,16 @@ let todayLog = { date: todayISO(), slots: {} };
 // Fields copied verbatim between PROF[key] and the store. Deliberately
 // excludes goalAdj (fixed, not user-editable) and everything else on PROF
 // (consumed, targets, ring/bar strings, coach text…) which is recomputed
-// by recomputeProf()/applyProf() every render, never stored.
-const PERSIST_PROFILE_FIELDS = ['sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF'];
+// by recomputeProf()/applyProf() every render, never stored. `avoid` (task C2) is an
+// array field, handled specially below (PROFILE_FIELD_TYPE / the load loop) since every
+// other persisted profile field is a plain string/number.
+const PERSIST_PROFILE_FIELDS = ['sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid'];
 
 function buildSnapshot(){
   const profiles = {};
   Object.keys(PROF).forEach(function(key){
     const p = PROF[key], out = {};
-    PERSIST_PROFILE_FIELDS.forEach(function(f){ out[f] = p[f]; });
+    PERSIST_PROFILE_FIELDS.forEach(function(f){ out[f] = (f === 'avoid') ? (p.avoid || []).slice() : p[f]; });
     profiles[key] = out;
   });
   return {
@@ -280,7 +265,13 @@ function buildSnapshot(){
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
     shopping: { checked: Object.keys(checkedShopNames).filter(function(n){ return checkedShopNames[n]; }) },
-    log: todayLog
+    log: todayLog,
+    // weekPlan (task C2): the generated week is plain JSON data (no functions), so it's
+    // stored verbatim; ensureWeekPlan() (js/planner.js) re-validates its signature and
+    // weekStartDate against the live profile/style/avoid/SHARED state on every load and
+    // regenerates when stale — this is just the last-known plan, not a cache that's
+    // trusted blindly.
+    weekPlan: weekPlan
   };
 }
 
@@ -302,7 +293,7 @@ function loadState(){
   if(!saved || typeof saved !== 'object') saved = {};
 
   if(typeof saved.currentProf === 'string' && PROF[saved.currentProf]) currentProf = saved.currentProf;
-  if(typeof saved.householdStyle === 'string' && MEALPLANS[saved.householdStyle]) householdStyle = saved.householdStyle;
+  if(typeof saved.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(saved.householdStyle) !== -1) householdStyle = saved.householdStyle;
 
   if(saved.shared && typeof saved.shared === 'object'){
     Object.keys(SHARED).forEach(function(slot){
@@ -317,10 +308,12 @@ function loadState(){
   }
 
   // Per-field type check: 'string' fields must be a string, 'number' fields must be a
-  // number, and calCustom is special-cased since null is its valid "no override" value.
+  // number, calCustom is special-cased since null is its valid "no override" value, and
+  // avoid (task C2) must be an array of strings.
   const PROFILE_FIELD_TYPE = {
     sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
-    activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number'
+    activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
+    avoid: 'string[]'
   };
   if(saved.profiles && typeof saved.profiles === 'object'){
     Object.keys(PROF).forEach(function(key){
@@ -330,8 +323,10 @@ function loadState(){
       PERSIST_PROFILE_FIELDS.forEach(function(f){
         if(!Object.prototype.hasOwnProperty.call(sp, f)) return;
         const v = sp[f], want = PROFILE_FIELD_TYPE[f];
-        const ok = want === 'number|null' ? (v === null || typeof v === 'number') : (typeof v === want);
-        if(ok) p[f] = v;
+        const ok = want === 'number|null' ? (v === null || typeof v === 'number')
+          : want === 'string[]' ? (Array.isArray(v) && v.every(function(x){ return typeof x === 'string'; }))
+          : (typeof v === want);
+        if(ok) p[f] = want === 'string[]' ? v.slice() : v;
       });
     });
   }
@@ -351,5 +346,19 @@ function loadState(){
     onboarded = saved.onboarded;
   } else {
     try{ onboarded = !!localStorage.getItem(LEGACY_ONBOARD_KEY); }catch(e){ onboarded = false; }
+  }
+
+  // weekPlan (task C2): loaded as-is; js/planner.js:ensureWeekPlan() (called once at
+  // boot, and again on every applyProf/toggleShared) checks weekPlan.signature and
+  // weekStartDate against the live state and regenerates if either is stale. A
+  // structurally-wrong stored value (wrong day count, missing fields) is discarded here
+  // rather than trusted, so a corrupt store can't crash rendering.
+  if(saved.weekPlan && typeof saved.weekPlan === 'object'
+     && typeof saved.weekPlan.weekStartDate === 'string'
+     && typeof saved.weekPlan.signature === 'string'
+     && Array.isArray(saved.weekPlan.days) && saved.weekPlan.days.length === 7){
+    weekPlan = saved.weekPlan;
+  } else {
+    weekPlan = null;
   }
 }

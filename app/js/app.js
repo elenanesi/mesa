@@ -26,13 +26,13 @@ function openRecipe(key, origin){
 }
 
 function openBreakfastRecipe(){
-  openRecipe(activeMenu.breakfastKey, 'today');
+  openRecipe(activeMenu.breakfast.recipeId, 'today');
 }
 function openLunchRecipe(){
-  openRecipe(activeMenu.lunchKey, 'today');
+  openRecipe(activeMenu.lunch.recipeId, 'today');
 }
 function openDinnerRecipe(){
-  openRecipe(activeMenu.dinnerKey, 'today');
+  openRecipe(activeMenu.dinner.recipeId, 'today');
 }
 
 // top segmented control (Today screen profile switch)
@@ -98,8 +98,9 @@ function maybeShowOnboarding(){
 }
 
 // Replays today's persisted plan-first log status (state.js: todayLog) onto the cards
-// renderLogPlan() just built fresh from the active menu. Runs once at boot, after the
-// first applyProf() — silent:true suppresses the confirm/skip toast for a replay, not a
+// renderLogPlan() just built fresh from the active menu. Called from the END of every
+// renderLogPlan() run (task C2 — confirms survive plan re-renders within the same day,
+// not just boot) — silent:true suppresses the confirm/skip toast for a replay, not a
 // live tap. Breakfast is never replayed: it has no confirm/skip UI, always auto-done.
 function restoreTodayLog(){
   Object.keys(todayLog.slots).forEach(function(slot){
@@ -124,10 +125,12 @@ function restoreTodayLog(){
 /* ---------------- init ---------------- */
 // Must run after data/foods.js, data/recipes.js and engine.js (recipeNutrition) have
 // all loaded, and before anything reads RECIPES — see state.js for what this builds.
+// applyProf() -> ensureWeekPlan() (planner.js) either keeps the persisted weekPlan (same
+// signature + same week) or regenerates it deterministically, then persists; it also
+// runs renderLogPlan(), which replays today's persisted confirms via restoreTodayLog().
 buildLegacyRecipesCompat();
 loadState();
 applyProf(currentProf);
 renderRecipe('salmon');
 recipeOrigin = 'today';
-restoreTodayLog();
 maybeShowOnboarding();

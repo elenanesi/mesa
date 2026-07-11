@@ -139,18 +139,13 @@
       <div class="card" style="padding:14px">
         <div class="row between" style="margin-bottom:4px">
           <b style="font-size:14px">Weekly nutrient coverage <span class="chip-computed">✓ computed</span></b>
-          <span class="pill">On track</span>
+          <span class="pill" id="coveragePill">On track</span>
         </div>
-        <div class="nutri" style="margin-top:10px">
-          <div class="n"><div class="nt"><span>Protein</span><b>96%</b></div><div class="nbar"><i style="width:96%"></i></div></div>
-          <div class="n"><div class="nt"><span>Fiber</span><b>88%</b></div><div class="nbar"><i style="width:88%"></i></div></div>
-          <div class="n"><div class="nt"><span>Omega-3</span><b>92%</b></div><div class="nbar"><i style="width:92%"></i></div></div>
-          <div class="n"><div class="nt"><span>Selenium</span><b>100%</b></div><div class="nbar"><i style="width:100%"></i></div></div>
-          <div class="n low" id="vitDChip"><div class="nt"><span>Vitamin D</span><b>61%</b></div><div class="nbar"><i style="width:61%"></i></div></div>
-          <div class="n"><div class="nt"><span>Iron</span><b>84%</b></div><div class="nbar"><i style="width:84%"></i></div></div>
-          <div class="n"><div class="nt"><span>Sat. fat</span><b>64% of cap</b></div><div class="nbar"><i style="width:64%"></i></div><div class="cap-note">Keep under — staying below is good</div></div>
-        </div>
-        <div class="why" style="margin-top:12px" id="vitDNote">🦋 <b>Vitamin D is trending low.</b> Mesa added eggs + a fortified option to Thu & Sat. Sunlight helps too — supplement only with your doctor.</div>
+        <!-- Rendered by renderNutrientChips() (render.js): the 4 real computed metrics
+             — omega-3 meals/wk, selenium sources/wk (thyroid goal on), fiber g/day avg,
+             sat-fat share of fat — from planner.js:computeWeeklyCoverage (task C2). -->
+        <div class="nutri" style="margin-top:10px" id="nutriChips"></div>
+        <div class="why" style="margin-top:12px" id="coverageNote"></div>
       </div>
 
       <h2>7-day plan</h2>

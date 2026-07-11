@@ -54,7 +54,7 @@ function updateServings(){
     total = +(svE + svM).toFixed(1);
     document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
     document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' servings';
-    const slot = RECIPE_SLOT[currentRecipeKey] || 'meal';
+    const slot = RECIPE_SLOT_DB[currentRecipeKey] || 'meal';
     document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once, plated per target';
   } else {
     document.getElementById('svSoloVal').textContent = svS + '×';
@@ -117,33 +117,82 @@ function markEatenFromRecipe(){
 }
 
 /* ---------------- week screen rendering ---------------- */
+// weekPlan.weekStartDate is always a Monday (planner.js:mondayOfWeek), so the day index
+// maps straight onto Mon..Sun.
+const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+
+// Paints the 7-day list for the CURRENT person from weekPlan (task C2): every kcal
+// shown is that person's portion-scaled computed value, day totals are real sums over
+// the four slots, and "today" follows weekPlan's day index rather than a hardcoded row.
 function renderWeek(){
-  // Regenerate every day's meal row to match the active style — simplest deterministic
-  // approach; a fuller version would vary specific dishes per day, but this keeps the
-  // whole week visibly consistent with the current split at a fraction of the data.
-  if(activeMenu){
-    const bf = RECIPES[activeMenu.breakfastKey], lu = RECIPES[activeMenu.lunchKey], di = RECIPES[activeMenu.dinnerKey];
-    WEEK.forEach(function(day){
-      day.meals[0] = {slot:'Breakfast', emoji:bf.emoji, name:bf.title, kcal:bf.kcal, key:activeMenu.breakfastKey};
-      day.meals[1] = {slot:'Lunch', emoji:lu.emoji, name:lu.title, kcal:lu.kcal, key:activeMenu.lunchKey};
-      day.meals[2] = {slot:'Dinner', emoji:di.emoji, name:di.title, kcal:di.kcal, key:activeMenu.dinnerKey};
-    });
-  }
+  ensureWeekPlan();
+  const todayIdx = todayDayIndex();
+  const person = currentProf;
   const el = document.getElementById('weekList');
-  el.innerHTML = WEEK.map(function(day, di){
-    const rows = day.meals.map(function(m){
-      const slotKey = m.slot.toLowerCase();
-      const together = SHARED[slotKey] ? ' <span class="pill together mini">👥 Together</span>' : '';
-      return '<div class="day-meal-row" onclick="event.stopPropagation();openRecipe(\''+m.key+'\',\'week\')">'
-        + '<div class="dm-e">'+m.emoji+'</div>'
-        + '<div class="dm-t">'+m.name+'<small>'+m.slot+together+'</small></div>'
-        + '<div class="dm-k">'+m.kcal+'</div></div>';
+  el.innerHTML = weekPlan.days.map(function(day, di){
+    let dayKcal = 0;
+    const titles = [];
+    const rows = SLOT_ORDER.map(function(slot){
+      const m = day.meals[slot];
+      const entry = m[person];
+      const r = RECIPES[entry.recipeId];
+      if(!r) return '';
+      dayKcal += entry.kcal;
+      titles.push(r.title);
+      const together = m.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
+      return '<div class="day-meal-row" onclick="event.stopPropagation();openRecipe(\''+entry.recipeId+'\',\'week\')">'
+        + '<div class="dm-e">'+r.emoji+'</div>'
+        + '<div class="dm-t">'+r.title+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
+        + '<div class="dm-k">'+Math.round(entry.kcal)+'</div></div>';
     }).join('');
-    return '<div class="day'+(day.today?' today':'')+'" id="wd'+di+'" onclick="toggleDay('+di+')">'
-      + '<div class="dh"><span class="dn">'+day.d+'</span><span class="dk">~'+day.kcal+' kcal <span class="chev">⌄</span></span></div>'
-      + '<div class="dmeals">'+day.meals.map(function(m){return m.name;}).join(' · ')+'</div>'
+    const label = DAY_NAMES[di] + (di === todayIdx ? ' · Today' : '');
+    return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" onclick="toggleDay('+di+')">'
+      + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(dayKcal))+' kcal <span class="chev">⌄</span></span></div>'
+      + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+rows+'</div></div>';
   }).join('');
+  renderNutrientChips();
+}
+
+// The Week screen's "Weekly nutrient coverage" card: the 4 REAL computed metrics from
+// planner.js:computeWeeklyCoverage (omega-3 meals/wk ≥3, selenium sources/wk ≥3 while
+// Elena's thyroid goal is on, fiber g/day avg vs 25g for whoever of the two is lower,
+// sat-fat share of fat ≤33%), replacing the hardcoded Vitamin D demo chips. The chip
+// markup (.n/.nt/.nbar) is unchanged — same visual design, real numbers.
+function coverageValueText(g){
+  if(g.key === 'fiber') return g.value + ' g/day';
+  if(g.key === 'satFat') return g.value + '% of fat';
+  return g.value + '/wk';
+}
+function coverageTargetText(g){
+  if(g.key === 'fiber') return g.target + ' g/day';
+  if(g.key === 'satFat') return '≤' + g.target + '%';
+  return '≥' + g.target + '/wk';
+}
+function renderNutrientChips(){
+  const wrap = document.getElementById('nutriChips');
+  if(!wrap) return;
+  const gaps = coverageGaps(computeWeeklyCoverage(weekPlan));
+  const order = ['omega3', 'selenium', 'fiber', 'satFat'].filter(function(k){
+    return k !== 'selenium' || PROF.elena.hashi; // selenium target tracked only with the thyroid goal on
+  });
+  wrap.innerHTML = order.map(function(k){
+    const g = gaps[k];
+    const low = g.gap > 1e-9;
+    const capNote = g.cap ? '<div class="cap-note">Keep under ' + g.target + '% — staying below is good</div>' : '';
+    return '<div class="n'+(low ? ' low' : '')+'"><div class="nt"><span>'+g.label+'</span><b>'+coverageValueText(g)+'</b></div>'
+      + '<div class="nbar"><i style="width:'+g.pct+'%"></i></div>'+capNote+'</div>';
+  }).join('');
+  const worstKey = order.reduce(function(a, b){ return gaps[b].gap > gaps[a].gap ? b : a; });
+  const worst = gaps[worstKey];
+  const pill = document.getElementById('coveragePill');
+  if(pill) pill.textContent = worst.gap > 1e-9 ? 'Needs a nudge' : 'On track';
+  const note = document.getElementById('coverageNote');
+  if(note){
+    note.innerHTML = worst.gap > 1e-9
+      ? '📌 <b>' + worst.label + ' is the biggest gap</b> — at ' + coverageValueText(worst) + ' vs a ' + coverageTargetText(worst) + ' target. “Re-balance my week” proposes the fewest swaps to close it.'
+      : '✅ <b>All coverage targets met this week.</b> Omega-3, ' + (PROF.elena.hashi ? 'selenium, ' : '') + 'fiber and saturated fat are all where they should be.';
+  }
 }
 
 function toggleDay(i){
@@ -151,9 +200,14 @@ function toggleDay(i){
 }
 
 /* ---------------- bottom sheet: generic open/close ---------------- */
+// mealKey may be a slot name (from Today/Log cards) or a recipe id (from the recipe
+// screen) — planner.js:resolveSwapContext maps either to (dayIndex, slot, person) on
+// TODAY's plan for the current person. buildSwapSheet stores the computed alternatives
+// on swapCtx so chooseSwap (planner.js) applies exactly what was shown.
 function openSwap(mealKey, targetElId){
-  swapCtx = {mealKey: mealKey, targetElId: targetElId};
-  document.getElementById('sheetBody').innerHTML = buildSwapSheet(mealKey);
+  const ctx = resolveSwapContext(mealKey);
+  swapCtx = {dayIndex: ctx.dayIndex, slot: ctx.slot, person: ctx.person, targetElId: targetElId};
+  document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
@@ -193,11 +247,11 @@ function buildShopSheet(){
   const list = computeShoppingList();
   const byCat = {};
   Object.keys(list.totals).forEach(function(name){
-    const cat = SHOP_CATEGORY[name] || 'Pantry';
+    const cat = foodCategoryForName(name); // real FOODS[..].cat, no hand-typed map (task C2)
     (byCat[cat] = byCat[cat] || []).push(name);
   });
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Shopping list <span class="chip-computed">✓ computed</span></h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub">For both of you · 7 days · totals summed from this week\'s plan at your portions (Elena '+svE+'× · Andrea '+svM+'×). Shared meals are counted once. Snacks are pantry-level and not listed.</p>';
+    + '<p class="sub">For both of you · 7 days · totals summed from this week\'s plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
   let idx = 0;
   SHOP_CAT_ORDER.forEach(function(cat){
     const names = byCat[cat];
@@ -223,17 +277,48 @@ function buildShopSheet(){
   return html;
 }
 
-/* ---------------- re-balance week (presentation only — see planner.js note) ---------------- */
+/* ---------------- re-balance week (task C2 item 4 — real solver) ---------------- */
+// buildRebalanceSheet asks planner.js:proposeRebalanceSwaps() for the real worst
+// coverage gap and the ≤2 swaps (same avoid/style/kcal-fit rules as generation) that
+// most improve it; applyRebalance() commits the proposed plan, persists, and re-renders
+// every surface that shows the plan (chips included).
+let rebalanceProposal = null;
+
+function rebalanceValueAfter(prop){
+  // The worst metric's value on the proposed plan, formatted like the chips.
+  const gaps = coverageGaps(prop.after);
+  return coverageValueText(gaps[prop.metricKey]);
+}
+
 function buildRebalanceSheet(){
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance this week</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub">Keeps fixed: your daily calories & protein, foods you avoid, shared dinners. Optimises: closes weekly nutrient gaps (right now: Vitamin D 61%), adds variety where meals repeat. Changes as few meals as possible.</p>'
+  rebalanceProposal = proposeRebalanceSwaps();
+  const g = rebalanceProposal.gapInfo;
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance this week</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  if(!rebalanceProposal.swaps.length){
+    const allMet = g.gap <= 1e-9;
+    html += '<p class="sub">' + (allMet
+      ? 'Nothing to fix — all four weekly coverage targets are already met. Nicely balanced.'
+      : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal swap (same slot & style, respecting avoid-lists) improves it this week.')
+      + '</p>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+    return html;
+  }
+  html += '<p class="sub">Keeps fixed: your daily calories & protein, foods you avoid, shared meals. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Changes as few meals as possible.</p>'
     + '<div class="card" style="padding:14px">'
-    + '<b style="font-size:13px">Would change 2 meals</b>'
-    + '<div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🐟</div><div class="li-t">Thu lunch → Sardine & white bean salad<small>+ Vitamin D</small></div></div>'
-    + '<div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--sage-tint)">🍳</div><div class="li-t">Sat breakfast → Shakshuka with fortified feta<small>+ Vitamin D</small></div></div>'
-    + '</div>'
+    + '<b style="font-size:13px">Would change ' + rebalanceProposal.swaps.length + ' meal' + (rebalanceProposal.swaps.length > 1 ? 's' : '') + '</b>';
+  rebalanceProposal.swaps.forEach(function(s, i){
+    const to = RECIPES[s.toRecipeId];
+    const who = s.unit.shared ? '' : (s.unit.person === 'elena' ? ' (Elena)' : ' (Andrea)');
+    const last = i === rebalanceProposal.swaps.length - 1;
+    html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + to.emoji + '</div>'
+      + '<div class="li-t">' + DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + who + ' → ' + to.title
+      + '<small>+ ' + g.label + '</small></div></div>';
+  });
+  html += '</div>'
+    + '<p class="sub">' + g.label + ' after these swaps: <b>' + rebalanceValueAfter(rebalanceProposal) + '</b> (now ' + coverageValueText(g) + ').</p>'
     + '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+  return html;
 }
 
 function openRebalanceSheet(){
@@ -244,16 +329,20 @@ function openRebalanceSheet(){
 }
 
 function applyRebalance(){
+  if(!rebalanceProposal || !rebalanceProposal.swaps.length){ closeSheet(); return; }
+  const g = rebalanceProposal.gapInfo;
+  const afterText = rebalanceValueAfter(rebalanceProposal);
+  weekPlan = rebalanceProposal.resultPlan; // same signature — ensureWeekPlan won't discard it
+  rebalanceProposal = null;
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
   closeSheet();
-  toast('✓ Week re-balanced — Vitamin D now 89%');
-  const chip = document.getElementById('vitDChip');
-  if(chip){
-    chip.classList.remove('low');
-    const b = chip.querySelector('.nt b'); if(b) b.textContent = '89%';
-    const bar = chip.querySelector('.nbar i'); if(bar) bar.style.width = '89%';
-  }
-  const note = document.getElementById('vitDNote');
-  if(note) note.innerHTML = '✅ <b>Vitamin D re-balanced to 89%.</b> Thu & Sat swaps added fortified options — nicely varied for the rest of the week.';
+  toast('✓ Week re-balanced — ' + g.label + ' now ' + afterText);
 }
 
 /* ---------------- log / plan-first confirm ---------------- */
@@ -282,6 +371,11 @@ function logConfirm(key, silent){
   if(!silent) toast('✓ Logged to today');
 
   todayLog.slots[key] = {status:'confirmed', title:TITLES[key], emoji:EMOJI[key], kcal:LOGKCAL[key]};
+  // Task C2 item 6: the Today ring/macros read consumed values derived from confirmed
+  // slots of today's real plan, not demo constants — refresh them on every confirm.
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
   persist();
 }
 
@@ -301,34 +395,34 @@ function logSkip(key, silent){
   persist();
 }
 
-// Builds the four "Today's plan" cards on the Log screen from the active menu.
-// Re-running this (e.g. after a macro-split rebuild) resets any confirm/skip taps —
-// acceptable per spec, since the underlying plan itself just changed.
+// Builds the four "Today's plan" cards on the Log screen from the active menu (today's
+// row of weekPlan for the current person — kcal/protein are portion-scaled computed
+// values). Re-running this rebuilds the cards fresh, then replays today's persisted
+// confirm/skip status back onto them (restoreTodayLog, app.js) so confirms survive
+// profile switches and plan re-renders within the same day.
 function renderLogPlan(){
   if(!activeMenu) return;
-  const bf = RECIPES[activeMenu.breakfastKey];
-  EMOJI.breakfast = bf.emoji; TITLES.breakfast = bf.title; LOGKCAL.breakfast = bf.kcal;
+  const bfv = activeMenu.breakfast, bf = RECIPES[bfv.recipeId];
+  EMOJI.breakfast = bf.emoji; TITLES.breakfast = bf.title; LOGKCAL.breakfast = bfv.kcal;
   const bfCard = document.getElementById('log-breakfast');
   bfCard.className = 'card meal done';
   bfCard.style.cursor = 'default';
   bfCard.innerHTML = '<div class="thumb">'+bf.emoji+'</div><div class="info">'
-    + '<div class="row between"><span class="t">'+bf.title+'</span><span class="kcal">'+bf.kcal+'</span></div>'
-    + '<div class="d">Breakfast · '+bf.protein+'g protein</div>'
+    + '<div class="row between"><span class="t">'+bf.title+'</span><span class="kcal">'+bfv.kcal+'</span></div>'
+    + '<div class="d">Breakfast · '+bfv.protein+'g protein</div>'
     + '<div class="confirmed-tag">✓ Logged · earlier today</div></div>';
 
-  const lu = RECIPES[activeMenu.lunchKey];
-  buildLogSlotCard('lunch', lu.emoji, lu.title, lu.kcal, 'Lunch · '+lu.protein+'g protein');
+  ['lunch', 'dinner', 'snack'].forEach(function(slot){
+    const v = activeMenu[slot], r = RECIPES[v.recipeId];
+    buildLogSlotCard(slot, r.emoji, r.title, v.kcal, SLOT_LABEL[slot] + ' · ' + v.protein + 'g protein');
+  });
 
-  const di = RECIPES[activeMenu.dinnerKey];
-  buildLogSlotCard('dinner', di.emoji, di.title, di.kcal, 'Dinner · '+di.protein+'g protein');
-
-  const sn = activeMenu.snack;
-  buildLogSlotCard('snack', sn.emoji, sn.title, sn.kcal, sn.desc);
-
-  logTotal = bf.kcal;
+  logTotal = bfv.kcal;
   document.getElementById('logTotalPill').textContent = logTotal + ' kcal';
   document.getElementById('todaySoFar').innerHTML = '<div class="logitem"><div class="li-i">'+bf.emoji+'</div>'
-    + '<div class="li-t">'+bf.title+'<small>Breakfast · earlier today</small></div><div class="li-k">'+bf.kcal+'</div></div>';
+    + '<div class="li-t">'+bf.title+'<small>Breakfast · earlier today</small></div><div class="li-k">'+bfv.kcal+'</div></div>';
+
+  if(typeof restoreTodayLog === 'function') restoreTodayLog();
 }
 
 function buildLogSlotCard(slot, emoji, title, kcal, desc){
@@ -356,7 +450,13 @@ function toggleShared(slot, el){
   toast(SHARED[slot]
     ? SLOT_LABEL[slot] + ' is now shared — one recipe, two portions'
     : SLOT_LABEL[slot] + ' is now solo — planned per person');
+  // Shared-toggles are part of the plan signature, so the next ensureWeekPlan() (inside
+  // renderTodayMeals -> computeActiveMenu) regenerates the week; refresh every surface.
   renderTogetherPills();
+  renderLogPlan();
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
   renderWeek();
   if(document.getElementById('recipe').classList.contains('active')) updateServings();
   persist();
@@ -366,45 +466,44 @@ function renderTogetherPills(){
   renderTodayMeals();
 }
 
-// Renders all four Today cards from the active menu (currentProf's breakfast + the
-// shared lunch/dinner/snack for the household's current plan style).
+// Renders all four Today cards from the active menu — today's row of weekPlan for the
+// current person (task C2). Kcal shown are the person's portion-scaled computed values.
 function renderTodayMeals(){
   activeMenu = computeActiveMenu();
-  const bf = RECIPES[activeMenu.breakfastKey];
+
+  function tagsHtml(r, slot, pillId){
+    let html = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+    html += '<span class="pill together mini" id="'+pillId+'" style="display:'+(SHARED[slot]?'inline-flex':'none')+'">👥 Together</span>';
+    return html;
+  }
+
+  const bfv = activeMenu.breakfast, bf = RECIPES[bfv.recipeId];
   document.getElementById('bfEmoji').textContent = bf.emoji;
   document.getElementById('bfTitle').textContent = bf.title;
-  document.getElementById('bfKcal').textContent = bf.kcal;
-  document.getElementById('bfDesc').textContent = 'Breakfast · ' + bf.protein + 'g protein';
-  let bfTags = bf.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-  bfTags += '<span class="pill together mini" id="pillBreakfast" style="display:'+(SHARED.breakfast?'inline-flex':'none')+'">👥 Together</span>';
-  document.getElementById('bfTags').innerHTML = bfTags;
+  document.getElementById('bfKcal').textContent = bfv.kcal;
+  document.getElementById('bfDesc').textContent = 'Breakfast · ' + bfv.protein + 'g protein';
+  document.getElementById('bfTags').innerHTML = tagsHtml(bf, 'breakfast', 'pillBreakfast');
 
-  const lu = RECIPES[activeMenu.lunchKey];
+  const luv = activeMenu.lunch, lu = RECIPES[luv.recipeId];
   document.getElementById('lunchThumb').textContent = lu.emoji;
   document.getElementById('lunchTitle').textContent = lu.title;
-  document.getElementById('lunchKcal').textContent = lu.kcal;
-  document.getElementById('lunchDesc').textContent = 'Lunch · ' + lu.protein + 'g protein';
-  let luTags = lu.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-  luTags += '<span class="pill together mini" id="pillLunch" style="display:'+(SHARED.lunch?'inline-flex':'none')+'">👥 Together</span>';
-  document.getElementById('lunchTags').innerHTML = luTags;
+  document.getElementById('lunchKcal').textContent = luv.kcal;
+  document.getElementById('lunchDesc').textContent = 'Lunch · ' + luv.protein + 'g protein';
+  document.getElementById('lunchTags').innerHTML = tagsHtml(lu, 'lunch', 'pillLunch');
 
-  const di = RECIPES[activeMenu.dinnerKey];
+  const div_ = activeMenu.dinner, di = RECIPES[div_.recipeId];
   document.getElementById('dinnerThumb').textContent = di.emoji;
   document.getElementById('dinnerTitle').textContent = di.title;
-  document.getElementById('dinnerKcal').textContent = di.kcal;
-  document.getElementById('dinnerDesc').textContent = 'Dinner · ' + di.protein + 'g protein';
-  let diTags = di.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-  diTags += '<span class="pill together mini" id="pillDinner" style="display:'+(SHARED.dinner?'inline-flex':'none')+'">👥 Together</span>';
-  document.getElementById('dinnerTags').innerHTML = diTags;
+  document.getElementById('dinnerKcal').textContent = div_.kcal;
+  document.getElementById('dinnerDesc').textContent = 'Dinner · ' + div_.protein + 'g protein';
+  document.getElementById('dinnerTags').innerHTML = tagsHtml(di, 'dinner', 'pillDinner');
 
-  const sn = activeMenu.snack;
+  const snv = activeMenu.snack, sn = RECIPES[snv.recipeId];
   document.getElementById('snackThumbEl').textContent = sn.emoji;
   document.getElementById('snackTitleEl').textContent = sn.title;
-  document.getElementById('snackKcalEl').textContent = sn.kcal;
-  document.getElementById('snackDescEl').textContent = sn.desc;
-  let snTags = (sn.tags||[]).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-  snTags += '<span class="pill together mini" id="pillSnack" style="display:'+(SHARED.snack?'inline-flex':'none')+'">👥 Together</span>';
-  document.getElementById('snackTags').innerHTML = snTags;
+  document.getElementById('snackKcalEl').textContent = snv.kcal;
+  document.getElementById('snackDescEl').textContent = 'Snack · ' + snv.protein + 'g protein';
+  document.getElementById('snackTags').innerHTML = tagsHtml(sn, 'snack', 'pillSnack');
 }
 
 /* ---------------- editable basics ---------------- */
@@ -631,15 +730,13 @@ function scheduleMenuRebuild(){
   }, 600);
 }
 
-function applyProf(key){
-  currentProf = key;
-  const p=PROF[key];
-  recomputeProf(key);
+// The Today screen's ring + macro bars for the current profile — split out of applyProf
+// so logConfirm/chooseSwap/applyRebalance can refresh consumed-so-far numbers without
+// re-running the whole profile render cycle.
+function refreshRingAndBars(){
+  const p = PROF[currentProf];
   document.getElementById('calLeft').textContent=p.calLeft;
   document.getElementById('calGoal').textContent=p.calGoal;
-  document.getElementById('goalTag').textContent=p.goalTag;
-  document.getElementById('coachT').textContent=p.coachOverrideT || p.coachT;
-  document.getElementById('coachD').textContent=p.coachOverrideD || p.coachD;
   document.getElementById('mp').textContent=p.mp;
   document.getElementById('mc').textContent=p.mc;
   document.getElementById('mf').textContent=p.mf;
@@ -647,10 +744,22 @@ function applyProf(key){
   document.getElementById('bc').style.width=p.bc;
   document.getElementById('bff').style.width=p.bff;
   document.getElementById('calRing').style.strokeDashoffset=p.off;
+  document.getElementById('fatSplit').textContent = '💚 ' + p.fatGood + 'g good fats · ' + p.fatSat + 'g sat.';
+}
+
+function applyProf(key){
+  currentProf = key;
+  const p=PROF[key];
+  ensureWeekPlan();       // regenerate the plan first if its inputs changed (task C2)
+  recomputeConsumed(key); // consumed-so-far from today's confirmed slots of the real plan
+  recomputeProf(key);
+  refreshRingAndBars();
+  document.getElementById('goalTag').textContent=p.goalTag;
+  document.getElementById('coachT').textContent=p.coachOverrideT || p.coachT;
+  document.getElementById('coachD').textContent=p.coachOverrideD || p.coachD;
   document.getElementById('profAv').textContent=p.av;
   renderBasics();
   document.getElementById('hashiOpt').style.display = p.hashi ? 'flex':'none';
-  document.getElementById('fatSplit').textContent = '💚 ' + p.fatGood + 'g good fats · ' + p.fatSat + 'g sat.';
   document.getElementById('ksP').style.width = p.kP + '%';
   document.getElementById('ksC').style.width = p.kC + '%';
   document.getElementById('ksF').style.width = p.kF + '%';
