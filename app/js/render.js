@@ -358,10 +358,46 @@ function applyRebalance(){
   toast('✓ Week re-balanced — ' + g.label + ' now ' + afterText);
 }
 
-/* ---------------- log / plan-first confirm ---------------- */
+/* ---------------- log / plan-first confirm (task D1: writes real LogEntrys) ---------------- */
+// Recomputes the "Today so far" kcal pill straight from today's logHistory entries for
+// currentProf (task D1 item 3) — replaces the old incrementally-accumulated `logTotal`.
+function updateLogTotalPill(){
+  const entries = getDayLog(todayISO())[currentProf];
+  const total = entries.reduce(function(s, e){ return s + e.kcal; }, 0);
+  document.getElementById('logTotalPill').textContent = total + ' kcal';
+}
+
+// "Today so far" list (task D1 item 3): every logged entry for currentProf today —
+// confirmed plan slots AND quick-added foods — sorted by log time. Fully derived from
+// logHistory on every call, so it can never drift from what confirm/skip/quick-add wrote.
+function renderTodaySoFar(){
+  const entries = getDayLog(todayISO())[currentProf].slice().sort(function(a, b){
+    return (a.t || '00:00') < (b.t || '00:00') ? -1 : 1;
+  });
+  const list = document.getElementById('todaySoFar');
+  if(!list) return;
+  if(!entries.length){
+    list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet today.</p>';
+    return;
+  }
+  list.innerHTML = entries.map(function(e){
+    if(e.kind === 'plan'){
+      const r = RECIPES[e.ref];
+      const emoji = r ? r.emoji : '🍽️';
+      const title = r ? r.title : 'Meal';
+      const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + (e.t ? ' · ' + e.t : ' · earlier today');
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div></div>';
+    }
+    const food = FOODS[e.ref];
+    const name = food ? food.name : 'Food';
+    const label = 'Quick add · ' + e.grams + 'g' + (e.t ? ' · ' + e.t : '');
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div></div>';
+  }).join('');
+}
+
 // `silent` is used only by restoreTodayLog() (app.js) replaying a persisted
-// confirm/skip at boot, so reload doesn't re-fire the toast for something the
-// user already actioned in a previous session.
+// confirm/skip at boot, so reload doesn't re-fire the toast or re-log the entry (it's
+// already in logHistory) for something the user already actioned in a previous session.
 function logConfirm(key, silent){
   const card = document.getElementById('log-' + key);
   if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
@@ -370,25 +406,22 @@ function logConfirm(key, silent){
   const info = card.querySelector('.info');
   const tag = document.createElement('div');
   tag.className = 'confirmed-tag';
-  tag.textContent = '✓ Logged · just now';
+  tag.textContent = silent ? '✓ Logged · earlier today' : '✓ Logged · just now';
   info.appendChild(tag);
 
-  const list = document.getElementById('todaySoFar');
-  const div = document.createElement('div');
-  div.className = 'logitem';
-  div.innerHTML = '<div class="li-i">'+EMOJI[key]+'</div><div class="li-t">'+TITLES[key]+'<small>'+SLOT_LABEL[key]+' · just now</small></div><div class="li-k">'+LOGKCAL[key]+'</div>';
-  list.appendChild(div);
+  if(!silent){
+    const v = activeMenu[key];
+    logPlanEntry(todayISO(), currentProf, key, v.recipeId, v.portion);
+    toast('✓ Logged to today');
+  }
 
-  logTotal += LOGKCAL[key];
-  document.getElementById('logTotalPill').textContent = logTotal + ' kcal';
-  if(!silent) toast('✓ Logged to today');
-
-  todayLog.slots[key] = {status:'confirmed', title:TITLES[key], emoji:EMOJI[key], kcal:LOGKCAL[key]};
-  // Task C2 item 6: the Today ring/macros read consumed values derived from confirmed
-  // slots of today's real plan, not demo constants — refresh them on every confirm.
+  // Task D1: Today ring/macros/good-sat-fat line and the "Today so far" list all derive
+  // from logHistory — refresh them on every confirm (live tap or silent replay alike).
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
+  updateLogTotalPill();
+  renderTodaySoFar();
   persist();
 }
 
@@ -404,7 +437,7 @@ function logSkip(key, silent){
   info.appendChild(tag);
   if(!silent) toast('Skipped — your plan stays balanced');
 
-  todayLog.slots[key] = {status:'skipped'};
+  markSlotSkipped(todayISO(), currentProf, key);
   persist();
 }
 
@@ -415,6 +448,7 @@ function logSkip(key, silent){
 // profile switches and plan re-renders within the same day.
 function renderLogPlan(){
   if(!activeMenu) return;
+  ensureTodayBreakfastLogged(currentProf); // planner.js (task D1) — breakfast has no confirm step, log it as soon as it's known
   const bfv = activeMenu.breakfast, bf = RECIPES[bfv.recipeId];
   EMOJI.breakfast = bf.emoji; TITLES.breakfast = bf.title; LOGKCAL.breakfast = bfv.kcal;
   const bfCard = document.getElementById('log-breakfast');
@@ -430,10 +464,8 @@ function renderLogPlan(){
     buildLogSlotCard(slot, r.emoji, r.title, v.kcal, SLOT_LABEL[slot] + ' · ' + v.protein + 'g protein');
   });
 
-  logTotal = bfv.kcal;
-  document.getElementById('logTotalPill').textContent = logTotal + ' kcal';
-  document.getElementById('todaySoFar').innerHTML = '<div class="logitem"><div class="li-i">'+bf.emoji+'</div>'
-    + '<div class="li-t">'+bf.title+'<small>Breakfast · earlier today</small></div><div class="li-k">'+bfv.kcal+'</div></div>';
+  updateLogTotalPill();
+  renderTodaySoFar();
 
   if(typeof restoreTodayLog === 'function') restoreTodayLog();
 }
@@ -840,6 +872,7 @@ function applyProf(key){
   renderTodayMeals();
   renderLogPlan();
   renderWeek();
+  if(typeof renderInsights === 'function') renderInsights(); // task D1: keep Insights in sync with whoever's now current
   updateRecipeWhy();     // task C3: re-personalize the why-box if the recipe screen is open
   syncServeHighlight();
   syncProfileToggle(key);
@@ -865,4 +898,178 @@ function setProf(key, el){
   el.classList.add('on'); applyProf(key);
   // sync top control
   document.querySelectorAll('#profSeg button').forEach(x=>x.classList.toggle('on', x.dataset.prof===key));
+}
+
+/* ===================================================================
+   Insights screen (task D1 item 4) — paints planner.js:computeInsights()
+   into the 4 sections: stat tiles, weekly band, 7-day bars, and the
+   2 deterministic "what's working" call-outs. Below 2 total logged days
+   every section instead shows the same friendly empty-state copy,
+   styled with the app's existing card/tile classes (no new components).
+   =================================================================== */
+const INSIGHTS_EMPTY_NOTE = 'Log a few days to unlock this — Mesa needs at least 2 logged days to show real trends here.';
+
+function renderInsights(){
+  const statWrap = document.getElementById('insightsStats');
+  const bandWrap = document.getElementById('insightsBandCard');
+  const barsWrap = document.getElementById('insightsBarsCard');
+  const workingWrap = document.getElementById('insightsWorking');
+  if(!statWrap || !bandWrap || !barsWrap || !workingWrap) return; // Insights markup not present
+
+  const data = computeInsights(currentProf);
+
+  if(!data.hasEnoughData){
+    statWrap.innerHTML = '<div class="s" style="grid-column:1/-1"><div class="sl" style="font-size:13px;font-weight:700;color:var(--ink)">Stats</div><p class="sub" style="margin-top:6px">'+INSIGHTS_EMPTY_NOTE+'</p></div>';
+    bandWrap.innerHTML = '<div class="row between"><b style="font-size:14px">Your weekly band</b></div><p class="sub" style="margin-top:6px">'+INSIGHTS_EMPTY_NOTE+'</p>';
+    barsWrap.innerHTML = '<div class="row between" style="margin-bottom:6px"><b style="font-size:14px">Calories vs target</b></div><p class="sub">'+INSIGHTS_EMPTY_NOTE+'</p>';
+    workingWrap.innerHTML = '<p class="sub" style="margin:0">'+INSIGHTS_EMPTY_NOTE+'</p>';
+    return;
+  }
+
+  // stat tiles
+  const tiles = [
+    {sv: Math.round(data.avgProtein) + 'g', sl: 'Avg protein/day (7d)', good: data.avgProtein >= data.targetProtein, goodNote: '▲ on target', badNote: '▼ below target'},
+    {sv: Math.round(data.avgFiber) + 'g', sl: 'Avg fiber/day (7d)', good: data.avgFiber >= 25, goodNote: '▲ heart-smart', badNote: '▼ below 25g guide'},
+    {sv: Math.round(data.pctUnsaturated) + '%', sl: 'Fats unsaturated (7d)', good: data.pctUnsaturated >= 67, goodNote: '▲ heart & skin smart', badNote: '▼ watch saturated fat'},
+    {sv: data.daysLoggedCount + '/7', sl: 'Days logged this week', good: data.daysLoggedCount >= 5, goodNote: '▲ steady', badNote: '▼ log a few more days'}
+  ];
+  statWrap.innerHTML = tiles.map(function(t){
+    return '<div class="s"><div class="sv">'+t.sv+'</div><div class="sl">'+t.sl+'</div><div class="sd '+(t.good ? 'up' : 'dn2')+'">'+(t.good ? t.goodNote : t.badNote)+'</div></div>';
+  }).join('');
+
+  // weekly band
+  bandWrap.innerHTML = '<div class="row between"><b style="font-size:14px">Your weekly band <span class="chip-computed">✓ computed</span></b></div>'
+    + '<p class="sub" style="margin-top:6px">'+data.inBandCount+' of 7 days landed inside your target range this week (kcal within ±10% of that day\'s target) — no streak to lose, just a gentle rhythm.</p>'
+    + '<div class="band">' + data.days.map(function(d){
+        const dotClass = !d.logged ? '' : (d.inBand ? 'filled' : 'soft');
+        return '<div class="dwrap"><div class="dot '+dotClass+'"></div><div class="dl">'+d.letter+'</div></div>';
+      }).join('') + '</div>';
+
+  // 7-day bars — height is kcal as a % of that day's OWN target (capped 6-100%) so every
+  // bar reads against the same "did I hit my target" scale; unlogged days get a distinct
+  // pale/empty style (.spark .col.empty, css/mesa.css) so they don't read as "a bad day".
+  barsWrap.innerHTML = '<div class="row between" style="margin-bottom:6px"><b style="font-size:14px">Calories vs target</b><span class="pill">last 7 days</span></div>'
+    + '<div class="spark">' + data.days.map(function(d){
+        if(!d.logged) return '<div class="col empty" style="height:14%" title="Not logged"><b>'+d.letter+'</b></div>';
+        const pct = d.target > 0 ? Math.max(6, Math.min(100, Math.round(d.kcal / d.target * 100))) : 100;
+        return '<div class="col'+(d.inBand ? ' hi' : '')+'" style="height:'+pct+'%" title="'+d.kcal+' kcal vs '+d.target+' target"><b>'+d.letter+'</b></div>';
+      }).join('') + '</div>';
+
+  // what's working / watch this — exactly 2 deterministic call-outs (planner.js)
+  workingWrap.innerHTML = data.callouts.map(function(c, i){
+    const last = i === data.callouts.length - 1;
+    const bg = c.good ? 'var(--sage-tint)' : 'var(--terra-tint)';
+    return '<div class="logitem"'+(last ? ' style="border-bottom:0"' : '')+'><div class="li-i" style="background:'+bg+'">'+c.icon+'</div><div class="li-t">'+c.text+'</div></div>';
+  }).join('');
+}
+
+/* ===================================================================
+   Quick-add: food search sheet (task D1 item 2)
+   "Search" and "Meal" quick actions (Log screen) both open this sheet
+   — Meal is a documented MVP alias, same flow. Two sub-views painted
+   into #sheetBody: a live text-filtered food list (>=2 chars, client-
+   side substring match on FOODS[..].name), then a grams stepper with a
+   live-computed kcal/protein/carbs/fat preview (foodMacros(), engine.js)
+   before writing a food-kind LogEntry (state.js:logFoodEntry) for
+   currentProf. Barcode/photo stay demo toasts (index.html); water stays
+   a toast too (it's not a nutrition entry).
+   =================================================================== */
+let quickAdd = {query: '', selectedId: null, grams: 100};
+
+function openFoodSearch(){
+  quickAdd = {query: '', selectedId: null, grams: 100};
+  document.getElementById('sheetBody').innerHTML = buildFoodSearchSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  const input = document.getElementById('foodSearchInput');
+  if(input) input.focus();
+}
+
+// Client-side substring match on food display names, case-insensitive, capped to keep the
+// sheet scannable. Requires >=2 characters (task D1 item 2) — shorter queries show a hint
+// instead of the whole 60-food DB.
+function searchFoods(query){
+  const q = query.trim().toLowerCase();
+  if(q.length < 2) return [];
+  return Object.keys(FOODS)
+    .filter(function(id){ return FOODS[id].name.toLowerCase().indexOf(q) !== -1; })
+    .sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : (FOODS[a].name > FOODS[b].name ? 1 : 0); })
+    .slice(0, 20);
+}
+
+function buildFoodSearchSheet(){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add a food</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="foodSearchInput" placeholder="Search foods… (e.g. yogurt)" value="'+jsAttr(quickAdd.query)+'" oninput="onFoodSearchInput(this.value)" autocomplete="off"></div>'
+    + '<div id="foodSearchResults">' + renderFoodSearchResults() + '</div>';
+}
+
+function renderFoodSearchResults(){
+  const q = quickAdd.query.trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
+  const ids = searchFoods(q);
+  if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + q + '”.</p>';
+  return ids.map(function(id){
+    const f = FOODS[id];
+    const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
+    return '<div class="altrow" onclick="selectQuickAddFood(\''+id+'\')">'
+      + '<div class="ae">🥄</div>'
+      + '<div class="at"><div class="an">'+f.name+'</div>'
+      + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein <b>/ '+per+'</b></div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function onFoodSearchInput(value){
+  quickAdd.query = value;
+  const el = document.getElementById('foodSearchResults');
+  if(el) el.innerHTML = renderFoodSearchResults();
+}
+
+function selectQuickAddFood(id){
+  if(!FOODS[id]) return;
+  quickAdd.selectedId = id;
+  quickAdd.grams = 100;
+  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
+}
+
+function stepQuickAddGrams(delta){
+  quickAdd.grams = Math.max(10, Math.min(2000, quickAdd.grams + delta));
+  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
+}
+
+function buildGramsStepperSheet(){
+  const food = FOODS[quickAdd.selectedId];
+  if(!food) return buildFoodSearchSheet();
+  const nut = foodMacros(quickAdd.selectedId, quickAdd.grams);
+  const pieceHint = food.unit === 'piece' ? ' (≈' + (+(quickAdd.grams / food.avgG).toFixed(1)) + ' piece)' : '';
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">'+food.name+'</h2><button class="backbtn" style="margin:0" onclick="openFoodSearch()">‹ Back</button></div>'
+    + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
+    + '<div class="sv-name">Amount</div>'
+    + '<div class="sv-stepper"><button onclick="stepQuickAddGrams(-10)" aria-label="Decrease grams">–</button>'
+    + '<span class="sv-val">'+quickAdd.grams+'g'+pieceHint+'</span>'
+    + '<button onclick="stepQuickAddGrams(10)" aria-label="Increase grams">+</button></div></div></div>'
+    + '<div class="nutri" style="margin-top:16px">'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>'+Math.round(nut.protein)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Carbs</span><b>'+Math.round(nut.carbs)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
+    + '</div>'
+    + '<button class="cta" onclick="confirmQuickAdd()">Add to today</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+function confirmQuickAdd(){
+  if(!quickAdd.selectedId || !FOODS[quickAdd.selectedId]) return;
+  const food = FOODS[quickAdd.selectedId];
+  const grams = quickAdd.grams;
+  logFoodEntry(todayISO(), currentProf, quickAdd.selectedId, grams);
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  updateLogTotalPill();
+  renderTodaySoFar();
+  persist();
+  closeSheet();
+  toast('✓ Added ' + grams + 'g ' + food.name + ' to today');
 }

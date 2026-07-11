@@ -269,11 +269,12 @@ let svE = 1, svM = 1.5, svS = 1;
 
 /* ---------------- log / plan-first state ---------------- */
 // Keyed by slot name (breakfast/lunch/dinner/snack), not recipe key — rebuilt by
-// renderLogPlan() each time the active menu (profile or split) changes.
+// renderLogPlan() each time the active menu (profile or split) changes. Card display
+// only (title/emoji/kcal shown before a slot is confirmed) — the source of truth for
+// what's actually logged is logHistory (state.js), not these.
 const EMOJI = {};
 const TITLES = {};
 const LOGKCAL = {};
-let logTotal = 0;
 
 /* ---------------- shared-meals model ---------------- */
 const SHARED = {breakfast:false, lunch:false, dinner:true, snack:false};
@@ -301,21 +302,24 @@ const PROF = {
   elena:   {seg:'Elena', av:'E',
             sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,
             activity:1.55, goalAdj:-325, goalName:'gentle fat loss',
-            calCustom:null, calNote:'', consumedKcal:400,
+            calCustom:null, calNote:'',
             goalTag:'🎯 Gentle fat loss · 🦋 Hashimoto',
             coachT:'Today leans thyroid-friendly 🦋', hashi:true,
             coachD:'Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.',
             kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'],
-            consumed:{p:28,c:34,f:12}, defaultSplit:{P:26,C:41,F:33}, splitNote:'', coachOverrideT:null, coachOverrideD:null},
+            // consumed*/consumedKcal start at zero (task D1): they're overwritten by
+            // planner.js:recomputeConsumed() from real logHistory entries before first
+            // paint (applyProf() at boot always runs it first) — no demo numbers linger.
+            consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:41,F:33}, splitNote:'', coachOverrideT:null, coachOverrideD:null},
   partner: {seg:'Andrea', av:'A',
             sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
             activity:1.375, goalAdj:60, goalName:'small muscle-gain surplus',
-            calCustom:null, calNote:'', consumedKcal:470,
+            calCustom:null, calNote:'',
             goalTag:'🎯 Muscle gain · ❤️ Heart-smart',
             coachT:'Today is built for muscle 💪', hashi:false,
             coachD:'Higher protein and a small surplus. Same Mediterranean base as Elena, scaled up — shared cooking, two targets.',
             kP:26, kC:43, kF:31, avoid:[],
-            consumed:{p:42,c:58,f:18}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
+            consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
 };
 
 /* ===================================================================
@@ -337,10 +341,10 @@ const PROF = {
        regenerates when the inputs that produced it have changed
      - checked shopping-list items, keyed by ingredient NAME (ids are
        positional and change whenever the list recomputes)
-     - today's plan-first log status (confirmed/skipped + what was
-       actually logged for lunch/dinner/snack — breakfast is always
-       auto-confirmed by design, see renderLogPlan), keyed by ISO date
-       so a new day always starts fresh
+     - logHistory (task D1): the rolling log of what was actually eaten,
+       keyed by ISO date — see the "log history" block below for the
+       full shape. Replaces the old v1 single-day `log` field (migrated
+       on load, see loadState()).
      - the onboarding-seen flag (migrated from the old standalone
        `mesaOnboarded` key; that key is still read as a fallback for
        installs that predate this store)
@@ -348,7 +352,7 @@ const PROF = {
    loadState() runs once at boot, before the first render. persist()
    is the single write-through call, invoked from the end of every
    mutating action (see render.js: applyProf, toggleShared, adjServe,
-   toggleShop, logConfirm/logSkip).
+   toggleShop, logConfirm/logSkip, confirmQuickAdd).
    =================================================================== */
 const STORE_KEY = 'mesa.v1';
 const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
@@ -361,10 +365,185 @@ function todayISO(){
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-// Today's plan-first log status, keyed by slot (lunch/dinner/snack only —
-// breakfast has no confirm/skip/swap actions, see buildLogSlotCard). Reset
-// whenever the stored date isn't today.
-let todayLog = { date: todayISO(), slots: {} };
+/* ===================================================================
+   log history (task D1) — replaces the old v1 single-day `todayLog`.
+
+   logHistory['YYYY-MM-DD'] = {
+     elena:   [LogEntry, ...],
+     partner: [LogEntry, ...],
+     targets: {elena: kcalNum|null, partner: kcalNum|null},  // each person's daily kcal
+       TARGET, frozen the first time THAT PERSON logs anything on this date (item 4a: a
+       later calorie-target change must never move a past day's 7-day bar). null until
+       then; computeInsights() (planner.js) falls back to the live target only for the
+       rare pre-D1 migrated day that has no snapshot (see migrateV1TodayLog() below).
+     skipped: {elena: {slot: true}, partner: {slot: true}}   // UI memory only — "you
+       tapped Skip for this slot today" — never summed into nutrition, just lets the Log
+       screen restore the skipped-tag across a reload (state, not a fact about food).
+   }
+
+   LogEntry = {kind:'plan'|'food', ref: recipeId|foodId, portion?, grams?, kcal, protein,
+     carbs, fat, satFat, fiber, slot?, t:'HH:MM'|null}. Every macro number is computed
+   ONCE, at log time, via recipeNutrition()/foodMacros() (engine.js) and stored verbatim —
+   never re-derived from the live recipe/food DB on a later read, so editing a recipe or
+   swapping a plan meal never rewrites a past day's history (ground rule 1 + task D1's
+   explicit "history stability" requirement). kind:'plan' entries are keyed by `slot`
+   (breakfast/lunch/dinner/snack) — upsertLogEntry() replaces-in-place on that key, so a
+   swap on an already-logged slot corrects it rather than appending a duplicate. kind:'food'
+   (quick-add) entries always append.
+
+   Capped at LOG_HISTORY_RETENTION_DAYS days (pruned on every persist()) so the store
+   never grows unbounded.
+   =================================================================== */
+const LOG_HISTORY_RETENTION_DAYS = 60;
+let logHistory = {};
+
+function nowHHMM(){
+  const d = new Date();
+  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+}
+
+function emptyDayLog(){
+  return {elena: [], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}};
+}
+
+// Returns logHistory[dateISO], creating (and back-filling any missing sub-keys on) an
+// empty day record on first touch — every caller can read/push without a null-check dance.
+function getDayLog(dateISO){
+  if(!logHistory[dateISO]) logHistory[dateISO] = emptyDayLog();
+  const day = logHistory[dateISO];
+  if(!day.targets) day.targets = {elena: null, partner: null};
+  if(!day.skipped) day.skipped = {elena: {}, partner: {}};
+  if(!Array.isArray(day.elena)) day.elena = [];
+  if(!Array.isArray(day.partner)) day.partner = [];
+  return day;
+}
+
+// Freezes personKey's kcal TARGET for dateISO the first time they log anything that day
+// (task D1 item 4a). Callers must ensure PROF[personKey].calGoalNum is current first —
+// every live call site runs after ensureWeekPlan()/recomputeProf() have already refreshed
+// it (see planner.js:ensureWeekPlan, applyProf), so this is always the true target at the
+// moment of logging, not a stale one.
+function ensureTargetSnapshot(dateISO, personKey){
+  const day = getDayLog(dateISO);
+  if(typeof day.targets[personKey] !== 'number') day.targets[personKey] = PROF[personKey].calGoalNum;
+  return day;
+}
+
+// Adds one computed LogEntry, freezing the day's target snapshot first. kind:'plan'
+// entries replace any existing entry for the same slot (a swap corrects history rather
+// than duplicating it); kind:'food' entries always append. persist() is the caller's job
+// (same convention as every other mutating action in render.js/planner.js).
+function upsertLogEntry(dateISO, personKey, entry){
+  ensureTargetSnapshot(dateISO, personKey);
+  const arr = getDayLog(dateISO)[personKey];
+  if(entry.kind === 'plan' && entry.slot){
+    const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === entry.slot; });
+    if(idx !== -1){
+      entry.t = arr[idx].t || entry.t; // keep the original log time on an edit (e.g. a post-confirm swap)
+      arr[idx] = entry;
+      return entry;
+    }
+  }
+  arr.push(entry);
+  return entry;
+}
+
+// Builds + upserts a plan-kind LogEntry from a recipe id + portion, computing every macro
+// fresh via recipeNutrition() (engine.js). Used by logConfirm (first confirm), by
+// chooseSwap (editing an already-logged slot — including breakfast, which has no confirm
+// step, see ensureTodayBreakfastLogged), and by restoreTodayLog's replay guard.
+function logPlanEntry(dateISO, personKey, slot, recipeId, portion){
+  const nut = recipeNutrition(recipeId, portion).totals;
+  return upsertLogEntry(dateISO, personKey, {
+    kind: 'plan', ref: recipeId, portion: portion,
+    kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
+    fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
+    slot: slot, t: nowHHMM()
+  });
+}
+
+// Quick-add (task D1 item 2): a food-kind LogEntry from FOODS, computed via foodMacros().
+function logFoodEntry(dateISO, personKey, foodId, grams){
+  const nut = foodMacros(foodId, grams);
+  return upsertLogEntry(dateISO, personKey, {
+    kind: 'food', ref: foodId, grams: grams,
+    kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
+    fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
+    t: nowHHMM()
+  });
+}
+
+// Skip = "not eaten", not a nutrition fact — recorded only so the Log screen can restore
+// the skipped-tag across a reload. Also drops any plan entry that might exist for that
+// slot (shouldn't normally happen, but keeps the two states mutually exclusive).
+function markSlotSkipped(dateISO, personKey, slot){
+  const day = getDayLog(dateISO);
+  day.skipped[personKey][slot] = true;
+  day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
+}
+
+// 'confirmed' | 'skipped' | null — drives the Log screen's per-slot restore (app.js:
+// restoreTodayLog) and lets chooseSwap (planner.js) know whether a swapped slot needs its
+// log entry corrected in place.
+function slotLogStatus(dateISO, personKey, slot){
+  const day = getDayLog(dateISO);
+  if(day[personKey].some(function(e){ return e.kind === 'plan' && e.slot === slot; })) return 'confirmed';
+  if(day.skipped[personKey][slot]) return 'skipped';
+  return null;
+}
+
+// Drops days older than LOG_HISTORY_RETENTION_DAYS (relative to today) — called from
+// persist() so the store never grows unbounded. String comparison is safe: ISO dates
+// sort lexicographically.
+function pruneLogHistory(){
+  const cutoff = addDaysISO(todayISO(), -LOG_HISTORY_RETENTION_DAYS);
+  Object.keys(logHistory).forEach(function(date){
+    if(date < cutoff) delete logHistory[date];
+  });
+}
+
+function isValidLogEntry(e){
+  if(!e || typeof e !== 'object') return false;
+  if(e.kind !== 'plan' && e.kind !== 'food') return false;
+  if(typeof e.ref !== 'string') return false;
+  return ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].every(function(k){ return typeof e[k] === 'number' && isFinite(e[k]); });
+}
+
+// v1 -> v2 migration: v1 stored only TODAY's plan-first confirm/skip status, un-keyed by
+// person (a known v1 gap — Log actions applied to whichever profile happened to be active
+// when tapped). loadState() only ever kept a v1 `log` whose date === today (older ones
+// were discarded outright), so there's at most one day to migrate. Rather than trust v1's
+// display-only {title, kcal} strings (no recipeId, no full macro breakdown), this recovers
+// the real recipeId + portion from the ALSO-persisted v1 weekPlan and recomputes full
+// macros via recipeNutrition() — so migrated entries are exactly as trustworthy as any
+// entry logged under v2. Attributed to v1's saved currentProf (the best available guess
+// for "whose log this was"). No-ops entirely once a v2 `logHistory` is present.
+function migrateV1TodayLog(saved){
+  if(saved.logHistory && typeof saved.logHistory === 'object') return;
+  if(!(saved.log && typeof saved.log === 'object' && saved.log.date === todayISO() && saved.log.slots && typeof saved.log.slots === 'object')) return;
+  const person = (typeof saved.currentProf === 'string' && PROF[saved.currentProf]) ? saved.currentProf : 'elena';
+  const wp = (saved.weekPlan && typeof saved.weekPlan === 'object' && typeof saved.weekPlan.weekStartDate === 'string' && Array.isArray(saved.weekPlan.days)) ? saved.weekPlan : null;
+  Object.keys(saved.log.slots).forEach(function(slot){
+    const rec = saved.log.slots[slot];
+    if(!rec || slot === 'breakfast') return; // breakfast has no v1 record — auto-(re)logged fresh, see ensureTodayBreakfastLogged()
+    if(rec.status === 'confirmed' && wp){
+      const dayIdx = Math.max(0, Math.min(6, diffDaysISO(todayISO(), wp.weekStartDate)));
+      const day = wp.days[dayIdx];
+      const planEntry = day && day.meals && day.meals[slot] && day.meals[slot][person];
+      if(planEntry && planEntry.recipeId){
+        const nut = recipeNutrition(planEntry.recipeId, planEntry.portion).totals;
+        getDayLog(todayISO())[person].push({
+          kind: 'plan', ref: planEntry.recipeId, portion: planEntry.portion,
+          kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
+          fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
+          slot: slot, t: null
+        });
+      }
+    } else if(rec.status === 'skipped'){
+      markSlotSkipped(todayISO(), person, slot);
+    }
+  });
+}
 
 // Fields copied verbatim between PROF[key] and the store. Deliberately
 // excludes goalAdj (fixed, not user-editable) and everything else on PROF
@@ -382,7 +561,7 @@ function buildSnapshot(){
     profiles[key] = out;
   });
   return {
-    v: 1,
+    v: 2, // task D1: bumped from 1 — `log` (single-day) replaced by `logHistory` (rolling)
     currentProf: currentProf,
     onboarded: onboarded,
     householdStyle: householdStyle,
@@ -390,7 +569,10 @@ function buildSnapshot(){
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
     shopping: { checked: Object.keys(checkedShopNames).filter(function(n){ return checkedShopNames[n]; }) },
-    log: todayLog,
+    // logHistory (task D1): plain JSON data (no functions) — stored verbatim, capped at
+    // LOG_HISTORY_RETENTION_DAYS by pruneLogHistory() (called from persist() below) before
+    // every write.
+    logHistory: logHistory,
     // weekPlan (task C2): the generated week is plain JSON data (no functions), so it's
     // stored verbatim; ensureWeekPlan() (js/planner.js) re-validates its signature and
     // weekStartDate against the live profile/style/avoid/SHARED state on every load and
@@ -400,8 +582,10 @@ function buildSnapshot(){
   };
 }
 
-// Single write-through: gathers current values and writes once.
+// Single write-through: gathers current values and writes once. Prunes old log-history
+// days first (task D1) so the store never grows unbounded.
 function persist(){
+  pruneLogHistory();
   try{ localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot())); }catch(e){ /* storage unavailable/full — no-op */ }
 }
 
@@ -461,23 +645,8 @@ function loadState(){
     saved.shopping.checked.forEach(function(name){ if(typeof name === 'string') checkedShopNames[name] = true; });
   }
 
-  if(saved.log && typeof saved.log === 'object' && saved.log.date === todayISO() && saved.log.slots && typeof saved.log.slots === 'object'){
-    todayLog = { date: saved.log.date, slots: saved.log.slots };
-  } else {
-    todayLog = { date: todayISO(), slots: {} };
-  }
-
-  if(typeof saved.onboarded === 'boolean'){
-    onboarded = saved.onboarded;
-  } else {
-    try{ onboarded = !!localStorage.getItem(LEGACY_ONBOARD_KEY); }catch(e){ onboarded = false; }
-  }
-
-  // weekPlan (task C2): loaded as-is; js/planner.js:ensureWeekPlan() (called once at
-  // boot, and again on every applyProf/toggleShared) checks weekPlan.signature and
-  // weekStartDate against the live state and regenerates if either is stale. A
-  // structurally-wrong stored value (wrong day count, missing fields) is discarded here
-  // rather than trusted, so a corrupt store can't crash rendering.
+  // weekPlan (task C2) is resolved BEFORE the log-history block below since v1->v2
+  // migration needs it (recovers recipeId+portion for today's confirmed slots).
   if(saved.weekPlan && typeof saved.weekPlan === 'object'
      && typeof saved.weekPlan.weekStartDate === 'string'
      && typeof saved.weekPlan.signature === 'string'
@@ -485,5 +654,43 @@ function loadState(){
     weekPlan = saved.weekPlan;
   } else {
     weekPlan = null;
+  }
+
+  // log history (task D1): migrate a v1 single-day `log` first (no-ops if `logHistory`
+  // is already present), then load whatever `logHistory` ended up in `saved` (empty {}
+  // for a brand-new v2 store, or the migrated-in-place result). Structurally-wrong dates/
+  // entries are dropped rather than trusted, so a corrupt store can't crash rendering.
+  logHistory = {};
+  migrateV1TodayLog(saved);
+  if(saved.logHistory && typeof saved.logHistory === 'object'){
+    Object.keys(saved.logHistory).forEach(function(date){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;
+      const d = saved.logHistory[date];
+      if(!d || typeof d !== 'object') return;
+      const clean = emptyDayLog();
+      ['elena', 'partner'].forEach(function(person){
+        if(Array.isArray(d[person])) clean[person] = d[person].filter(isValidLogEntry);
+      });
+      if(d.targets && typeof d.targets === 'object'){
+        ['elena', 'partner'].forEach(function(person){
+          if(typeof d.targets[person] === 'number') clean.targets[person] = d.targets[person];
+        });
+      }
+      if(d.skipped && typeof d.skipped === 'object'){
+        ['elena', 'partner'].forEach(function(person){
+          if(d.skipped[person] && typeof d.skipped[person] === 'object'){
+            Object.keys(d.skipped[person]).forEach(function(slot){ if(d.skipped[person][slot]) clean.skipped[person][slot] = true; });
+          }
+        });
+      }
+      logHistory[date] = clean;
+    });
+  }
+  pruneLogHistory();
+
+  if(typeof saved.onboarded === 'boolean'){
+    onboarded = saved.onboarded;
+  } else {
+    try{ onboarded = !!localStorage.getItem(LEGACY_ONBOARD_KEY); }catch(e){ onboarded = false; }
   }
 }

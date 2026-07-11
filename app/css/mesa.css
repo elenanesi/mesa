@@ -197,6 +197,9 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .spark .col{flex:1;background:var(--sage-tint);border-radius:6px 6px 0 0;position:relative;}
 .spark .col b{position:absolute;bottom:-20px;left:0;right:0;text-align:center;font-size:10px;color:var(--muted);font-weight:600;}
 .spark .col.hi{background:var(--sage);}
+/* task D1: an un-logged day in the Insights 7-day bar chart — visually distinct (pale,
+   flat) from a real short bar so it doesn't read as "a bad day". */
+.spark .col.empty{background:#eef0ec;}
 
 /* weekly adherence band */
 .band{display:flex;gap:8px;margin-top:14px;}

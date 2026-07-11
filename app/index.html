@@ -232,9 +232,9 @@
 
       <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
       <div class="quick">
-        <button onclick="toast('📷 Scan a barcode')"><span class="qi">📷</span>Scan</button>
-        <button onclick="toast('🔎 Search foods')"><span class="qi">🔎</span>Search</button>
-        <button onclick="toast('🍱 Add a meal')"><span class="qi">🍱</span>Meal</button>
+        <button onclick="toast('📷 Coming in a later phase')"><span class="qi">📷</span>Scan</button>
+        <button onclick="openFoodSearch()"><span class="qi">🔎</span>Search</button>
+        <button onclick="openFoodSearch()"><span class="qi">🍱</span>Meal</button>
         <button onclick="toast('💧 +250ml water')"><span class="qi">💧</span>Water</button>
       </div>
 
@@ -250,47 +250,16 @@
       <h1>Insights</h1>
       <p class="sub">How your eating is trending — for you and Andrea.</p>
 
-      <div class="stat">
-        <div class="s"><div class="sv">94%</div><div class="sl">Plan adherence (7d)</div><div class="sd up">▲ 11% vs last week</div></div>
-        <div class="s"><div class="sv">108g</div><div class="sl">Avg protein/day</div><div class="sd up">▲ on target</div></div>
-        <div class="s"><div class="sv">26g</div><div class="sl">Avg fiber/day</div><div class="sd up">▲ heart-smart</div></div>
-        <div class="s"><div class="sv">61%</div><div class="sl">Vitamin D</div><div class="sd dn2">▼ needs attention</div></div>
-        <div class="s"><div class="sv">82%</div><div class="sl">Fats unsaturated</div><div class="sd up">▲ heart & skin smart</div></div>
-      </div>
+      <!-- Rendered by renderInsights() (render.js, task D1): 4 real computed stat tiles,
+           or one spanning "log a few days" empty-state tile below 2 logged days. -->
+      <div class="stat" id="insightsStats"></div>
 
-      <div class="card">
-        <div class="row between"><b style="font-size:14px">Your weekly band <span class="chip-computed">✓ computed</span></b></div>
-        <p class="sub" style="margin-top:6px">5 of 7 days landed inside your target range this week — no streak to lose, just a gentle rhythm.</p>
-        <div class="band">
-          <div class="dwrap"><div class="dot filled"></div><div class="dl">M</div></div>
-          <div class="dwrap"><div class="dot filled"></div><div class="dl">T</div></div>
-          <div class="dwrap"><div class="dot filled"></div><div class="dl">W</div></div>
-          <div class="dwrap"><div class="dot soft"></div><div class="dl">T</div></div>
-          <div class="dwrap"><div class="dot filled"></div><div class="dl">F</div></div>
-          <div class="dwrap"><div class="dot filled"></div><div class="dl">S</div></div>
-          <div class="dwrap"><div class="dot"></div><div class="dl">S</div></div>
-        </div>
-      </div>
+      <div class="card" id="insightsBandCard"></div>
 
-      <div class="card">
-        <div class="row between" style="margin-bottom:6px"><b style="font-size:14px">Calories vs target</b><span class="pill">last 7 days</span></div>
-        <div class="spark">
-          <div class="col" style="height:62%"><b>M</b></div>
-          <div class="col" style="height:70%"><b>T</b></div>
-          <div class="col hi" style="height:88%"><b>W</b></div>
-          <div class="col" style="height:66%"><b>T</b></div>
-          <div class="col" style="height:74%"><b>F</b></div>
-          <div class="col hi" style="height:96%"><b>S</b></div>
-          <div class="col" style="height:58%"><b>S</b></div>
-        </div>
-      </div>
+      <div class="card" id="insightsBarsCard"></div>
 
       <h2>What's working</h2>
-      <div class="card" style="padding:14px">
-        <div class="logitem" style="border-bottom:1px solid var(--line)"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Selenium consistently met<small>Brazil nuts + fish doing the work</small></div></div>
-        <div class="logitem" style="border-bottom:1px solid var(--line)"><div class="li-i" style="background:var(--sage-tint)">✨</div><div class="li-t">Low-GI 6 of 7 days<small>Supports skin & steady energy</small></div></div>
-        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">📌</div><div class="li-t">Watch added sugar on weekends<small>Sat spiked — skin-relevant</small></div></div>
-      </div>
+      <div class="card" style="padding:14px" id="insightsWorking"></div>
 
       <div class="banner">
         <div class="ai">Weekly review · powered by Mesa coach <span class="badge-mini">✨ Suggestion</span></div>

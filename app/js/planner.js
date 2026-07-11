@@ -317,25 +317,145 @@ function computeActiveMenu(){
   return {style: householdStyle, dayIndex: dayIdx, breakfast: view('breakfast'), lunch: view('lunch'), dinner: view('dinner'), snack: view('snack')};
 }
 
-// Task C2 item 6: PROF.consumed / consumedKcal derived from real log state instead of
-// hardcoded demo numbers. Breakfast is always counted (auto-confirmed by design, see
-// renderLogPlan); lunch/dinner/snack count only once todayLog marks them confirmed.
-// Uses weekPlan's ACTUAL assigned recipe+portion for today, so a swap after confirming
-// is reflected correctly too.
-function recomputeConsumed(personKey){
+// Auto-logs today's breakfast for personKey the first time it's seen (task D1): breakfast
+// has no confirm/skip UI (always "done" by design, see renderLogPlan/buildLogSlotCard), so
+// unlike lunch/dinner/snack its LogEntry is written as soon as its plan slot exists rather
+// than on a tap. Idempotent (skips the write if the logged ref+portion already match
+// today's plan) and slot-keyed upsert means a later breakfast swap corrects the entry in
+// place instead of duplicating it — see logPlanEntry (state.js).
+function ensureTodayBreakfastLogged(personKey){
   ensureWeekPlan();
   const day = weekPlan.days[todayDayIndex()];
-  let kcal = 0, p = 0, c = 0, f = 0;
-  SLOT_ORDER.forEach(function(slot){
-    const confirmed = (slot === 'breakfast') || (todayLog.slots[slot] && todayLog.slots[slot].status === 'confirmed');
-    if(!confirmed) return;
-    const entry = day.meals[slot][personKey];
-    if(!entry || !entry.recipeId) return;
-    const nut = recipeNutrition(entry.recipeId, entry.portion).totals;
-    kcal += nut.kcal; p += nut.protein; c += nut.carbs; f += nut.fat;
-  });
+  const entry = day.meals.breakfast[personKey];
+  if(!entry || !entry.recipeId) return;
+  const today = todayISO();
+  const existing = getDayLog(today)[personKey].find(function(e){ return e.kind === 'plan' && e.slot === 'breakfast'; });
+  if(existing && existing.ref === entry.recipeId && existing.portion === entry.portion) return;
+  logPlanEntry(today, personKey, 'breakfast', entry.recipeId, entry.portion);
+}
+
+// Task D1 ("Today = Log"): PROF.consumed*/consumedKcal derived purely from today's
+// logHistory entries for personKey (confirmed plan slots + quick-added foods) — replaces
+// the old weekPlan-plus-todayLog-status computation. Every number here was already
+// computed once at log time (recipeNutrition/foodMacros), so this is just a sum.
+function recomputeConsumed(personKey){
+  ensureTodayBreakfastLogged(personKey);
+  const entries = getDayLog(todayISO())[personKey];
+  let kcal = 0, p = 0, c = 0, f = 0, sat = 0, fib = 0;
+  entries.forEach(function(e){ kcal += e.kcal; p += e.protein; c += e.carbs; f += e.fat; sat += e.satFat; fib += e.fiber; });
   PROF[personKey].consumedKcal = Math.round(kcal);
-  PROF[personKey].consumed = {p: Math.round(p), c: Math.round(c), f: Math.round(f)};
+  PROF[personKey].consumed = {p: Math.round(p), c: Math.round(c), f: Math.round(f), satFat: Math.round(sat), fiber: Math.round(fib)};
+}
+
+/* ---------------- Insights (task D1 item 4) ---------------- */
+// The single rolling 7-day window (today included, oldest first) every Insights number —
+// bars, band, stat tiles, call-outs — is computed over, so they can never disagree with
+// each other or with the Log screen's "today" slice.
+function last7Dates(){
+  const today = todayISO();
+  const dates = [];
+  for(let i = 6; i >= 0; i--) dates.push(addDaysISO(today, -i));
+  return dates;
+}
+
+const DAY_LETTERS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']; // Mon..Sun
+function dayLetterFor(iso){
+  const jsDay = parseISODate(iso).getDay(); // 0=Sun..6=Sat
+  return DAY_LETTERS[(jsDay + 6) % 7];
+}
+
+// How many distinct calendar days (within retention) have at least one logged entry for
+// personKey — the "<2 logged days" empty-state gate (task D1 item 4 EMPTY STATES). Not
+// limited to the rolling 7-day window: 2 logged days anywhere unlocks Insights.
+function loggedDayCount(personKey){
+  return Object.keys(logHistory).filter(function(date){
+    const day = logHistory[date];
+    return day && Array.isArray(day[personKey]) && day[personKey].length > 0;
+  }).length;
+}
+
+// Pure computation for the Insights screen (task D1 item 4). Every per-day kcal figure is
+// compared against that day's FROZEN target snapshot (state.js:ensureTargetSnapshot), so a
+// later calorie-target change never moves a past day's bar or band dot. Returns
+// hasEnoughData:false (with everything else zeroed) once fewer than 2 days have ever been
+// logged — render.js paints the empty-state pattern in that case.
+function computeInsights(personKey){
+  const days = last7Dates().map(function(date){
+    const day = getDayLog(date);
+    const entries = day[personKey] || [];
+    const logged = entries.length > 0;
+    let kcal = 0, protein = 0, fat = 0, satFat = 0, fiber = 0;
+    entries.forEach(function(e){ kcal += e.kcal; protein += e.protein; fat += e.fat; satFat += e.satFat; fiber += e.fiber; });
+    const target = (typeof day.targets[personKey] === 'number') ? day.targets[personKey] : PROF[personKey].calGoalNum;
+    const inBand = logged && target > 0 && Math.abs(kcal - target) <= target * 0.10;
+    return {date: date, letter: dayLetterFor(date), logged: logged, kcal: Math.round(kcal), target: Math.round(target),
+      protein: protein, fat: fat, satFat: satFat, fiber: fiber, inBand: inBand};
+  });
+
+  const totalLoggedDays = loggedDayCount(personKey);
+  if(totalLoggedDays < 2){
+    return {hasEnoughData: false, days: days, inBandCount: 0, daysLoggedCount: 0,
+      avgProtein: 0, avgFiber: 0, pctUnsaturated: 0, targetProtein: PROF[personKey].targetP, callouts: []};
+  }
+
+  const loggedDays = days.filter(function(d){ return d.logged; });
+  const sum = function(key){ return loggedDays.reduce(function(s, d){ return s + d[key]; }, 0); };
+  const avgProtein = loggedDays.length ? sum('protein') / loggedDays.length : 0;
+  const avgFiber = loggedDays.length ? sum('fiber') / loggedDays.length : 0;
+  const totalFat = sum('fat'), totalSatFat = sum('satFat');
+  const pctUnsaturated = totalFat > 0 ? (1 - totalSatFat / totalFat) * 100 : 0;
+  const inBandCount = days.filter(function(d){ return d.inBand; }).length;
+  const targetProtein = PROF[personKey].targetP;
+
+  return {
+    hasEnoughData: true, days: days, inBandCount: inBandCount, daysLoggedCount: loggedDays.length,
+    avgProtein: avgProtein, avgFiber: avgFiber, pctUnsaturated: pctUnsaturated, targetProtein: targetProtein,
+    callouts: buildInsightCallouts(avgProtein, targetProtein, avgFiber, pctUnsaturated, inBandCount)
+  };
+}
+
+// Task D1 item 4d: exactly 2 call-outs ("what's working / watch this"), picked
+// deterministically by which metric sits furthest (relatively) from its target — the most
+// notable fact wins; ties broken by this fixed rule order (protein, fiber, satFat,
+// adherence). Every clause has fixed phrasing per rule × verdict — no free text.
+function buildInsightCallouts(avgProtein, targetProtein, avgFiber, pctUnsaturated, inBandCount){
+  const satSharePct = 100 - pctUnsaturated;
+  const rules = [
+    {
+      key: 'protein', magnitude: targetProtein > 0 ? Math.abs(avgProtein - targetProtein) / targetProtein : 0,
+      good: avgProtein >= targetProtein,
+      icon: function(good){ return good ? '💪' : '📌'; },
+      text: function(good){ return good
+        ? 'Protein average is on target — ' + Math.round(avgProtein) + 'g/day vs a ' + targetProtein + 'g goal.'
+        : 'Protein is running under target — ' + Math.round(avgProtein) + 'g/day vs a ' + targetProtein + 'g goal.'; }
+    },
+    {
+      key: 'fiber', magnitude: Math.abs(avgFiber - 25) / 25,
+      good: avgFiber >= 25,
+      icon: function(good){ return good ? '🌾' : '📌'; },
+      text: function(good){ return good
+        ? 'Fiber is solidly heart-smart — averaging ' + Math.round(avgFiber) + 'g/day, at or above the 25g guide.'
+        : 'Fiber is under the 25g guide — averaging ' + Math.round(avgFiber) + 'g/day this week.'; }
+    },
+    {
+      key: 'satFat', magnitude: Math.abs(satSharePct - 33) / 33,
+      good: satSharePct <= 33,
+      icon: function(good){ return good ? '❤️' : '📌'; },
+      text: function(good){ return good
+        ? 'Saturated fat stays in check — ' + Math.round(satSharePct) + '% of fat vs the 33% cap.'
+        : 'Saturated fat is creeping up — ' + Math.round(satSharePct) + '% of fat vs the 33% cap.'; }
+    },
+    {
+      key: 'adherence', magnitude: Math.abs(inBandCount / 7 - 0.7),
+      good: inBandCount >= 5,
+      icon: function(good){ return good ? '🎉' : '📌'; },
+      text: function(good){ return good
+        ? 'Adherence is steady — ' + inBandCount + ' of 7 days landed inside your target range.'
+        : 'A few days drifted outside your target range — ' + inBandCount + ' of 7 this week.'; }
+    }
+  ];
+  rules.sort(function(a, b){ return b.magnitude - a.magnitude; }); // stable sort (ES2019+): ties keep the fixed order above
+  return rules.slice(0, 2).map(function(r){ return {key: r.key, good: r.good, icon: r.icon(r.good), text: r.text(r.good)}; });
 }
 
 /* ---------------- avoid-list editor helpers (task C3 item 2) ---------------- */
@@ -537,10 +657,12 @@ function chooseSwap(i){
   if(!alt) return;
   const view = applySwap(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, alt.id);
 
-  // If this slot was already confirmed today, keep the persisted log entry in sync with
-  // what was actually swapped in (the log replay uses these stored display fields).
-  if(swapCtx.dayIndex === todayDayIndex() && todayLog.slots[swapCtx.slot] && todayLog.slots[swapCtx.slot].status === 'confirmed'){
-    todayLog.slots[swapCtx.slot] = {status: 'confirmed', title: view.title, emoji: view.emoji, kcal: view.kcal};
+  // If this slot is already logged today (breakfast always is; lunch/dinner/snack once
+  // confirmed), correct its LogEntry in place (task D1: a swap edits today's history, it
+  // never duplicates it — logPlanEntry/upsertLogEntry replace by slot).
+  if(swapCtx.dayIndex === todayDayIndex() && slotLogStatus(todayISO(), swapCtx.person, swapCtx.slot) === 'confirmed'){
+    const planEntry = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot][swapCtx.person];
+    logPlanEntry(todayISO(), swapCtx.person, swapCtx.slot, planEntry.recipeId, planEntry.portion);
   }
 
   // Re-render every surface that shows the plan; consumed-so-far follows the plan's

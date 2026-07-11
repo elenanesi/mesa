@@ -56,10 +56,12 @@ function recomputeProf(key){
   p.bp = Math.min(100, Math.round(p.consumed.p / targetP * 100)) + '%';
   p.bc = Math.min(100, Math.round(p.consumed.c / targetC * 100)) + '%';
   p.bff = Math.min(100, Math.round(p.consumed.f / targetF * 100)) + '%';
-  // Good/sat fat line scales with the fat *target* (not the fixed consumed grams) so it
-  // visibly moves with the split, holding roughly a 75/25 good/sat ratio.
-  p.fatGood = Math.round(targetF * 0.75);
-  p.fatSat = targetF - p.fatGood;
+  // Good/sat fat line (task D1 item 3 "Today = Log"): the REAL split of today's logged
+  // fat (planner.js:recomputeConsumed sums satFat straight from each LogEntry, itself
+  // computed at log time by recipeNutrition()/foodMacros()) — no more 75/25 target-based
+  // approximation. Zero before anything is logged, exactly like every other consumed number.
+  p.fatSat = Math.round(p.consumed.satFat || 0);
+  p.fatGood = Math.max(0, Math.round(p.consumed.f || 0) - p.fatSat);
 }
 
 /* ---------------- computed nutrition core (task C1) ----------------

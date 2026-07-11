@@ -16,6 +16,10 @@ function go(id, el){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   var tab = el && el.dataset.tab ? el : document.querySelector('.tab[data-tab="'+id+'"]');
   if(tab) tab.classList.add('on');
+  // Task D1: Insights is cheap to recompute (≤7 days of small arrays) and only ever
+  // needs to be fresh at the moment it's shown, so it repaints on every visit rather than
+  // needing an eager call from every log-mutating action (confirm/skip/quick-add/swap).
+  if(id === 'insights' && typeof renderInsights === 'function') renderInsights();
 }
 
 /* ---------------- open a recipe from a tap ---------------- */
@@ -97,26 +101,29 @@ function maybeShowOnboarding(){
   }
 }
 
-// Replays today's persisted plan-first log status (state.js: todayLog) onto the cards
-// renderLogPlan() just built fresh from the active menu. Called from the END of every
-// renderLogPlan() run (task C2 — confirms survive plan re-renders within the same day,
-// not just boot) — silent:true suppresses the confirm/skip toast for a replay, not a
-// live tap. Breakfast is never replayed: it has no confirm/skip UI, always auto-done.
+// Replays today's persisted plan-first log status (state.js: logHistory/slotLogStatus)
+// onto the cards renderLogPlan() just built fresh from the active menu. Called from the
+// END of every renderLogPlan() run (task C2 — confirms survive plan re-renders within the
+// same day, not just boot) — silent:true suppresses the confirm/skip toast AND the
+// re-log (state.js:logConfirm skips logPlanEntry when silent, since the entry is already
+// in logHistory — replaying must never rewrite it with whatever's in activeMenu right
+// now). Breakfast is never replayed here: it has no confirm/skip UI, always auto-logged
+// fresh by ensureTodayBreakfastLogged() (planner.js) inside renderLogPlan().
 function restoreTodayLog(){
-  Object.keys(todayLog.slots).forEach(function(slot){
-    const entry = todayLog.slots[slot];
-    if(!entry || slot === 'breakfast') return;
-    if(entry.status === 'confirmed'){
+  ['lunch', 'dinner', 'snack'].forEach(function(slot){
+    const status = slotLogStatus(todayISO(), currentProf, slot);
+    if(status === 'confirmed'){
+      const entry = getDayLog(todayISO())[currentProf].find(function(e){ return e.kind === 'plan' && e.slot === slot; });
+      const r = entry && RECIPES[entry.ref];
       const card = document.getElementById('log-' + slot);
-      if(card){
-        if(entry.title){ const t = card.querySelector('.t'); if(t) t.textContent = entry.title; }
-        if(entry.emoji){ const th = card.querySelector('.thumb'); if(th) th.textContent = entry.emoji; }
+      if(card && r){
+        const t = card.querySelector('.t'); if(t) t.textContent = r.title;
+        const th = card.querySelector('.thumb'); if(th) th.textContent = r.emoji;
       }
-      if(entry.title) TITLES[slot] = entry.title;
-      if(entry.emoji) EMOJI[slot] = entry.emoji;
-      if(typeof entry.kcal === 'number') LOGKCAL[slot] = entry.kcal;
+      if(r){ TITLES[slot] = r.title; EMOJI[slot] = r.emoji; }
+      if(entry) LOGKCAL[slot] = entry.kcal;
       logConfirm(slot, true);
-    } else if(entry.status === 'skipped'){
+    } else if(status === 'skipped'){
       logSkip(slot, true);
     }
   });
