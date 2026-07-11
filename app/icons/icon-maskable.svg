@@ -1,0 +1,18 @@
+<svg width="512" height="512" viewBox="0 0 512 512" xmlns="http://www.w3.org/2000/svg">
+  <!-- Mesa maskable icon: full-bleed sage square (OS applies its own mask shape),
+       same bowl-and-steam mark, already inside the 40%-radius safe-zone circle. -->
+  <rect x="0" y="0" width="512" height="512" fill="#6f8f76"/>
+
+  <!-- steam -->
+  <path d="M 196 168 C 176 148, 176 124, 196 104" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round"/>
+  <path d="M 256 168 C 236 148, 236 118, 256 96" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round"/>
+  <path d="M 316 168 C 296 148, 296 124, 316 104" fill="none" stroke="#ffffff" stroke-width="18" stroke-linecap="round"/>
+
+  <!-- bowl -->
+  <path d="M 128 236
+           a 128 128 0 0 0 256 0
+           z"
+        fill="#ffffff"/>
+  <rect x="220" y="364" width="72" height="20" rx="10" fill="#ffffff"/>
+  <rect x="120" y="228" width="272" height="16" rx="8" fill="#5b7860"/>
+</svg>

@@ -586,7 +586,13 @@ function buildSnapshot(){
 // days first (task D1) so the store never grows unbounded.
 function persist(){
   pruneLogHistory();
-  try{ localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot())); }catch(e){ /* storage unavailable/full — no-op */ }
+  try{
+    localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot()));
+  }catch(e){
+    // Storage unavailable or full (iOS PWA localStorage quota, private mode, etc.) —
+    // degrade to in-memory only rather than crashing the app.
+    console.warn('Mesa: could not persist state to localStorage', e);
+  }
 }
 
 // Deep-merges saved values over the in-code defaults above: only known,

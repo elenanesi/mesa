@@ -141,3 +141,15 @@ applyProf(currentProf);
 renderRecipe('salmon');
 recipeOrigin = 'today';
 maybeShowOnboarding();
+
+/* ---------------- service worker registration (task E1) ---------------- */
+// Offline shell + installability. Guarded so it's a silent no-op wherever it
+// can't work: browsers without SW support, and file:// (not a secure context —
+// registration throws there, e.g. opening index.html directly on a phone).
+if('serviceWorker' in navigator && location.protocol !== 'file:'){
+  window.addEventListener('load', function(){
+    navigator.serviceWorker.register('sw.js').catch(function(err){
+      console.warn('Mesa: service worker registration failed', err);
+    });
+  });
+}
