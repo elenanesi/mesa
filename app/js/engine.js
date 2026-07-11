@@ -62,6 +62,65 @@ function recomputeProf(key){
   p.fatSat = targetF - p.fatGood;
 }
 
+/* ---------------- computed nutrition core (task C1) ----------------
+   Every displayed nutrition number is computed from data/foods.js +
+   data/recipes.js — never typed in (ground rule #1). This block is the
+   single source both the recipe screen and the legacy-recipe
+   compatibility view (state.js) read from. */
+
+// Scales one food's macros to `grams`. Per-piece foods (unit:'piece', e.g. eggs) store
+// PER-PIECE values with avgG documenting the assumed piece weight, so the scale factor
+// is grams/avgG rather than grams/per (per-100g/ml foods use grams/per, per === 100).
+// A missing food id is a data bug, never a crash: log loudly and return zeros so a bad
+// id degrades one line of a nutrition grid to "0" instead of breaking the screen.
+function foodMacros(foodId, grams){
+  const food = (typeof FOODS !== 'undefined') ? FOODS[foodId] : undefined;
+  if(!food){
+    console.error('foodMacros: unknown food id "' + foodId + '"');
+    return {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  }
+  const factor = (food.unit === 'piece') ? (grams / food.avgG) : (grams / food.per);
+  return {
+    kcal: food.kcal * factor,
+    protein: food.protein * factor,
+    carbs: food.carbs * factor,
+    fat: food.fat * factor,
+    satFat: food.satFat * factor,
+    fiber: food.fiber * factor
+  };
+}
+
+// Sums a recipe's `ingredients` (never `toTaste` — unquantified garnish, see
+// data/recipes.js) at `servings`x the as-written recipe. Returns both the scaled
+// `totals` and the servings-invariant `perServing` (totals/servings always equals "the
+// recipe as written" — the same base unit the UI's servings steppers scale against).
+// kcal is computed 4/4/9 from the SUMMED macros — same policy as foods.js — so a
+// recipe's kcal always stays internally consistent with its own protein/carbs/fat
+// instead of drifting from summing each ingredient's already-rounded kcal field.
+// goodFat = fat − satFat: the real ingredient-derived good/sat split for the recipe
+// screen (no more 75/25 approximation there — that approximation remains only for the
+// profile-level *target* split in recomputeProf, which this does not touch).
+function recipeNutrition(recipeId, servings){
+  servings = (typeof servings === 'number' && servings > 0) ? servings : 1;
+  const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, goodFat:0};
+  const r = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[recipeId] : undefined;
+  if(!r){
+    console.error('recipeNutrition: unknown recipe id "' + recipeId + '"');
+    return {totals: Object.assign({}, zero), perServing: Object.assign({}, zero)};
+  }
+  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  (r.ingredients || []).forEach(function(ing){
+    const m = foodMacros(ing[0], ing[1] * servings);
+    totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
+    totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
+  });
+  totals.kcal = 4 * totals.protein + 4 * totals.carbs + 9 * totals.fat;
+  totals.goodFat = totals.fat - totals.satFat;
+  const perServing = {};
+  Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / servings; });
+  return {totals: totals, perServing: perServing};
+}
+
 const SPLIT_BOUNDS = {P:[10,40], C:[20,60], F:[20,45]};
 const SPLIT_PROP = {P:'kP', C:'kC', F:'kF'};
 const SPLIT_LABEL = {P:'Protein', C:'Carbs', F:'Fat'};

@@ -1,0 +1,585 @@
+/* ===================================================================
+   foods.js — Mesa food database (task B1)
+
+   Global `const FOODS = {...}` keyed by stable kebab-case id. Values
+   are per 100g/100ml edible portion unless unit:'piece' (see 'eggs'),
+   in which case `per`, `kcal`, `protein`, `carbs`, `fat`, `satFat`,
+   `fiber` are all PER PIECE (avgG documents the assumed piece weight).
+
+   Sourcing: standard published tables — mostly USDA FoodData Central
+   (FDC id noted per entry where a specific match exists; "-style"
+   means a representative FDC entry for that food class was used, not
+   an exact id lookup) plus a couple of CREA-style Italian references
+   for farro/bresaola where USDA doesn't have a close match. Rounded
+   to 1 decimal (kcal to whole numbers).
+
+   kcal policy: kcal is computed as round(4*protein + 4*carbs + 9*fat)
+   from the published protein/carb/fat grams (EU-style labeling: fiber
+   is counted WITHIN carbs, not subtracted as "net carbs"). This is
+   the standard Atwater general-factor approach and keeps every entry
+   trivially consistent with the 4/4/9 self-check below. It can read
+   a little higher than some published "kcal" columns for very fibrous
+   low-calorie vegetables (USDA sometimes uses refined, food-specific
+   energy factors that discount fiber further) — that's a known,
+   deliberate simplification, not a typo; the macro grams themselves
+   are the sourced values.
+
+   Composite ingredients (mockup shorthand like 'Roasted mixed veg')
+   get ONE pragmatic blended entry — a weighted average of their
+   components, documented in `src` — so recipes keep working, PLUS
+   the individual components as their own separate foods.
+
+   Categories (shopping list): Produce | Protein | Dairy | Pantry |
+   Bakery | Frozen. Flags (nutrition tags): lowGI, omega3, selenium,
+   highIodine, glutenFree, highFiber, fermented.
+
+   FOOD_ALIASES maps every ingredient-name STRING used in RECIPES
+   (app/js/state.js) to a food id here, since recipe ingredient names
+   are free-text mockup copy ("Salmon fillet") and don't always match
+   a food's display `name` ("Salmon fillet, raw (Atlantic)") exactly.
+
+   NOT wired into index.html yet — that happens in task C1.
+   =================================================================== */
+
+const FOODS = {
+
+  /* ---------------- Produce ---------------- */
+
+  'mixed-berries': {
+    name: 'Mixed berries (strawberry, blueberry, raspberry)', per: 100, unit: 'g',
+    kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5,
+    flags: ['lowGI'], cat: 'Produce', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
+  },
+  'bell-pepper': {
+    name: 'Bell pepper, red, raw', per: 100, unit: 'g',
+    kcal: 31, protein: 1.0, carbs: 6.0, fat: 0.3, satFat: 0.0, fiber: 2.1,
+    flags: [], cat: 'Produce', src: 'USDA FDC 170108 (pepper, sweet, red, raw)'
+  },
+  'spinach': {
+    name: 'Spinach, baby leaf, raw', per: 100, unit: 'g',
+    kcal: 30, protein: 2.9, carbs: 3.6, fat: 0.4, satFat: 0.1, fiber: 2.2,
+    flags: [], cat: 'Produce', src: 'USDA FDC 168462 (spinach, raw); kcal per 4/4/9'
+  },
+  'courgette': {
+    name: 'Courgette / zucchini, raw', per: 100, unit: 'g',
+    kcal: 20, protein: 1.2, carbs: 3.1, fat: 0.3, satFat: 0.1, fiber: 1.0,
+    flags: [], cat: 'Produce', src: 'USDA FDC 169291 (zucchini, raw)'
+  },
+  'aubergine': {
+    name: 'Aubergine / eggplant, raw', per: 100, unit: 'g',
+    kcal: 29, protein: 1.0, carbs: 5.9, fat: 0.2, satFat: 0.0, fiber: 3.0,
+    flags: ['highFiber'], cat: 'Produce', src: 'USDA FDC 169228 (eggplant, raw)'
+  },
+  'red-onion': {
+    name: 'Onion, red, raw', per: 100, unit: 'g',
+    kcal: 43, protein: 1.1, carbs: 9.3, fat: 0.1, satFat: 0.0, fiber: 1.7,
+    flags: [], cat: 'Produce', src: 'USDA FDC 170000-style (onion, red, raw)'
+  },
+  'lemon-juice': {
+    name: 'Lemon juice, raw', per: 100, unit: 'ml',
+    kcal: 31, protein: 0.4, carbs: 6.9, fat: 0.2, satFat: 0.0, fiber: 0.3,
+    flags: [], cat: 'Produce', src: 'USDA FDC 167747 (lemon juice, raw); kcal per 4/4/9'
+  },
+  'cherry-tomatoes': {
+    name: 'Cherry tomatoes, raw', per: 100, unit: 'g',
+    kcal: 21, protein: 0.9, carbs: 3.9, fat: 0.2, satFat: 0.0, fiber: 1.2,
+    flags: [], cat: 'Produce', src: 'USDA FDC 170457 (tomatoes, cherry, raw)'
+  },
+  'cucumber': {
+    name: 'Cucumber, raw, with peel', per: 100, unit: 'g',
+    kcal: 18, protein: 0.7, carbs: 3.6, fat: 0.1, satFat: 0.0, fiber: 0.5,
+    flags: [], cat: 'Produce', src: 'USDA FDC 168409 (cucumber, raw, with peel)'
+  },
+  'broccoli': {
+    name: 'Broccoli, raw', per: 100, unit: 'g',
+    kcal: 41, protein: 2.8, carbs: 6.6, fat: 0.4, satFat: 0.1, fiber: 2.6,
+    flags: ['highFiber'], cat: 'Produce', src: 'USDA FDC 170379 (broccoli, raw)'
+  },
+  'garlic': {
+    name: 'Garlic, raw', per: 100, unit: 'g',
+    kcal: 163, protein: 6.4, carbs: 33.1, fat: 0.5, satFat: 0.1, fiber: 2.1,
+    flags: [], cat: 'Produce', src: 'USDA FDC 169230 (garlic, raw); kcal per 4/4/9'
+  },
+  'avocado': {
+    name: 'Avocado, raw', per: 100, unit: 'g',
+    kcal: 174, protein: 2.0, carbs: 8.5, fat: 14.7, satFat: 2.1, fiber: 6.7,
+    flags: ['highFiber'], cat: 'Produce', src: 'USDA FDC 171705 (avocado, raw)'
+  },
+  'tomatoes': {
+    name: 'Tomatoes, raw', per: 100, unit: 'g',
+    kcal: 21, protein: 0.9, carbs: 3.9, fat: 0.2, satFat: 0.0, fiber: 1.2,
+    flags: [], cat: 'Produce', src: 'USDA FDC 170457-style (tomatoes, red, raw)'
+  },
+  'potatoes': {
+    name: 'Potatoes, raw', per: 100, unit: 'g',
+    kcal: 77, protein: 2.0, carbs: 17.0, fat: 0.1, satFat: 0.0, fiber: 2.2,
+    flags: ['glutenFree'], cat: 'Produce', src: 'USDA FDC 170026 (potato, flesh and skin, raw)'
+  },
+  'oranges': {
+    name: 'Oranges, raw', per: 100, unit: 'g',
+    kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4,
+    flags: ['highFiber'], cat: 'Produce', src: 'USDA FDC 169918 (orange, raw)'
+  },
+  'apples': {
+    name: 'Apples, raw, with skin', per: 100, unit: 'g',
+    kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4,
+    flags: ['highFiber'], cat: 'Produce', src: 'USDA FDC 171688 (apple, raw, with skin)'
+  },
+  'bananas': {
+    name: 'Bananas, raw', per: 100, unit: 'g',
+    kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6,
+    flags: [], cat: 'Produce', src: 'USDA FDC 173944 (banana, raw)'
+  },
+  'rocket-arugula': {
+    name: 'Rocket / arugula, raw', per: 100, unit: 'g',
+    kcal: 32, protein: 2.6, carbs: 3.7, fat: 0.7, satFat: 0.1, fiber: 1.6,
+    flags: [], cat: 'Produce', src: 'USDA FDC 168435 (arugula, raw); kcal per 4/4/9'
+  },
+  'mixed-peppers-spinach': {
+    name: 'Mixed peppers & spinach (blend)', per: 100, unit: 'g',
+    kcal: 30, protein: 1.8, carbs: 5.0, fat: 0.3, satFat: 0.0, fiber: 2.1,
+    flags: [], cat: 'Produce',
+    src: 'Composite: 60% red bell pepper + 40% spinach, weighted avg of USDA raw values'
+  },
+  'roasted-mixed-veg': {
+    name: 'Roasted mixed veg (courgette, pepper, aubergine, onion)', per: 100, unit: 'g',
+    kcal: 58, protein: 1.1, carbs: 6.1, fat: 3.2, satFat: 0.4, fiber: 2.0,
+    flags: ['highFiber'], cat: 'Produce',
+    src: 'Composite: equal-weight courgette + red bell pepper + aubergine + red onion (USDA raw) + ~3g/100g roasting oil'
+  },
+  'broccoli-courgette': {
+    name: 'Broccoli & courgette (blend)', per: 100, unit: 'g',
+    kcal: 31, protein: 2.0, carbs: 4.9, fat: 0.4, satFat: 0.1, fiber: 1.8,
+    flags: ['highFiber'], cat: 'Produce',
+    src: 'Composite: 50/50 broccoli + courgette, USDA raw values'
+  },
+  'cherry-tomatoes-cucumber': {
+    name: 'Cherry tomatoes & cucumber (blend)', per: 100, unit: 'g',
+    kcal: 20, protein: 0.8, carbs: 3.8, fat: 0.2, satFat: 0.0, fiber: 0.9,
+    flags: [], cat: 'Produce',
+    src: 'Composite: 50/50 cherry tomatoes + cucumber, USDA raw values'
+  },
+
+  /* ---------------- Protein ---------------- */
+
+  'eggs': {
+    name: 'Eggs, whole', per: 1, unit: 'piece', avgG: 50,
+    kcal: 70, protein: 6.3, carbs: 0.4, fat: 4.8, satFat: 1.6, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 748967 (egg, whole, raw), per ~50g large egg'
+  },
+  'salmon-fillet': {
+    name: 'Salmon fillet, raw (Atlantic)', per: 100, unit: 'g',
+    kcal: 202, protein: 20.4, carbs: 0, fat: 13.4, satFat: 3.1, fiber: 0,
+    flags: ['omega3', 'selenium'], cat: 'Protein', src: 'USDA FDC 175167 (salmon, Atlantic, raw)'
+  },
+  'turkey-breast': {
+    name: 'Turkey breast, sliced, cooked (deli-style)', per: 100, unit: 'g',
+    kcal: 100, protein: 17.1, carbs: 1.9, fat: 2.7, satFat: 0.7, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 171506-style (turkey breast, sliced, cooked)'
+  },
+  'chicken-breast': {
+    name: 'Chicken breast, grilled, skinless', per: 100, unit: 'g',
+    kcal: 156, protein: 31.0, carbs: 0, fat: 3.6, satFat: 1.0, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 171077 (chicken, breast, grilled, skinless)'
+  },
+  'tuna-in-olive-oil': {
+    name: 'Tuna, canned in olive oil, drained', per: 100, unit: 'g',
+    kcal: 187, protein: 26.5, carbs: 0, fat: 9.0, satFat: 1.6, fiber: 0,
+    flags: ['omega3', 'selenium'], cat: 'Protein', src: 'USDA FDC 175159 (tuna, canned in oil, drained)'
+  },
+  'tuna': {
+    name: 'Tuna, canned in water, drained', per: 100, unit: 'g',
+    kcal: 112, protein: 26.2, carbs: 0, fat: 0.8, satFat: 0.2, fiber: 0,
+    flags: ['selenium', 'omega3'], cat: 'Protein', src: 'USDA FDC 175160-style (tuna, canned in water, drained)'
+  },
+  'sardines': {
+    name: 'Sardines, canned in olive oil, drained', per: 100, unit: 'g',
+    kcal: 202, protein: 24.6, carbs: 0, fat: 11.5, satFat: 1.5, fiber: 0,
+    flags: ['omega3', 'selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC 175139 (sardines, canned in oil, drained)'
+  },
+  'cod': {
+    name: 'Cod / white fish, raw', per: 100, unit: 'g',
+    kcal: 78, protein: 17.8, carbs: 0, fat: 0.7, satFat: 0.1, fiber: 0,
+    flags: ['selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC 175167-style (cod, Atlantic, raw)'
+  },
+  'prawns': {
+    name: 'Prawns / shrimp, raw', per: 100, unit: 'g',
+    kcal: 100, protein: 24.0, carbs: 0.2, fat: 0.3, satFat: 0.1, fiber: 0,
+    flags: ['selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC 171998 (shrimp, raw)'
+  },
+  'chicken-thigh': {
+    name: 'Chicken thigh, skinless, raw', per: 100, unit: 'g',
+    kcal: 141, protein: 17.0, carbs: 0, fat: 8.1, satFat: 2.3, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 171476 (chicken, thigh, skinless, raw)'
+  },
+  'beef-mince-lean': {
+    name: 'Beef mince, lean (95/5), raw', per: 100, unit: 'g',
+    kcal: 129, protein: 21.0, carbs: 0, fat: 5.0, satFat: 2.1, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 174036-style (beef, ground, 95% lean, raw)'
+  },
+  'pork-loin': {
+    name: 'Pork loin, lean, raw', per: 100, unit: 'g',
+    kcal: 127, protein: 21.5, carbs: 0, fat: 4.5, satFat: 1.6, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 167907-style (pork loin, lean, raw)'
+  },
+  'bresaola': {
+    name: 'Bresaola (cured beef), sliced', per: 100, unit: 'g',
+    kcal: 148, protein: 32.0, carbs: 0.5, fat: 2.0, satFat: 0.8, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'CREA-style Italian food table (bresaola)'
+  },
+  'chickpeas': {
+    name: 'Chickpeas, cooked', per: 100, unit: 'g',
+    kcal: 169, protein: 8.9, carbs: 27.4, fat: 2.6, satFat: 0.3, fiber: 7.6,
+    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Protein', src: 'USDA FDC 173757 (chickpeas, cooked, boiled)'
+  },
+  'cannellini-beans': {
+    name: 'Cannellini / white beans, cooked', per: 100, unit: 'g',
+    kcal: 131, protein: 8.7, carbs: 22.8, fat: 0.5, satFat: 0.1, fiber: 6.3,
+    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Protein', src: 'USDA FDC 173743-style (white/cannellini beans, cooked)'
+  },
+
+  /* ---------------- Dairy ---------------- */
+
+  'greek-yogurt': {
+    name: 'Greek yogurt, plain (2%)', per: 100, unit: 'g',
+    kcal: 72, protein: 9.9, carbs: 3.9, fat: 1.9, satFat: 1.2, fiber: 0,
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
+  },
+  'skyr': {
+    name: 'Skyr, plain', per: 100, unit: 'g',
+    kcal: 62, protein: 11.0, carbs: 4.0, fat: 0.2, satFat: 0.1, fiber: 0,
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', src: 'Icelandic dairy standard table (skyr, plain)'
+  },
+  'feta-cheese': {
+    name: 'Feta cheese', per: 100, unit: 'g',
+    kcal: 265, protein: 14.2, carbs: 4.1, fat: 21.3, satFat: 14.9, fiber: 0,
+    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173417 (cheese, feta)'
+  },
+  'parmesan': {
+    name: 'Parmesan, grated', per: 100, unit: 'g',
+    kcal: 388, protein: 35.8, carbs: 3.2, fat: 25.8, satFat: 16.4, fiber: 0,
+    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173419-style (cheese, parmesan, grated)'
+  },
+  'mozzarella': {
+    name: 'Mozzarella, fresh (whole milk)', per: 100, unit: 'g',
+    kcal: 283, protein: 18.1, carbs: 2.2, fat: 22.4, satFat: 13.2, fiber: 0,
+    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173441-style (cheese, mozzarella, whole milk)'
+  },
+  'ricotta': {
+    name: 'Ricotta, whole milk', per: 100, unit: 'g',
+    kcal: 166, protein: 8.8, carbs: 3.5, fat: 13.0, satFat: 8.3, fiber: 0,
+    flags: [], cat: 'Dairy', src: 'USDA FDC 173439 (cheese, ricotta, whole milk)'
+  },
+  'milk': {
+    name: 'Milk, whole (3.5% fat)', per: 100, unit: 'ml',
+    kcal: 65, protein: 3.3, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0,
+    flags: [], cat: 'Dairy', src: 'USDA FDC 746782 (milk, whole, 3.25-3.5% fat)'
+  },
+  'oat-milk': {
+    name: 'Oat milk, unsweetened', per: 100, unit: 'ml',
+    kcal: 43, protein: 0.6, carbs: 6.7, fat: 1.5, satFat: 0.2, fiber: 0.8,
+    flags: [], cat: 'Dairy', src: 'Generic oat milk, unsweetened, manufacturer label average'
+  },
+
+  /* ---------------- Bakery ---------------- */
+
+  'rye-bread': {
+    name: 'Rye bread', per: 100, unit: 'g',
+    kcal: 257, protein: 8.5, carbs: 48.3, fat: 3.3, satFat: 0.5, fiber: 5.8,
+    flags: ['highFiber'], cat: 'Bakery', src: 'USDA FDC 172686 (bread, rye)'
+  },
+  'wholewheat-bread': {
+    name: 'Whole-wheat bread', per: 100, unit: 'g',
+    kcal: 232, protein: 9.0, carbs: 41.3, fat: 3.4, satFat: 0.7, fiber: 7.0,
+    flags: ['highFiber'], cat: 'Bakery', src: 'USDA FDC 172687-style (bread, whole wheat)'
+  },
+
+  /* ---------------- Pantry ---------------- */
+
+  'granola': {
+    name: 'Granola, plain', per: 100, unit: 'g',
+    kcal: 476, protein: 10.0, carbs: 64.0, fat: 20.0, satFat: 3.5, fiber: 7.0,
+    flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 173977-style (granola, plain)'
+  },
+  'honey': {
+    name: 'Honey', per: 100, unit: 'g',
+    kcal: 331, protein: 0.3, carbs: 82.4, fat: 0, satFat: 0, fiber: 0.2,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 169640 (honey)'
+  },
+  'chia-seeds': {
+    name: 'Chia seeds', per: 100, unit: 'g',
+    kcal: 511, protein: 16.5, carbs: 42.1, fat: 30.7, satFat: 3.3, fiber: 34.4,
+    flags: ['omega3', 'highFiber', 'glutenFree'], cat: 'Pantry', src: 'USDA FDC 170554 (chia seeds, dried)'
+  },
+  'quinoa-dry': {
+    name: 'Quinoa, dry (uncooked)', per: 100, unit: 'g',
+    kcal: 368, protein: 14.1, carbs: 64.2, fat: 6.1, satFat: 0.7, fiber: 7.0,
+    flags: ['lowGI', 'glutenFree', 'highFiber'], cat: 'Pantry', src: 'USDA FDC 168917 (quinoa, uncooked)'
+  },
+  'cooked-lentils': {
+    name: 'Lentils, cooked', per: 100, unit: 'g',
+    kcal: 120, protein: 9.0, carbs: 20.1, fat: 0.4, satFat: 0.1, fiber: 7.9,
+    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Pantry', src: 'USDA FDC 172420 (lentils, cooked, boiled)'
+  },
+  'farro-cooked': {
+    name: 'Farro, cooked', per: 100, unit: 'g',
+    kcal: 133, protein: 5.0, carbs: 26.0, fat: 1.0, satFat: 0.2, fiber: 3.5,
+    flags: ['highFiber', 'lowGI'], cat: 'Pantry', src: 'CREA-style Italian food table (farro, cooked)'
+  },
+  'pasta': {
+    name: 'Pasta, dry (durum wheat)', per: 100, unit: 'g',
+    kcal: 364, protein: 13.0, carbs: 74.7, fat: 1.5, satFat: 0.3, fiber: 3.2,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 168927-style (pasta, dry, unenriched)'
+  },
+  'wholegrain-pasta': {
+    name: 'Wholegrain pasta, dry', per: 100, unit: 'g',
+    kcal: 328, protein: 13.4, carbs: 63.0, fat: 2.5, satFat: 0.5, fiber: 8.0,
+    flags: ['highFiber', 'lowGI'], cat: 'Pantry', src: 'USDA FDC 168928-style (pasta, whole wheat, dry)'
+  },
+  'rice': {
+    name: 'Rice, white, dry', per: 100, unit: 'g',
+    kcal: 355, protein: 7.1, carbs: 80.0, fat: 0.7, satFat: 0.2, fiber: 1.3,
+    flags: ['glutenFree'], cat: 'Pantry', src: 'USDA FDC 169756 (rice, white, long-grain, dry)'
+  },
+  'couscous': {
+    name: 'Couscous, dry', per: 100, unit: 'g',
+    kcal: 346, protein: 12.8, carbs: 72.4, fat: 0.6, satFat: 0.1, fiber: 5.0,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 169736 (couscous, dry)'
+  },
+  'barley': {
+    name: 'Barley, pearled, dry', per: 100, unit: 'g',
+    kcal: 361, protein: 9.9, carbs: 77.7, fat: 1.2, satFat: 0.3, fiber: 15.6,
+    flags: ['highFiber', 'lowGI'], cat: 'Pantry', src: 'USDA FDC 170287 (barley, pearled, raw)'
+  },
+  'olive-oil': {
+    name: 'Olive oil, extra virgin', per: 100, unit: 'ml',
+    kcal: 900, protein: 0, carbs: 0, fat: 100, satFat: 13.8, fiber: 0,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 171413 (oil, olive)'
+  },
+  'balsamic-vinegar': {
+    name: 'Balsamic vinegar', per: 100, unit: 'ml',
+    kcal: 90, protein: 0.5, carbs: 22.0, fat: 0, satFat: 0, fiber: 0,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 172387-style (vinegar, balsamic); kcal per 4/4/9'
+  },
+  'dark-chocolate-85': {
+    name: 'Dark chocolate, 85% cocoa', per: 100, unit: 'g',
+    kcal: 591, protein: 7.8, carbs: 23.0, fat: 52.0, satFat: 31.0, fiber: 11.0,
+    flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 170272-style (chocolate, dark, 85% cacao)'
+  },
+  'capers': {
+    name: 'Capers, brined, drained', per: 100, unit: 'g',
+    kcal: 37, protein: 2.4, carbs: 4.9, fat: 0.9, satFat: 0.1, fiber: 3.2,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 170915 (capers, canned); kcal per 4/4/9'
+  },
+  'olives': {
+    name: 'Olives, green, in brine', per: 100, unit: 'g',
+    kcal: 157, protein: 1.0, carbs: 3.8, fat: 15.3, satFat: 2.0, fiber: 3.3,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 171899-style (olives, green, canned/pickled)'
+  },
+  'sweet-potato': {
+    name: 'Sweet potato', per: 100, unit: 'g',
+    kcal: 88, protein: 1.6, carbs: 20.1, fat: 0.1, satFat: 0, fiber: 3.0,
+    flags: ['highFiber', 'glutenFree'], cat: 'Produce', src: 'USDA FDC 168482 (sweet potato, raw); kcal via 4/4/9 policy'
+  },
+  'brazil-nuts': {
+    name: 'Brazil nuts', per: 100, unit: 'g',
+    kcal: 704, protein: 14.3, carbs: 12.3, fat: 66.4, satFat: 15.1, fiber: 7.5,
+    flags: ['selenium'], cat: 'Pantry', src: 'USDA FDC 170569 (nuts, brazil, dried)'
+  },
+  'walnuts': {
+    name: 'Walnuts', per: 100, unit: 'g',
+    kcal: 702, protein: 15.2, carbs: 13.7, fat: 65.2, satFat: 6.1, fiber: 6.7,
+    flags: ['omega3', 'highFiber'], cat: 'Pantry', src: 'USDA FDC 170187 (nuts, walnuts, English)'
+  },
+  'almonds': {
+    name: 'Almonds', per: 100, unit: 'g',
+    kcal: 620, protein: 21.2, carbs: 21.6, fat: 49.9, satFat: 3.8, fiber: 12.5,
+    flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 170567 (nuts, almonds)'
+  },
+  'oats': {
+    name: 'Oats, rolled, dry', per: 100, unit: 'g',
+    kcal: 395, protein: 16.9, carbs: 66.3, fat: 6.9, satFat: 1.2, fiber: 10.6,
+    flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 173904 (oats, rolled, dry)'
+  },
+  'pumpkin-seeds': {
+    name: 'Pumpkin seeds, hulled, raw', per: 100, unit: 'g',
+    kcal: 605, protein: 30.2, carbs: 10.7, fat: 49.0, satFat: 8.7, fiber: 6.0,
+    flags: ['omega3'], cat: 'Pantry', src: 'USDA FDC 170556 (seeds, pumpkin, hulled, raw)'
+  },
+  'hummus': {
+    name: 'Hummus', per: 100, unit: 'g',
+    kcal: 175, protein: 7.9, carbs: 14.3, fat: 9.6, satFat: 1.3, fiber: 6.0,
+    flags: ['highFiber', 'glutenFree'], cat: 'Pantry', src: 'USDA FDC 172420-style (hummus, commercial)'
+  },
+  'coconut-milk': {
+    name: 'Coconut milk, canned (regular)', per: 100, unit: 'ml',
+    kcal: 245, protein: 2.3, carbs: 5.5, fat: 23.8, satFat: 21.1, fiber: 2.2,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 170173 (coconut milk, canned)'
+  },
+  'olive-oil-lemon-dressing': {
+    name: 'Olive oil & lemon dressing (blend)', per: 100, unit: 'ml',
+    kcal: 726, protein: 0.1, carbs: 1.4, fat: 80.0, satFat: 11.0, fiber: 0.1,
+    flags: [], cat: 'Pantry', src: 'Composite: 80% olive oil + 20% lemon juice by weight'
+  },
+  'pumpkin-chia-seeds': {
+    name: 'Pumpkin & chia seeds (blend)', per: 100, unit: 'g',
+    kcal: 558, protein: 23.4, carbs: 26.4, fat: 39.9, satFat: 6.0, fiber: 20.2,
+    flags: ['omega3', 'highFiber'], cat: 'Pantry', src: 'Composite: 50/50 pumpkin seeds + chia seeds by weight'
+  },
+  'herbs-black-pepper': {
+    name: 'Herbs & black pepper (mixed, to taste)', per: 100, unit: 'g',
+    kcal: 332, protein: 10.0, carbs: 65.0, fat: 3.5, satFat: 1.5, fiber: 30.0,
+    flags: [], cat: 'Pantry',
+    src: 'Composite: generic dried mixed herbs + ground black pepper, USDA spice-table averages (used in "to taste" amounts, negligible actual contribution)'
+  },
+  'vanilla-cinnamon': {
+    name: 'Vanilla or cinnamon (to taste)', per: 100, unit: 'g',
+    kcal: 202, protein: 2.0, carbs: 47.0, fat: 0.7, satFat: 0.2, fiber: 27.0,
+    flags: [], cat: 'Pantry',
+    src: 'Composite: 50/50 vanilla extract + ground cinnamon, USDA spice-table averages (used in "to taste" amounts, negligible actual contribution)'
+  }
+
+};
+
+/* ===================================================================
+   FOOD_ALIASES — every ingredient-name string used in RECIPES
+   (app/js/state.js) mapped to its food id above. Recipe ingredient
+   names are free-text mockup copy and don't always match a food's
+   display `name` exactly, so this table is the resolution layer
+   recipes.js (task B2) and validateFoods() (below) both rely on.
+   =================================================================== */
+const FOOD_ALIASES = {
+  'Greek yogurt, plain': 'greek-yogurt',
+  'Mixed berries': 'mixed-berries',
+  'Granola': 'granola',
+  'Honey': 'honey',
+  'Chia seeds': 'chia-seeds',
+  'Eggs': 'eggs',
+  'Mixed peppers & spinach': 'mixed-peppers-spinach',
+  'Rye bread': 'rye-bread',
+  'Olive oil': 'olive-oil',
+  'Herbs & black pepper': 'herbs-black-pepper',
+  'Cooked lentils': 'cooked-lentils',
+  'Roasted mixed veg': 'roasted-mixed-veg',
+  'Feta cheese': 'feta-cheese',
+  'Rocket / arugula': 'rocket-arugula',
+  'Olive oil & lemon dressing': 'olive-oil-lemon-dressing',
+  'Salmon fillet': 'salmon-fillet',
+  'Quinoa, dry': 'quinoa-dry',
+  'Baby spinach': 'spinach',
+  'Broccoli': 'broccoli',
+  // "to taste" garnish of oil + lemon + garlic — dominated by the oil in any
+  // realistic quantity, so it resolves to plain olive oil rather than a new
+  // three-way composite (the quantity is null/"to taste" in every recipe
+  // that uses it, so this never actually drives a computed number).
+  'Olive oil, lemon, garlic': 'olive-oil',
+  'Skyr, plain': 'skyr',
+  'Pumpkin & chia seeds': 'pumpkin-chia-seeds',
+  'Sliced turkey breast': 'turkey-breast',
+  'Grilled chicken breast': 'chicken-breast',
+  'Cooked farro': 'farro-cooked',
+  'Coconut milk': 'coconut-milk',
+  'Vanilla or cinnamon': 'vanilla-cinnamon',
+  'Tuna in olive oil, drained': 'tuna-in-olive-oil',
+  'Avocado': 'avocado',
+  'Cherry tomatoes & cucumber': 'cherry-tomatoes-cucumber',
+  'Broccoli & courgette': 'broccoli-courgette'
+};
+
+/* ===================================================================
+   validateFoods() — self-check, runnable in the browser console.
+   Returns {ok, errors[]}. Checks:
+     - every field present & correctly typed on every food
+     - satFat <= fat, fiber <= carbs (small epsilon for rounding)
+     - kcal within ±15% of round(4*protein + 4*carbs + 9*fat)
+     - cat is one of the allowed shopping categories
+     - every flag is one of the allowed flags
+     - no two foods share the same display `name`
+     - every RECIPES ingredient-name string (hardcoded list below,
+       read from app/js/state.js RECIPES at authoring time) resolves
+       to a real food, either directly by name or via FOOD_ALIASES
+   =================================================================== */
+const ALLOWED_CATS = ['Produce', 'Protein', 'Dairy', 'Pantry', 'Bakery', 'Frozen'];
+const ALLOWED_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree', 'highFiber', 'fermented'];
+
+// Every distinct ingredient-name string that appears in RECIPES (state.js),
+// as of task B1. Hardcoded per the task brief rather than parsed at runtime
+// so this file has no dependency on state.js loading first.
+const RECIPE_INGREDIENT_NAMES = [
+  'Greek yogurt, plain', 'Mixed berries', 'Granola', 'Honey', 'Chia seeds',
+  'Eggs', 'Mixed peppers & spinach', 'Rye bread', 'Olive oil', 'Herbs & black pepper',
+  'Cooked lentils', 'Roasted mixed veg', 'Feta cheese', 'Rocket / arugula', 'Olive oil & lemon dressing',
+  'Salmon fillet', 'Quinoa, dry', 'Baby spinach', 'Broccoli', 'Olive oil, lemon, garlic',
+  'Skyr, plain', 'Pumpkin & chia seeds', 'Sliced turkey breast', 'Grilled chicken breast', 'Cooked farro',
+  'Coconut milk', 'Vanilla or cinnamon', 'Tuna in olive oil, drained', 'Avocado', 'Cherry tomatoes & cucumber',
+  'Broccoli & courgette'
+];
+
+function validateFoods(){
+  const errors = [];
+  const EPS = 0.05; // rounding tolerance for satFat<=fat / fiber<=carbs
+  const seenNames = {};
+
+  Object.keys(FOODS).forEach(function(id){
+    const f = FOODS[id];
+    const where = 'FOODS["' + id + '"]';
+
+    if (!f || typeof f !== 'object') { errors.push(where + ': missing or not an object'); return; }
+
+    // required fields present & correctly typed
+    if (typeof f.name !== 'string' || !f.name) errors.push(where + ': name missing/invalid');
+    if (typeof f.per !== 'number') errors.push(where + ': per missing/not a number');
+    if (typeof f.unit !== 'string' || !f.unit) errors.push(where + ': unit missing/invalid');
+    ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].forEach(function(field){
+      if (typeof f[field] !== 'number' || Number.isNaN(f[field])) errors.push(where + ': ' + field + ' missing/not a number');
+    });
+    if (!Array.isArray(f.flags)) errors.push(where + ': flags missing/not an array');
+    if (typeof f.cat !== 'string' || !f.cat) errors.push(where + ': cat missing/invalid');
+    if (typeof f.src !== 'string' || !f.src) errors.push(where + ': src missing/invalid');
+    if (f.unit === 'piece' && typeof f.avgG !== 'number') errors.push(where + ': unit is "piece" but avgG missing/not a number');
+
+    if (typeof f.satFat === 'number' && typeof f.fat === 'number' && f.satFat > f.fat + EPS) {
+      errors.push(where + ': satFat (' + f.satFat + ') > fat (' + f.fat + ')');
+    }
+    if (typeof f.fiber === 'number' && typeof f.carbs === 'number' && f.fiber > f.carbs + EPS) {
+      errors.push(where + ': fiber (' + f.fiber + ') > carbs (' + f.carbs + ')');
+    }
+
+    if (typeof f.protein === 'number' && typeof f.carbs === 'number' && typeof f.fat === 'number' && typeof f.kcal === 'number') {
+      const expected = 4 * f.protein + 4 * f.carbs + 9 * f.fat;
+      const denom = Math.max(expected, 1);
+      const diffRatio = Math.abs(f.kcal - expected) / denom;
+      if (diffRatio > 0.15) {
+        errors.push(where + ': kcal (' + f.kcal + ') is more than 15% off 4/4/9 macro math (expected ~' + Math.round(expected) + ')');
+      }
+    }
+
+    if (typeof f.cat === 'string' && ALLOWED_CATS.indexOf(f.cat) === -1) {
+      errors.push(where + ': cat "' + f.cat + '" not in allowed set (' + ALLOWED_CATS.join(', ') + ')');
+    }
+
+    if (Array.isArray(f.flags)) {
+      f.flags.forEach(function(flag){
+        if (ALLOWED_FLAGS.indexOf(flag) === -1) errors.push(where + ': flag "' + flag + '" not in allowed set (' + ALLOWED_FLAGS.join(', ') + ')');
+      });
+    }
+
+    if (typeof f.name === 'string' && f.name) {
+      if (seenNames[f.name]) errors.push('Duplicate food name "' + f.name + '": ' + seenNames[f.name] + ' and ' + where);
+      else seenNames[f.name] = where;
+    }
+  });
+
+  // every RECIPES ingredient name must resolve to a real food, by alias or direct name match
+  RECIPE_INGREDIENT_NAMES.forEach(function(ingName){
+    const aliasId = FOOD_ALIASES[ingName];
+    if (aliasId) {
+      if (!FOODS[aliasId]) errors.push('FOOD_ALIASES["' + ingName + '"] points to missing food id "' + aliasId + '"');
+      return;
+    }
+    const directMatch = Object.keys(FOODS).some(function(id){ return FOODS[id].name === ingName; });
+    if (!directMatch) errors.push('Recipe ingredient "' + ingName + '" has no FOOD_ALIASES entry and no food with a matching name');
+  });
+
+  return { ok: errors.length === 0, errors: errors };
+}

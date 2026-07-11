@@ -30,8 +30,6 @@ function renderRecipe(key){
   document.getElementById('rsProt').textContent = '💪 ' + r.protein + 'g protein';
   document.getElementById('recipeTags').innerHTML = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
   document.getElementById('recipeWhy').innerHTML = '<b>Why this fits you</b><br>' + r.why;
-  document.getElementById('recipeNutri').innerHTML = r.nutrition.map(function(n){ return '<div class="n"><div class="nt"><span>'+n[0]+'</span><b>'+n[1]+'</b></div></div>'; }).join('');
-  document.getElementById('recipeKcalSplit').textContent = 'kcal from: ' + r.kcalSplit;
   document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+s+'</li>'; }).join('');
   updateServings();
 }
@@ -72,7 +70,33 @@ function updateServings(){
     const scaled = +(qty * total).toFixed(1);
     return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
   }).join('');
+  updateNutritionGrid(total);
   syncServeHighlight();
+}
+
+// Nutrition grid + "kcal from" split, computed fresh from recipeNutrition() at the
+// current total serving scale (same scale the ingredient list above uses) — so the
+// steppers rescale nutrition exactly as they rescale ingredients (task C1). Replaces
+// the old hand-typed r.nutrition/r.kcalSplit fields entirely; nothing here is typed in.
+function updateNutritionGrid(total){
+  const header = document.getElementById('nutriHeader');
+  if(header) header.textContent = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
+  const nut = recipeNutrition(currentRecipeKey, total).totals;
+  const rows = [
+    ['Calories', fmtKcal(Math.round(nut.kcal))],
+    ['Protein', Math.round(nut.protein) + ' g'],
+    ['Carbs', Math.round(nut.carbs) + ' g'],
+    ['Fat', Math.round(nut.fat) + ' g'],
+    ['Good fats (unsat.)', Math.round(nut.goodFat) + ' g'],
+    ['Sat. fat', Math.round(nut.satFat) + ' g'],
+    ['Fiber', Math.round(nut.fiber) + ' g']
+  ];
+  document.getElementById('recipeNutri').innerHTML = rows.map(function(n){ return '<div class="n"><div class="nt"><span>'+n[0]+'</span><b>'+n[1]+'</b></div></div>'; }).join('');
+  const kcalR = nut.kcal;
+  const pPct = kcalR > 0 ? Math.round(nut.protein * 4 / kcalR * 100) : 0;
+  const cPct = kcalR > 0 ? Math.round(nut.carbs * 4 / kcalR * 100) : 0;
+  const fPct = kcalR > 0 ? Math.round(nut.fat * 9 / kcalR * 100) : 0;
+  document.getElementById('recipeKcalSplit').textContent = 'kcal from: protein ' + pPct + '% · carbs ' + cPct + '% · fat ' + fPct + '%';
 }
 
 function syncServeHighlight(){

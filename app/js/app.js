@@ -122,6 +122,9 @@ function restoreTodayLog(){
 }
 
 /* ---------------- init ---------------- */
+// Must run after data/foods.js, data/recipes.js and engine.js (recipeNutrition) have
+// all loaded, and before anything reads RECIPES — see state.js for what this builds.
+buildLegacyRecipesCompat();
 loadState();
 applyProf(currentProf);
 renderRecipe('salmon');
