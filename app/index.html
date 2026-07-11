@@ -425,13 +425,11 @@
       <div class="opt" id="shareSnack" onclick="toggleShared('snack',this)"><div class="ck"></div><div><div class="ot">Snack</div><div class="od">Solo (default)</div></div></div>
 
       <h2>Foods to avoid</h2>
-      <p class="sub">Add anything you can't or won't eat — intolerances, allergies, dislikes. Mesa will never suggest them.</p>
-      <div class="field"><div class="inp" onclick="toast('➕ Add a food to avoid')"><span style="color:var(--muted)">e.g. lactose, shellfish, cilantro…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
-      <div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">
-        <span class="pill ghost">Lactose ✕</span>
-        <span class="pill ghost">Raw onion ✕</span>
-        <span class="pill ghost">Very spicy ✕</span>
-      </div>
+      <p class="sub">Mesa will never suggest a recipe that contains these.</p>
+      <div class="row" id="avoidPills" style="gap:7px;flex-wrap:wrap"></div>
+      <div class="field"><div class="inp" onclick="toggleAvoidChooser()"><span style="color:var(--muted)">Choose from lactose, gluten, shellfish, nuts, raw onion, spicy…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
+      <div class="cap-note">Free-text isn't supported yet — more coming with the AI phase.</div>
+      <div class="row" id="avoidChooser" style="gap:7px;flex-wrap:wrap;margin-top:10px;display:none"></div>
 
       <h2>Connections</h2>
       <div class="opt" onclick="toast('Apple Health connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">♥</div><div><div class="ot">Apple Health</div><div class="od">Sync weight, activity & steps → better targets</div></div></div>

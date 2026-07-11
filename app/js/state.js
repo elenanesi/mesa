@@ -19,8 +19,12 @@
    by engine.js:recipeNutrition(). This block instead builds a thin
    compatibility view — same keys, same shape every renderer already
    expects (title, emoji, kcal, protein, tags as legacy [class,label]
-   pills, ingredients as legacy [name,qty,unit] rows, steps, why) — from
+   pills, ingredients as legacy [name,qty,unit] rows, steps) — from
    RECIPES_DB so render.js/planner.js/app.js need no broader rewrite.
+   "why" is deliberately NOT part of this compat view (task C3): it's
+   per-PERSON (goals differ by profile), not per-recipe, so it can't be
+   baked into a single shared RECIPES[id] object — see whyText(recipeId,
+   profKey) above, called fresh by render.js wherever the why-box paints.
 
    Since task C2 the planner draws from the FULL RECIPES_DB, so every
    recipe in the DB gets a compatibility entry (the 10 original mockup
@@ -54,6 +58,122 @@ const LEGACY_WHY = {
   salmongreens: 'Same salmon, same omega-3 and selenium — just without the quinoa, so carbs stay low while protein and healthy fat carry the meal. Iodine stays moderate for Hashimoto\'s balance. <i>General guidance, not medical advice.</i>'
 };
 
+/* ===================================================================
+   whyText() — task C3: deterministic "why this fits you" generator
+
+   Replaces the LEGACY_WHY-only mechanism for the ~26 non-legacy recipes.
+   Where LEGACY_WHY has hand-written copy, whyText() returns it verbatim
+   (it's better prose than a template can produce and the plan says to
+   keep it). For everything else it assembles 2-3 sentences from the
+   recipe's tags (RECIPES_DB) and its ingredients' FOODS flags, crossed
+   with the person's ACTIVE goals (hashi/skin/muscle/heart — derived
+   from PROF, not typed in per recipe), always ending with the existing
+   guidance line. Never invents a number — the one quantity it can cite
+   (protein grams for the muscle clause) comes straight from
+   recipeNutrition(), same as every other displayed nutrition number.
+
+   Priority order (WHY_RULES below) is chosen so the person's most
+   DISTINCTIVE goals surface first: thyroid + skin only ever apply to
+   Elena (hashi flag / skin is one of her defaults), so for her they
+   out-rank muscle/heart; for Andrea (no hashi, no skin goal) those two
+   rules never match, so muscle (his surplus goal) naturally leads.
+   =================================================================== */
+function recipeFlagSet(recipeId){
+  const r = RECIPES_DB[recipeId];
+  const set = {};
+  if(!r) return set;
+  (r.ingredients || []).forEach(function(ing){
+    const food = FOODS[ing[0]];
+    (food && food.flags || []).forEach(function(f){ set[f] = true; });
+  });
+  return set;
+}
+function hasTag(recipe, tag){ return recipe.tags.indexOf(tag) !== -1; }
+
+// Each rule contributes at most one clause, keyed by `goal` so a recipe never mentions
+// the same goal twice. `clause` returns a lowercase sentence fragment (no leading capital,
+// no trailing period) — whyText() handles capitalization/punctuation so every clause reads
+// naturally whether it lands first (after an em dash) or later (as its own sentence).
+const WHY_RULES = [
+  {
+    goal: 'thyroid',
+    applies: function(profKey){ return !!PROF[profKey].hashi; },
+    matches: function(recipe, flags){ return hasTag(recipe, 'thyroid') || flags.selenium; },
+    clause: function(recipe, flags){
+      return flags.selenium
+        ? 'selenium here supports your thyroid focus'
+        : 'this stays gentle on iodine, in line with your Hashimoto’s-aware plan';
+    }
+  },
+  {
+    goal: 'skin',
+    applies: function(profKey){ return profKey === 'elena'; },
+    matches: function(recipe, flags){ return hasTag(recipe, 'skin') || flags.omega3 || hasTag(recipe, 'lowGI'); },
+    clause: function(recipe, flags){
+      return flags.omega3
+        ? 'omega-3 here supports your skin goal'
+        : 'the low glycemic load here is kind to your skin goal';
+    }
+  },
+  {
+    goal: 'muscle',
+    applies: function(){ return true; },
+    matches: function(recipe){ return hasTag(recipe, 'muscle'); },
+    clause: function(recipe, flags, profKey, proteinG){
+      return profKey === 'partner'
+        ? proteinG + 'g of protein backs your muscle-gain surplus'
+        : proteinG + 'g of protein supports your muscle & protein goal';
+    }
+  },
+  {
+    goal: 'heart',
+    applies: function(){ return true; },
+    matches: function(recipe, flags){ return hasTag(recipe, 'heart') || hasTag(recipe, 'highFiber') || flags.highFiber; },
+    clause: function(recipe, flags){
+      return (hasTag(recipe, 'highFiber') || flags.highFiber)
+        ? 'the fiber here makes it a heart-smart pick'
+        : 'this is a heart-smart choice for your Mediterranean base';
+    }
+  },
+  {
+    goal: 'veggie',
+    applies: function(){ return true; },
+    matches: function(recipe){ return hasTag(recipe, 'veggie'); },
+    clause: function(){ return 'it’s plant-forward and easy on digestion'; }
+  }
+];
+
+const WHY_GUIDANCE = '<i>General guidance, not medical advice.</i>';
+
+function whyText(recipeId, profKey){
+  if(LEGACY_WHY[recipeId]) return LEGACY_WHY[recipeId];
+  const recipe = RECIPES_DB[recipeId];
+  if(!recipe){ console.error('whyText: unknown recipe id "' + recipeId + '"'); return WHY_GUIDANCE; }
+  if(!PROF[profKey]){ console.error('whyText: unknown profile key "' + profKey + '"'); profKey = 'elena'; }
+
+  const flags = recipeFlagSet(recipeId);
+  const proteinG = Math.round(recipeNutrition(recipeId, 1).totals.protein);
+
+  const seenGoals = {};
+  const clauses = [];
+  WHY_RULES.forEach(function(rule){
+    if(clauses.length >= 3 || seenGoals[rule.goal]) return;
+    if(!rule.applies(profKey)) return;
+    if(!rule.matches(recipe, flags)) return;
+    seenGoals[rule.goal] = true;
+    clauses.push(rule.clause(recipe, flags, profKey, proteinG));
+  });
+
+  let body;
+  if(!clauses.length){
+    body = capitalizeFirst(recipe.title) + ' is a simple, Mediterranean-style ' + recipe.slot + ' that fits your plan.';
+  } else {
+    body = capitalizeFirst(recipe.title) + ' — ' + clauses[0] + '.';
+    if(clauses.length > 1) body += ' ' + capitalizeFirst(clauses.slice(1).join('; ')) + '.';
+  }
+  return body + ' ' + WHY_GUIDANCE;
+}
+
 // Small tag→pill map: RECIPES_DB.tags (data/recipes.js VALID_TAGS) to the legacy
 // [pillClass, label] shape render.js already knows how to paint. Deliberately not a
 // 1:1 reproduction of every hand-picked legacy pill (some of those were per-recipe
@@ -76,8 +196,8 @@ function capitalizeFirst(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
 // Builds RECIPES[id] for every id in LEGACY_RECIPE_IDS from RECIPES_DB + FOODS +
 // recipeNutrition() (engine.js). Called once from app.js's boot sequence, after
 // data/foods.js, data/recipes.js and engine.js have all loaded. Every number here is
-// computed, never typed in (ground rule #1) — the one exception is LEGACY_WHY (display
-// copy, not a number) and TAG_PILL_MAP (a label lookup, not a number either).
+// computed, never typed in (ground rule #1) — the one exception is TAG_PILL_MAP (a label
+// lookup, not a number). "why" copy is NOT built here — see whyText() above.
 function buildLegacyRecipesCompat(){
   Object.keys(RECIPES_DB).forEach(function(id){
     const src = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[id] : undefined;
@@ -101,7 +221,6 @@ function buildLegacyRecipesCompat(){
       kcal: Math.round(base.kcal),
       protein: Math.round(base.protein),
       tags: src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; }),
-      why: LEGACY_WHY[id] || 'General guidance, not medical advice.',
       ingredients: ingredients,
       method: src.steps
     };
@@ -166,12 +285,18 @@ const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack
 // goalAdj is each person's goal offset from maintenance: Elena −325 (gentle deficit),
 // Andrea +60 (small muscle-gain surplus) — chosen so current stats land exactly on the
 // familiar 1,820 / 2,480 defaults. calCustom is null while following the recommendation.
-// avoid: per-person allergen/dislike keys (subset of data/recipes.js VALID_AVOID —
-// lactose, gluten, shellfish, nuts, spicy, raw-onion), read by the planner's hard
-// avoid-list filter (task C2 rule (a)). Elena's defaults match the "Foods to avoid"
-// pills already in the Profile screen mockup (index.html, still static/unwired there —
-// editing them isn't part of this task); Andrea has none today.
+// avoid: per-person allergen/dislike keys (subset of AVOID_KEYS below, itself a mirror of
+// data/recipes.js's documented avoid vocabulary), read by the planner's hard avoid-list
+// filter (task C2 rule (a)) AND now editable from the Profile screen's real "Foods to
+// avoid" editor (task C3) — see AVOID_KEYS/avoidLabel() + render.js:renderAvoidEditor().
+// Elena's defaults match the pills already in the Profile screen mockup; Andrea has none.
 let currentProf = 'elena';
+
+// The supported avoid keys (task C3): free-text isn't in MVP scope, so the editor is a
+// closed picker over exactly these — the same keys recipes.js's `avoid` arrays carry.
+const AVOID_KEYS = ['lactose', 'gluten', 'shellfish', 'nuts', 'raw-onion', 'spicy'];
+const AVOID_LABELS = {lactose: 'Lactose', gluten: 'Gluten', shellfish: 'Shellfish', nuts: 'Nuts', 'raw-onion': 'Raw onion', spicy: 'Spicy'};
+function avoidLabel(key){ return AVOID_LABELS[key] || capitalizeFirst(key); }
 const PROF = {
   elena:   {seg:'Elena', av:'E',
             sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,

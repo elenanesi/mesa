@@ -47,6 +47,16 @@ const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 const SLOT_WEIGHT = {breakfast: 0.28, lunch: 0.32, dinner: 0.30, snack: 0.10};
 const PERSON_ANCHOR = {elena: 1, partner: 1.5}; // matches the old svE/svM defaults
 const PORTION_STEPS = [0.5, 1, 1.5, 2, 2.5, 3];
+// Task C3 item 3 ("snack realism"): breakfast/snack portions are capped at 1.5x so a
+// 2x/2.5x/3x scale-up of an egg-heavy breakfast can't produce absurd shopping totals
+// (69 eggs/week before this cap). Lunch/dinner keep the full 0.5-3x range. Capping the
+// portion means bestPortion() can no longer close a big kcal gap by over-scaling one
+// recipe — mealScore() (which picks the WINNING candidate across the whole pool, not
+// just the portion of one) then naturally prefers a denser recipe that reaches the
+// target within the cap, exactly as the plan asks, with no extra "prefer denser" code
+// needed: a capped, under-target portion just scores worse on kcal-fit than a candidate
+// that doesn't need capping.
+const SLOT_MAX_PORTION = {breakfast: 1.5, lunch: 3, dinner: 3, snack: 1.5};
 
 /* ---------------- small deterministic helpers ---------------- */
 // DJB2-xor string hash — stable across runs (no Math.random), used only as a tiny
@@ -92,13 +102,16 @@ function candidatesFor(slot, styleKey, avoidList){
 }
 function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the recipe as written" (1x)
 
-// Picks the portion (0.5 steps, 0.5-3x) that lands closest to desiredKcal; ties broken
-// toward the person's natural anchor (Elena 1x, Andrea 1.5x) so portions stay sane
-// rather than drifting to arbitrary extremes when multiple steps tie on kcal.
-function bestPortion(baseKcal, desiredKcal, anchor){
+// Picks the portion (0.5 steps, 0.5-3x, or 0.5-maxPortion when capped) that lands closest
+// to desiredKcal; ties broken toward the person's natural anchor (Elena 1x, Andrea 1.5x)
+// so portions stay sane rather than drifting to arbitrary extremes when multiple steps
+// tie on kcal. maxPortion defaults to 3 (the old uncapped behavior) — callers pass
+// SLOT_MAX_PORTION[slot] to apply the breakfast/snack cap (task C3 item 3).
+function bestPortion(baseKcal, desiredKcal, anchor, maxPortion){
+  maxPortion = (typeof maxPortion === 'number' && maxPortion > 0) ? maxPortion : 3;
   if(!(baseKcal > 0)) return {portion: 1, kcal: 0, err: Math.abs(desiredKcal), anchorDist: 0};
   let best = null;
-  PORTION_STEPS.forEach(function(portion){
+  PORTION_STEPS.filter(function(p){ return p <= maxPortion; }).forEach(function(portion){
     const kcal = baseKcal * portion;
     const err = Math.abs(kcal - desiredKcal);
     const anchorDist = Math.abs(portion - anchor);
@@ -210,8 +223,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   let best = null;
   pool.forEach(function(id){
     const base = dbBaseNutrition(id);
-    const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena);
-    const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner);
+    const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[slot]);
+    const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[slot]);
     const proteinE = base.protein * bpE.portion, proteinA = base.protein * bpA.portion;
     const scoreE = mealScore(bpE.kcal, desiredE, proteinE, desiredProtE, dayIndex, slotIndex, id);
     const scoreA = mealScore(bpA.kcal, desiredA, proteinA, desiredProtA, dayIndex, slotIndex, id);
@@ -237,7 +250,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   let best = null;
   pool.forEach(function(id){
     const base = dbBaseNutrition(id);
-    const bp = bestPortion(base.kcal, desired, anchor);
+    const bp = bestPortion(base.kcal, desired, anchor, SLOT_MAX_PORTION[slot]);
     const protein = base.protein * bp.portion;
     const score = mealScore(bp.kcal, desired, protein, desiredProt, dayIndex, slotIndex, id);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && id < best.id);
@@ -325,7 +338,28 @@ function recomputeConsumed(personKey){
   PROF[personKey].consumed = {p: Math.round(p), c: Math.round(c), f: Math.round(f)};
 }
 
+/* ---------------- avoid-list editor helpers (task C3 item 2) ---------------- */
+// How many RECIPES_DB recipes carry `key` in their `avoid` array — used by the Profile
+// screen's toast when a person adds/removes an avoid key ("Lactose removed — N more
+// recipes available to you"). Independent of anyone's CURRENT avoid list: it's just how
+// many recipes that single key touches across the whole DB.
+function countRecipesWithAvoidKey(key){
+  return Object.keys(RECIPES_DB).filter(function(id){ return RECIPES_DB[id].avoid.indexOf(key) !== -1; }).length;
+}
+
 /* ---------------- shopping list (computed from weekPlan) ---------------- */
+// "Mon 6 – Sun 12 Jul" (task C3 item 4): weekStartDate is always a Monday
+// (planner.js:mondayOfWeek), so the range is always exactly 7 days, Mon..Sun. Only the
+// end date's month is shown unless the week actually crosses a month boundary.
+function fmtShopWeekRange(weekStartDate){
+  const start = parseISODate(weekStartDate);
+  const end = parseISODate(addDaysISO(weekStartDate, 6));
+  const sameMonth = start.getMonth() === end.getMonth();
+  const startStr = 'Mon ' + start.getDate() + (sameMonth ? '' : ' ' + MONTHS[start.getMonth()]);
+  const endStr = 'Sun ' + end.getDate() + ' ' + MONTHS[end.getMonth()];
+  return startStr + ' – ' + endStr;
+}
+
 // Categories now come straight from FOODS[id].cat (task B1) instead of a hand-typed
 // name->category map — the food DB is the single source of truth for both nutrition and
 // shopping-aisle grouping.
@@ -402,14 +436,14 @@ function applySwapToPlan(plan, unit, newRecipeId){
   const m = plan.days[unit.dayIndex].meals[unit.slot];
   const newBase = dbBaseNutrition(newRecipeId);
   if(unit.shared){
-    const bpE = bestPortion(newBase.kcal, m.elena.kcal, PERSON_ANCHOR.elena);
-    const bpA = bestPortion(newBase.kcal, m.partner.kcal, PERSON_ANCHOR.partner);
+    const bpE = bestPortion(newBase.kcal, m.elena.kcal, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[unit.slot]);
+    const bpA = bestPortion(newBase.kcal, m.partner.kcal, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[unit.slot]);
     m.recipeId = newRecipeId;
     m.elena = {recipeId: newRecipeId, portion: bpE.portion, kcal: bpE.kcal, protein: newBase.protein * bpE.portion};
     m.partner = {recipeId: newRecipeId, portion: bpA.portion, kcal: bpA.kcal, protein: newBase.protein * bpA.portion};
   } else {
     const person = unit.person;
-    const bp = bestPortion(newBase.kcal, m[person].kcal, PERSON_ANCHOR[person]);
+    const bp = bestPortion(newBase.kcal, m[person].kcal, PERSON_ANCHOR[person], SLOT_MAX_PORTION[unit.slot]);
     m[person] = {recipeId: newRecipeId, portion: bp.portion, kcal: bp.kcal, protein: newBase.protein * bp.portion};
   }
   return m;
@@ -439,7 +473,7 @@ function buildSwapAlternatives(dayIndex, slot, person){
   const anchor = PERSON_ANCHOR[person];
   const scored = pool.map(function(id){
     const base = dbBaseNutrition(id);
-    const bp = bestPortion(base.kcal, currentKcal, anchor);
+    const bp = bestPortion(base.kcal, currentKcal, anchor, SLOT_MAX_PORTION[slot]);
     const protein = base.protein * bp.portion;
     return {id: id, portion: bp.portion, kcal: bp.kcal, protein: protein, kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
   });

@@ -29,9 +29,19 @@ function renderRecipe(key){
   document.getElementById('rsKcal').textContent = '🔥 ' + r.kcal + ' kcal';
   document.getElementById('rsProt').textContent = '💪 ' + r.protein + 'g protein';
   document.getElementById('recipeTags').innerHTML = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-  document.getElementById('recipeWhy').innerHTML = '<b>Why this fits you</b><br>' + r.why;
+  updateRecipeWhy();
   document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+s+'</li>'; }).join('');
   updateServings();
+}
+
+// Task C3: "why this fits you" is per-PERSON (whyText(recipeId, profKey) — state.js), so
+// it can't be baked into RECIPES[id] at boot like the rest of the compat view. Called from
+// renderRecipe() (opening a recipe) and from applyProf() (switching profile while the
+// recipe screen is already open) so the copy always matches whoever's currently selected.
+function updateRecipeWhy(){
+  const el = document.getElementById('recipeWhy');
+  if(!el || !RECIPES[currentRecipeKey]) return;
+  el.innerHTML = '<b>Why this fits you</b><br>' + whyText(currentRecipeKey, currentProf);
 }
 
 function adjServe(who, delta){
@@ -250,8 +260,11 @@ function buildShopSheet(){
     const cat = foodCategoryForName(name); // real FOODS[..].cat, no hand-typed map (task C2)
     (byCat[cat] = byCat[cat] || []).push(name);
   });
+  // Task C3 item 4: the week date range, computed from weekPlan.weekStartDate (never
+  // typed in — computeShoppingList() above already called ensureWeekPlan()).
+  const weekRange = fmtShopWeekRange(weekPlan.weekStartDate);
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Shopping list <span class="chip-computed">✓ computed</span></h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub">For both of you · 7 days · totals summed from this week\'s plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
+    + '<p class="sub"><b>' + weekRange + '</b> · For both of you · 7 days · totals summed from this week\'s plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
   let idx = 0;
   SHOP_CAT_ORDER.forEach(function(cat){
     const names = byCat[cat];
@@ -710,6 +723,64 @@ function renderSplitEditor(){
     || (customSplit ? 'Custom split — “Mesa default” restores ' + p.defaultSplit.P + '/' + p.defaultSplit.C + '/' + p.defaultSplit.F + '.' : '');
 }
 
+/* ---------------- "Foods to avoid" editor (task C3 item 2) ---------------- */
+// Real editor over PROF[currentProf].avoid (state.js), replacing the three static demo
+// pills. Renders removable pills from the persisted array, plus a picker of the
+// remaining AVOID_KEYS (state.js) behind the "＋ Add" field — free-text isn't supported
+// in MVP (cap-note in index.html says so), so there's nothing to validate/parse here.
+function renderAvoidEditor(){
+  const p = PROF[currentProf];
+  const pillsEl = document.getElementById('avoidPills');
+  if(!pillsEl) return; // Profile screen markup not present (shouldn't happen, but don't crash)
+  const list = (p.avoid || []).slice().sort();
+  pillsEl.innerHTML = list.length
+    ? list.map(function(k){ return '<span class="pill ghost" onclick="removeAvoid(\''+k+'\')">'+avoidLabel(k)+' ✕</span>'; }).join('')
+    : '<span class="sub" style="margin:0">Nothing avoided right now — tap ＋ Add to pick from lactose, gluten, shellfish, nuts, raw onion or spicy.</span>';
+
+  const chooserEl = document.getElementById('avoidChooser');
+  if(chooserEl){
+    const remaining = AVOID_KEYS.filter(function(k){ return list.indexOf(k) === -1; });
+    chooserEl.innerHTML = remaining.length
+      ? remaining.map(function(k){ return '<span class="pill" onclick="addAvoid(\''+k+'\')">＋ '+avoidLabel(k)+'</span>'; }).join('')
+      : '<span class="sub" style="margin:0">Every supported item is already avoided.</span>';
+  }
+}
+
+function toggleAvoidChooser(){
+  const el = document.getElementById('avoidChooser');
+  if(!el) return;
+  el.style.display = (el.style.display === 'flex') ? 'none' : 'flex';
+}
+
+// Adds/removes one avoid key on the CURRENT profile, then runs the exact same funnel
+// every other profile-mutating action uses: applyProf() re-derives everything (including
+// ensureWeekPlan(), since the avoid-list is part of the plan signature — task C2) and
+// persists. The toast's recipe count is a simple DB-wide fact (countRecipesWithAvoidKey,
+// planner.js) — how many recipes carry this key at all — not a "how many now fit today's
+// slot/style" figure, which would need re-deriving the whole candidate pool just to word
+// a toast.
+function addAvoid(key){
+  const p = PROF[currentProf];
+  p.avoid = p.avoid || [];
+  if(p.avoid.indexOf(key) !== -1) return;
+  p.avoid.push(key);
+  const n = countRecipesWithAvoidKey(key);
+  applyProf(currentProf);
+  const chooserEl = document.getElementById('avoidChooser');
+  if(chooserEl) chooserEl.style.display = 'none';
+  toast(avoidLabel(key) + ' avoided — ' + n + (n === 1 ? ' recipe' : ' recipes') + ' fewer available to you');
+}
+
+function removeAvoid(key){
+  const p = PROF[currentProf];
+  const idx = (p.avoid || []).indexOf(key);
+  if(idx === -1) return;
+  p.avoid.splice(idx, 1);
+  const n = countRecipesWithAvoidKey(key);
+  applyProf(currentProf);
+  toast(avoidLabel(key) + ' removed — ' + n + (n === 1 ? ' more recipe' : ' more recipes') + ' available to you');
+}
+
 // Debounced ~600ms after the last tap: reclassifies the plan style from the active
 // profile's split, rebuilds the shared menu, and surfaces a toast + coach note.
 let splitRebuildTimer = null;
@@ -765,9 +836,11 @@ function applyProf(key){
   document.getElementById('ksF').style.width = p.kF + '%';
   document.getElementById('kcalSplitLegend').textContent = 'Protein ' + p.kP + '% · Carbs ' + p.kC + '% · Fat ' + p.kF + '% of calories';
   renderSplitEditor();
+  renderAvoidEditor();  // task C3: "Foods to avoid" pills for whichever profile is now active
   renderTodayMeals();
   renderLogPlan();
   renderWeek();
+  updateRecipeWhy();     // task C3: re-personalize the why-box if the recipe screen is open
   syncServeHighlight();
   syncProfileToggle(key);
   persist();
