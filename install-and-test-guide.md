@@ -1,6 +1,20 @@
 # Mesa — Test it & put it on your iPhone
 
-There are two stages. **Stage 1** is now: open the mockup and try it on your phone (no code, no accounts, 5 minutes). **Stage 2** is later, when you build the real app — it's here so you know what's coming.
+## ⭐ Install Mesa on your iPhone (the real app)
+
+Mesa is live as a free PWA — no App Store, no accounts, works offline:
+
+1. On your iPhone, open Safari and go to **https://elenanesi.github.io/mesa/**
+2. Tap the **Share** button (square with up-arrow) → **Add to Home Screen** → **Add**.
+3. Open the Mesa icon on your home screen. It runs full-screen, remembers everything, and works with no connection.
+
+Andrea does the exact same on his phone. A few things to know:
+
+- **Updates are automatic**: when the app changes, you get the new version on the next open (occasionally it takes one extra open — the offline cache refreshes in the background).
+- **Move your data between phones**: Profile → **Your data** → *Export my data* (share the file via AirDrop) → on the other phone, *Import data*. That's how you two stay in sync until the real couple-sync arrives in Phase 2.
+- **First on-device pass — worth an eye check** (things that can't be tested outside a real iPhone): the Add-to-Home-Screen flow itself, the home-screen icon look, the status bar in standalone mode, and that Export opens the share sheet.
+
+The sections below are the older mockup-testing paths, kept for reference.
 
 ---
 

@@ -1,6 +1,10 @@
 # Mesa — PWA MVP build plan (agent playbook)
 
-Date: 10 July 2026 · Owner: Elena · Executor: Claude (orchestrating Sonnet agents) · Status: ready to start
+Date: 10 July 2026 · Owner: Elena · Executor: Claude (orchestrating Sonnet agents) · Status: **DONE — shipped 12 July 2026 at https://elenanesi.github.io/mesa/**
+
+> **Outcome summary:** all phases completed and verified.
+> **A1/A2** — mockup split into app/ (no build step), full localStorage persistence (mesa.v1, v2 schema). **B1/B2** — 75 hand-checked foods + 36 recipes, nutrition always computed (validators clean). **C1** — Mifflin-St Jeor engine intact (1,820/2,480 defaults reproduced), recipeNutrition() everywhere. **C2** — deterministic week planner: all 14 person-days within ±2.1% of calorie targets (±4% after C3's portion caps), byte-identical regeneration, real swap deltas and re-balance over 4 computed coverage metrics. **C3** — per-person "why this fits you" templates, real avoid-list editor, breakfast/snack portion caps. **D1** — 60-day log history with frozen computed macros, quick-add food search, fully computed Insights with empty states. **E1** — manifest + icons + service worker; offline operation proven with the server killed. **F** — JSON export/import verified end-to-end (corrupted files rejected safely); deployed to GitHub Pages (public repo elenanesi/mesa) with root redirect.
+> Remaining for a human: on-device pass on two iPhones (Add to Home Screen, icon look, share-sheet export) per the install guide.
 
 **Goal:** turn `mesa-prototype.html` (mockup v5) into a **free, installable PWA** — no Apple Developer account, no Apple Health, no third-party apps. Elena and Andrea add it to their Home Screens from Safari; it works offline and remembers everything.
 

@@ -150,6 +150,8 @@ All are opt-in toggles in Profile, with a one-line reason each — never a wall 
 ## 8. Recommended build path
 
 > **Decision (10 July 2026):** Elena chose the **free PWA path** — no Apple Developer account, no Apple Health in the MVP, LLM features deferred to Phase 2. The step-by-step agent playbook is in `PWA-MVP-plan.md`; the Expo/React Native route below stays as the documented alternative if Apple Health ever becomes a must-have.
+>
+> **SHIPPED (12 July 2026):** the PWA MVP is live at **https://elenanesi.github.io/mesa/** — installable from Safari, fully offline, deterministic engine end to end (all 14 person-days within ±4% of calorie targets), real food/recipe database, computed insights, JSON export/import between phones. Source: https://github.com/elenanesi/mesa (public repo).
 
 You're on iPhone (both of you), the mockup is web, and you want to test on-device quickly. The pragmatic path:
 
