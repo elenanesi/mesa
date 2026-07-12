@@ -1073,3 +1073,123 @@ function confirmQuickAdd(){
   closeSheet();
   toast('✓ Added ' + grams + 'g ' + food.name + ' to today');
 }
+
+/* ===================================================================
+   export / import (task F2) — Profile → "Your data"
+
+   Poor-man's Elena⇄Andrea sync until Phase 2's real backend: export
+   downloads (iOS Safari: share-sheets) the EXACT mesa.v1 value as a
+   dated JSON file; import reads a file, validates its shape, shows a
+   confirm sheet naming the backup's date, and on confirm overwrites
+   localStorage and reloads. Nothing is written to localStorage until
+   the user confirms — an invalid file never touches existing state.
+   =================================================================== */
+
+// exportData() calls persist() first so the exact bytes exported are what's actually in
+// localStorage right now (not a re-serialization that could drift from it), then reads
+// STORE_KEY back verbatim and downloads it — no transformation of the stored value.
+function exportData(){
+  persist();
+  let raw = null;
+  try{ raw = localStorage.getItem(STORE_KEY); }catch(e){ raw = null; }
+  if(!raw){ toast('Nothing to export yet'); return; }
+  const filename = 'mesa-backup-' + todayISO() + '.json';
+  const blob = new Blob([raw], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke on a delay: iOS Safari's share sheet reads the blob URL asynchronously after
+  // the click handler returns, so revoking immediately can race it.
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  toast('✓ Backup downloaded');
+}
+
+// The same structural checks loadState() trusts before touching any field: a version
+// number no newer than this app understands, and a profiles object with both known
+// people. Deliberately shallow — loadState()'s own per-field type checks (already run
+// against whatever we write to localStorage, on the reload that follows a confirmed
+// import) are the real guard against a malformed-but-structurally-OK file.
+function validateBackupStructure(obj){
+  if(!obj || typeof obj !== 'object') return false;
+  if(typeof obj.v !== 'number' || obj.v > CURRENT_STORE_VERSION) return false;
+  if(!obj.profiles || typeof obj.profiles !== 'object') return false;
+  if(!obj.profiles.elena || typeof obj.profiles.elena !== 'object') return false;
+  if(!obj.profiles.partner || typeof obj.profiles.partner !== 'object') return false;
+  return true;
+}
+
+// Pulls a human date out of the mesa-backup-YYYY-MM-DD.json filename Mesa itself writes
+// (exportData() above) so the confirm sheet can name the backup without needing an
+// export timestamp inside the store itself; falls back to the file's mtime for a
+// renamed file, and finally to a neutral phrase if neither is available.
+function importDateLabel(filename, lastModified){
+  const m = /mesa-backup-(\d{4}-\d{2}-\d{2})/.exec(filename || '');
+  if(m) return m[1];
+  if(typeof lastModified === 'number' && isFinite(lastModified)){
+    try{ return new Date(lastModified).toISOString().slice(0, 10); }catch(e){ /* fall through */ }
+  }
+  return 'this file';
+}
+
+// Holds the exact raw JSON text of a file that passed validateBackupStructure() and is
+// awaiting the confirm sheet's decision — never written to localStorage until
+// confirmImport(). null whenever no import is pending (cancelled, completed, or never
+// started).
+let pendingImportRaw = null;
+
+function handleImportFile(input){
+  const file = input.files && input.files[0];
+  input.value = ''; // reset so re-picking the same filename still fires 'change'
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onerror = function(){ toast("Couldn't read that file"); };
+  reader.onload = function(){
+    let parsed;
+    try{ parsed = JSON.parse(String(reader.result)); }
+    catch(e){ toast("That file isn't a valid Mesa backup"); return; }
+    if(!validateBackupStructure(parsed)){ toast("That file isn't a valid Mesa backup"); return; }
+    pendingImportRaw = String(reader.result);
+    openImportConfirm(importDateLabel(file.name, file.lastModified));
+  };
+  reader.readAsText(file);
+}
+
+function buildImportConfirmSheet(dateLabel){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Import backup</h2><button class="backbtn" style="margin:0" onclick="cancelImport()">✕ Close</button></div>'
+    + '<p class="sub">This replaces everything on this phone with the backup from <b>' + dateLabel + '</b>. Your current data on this phone will be lost.</p>'
+    + '<button class="cta" onclick="confirmImport()">Replace with backup</button>'
+    + '<button class="cta ghostbtn" onclick="cancelImport()">Cancel</button>';
+}
+
+function openImportConfirm(dateLabel){
+  document.getElementById('sheetBody').innerHTML = buildImportConfirmSheet(dateLabel);
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function cancelImport(){
+  pendingImportRaw = null;
+  closeSheet();
+}
+
+// Overwrites STORE_KEY with the pending backup's exact bytes, then reloads: a full
+// reload (rather than re-running loadState() in place) guarantees every already-rendered
+// screen, in-memory global (PROF, weekPlan, logHistory, currentProf…) and the compat
+// RECIPES view rebuild from scratch against the new store, with zero risk of stale
+// in-memory state bleeding through.
+function confirmImport(){
+  if(!pendingImportRaw){ closeSheet(); return; }
+  try{
+    localStorage.setItem(STORE_KEY, pendingImportRaw);
+  }catch(e){
+    toast("Couldn't save that backup on this phone");
+    return;
+  }
+  pendingImportRaw = null;
+  location.reload();
+}

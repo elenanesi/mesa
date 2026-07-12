@@ -356,6 +356,10 @@ const PROF = {
    =================================================================== */
 const STORE_KEY = 'mesa.v1';
 const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
+// Task F2 (export/import): the schema version buildSnapshot() writes and loadState() /
+// the import validator (render.js:validateBackupStructure) accept. Bump alongside any
+// future schema change (same version this store's `v` field already carried since D1).
+const CURRENT_STORE_VERSION = 2;
 
 let onboarded = false;
 let checkedShopNames = {};   // ingredient name -> true, for shopping-list checks
@@ -561,7 +565,7 @@ function buildSnapshot(){
     profiles[key] = out;
   });
   return {
-    v: 2, // task D1: bumped from 1 — `log` (single-day) replaced by `logHistory` (rolling)
+    v: CURRENT_STORE_VERSION, // task D1: bumped from 1 — `log` (single-day) replaced by `logHistory` (rolling)
     currentProf: currentProf,
     onboarded: onboarded,
     householdStyle: householdStyle,

@@ -409,6 +409,12 @@
       <div class="opt" onclick="toast('Reminders connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔔</div><div><div class="ot">Notifications</div><div class="od">Meal prep nudges & shopping reminders</div></div></div>
       <div class="opt" onclick="toast('Calendar connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">📅</div><div><div class="ot">Calendar</div><div class="od">Lighter prep on busy days</div></div></div>
 
+      <h2>Your data</h2>
+      <p class="sub">Move your plan between phones — export here, AirDrop the file, import on the other phone.</p>
+      <button class="cta ghostbtn" style="margin-top:6px" onclick="exportData()">⬇️ Export my data</button>
+      <input type="file" id="importFileInput" accept="application/json" style="display:none" onchange="handleImportFile(this)">
+      <button class="cta ghostbtn" style="margin-top:10px" onclick="document.getElementById('importFileInput').click()">⬆️ Import data</button>
+
       <h2>About</h2>
       <div class="opt" onclick="replayOnboarding()"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔄</div><div><div class="ot">Replay intro</div><div class="od">Watch the welcome walkthrough again</div></div></div>
 
