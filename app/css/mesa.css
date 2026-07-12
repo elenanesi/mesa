@@ -122,6 +122,12 @@ h2{font-size:18px;margin:22px 0 10px;letter-spacing:-.2px;}
 /* shared meals + macro-split additions */
 .pill.together{background:var(--sage-tint);color:var(--sage-deep);}
 .pill.mini{padding:3px 7px;font-size:9.5px;}
+/* library.js: delete affordance on custom-food/custom-recipe/builder-ingredient rows —
+   sized to the app's 44px tap-target minimum (ground rule 4), unlike the smaller inline
+   log-action buttons (.la-skip etc.) it visually echoes. */
+.lib-del{width:44px;height:44px;min-width:44px;flex:0 0 44px;border:0;border-radius:12px;background:#f6e6dc;color:#b25e35;font-size:15px;font-weight:700;cursor:pointer;}
+.lib-del:active{transform:scale(.94);}
+.field textarea.inp{display:block;}
 .stackbar{height:8px;border-radius:999px;background:#eef0ec;overflow:hidden;display:flex;}
 .stackbar i{display:block;height:100%;}
 .cap-note{font-size:10px;color:var(--muted);margin-top:4px;min-height:13px;}

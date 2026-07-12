@@ -23,8 +23,8 @@
     <section class="screen active" id="today">
       <div class="topbar">
         <div>
-          <div class="eyebrow">Monday · 29 Jun</div>
-          <h1 style="margin-top:2px">Good morning</h1>
+          <div class="eyebrow" id="todayEyebrow">Today</div>
+          <h1 style="margin-top:2px" id="todayGreeting">Good morning</h1>
         </div>
         <div class="seg" id="profSeg">
           <button class="on" data-prof="elena">Elena</button>
@@ -409,6 +409,11 @@
       <div class="opt" onclick="toast('Reminders connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔔</div><div><div class="ot">Notifications</div><div class="od">Meal prep nudges & shopping reminders</div></div></div>
       <div class="opt" onclick="toast('Calendar connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">📅</div><div><div class="ot">Calendar</div><div class="od">Lighter prep on busy days</div></div></div>
 
+      <h2>Food library</h2>
+      <p class="sub" id="libFoodCount">75 built-in · 0 yours</p>
+      <button class="cta ghostbtn" style="margin-top:6px" onclick="openFoodLibrary()">📖 Browse ingredients</button>
+      <button class="cta ghostbtn" style="margin-top:10px" onclick="openMyRecipes()">📋 My recipes</button>
+
       <h2>Your data</h2>
       <p class="sub">Move your plan between phones — export here, AirDrop the file, import on the other phone.</p>
       <button class="cta ghostbtn" style="margin-top:6px" onclick="exportData()">⬇️ Export my data</button>
@@ -491,6 +496,7 @@
 <script src="js/engine.js"></script>
 <script src="js/planner.js"></script>
 <script src="js/render.js"></script>
+<script src="js/library.js"></script>
 <script src="js/app.js"></script>
 </body>
 </html>

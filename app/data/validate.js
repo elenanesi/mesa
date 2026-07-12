@@ -158,8 +158,15 @@ function validateData() {
 
     if (!Array.isArray(r.toTaste)) errors.push(prefix + 'toTaste is not an array');
 
-    if (!Array.isArray(r.steps) || r.steps.length < 3 || r.steps.length > 6) {
-      errors.push(prefix + 'steps must be an array of 3-6 entries (has ' + (Array.isArray(r.steps) ? r.steps.length : 0) + ')');
+    // User-authored custom recipes (id 'cr-*', js/library.js) default to a single step
+    // ("Combine and enjoy.") when the author leaves the steps textarea blank, and can run
+    // past 6 lines with no cap — so they get a relaxed 1-N bound; built-in RECIPES_DB
+    // recipes (hand-authored, task B2) keep the original 3-6 requirement.
+    const isCustomRecipe = id.indexOf('cr-') === 0;
+    const minSteps = isCustomRecipe ? 1 : 3;
+    const maxSteps = isCustomRecipe ? Infinity : 6;
+    if (!Array.isArray(r.steps) || r.steps.length < minSteps || r.steps.length > maxSteps) {
+      errors.push(prefix + 'steps must be an array of ' + minSteps + (maxSteps === Infinity ? '+' : ('-' + maxSteps)) + ' entries (has ' + (Array.isArray(r.steps) ? r.steps.length : 0) + ')');
     }
 
     // coverage tallies (only meaningful once slot/styles are valid)

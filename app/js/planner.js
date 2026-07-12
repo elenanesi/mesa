@@ -276,7 +276,10 @@ function computePlanSignature(){
     (e.avoid || []).slice().sort().join(','),
     (a.avoid || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
-    SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0
+    SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
+    // customRev (js/library.js): bumped on every custom-food/custom-recipe add or delete,
+    // so a library change always regenerates the week even though nothing else here moved.
+    customRev
   ].join('|');
 }
 

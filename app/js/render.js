@@ -869,6 +869,7 @@ function applyProf(key){
   document.getElementById('kcalSplitLegend').textContent = 'Protein ' + p.kP + '% · Carbs ' + p.kC + '% · Fat ' + p.kF + '% of calories';
   renderSplitEditor();
   renderAvoidEditor();  // task C3: "Foods to avoid" pills for whichever profile is now active
+  if(typeof renderFoodLibraryCount === 'function') renderFoodLibraryCount(); // js/library.js: "N built-in · M yours"
   renderTodayMeals();
   renderLogPlan();
   renderWeek();

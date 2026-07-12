@@ -20,6 +20,7 @@ function go(id, el){
   // needs to be fresh at the moment it's shown, so it repaints on every visit rather than
   // needing an eager call from every log-mutating action (confirm/skip/quick-add/swap).
   if(id === 'insights' && typeof renderInsights === 'function') renderInsights();
+  if(id === 'today' && typeof renderTodayHeader === 'function') renderTodayHeader();
 }
 
 /* ---------------- open a recipe from a tap ---------------- */
@@ -129,14 +130,32 @@ function restoreTodayLog(){
   });
 }
 
+/* ---------------- today header (real date + time-aware greeting) ---------------- */
+// The mockup shipped a hardcoded "Monday · 29 Jun". Both lines derive from the device
+// clock at render time; refreshed on every applyProf() (cheap) so a day rollover while
+// the app stays open in the app switcher corrects itself on next interaction.
+const WEEKDAY_FULL = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+function renderTodayHeader(){
+  const now = new Date();
+  const el = document.getElementById('todayEyebrow');
+  if(el) el.textContent = WEEKDAY_FULL[now.getDay()] + ' · ' + now.getDate() + ' ' + MONTHS[now.getMonth()];
+  const g = document.getElementById('todayGreeting');
+  const h = now.getHours();
+  if(g) g.textContent = h < 5 ? 'Up late?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
+}
+
 /* ---------------- init ---------------- */
 // Must run after data/foods.js, data/recipes.js and engine.js (recipeNutrition) have
 // all loaded, and before anything reads RECIPES — see state.js for what this builds.
 // applyProf() -> ensureWeekPlan() (planner.js) either keeps the persisted weekPlan (same
 // signature + same week) or regenerates it deterministically, then persists; it also
 // runs renderLogPlan(), which replays today's persisted confirms via restoreTodayLog().
-buildLegacyRecipesCompat();
 loadState();
+applyCustomFoods();     // js/library.js — merge customFoods into FOODS before recipes/compat view need them
+applyCustomRecipes();   // js/library.js — merge customRecipes into RECIPES_DB + RECIPE_SLOT_DB, rebuild the
+                         // RECIPES compat view (calls buildLegacyRecipesCompat() internally, for every id —
+                         // built-in and custom alike — so nothing below needs a separate compat-view call)
+renderTodayHeader();
 applyProf(currentProf);
 renderRecipe('salmon');
 recipeOrigin = 'today';

@@ -67,6 +67,8 @@ With the server running, when I update the design you just **reload** the page o
 - Still in Profile, step the **Calories** target away from the recommendation — the chip flips to "custom" and a **"↺ Restore recommended"** button appears. Then change your weight while the custom value is active: Mesa keeps your number and just tells you what it now recommends. Does that feel respectful rather than pushy?
 - On **Log** (the + tab), try the plan-first flow: **✓ Confirm / 🔁 Swap / ✕ Skip** on a planned meal. Swap opens a sheet with alternatives showing kcal/protein differences — pick one and see the card update.
 - On **Insights**, look at the **weekly band** (7 dots) — does "5 of 7 days in your band" feel kinder and more honest than a streak?
+- In **Profile → "Food library" → Browse ingredients**, add a food you actually buy that isn't in the list (＋ New ingredient) — check it shows up with a "yours" pill and that it's findable from the Log screen's quick-add search.
+- In **Profile → "Food library" → My recipes**, build a recipe from your own ingredients — check it shows up (with computed kcal/protein, auto-tagged) in your weekly plan or its swap alternatives, and that its ingredients appear correctly in the shopping list.
 - Is anything too small to tap, or any screen too busy / too empty?
 - What's missing from the six screens that you'd reach for daily?
 

@@ -364,6 +364,22 @@ const CURRENT_STORE_VERSION = 2;
 let onboarded = false;
 let checkedShopNames = {};   // ingredient name -> true, for shopping-list checks
 
+/* ---------------- user content library (post-MVP: ingredients + recipes) ----------------
+   customFoods: id 'cf-<slug>' -> food object, same shape as a data/foods.js FOODS entry
+   (per, unit, kcal, protein, carbs, fat, satFat, fiber, flags, cat, src). Merged into the
+   global FOODS object at boot and after every add/delete via js/library.js:applyCustomFoods().
+   customRecipes: id 'cr-<slug>' -> recipe object, same shape as a data/recipes.js
+   RECIPES_DB entry (title, emoji, slot, styles, time, ingredients, toTaste, steps, tags,
+   avoid) — nutrition is NEVER stored (ground rule 1); tags/styles/avoid are AUTO-DERIVED
+   from ingredients at save time (js/library.js:deriveRecipeMeta()). Merged into RECIPES_DB
+   the same way via applyCustomRecipes(), which also rebuilds the RECIPES compat view.
+   customRev: monotonic counter, bumped on every library mutation (add/delete a food or
+   recipe) — folded into the week-plan signature (planner.js:computePlanSignature()) so a
+   library change deterministically regenerates the week. */
+let customFoods = {};
+let customRecipes = {};
+let customRev = 0;
+
 function todayISO(){
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -573,6 +589,11 @@ function buildSnapshot(){
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
     shopping: { checked: Object.keys(checkedShopNames).filter(function(n){ return checkedShopNames[n]; }) },
+    // user content library (post-MVP): plain JSON data, stored verbatim — see the block
+    // above for the shape. Exported/imported for free as part of the whole store (task F2).
+    customFoods: customFoods,
+    customRecipes: customRecipes,
+    customRev: customRev,
     // logHistory (task D1): plain JSON data (no functions) — stored verbatim, capped at
     // LOG_HISTORY_RETENTION_DAYS by pruneLogHistory() (called from persist() below) before
     // every write.
@@ -654,6 +675,28 @@ function loadState(){
     checkedShopNames = {};
     saved.shopping.checked.forEach(function(name){ if(typeof name === 'string') checkedShopNames[name] = true; });
   }
+
+  // user content library: structurally-wrong ids/entries are dropped rather than trusted
+  // (same defensive posture as logHistory below), so a corrupt store can't crash rendering
+  // or js/library.js's applyCustomFoods()/applyCustomRecipes() (called right after loadState()
+  // in app.js's boot sequence).
+  customFoods = {};
+  if(saved.customFoods && typeof saved.customFoods === 'object'){
+    Object.keys(saved.customFoods).forEach(function(id){
+      if(typeof id === 'string' && id.indexOf('cf-') === 0 && saved.customFoods[id] && typeof saved.customFoods[id] === 'object'){
+        customFoods[id] = saved.customFoods[id];
+      }
+    });
+  }
+  customRecipes = {};
+  if(saved.customRecipes && typeof saved.customRecipes === 'object'){
+    Object.keys(saved.customRecipes).forEach(function(id){
+      if(typeof id === 'string' && id.indexOf('cr-') === 0 && saved.customRecipes[id] && typeof saved.customRecipes[id] === 'object'){
+        customRecipes[id] = saved.customRecipes[id];
+      }
+    });
+  }
+  customRev = (typeof saved.customRev === 'number' && isFinite(saved.customRev)) ? saved.customRev : 0;
 
   // weekPlan (task C2) is resolved BEFORE the log-history block below since v1->v2
   // migration needs it (recovers recipeId+portion for today's confirmed slots).
