@@ -108,10 +108,10 @@ function maybeShowOnboarding(){
 // same day, not just boot) — silent:true suppresses the confirm/skip toast AND the
 // re-log (state.js:logConfirm skips logPlanEntry when silent, since the entry is already
 // in logHistory — replaying must never rewrite it with whatever's in activeMenu right
-// now). Breakfast is never replayed here: it has no confirm/skip UI, always auto-logged
-// fresh by ensureTodayBreakfastLogged() (planner.js) inside renderLogPlan().
+// now). FIX 1 (feedback): breakfast is a normal meal now — replayed here exactly like
+// every other slot (the old auto-log path, ensureTodayBreakfastLogged, is gone).
 function restoreTodayLog(){
-  ['lunch', 'dinner', 'snack'].forEach(function(slot){
+  SLOT_ORDER.forEach(function(slot){
     const status = slotLogStatus(todayISO(), currentProf, slot);
     if(status === 'confirmed'){
       const entry = getDayLog(todayISO())[currentProf].find(function(e){ return e.kind === 'plan' && e.slot === slot; });

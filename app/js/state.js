@@ -359,7 +359,9 @@ const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 // Task F2 (export/import): the schema version buildSnapshot() writes and loadState() /
 // the import validator (render.js:validateBackupStructure) accept. Bump alongside any
 // future schema change (same version this store's `v` field already carried since D1).
-const CURRENT_STORE_VERSION = 2;
+// v3 (feedback FIX 1): breakfast is no longer auto-logged — see
+// migrateRemoveAutoBreakfast() below for the one-time v2->v3 migration this bump gates.
+const CURRENT_STORE_VERSION = 3;
 
 let onboarded = false;
 let checkedShopNames = {};   // ingredient name -> true, for shopping-list checks
@@ -469,9 +471,10 @@ function upsertLogEntry(dateISO, personKey, entry){
 }
 
 // Builds + upserts a plan-kind LogEntry from a recipe id + portion, computing every macro
-// fresh via recipeNutrition() (engine.js). Used by logConfirm (first confirm), by
-// chooseSwap (editing an already-logged slot — including breakfast, which has no confirm
-// step, see ensureTodayBreakfastLogged), and by restoreTodayLog's replay guard.
+// fresh via recipeNutrition() (engine.js). Used by logConfirm (first confirm — breakfast
+// included, see FIX 1: breakfast is a normal meal with its own Confirm/Swap/Skip, no more
+// auto-log), by chooseSwap (editing an already-logged slot), and by restoreTodayLog's
+// replay guard.
 function logPlanEntry(dateISO, personKey, slot, recipeId, portion){
   const nut = recipeNutrition(recipeId, portion).totals;
   return upsertLogEntry(dateISO, personKey, {
@@ -500,6 +503,28 @@ function markSlotSkipped(dateISO, personKey, slot){
   const day = getDayLog(dateISO);
   day.skipped[personKey][slot] = true;
   day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
+}
+
+// FIX 2 (feedback) — undo paths. Removing a slot's plan entry (and clearing any skipped
+// flag) sends slotLogStatus() back to null, which is exactly what restores the card's
+// Confirm/Swap/Skip actions on the next renderLogPlan(). Pure logHistory mutations:
+// every surface (Today ring/macros, Log pill, "Today so far", Insights) re-derives from
+// logHistory, so callers just re-render + persist() afterwards (same convention as every
+// other mutator in this file).
+function removeLoggedSlot(dateISO, personKey, slot){
+  const day = getDayLog(dateISO);
+  day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
+  delete day.skipped[personKey][slot];
+}
+
+// Removes ONE specific entry by its index in the day's per-person array — the "Today so
+// far" ✕ (quick-added foods AND confirmed plan meals alike). Returns the removed entry
+// (or null) so the caller can toast and, for a plan entry, restore the matching Log
+// card's actions.
+function removeLogEntryAt(dateISO, personKey, index){
+  const arr = getDayLog(dateISO)[personKey];
+  if(!(index >= 0 && index < arr.length)) return null;
+  return arr.splice(index, 1)[0];
 }
 
 // 'confirmed' | 'skipped' | null — drives the Log screen's per-slot restore (app.js:
@@ -545,7 +570,7 @@ function migrateV1TodayLog(saved){
   const wp = (saved.weekPlan && typeof saved.weekPlan === 'object' && typeof saved.weekPlan.weekStartDate === 'string' && Array.isArray(saved.weekPlan.days)) ? saved.weekPlan : null;
   Object.keys(saved.log.slots).forEach(function(slot){
     const rec = saved.log.slots[slot];
-    if(!rec || slot === 'breakfast') return; // breakfast has no v1 record — auto-(re)logged fresh, see ensureTodayBreakfastLogged()
+    if(!rec || slot === 'breakfast') return; // breakfast had no v1 record (it was auto-logged pre-FIX-1, never persisted as a v1 slot)
     if(rec.status === 'confirmed' && wp){
       const dayIdx = Math.max(0, Math.min(6, diffDaysISO(todayISO(), wp.weekStartDate)));
       const day = wp.days[dayIdx];
@@ -561,6 +586,30 @@ function migrateV1TodayLog(saved){
       }
     } else if(rec.status === 'skipped'){
       markSlotSkipped(todayISO(), person, slot);
+    }
+  });
+}
+
+// v2 -> v3 migration (feedback FIX 1): breakfast used to be auto-logged the moment its
+// plan slot was known (planner.js's now-removed ensureTodayBreakfastLogged()), so a store
+// saved by an older build may contain TODAY's breakfast plan-entry even though the user
+// never tapped Confirm. LogEntry (see the shape doc above) records no auto-vs-manual flag
+// — there's nothing in the stored shape that distinguishes a real confirm from the old
+// auto-log — so as a one-time migration (gated on the stored version being < 3, so this
+// never re-fires on a later load) we drop TODAY's breakfast plan-entry for both people.
+// A genuinely confirmed breakfast today is the rare case (this only matters on the exact
+// day the app updates) and is one tap to re-confirm; every other day's history, and every
+// other slot, is untouched.
+function migrateRemoveAutoBreakfast(saved){
+  const fromVersion = (typeof saved.v === 'number' && isFinite(saved.v)) ? saved.v : 0;
+  if(fromVersion >= 3) return;
+  if(!saved.logHistory || typeof saved.logHistory !== 'object') return;
+  const today = todayISO();
+  const day = saved.logHistory[today];
+  if(!day || typeof day !== 'object') return;
+  ['elena', 'partner'].forEach(function(person){
+    if(Array.isArray(day[person])){
+      day[person] = day[person].filter(function(e){ return !(e && e.kind === 'plan' && e.slot === 'breakfast'); });
     }
   });
 }
@@ -715,6 +764,7 @@ function loadState(){
   // entries are dropped rather than trusted, so a corrupt store can't crash rendering.
   logHistory = {};
   migrateV1TodayLog(saved);
+  migrateRemoveAutoBreakfast(saved); // v2->v3, one-time (see function doc above)
   if(saved.logHistory && typeof saved.logHistory === 'object'){
     Object.keys(saved.logHistory).forEach(function(date){
       if(!/^\d{4}-\d{2}-\d{2}$/.test(date)) return;

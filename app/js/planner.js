@@ -320,29 +320,15 @@ function computeActiveMenu(){
   return {style: householdStyle, dayIndex: dayIdx, breakfast: view('breakfast'), lunch: view('lunch'), dinner: view('dinner'), snack: view('snack')};
 }
 
-// Auto-logs today's breakfast for personKey the first time it's seen (task D1): breakfast
-// has no confirm/skip UI (always "done" by design, see renderLogPlan/buildLogSlotCard), so
-// unlike lunch/dinner/snack its LogEntry is written as soon as its plan slot exists rather
-// than on a tap. Idempotent (skips the write if the logged ref+portion already match
-// today's plan) and slot-keyed upsert means a later breakfast swap corrects the entry in
-// place instead of duplicating it — see logPlanEntry (state.js).
-function ensureTodayBreakfastLogged(personKey){
-  ensureWeekPlan();
-  const day = weekPlan.days[todayDayIndex()];
-  const entry = day.meals.breakfast[personKey];
-  if(!entry || !entry.recipeId) return;
-  const today = todayISO();
-  const existing = getDayLog(today)[personKey].find(function(e){ return e.kind === 'plan' && e.slot === 'breakfast'; });
-  if(existing && existing.ref === entry.recipeId && existing.portion === entry.portion) return;
-  logPlanEntry(today, personKey, 'breakfast', entry.recipeId, entry.portion);
-}
-
 // Task D1 ("Today = Log"): PROF.consumed*/consumedKcal derived purely from today's
 // logHistory entries for personKey (confirmed plan slots + quick-added foods) — replaces
 // the old weekPlan-plus-todayLog-status computation. Every number here was already
 // computed once at log time (recipeNutrition/foodMacros), so this is just a sum.
+// FIX 1 (feedback): breakfast used to be force-logged here via the now-removed
+// ensureTodayBreakfastLogged() the moment its plan slot was known. Breakfast is now a
+// normal meal — nothing is in logHistory until the user taps Confirm on the Log screen —
+// so this is a pure read, exactly like every other slot.
 function recomputeConsumed(personKey){
-  ensureTodayBreakfastLogged(personKey);
   const entries = getDayLog(todayISO())[personKey];
   let kcal = 0, p = 0, c = 0, f = 0, sat = 0, fib = 0;
   entries.forEach(function(e){ kcal += e.kcal; p += e.protein; c += e.carbs; f += e.fat; sat += e.satFat; fib += e.fiber; });
@@ -660,9 +646,9 @@ function chooseSwap(i){
   if(!alt) return;
   const view = applySwap(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, alt.id);
 
-  // If this slot is already logged today (breakfast always is; lunch/dinner/snack once
-  // confirmed), correct its LogEntry in place (task D1: a swap edits today's history, it
-  // never duplicates it — logPlanEntry/upsertLogEntry replace by slot).
+  // If this slot is already confirmed today (any slot — breakfast included since FIX 1
+  // made it a normal meal), correct its LogEntry in place (task D1: a swap edits today's
+  // history, it never duplicates it — logPlanEntry/upsertLogEntry replace by slot).
   if(swapCtx.dayIndex === todayDayIndex() && slotLogStatus(todayISO(), swapCtx.person, swapCtx.slot) === 'confirmed'){
     const planEntry = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot][swapCtx.person];
     logPlanEntry(todayISO(), swapCtx.person, swapCtx.slot, planEntry.recipeId, planEntry.portion);

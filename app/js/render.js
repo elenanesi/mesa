@@ -164,7 +164,9 @@ function renderWeek(){
   renderNutrientChips();
 }
 
-// The Week screen's "Weekly nutrient coverage" card: the 4 REAL computed metrics from
+// The "Weekly nutrient coverage" card (FIX 3: moved from the Week screen to the TOP of
+// Insights — same markup/ids, same live wiring: renderWeek() still calls this after every
+// plan change, and renderInsights() also refreshes it on each visit): the 4 REAL computed metrics from
 // planner.js:computeWeeklyCoverage (omega-3 meals/wk ≥3, selenium sources/wk ≥3 while
 // Elena's thyroid goal is on, fiber g/day avg vs 25g for whoever of the two is lower,
 // sat-fat share of fat ≤33%), replacing the hardcoded Vitamin D demo chips. The chip
@@ -370,9 +372,14 @@ function updateLogTotalPill(){
 // "Today so far" list (task D1 item 3): every logged entry for currentProf today —
 // confirmed plan slots AND quick-added foods — sorted by log time. Fully derived from
 // logHistory on every call, so it can never drift from what confirm/skip/quick-add wrote.
+// FIX 2c (feedback): every row carries a ✕ that removes that SPECIFIC entry from
+// logHistory (removeTodayEntry below). Rows are sorted for display but each ✕ carries the
+// entry's ORIGINAL index in the day's array (captured before the sort), so it always
+// removes exactly the entry shown.
 function renderTodaySoFar(){
-  const entries = getDayLog(todayISO())[currentProf].slice().sort(function(a, b){
-    return (a.t || '00:00') < (b.t || '00:00') ? -1 : 1;
+  const raw = getDayLog(todayISO())[currentProf];
+  const entries = raw.map(function(e, i){ return {e: e, i: i}; }).sort(function(a, b){
+    return ((a.e.t || '00:00') < (b.e.t || '00:00')) ? -1 : 1;
   });
   const list = document.getElementById('todaySoFar');
   if(!list) return;
@@ -380,34 +387,88 @@ function renderTodaySoFar(){
     list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet today.</p>';
     return;
   }
-  list.innerHTML = entries.map(function(e){
+  list.innerHTML = entries.map(function(row){
+    const e = row.e;
+    const removeBtn = '<button class="li-x" aria-label="Remove this entry" onclick="removeTodayEntry('+row.i+')">✕</button>';
     if(e.kind === 'plan'){
       const r = RECIPES[e.ref];
       const emoji = r ? r.emoji : '🍽️';
       const title = r ? r.title : 'Meal';
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + (e.t ? ' · ' + e.t : ' · earlier today');
-      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div></div>';
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div>'+removeBtn+'</div>';
     }
     const food = FOODS[e.ref];
     const name = food ? food.name : 'Food';
     const label = 'Quick add · ' + e.grams + 'g' + (e.t ? ' · ' + e.t : '');
-    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div></div>';
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div>'+removeBtn+'</div>';
   }).join('');
+}
+
+// FIX 2 (feedback): one refresh funnel for every undo/remove — everything below derives
+// from logHistory, so this is all that's needed for full parity across Today (ring/
+// macros/fat line), Log (cards, pill, "Today so far") and Insights (which repaints from
+// logHistory on next visit via go()).
+function refreshAfterLogChange(){
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderLogPlan(); // rebuilds cards + replays statuses, then updates pill + "Today so far"
+  persist();
+}
+
+// FIX 2a/2b (feedback): "Undo" on a confirmed or skipped Log card — clears the slot's
+// plan entry / skipped flag (state.js:removeLoggedSlot), which restores the card's
+// Confirm/Swap/Skip actions on the renderLogPlan() rebuild.
+function undoLogSlot(slot){
+  const status = slotLogStatus(todayISO(), currentProf, slot);
+  if(!status) return;
+  removeLoggedSlot(todayISO(), currentProf, slot);
+  refreshAfterLogChange();
+  toast(status === 'confirmed'
+    ? '↺ Un-logged ' + (TITLES[slot] || SLOT_LABEL[slot]) + ' — confirm it again anytime'
+    : '↺ ' + SLOT_LABEL[slot] + ' un-skipped');
+}
+
+// FIX 2c (feedback): the "Today so far" ✕ — removes one specific entry from today's
+// logHistory. For a plan entry this also restores the matching card's actions (the card
+// state is re-derived from slotLogStatus on the renderLogPlan() rebuild, same path as
+// undoLogSlot — the two stay consistent by construction).
+function removeTodayEntry(index){
+  const removed = removeLogEntryAt(todayISO(), currentProf, index);
+  if(!removed) return;
+  let name = 'entry';
+  if(removed.kind === 'plan'){
+    const r = RECIPES[removed.ref];
+    name = r ? r.title : 'meal';
+  } else {
+    const f = FOODS[removed.ref];
+    name = f ? f.name : 'food';
+  }
+  refreshAfterLogChange();
+  toast('✕ Removed ' + name + ' (−' + removed.kcal + ' kcal)');
 }
 
 // `silent` is used only by restoreTodayLog() (app.js) replaying a persisted
 // confirm/skip at boot, so reload doesn't re-fire the toast or re-log the entry (it's
 // already in logHistory) for something the user already actioned in a previous session.
+// FIX 2a/2b (feedback): the confirmed/skipped tag is now a ROW — the status text plus an
+// "Undo" ghost button (44px tap target, css .tag-undo) that reverses the action via
+// undoLogSlot(). Shared by logConfirm and logSkip below.
+function appendTagRow(card, slot, tagClass, tagText){
+  const actions = card.querySelector('.logactions'); if(actions) actions.remove();
+  const info = card.querySelector('.info');
+  const row = document.createElement('div');
+  row.className = 'tag-row';
+  row.innerHTML = '<span class="'+tagClass+'">'+tagText+'</span>'
+    + '<button class="tag-undo" onclick="undoLogSlot(\''+slot+'\')">↺ Undo</button>';
+  info.appendChild(row);
+}
+
 function logConfirm(key, silent){
   const card = document.getElementById('log-' + key);
   if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
   card.classList.add('done');
-  const actions = card.querySelector('.logactions'); if(actions) actions.remove();
-  const info = card.querySelector('.info');
-  const tag = document.createElement('div');
-  tag.className = 'confirmed-tag';
-  tag.textContent = silent ? '✓ Logged · earlier today' : '✓ Logged · just now';
-  info.appendChild(tag);
+  appendTagRow(card, key, 'confirmed-tag', silent ? '✓ Logged · earlier today' : '✓ Logged · just now');
 
   if(!silent){
     const v = activeMenu[key];
@@ -429,12 +490,7 @@ function logSkip(key, silent){
   const card = document.getElementById('log-' + key);
   if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
   card.classList.add('skipped');
-  const actions = card.querySelector('.logactions'); if(actions) actions.remove();
-  const info = card.querySelector('.info');
-  const tag = document.createElement('div');
-  tag.className = 'skipped-tag';
-  tag.textContent = 'Skipped for today';
-  info.appendChild(tag);
+  appendTagRow(card, key, 'skipped-tag', 'Skipped for today');
   if(!silent) toast('Skipped — your plan stays balanced');
 
   markSlotSkipped(todayISO(), currentProf, key);
@@ -446,20 +502,12 @@ function logSkip(key, silent){
 // values). Re-running this rebuilds the cards fresh, then replays today's persisted
 // confirm/skip status back onto them (restoreTodayLog, app.js) so confirms survive
 // profile switches and plan re-renders within the same day.
+// FIX 1 (feedback): breakfast is a normal meal now — same Confirm/Swap/Skip actions as
+// lunch/dinner/snack, nothing pre-logged. All four slots go through the same
+// buildLogSlotCard() path (the old breakfast-only "always done" branch is gone).
 function renderLogPlan(){
   if(!activeMenu) return;
-  ensureTodayBreakfastLogged(currentProf); // planner.js (task D1) — breakfast has no confirm step, log it as soon as it's known
-  const bfv = activeMenu.breakfast, bf = RECIPES[bfv.recipeId];
-  EMOJI.breakfast = bf.emoji; TITLES.breakfast = bf.title; LOGKCAL.breakfast = bfv.kcal;
-  const bfCard = document.getElementById('log-breakfast');
-  bfCard.className = 'card meal done';
-  bfCard.style.cursor = 'default';
-  bfCard.innerHTML = '<div class="thumb">'+bf.emoji+'</div><div class="info">'
-    + '<div class="row between"><span class="t">'+bf.title+'</span><span class="kcal">'+bfv.kcal+'</span></div>'
-    + '<div class="d">Breakfast · '+bfv.protein+'g protein</div>'
-    + '<div class="confirmed-tag">✓ Logged · earlier today</div></div>';
-
-  ['lunch', 'dinner', 'snack'].forEach(function(slot){
+  SLOT_ORDER.forEach(function(slot){
     const v = activeMenu[slot], r = RECIPES[v.recipeId];
     buildLogSlotCard(slot, r.emoji, r.title, v.kcal, SLOT_LABEL[slot] + ' · ' + v.protein + 'g protein');
   });
@@ -916,6 +964,10 @@ function renderInsights(){
   const barsWrap = document.getElementById('insightsBarsCard');
   const workingWrap = document.getElementById('insightsWorking');
   if(!statWrap || !bandWrap || !barsWrap || !workingWrap) return; // Insights markup not present
+
+  // FIX 3 (feedback): the coverage card lives at the top of Insights now — refresh its
+  // chips/pill/note on every visit (plan-derived, so not gated on logged-day count).
+  renderNutrientChips();
 
   const data = computeInsights(currentProf);
 

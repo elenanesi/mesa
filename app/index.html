@@ -128,29 +128,13 @@
     </section>
 
     <!-- ============ WEEK ============ -->
+    <!-- FIX 3 (feedback): the plan comes FIRST — day rows right under the header, then
+         the two actions. The "Last week in one minute" and "Weekly nutrient coverage"
+         cards moved to the top of the Insights screen (same markup/ids, live wiring
+         intact — renderNutrientChips() targets them by id wherever they live). -->
     <section class="screen" id="week">
       <h1>This week</h1>
       <p class="sub">A balanced 7-day rhythm. Nutrient coverage evens out across days, not just within one.</p>
-
-      <div class="card">
-        <div class="row between"><b style="font-size:14px">Last week in one minute</b><span class="pill ghost">Weekly reflection</span></div>
-        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🎉</div><div class="li-t">Win — protein on target 6 of 7 days<small>Lentil lunches carried the week</small></div></div>
-        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Win — selenium fully covered<small>Brazil nuts + salmon dinners</small></div></div>
-        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">🌤️</div><div class="li-t">Gentle focus — vitamin D dipped<small>Thu & Sat egg additions should help next week</small></div></div>
-        <button class="cta ghostbtn" onclick="toast('📅 Planning next week around this week\'s wins…')">Plan next week</button>
-      </div>
-
-      <div class="card" style="padding:14px">
-        <div class="row between" style="margin-bottom:4px">
-          <b style="font-size:14px">Weekly nutrient coverage <span class="chip-computed">✓ computed</span></b>
-          <span class="pill" id="coveragePill">On track</span>
-        </div>
-        <!-- Rendered by renderNutrientChips() (render.js): the 4 real computed metrics
-             — omega-3 meals/wk, selenium sources/wk (thyroid goal on), fiber g/day avg,
-             sat-fat share of fat — from planner.js:computeWeeklyCoverage (task C2). -->
-        <div class="nutri" style="margin-top:10px" id="nutriChips"></div>
-        <div class="why" style="margin-top:12px" id="coverageNote"></div>
-      </div>
 
       <h2>7-day plan</h2>
       <div class="week" id="weekList"></div>
@@ -224,7 +208,9 @@
 
       <h2 style="margin-top:18px">Today's plan</h2>
 
-      <div class="card meal done" id="log-breakfast" style="cursor:default"></div>
+      <!-- FIX 1 (feedback): breakfast is a normal meal — no pre-set "done" class; all
+           four cards are built identically by renderLogPlan() with Confirm/Swap/Skip. -->
+      <div class="card meal" id="log-breakfast" style="cursor:default"></div>
       <div class="card meal" id="log-lunch" style="cursor:default"></div>
       <div class="card meal" id="log-dinner" style="cursor:default"></div>
       <div class="card meal" id="log-snack" style="cursor:default"></div>
@@ -235,11 +221,16 @@
       </div>
 
       <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
+      <!-- FIX 4 (feedback): library shortcuts surfaced here (they were Profile-only and
+           hard to find) — same sheets as Profile's "Food library" section (library.js
+           openers). 6 buttons wrap onto a second grid row at 375px; targets stay >=44px. -->
       <div class="quick">
         <button onclick="toast('📷 Coming in a later phase')"><span class="qi">📷</span>Scan</button>
         <button onclick="openFoodSearch()"><span class="qi">🔎</span>Search</button>
         <button onclick="openFoodSearch()"><span class="qi">🍱</span>Meal</button>
         <button onclick="toast('💧 +250ml water')"><span class="qi">💧</span>Water</button>
+        <button onclick="openFoodLibrary()"><span class="qi">🧺</span>Ingredients</button>
+        <button onclick="openMyRecipes()"><span class="qi">📖</span>My recipes</button>
       </div>
 
       <div class="banner" style="background:linear-gradient(135deg,var(--terra),#b25e35)">
@@ -254,9 +245,33 @@
       <h1>Insights</h1>
       <p class="sub">How your eating is trending — for you and Andrea.</p>
 
+      <!-- FIX 3 (feedback): both cards below moved here from the Week screen — coverage
+           first, then the last-week reflection, above the stat tiles. Same markup + ids,
+           still painted by renderNutrientChips() (render.js) on every plan change AND on
+           every Insights visit (renderInsights). -->
+      <div class="card" style="padding:14px">
+        <div class="row between" style="margin-bottom:4px">
+          <b style="font-size:14px">Weekly nutrient coverage <span class="chip-computed">✓ computed</span></b>
+          <span class="pill" id="coveragePill">On track</span>
+        </div>
+        <!-- Rendered by renderNutrientChips() (render.js): the 4 real computed metrics
+             — omega-3 meals/wk, selenium sources/wk (thyroid goal on), fiber g/day avg,
+             sat-fat share of fat — from planner.js:computeWeeklyCoverage (task C2). -->
+        <div class="nutri" style="margin-top:10px" id="nutriChips"></div>
+        <div class="why" style="margin-top:12px" id="coverageNote"></div>
+      </div>
+
+      <div class="card">
+        <div class="row between"><b style="font-size:14px">Last week in one minute</b><span class="pill ghost">Weekly reflection</span></div>
+        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🎉</div><div class="li-t">Win — protein on target 6 of 7 days<small>Lentil lunches carried the week</small></div></div>
+        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Win — selenium fully covered<small>Brazil nuts + salmon dinners</small></div></div>
+        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">🌤️</div><div class="li-t">Gentle focus — vitamin D dipped<small>Thu & Sat egg additions should help next week</small></div></div>
+        <button class="cta ghostbtn" onclick="toast('📅 Planning next week around this week\'s wins…')">Plan next week</button>
+      </div>
+
       <!-- Rendered by renderInsights() (render.js, task D1): 4 real computed stat tiles,
            or one spanning "log a few days" empty-state tile below 2 logged days. -->
-      <div class="stat" id="insightsStats"></div>
+      <div class="stat" id="insightsStats" style="margin-top:12px"></div>
 
       <div class="card" id="insightsBandCard"></div>
 

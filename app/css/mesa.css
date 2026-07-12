@@ -100,6 +100,12 @@ h2{font-size:18px;margin:22px 0 10px;letter-spacing:-.2px;}
 .meal.skipped{opacity:.55;}
 .confirmed-tag{font-size:12px;font-weight:700;color:var(--sage-deep);margin-top:8px;}
 .skipped-tag{font-size:12px;font-weight:700;color:var(--muted);margin-top:8px;}
+/* FIX 2 (feedback): the confirmed/skipped tag row also carries an Undo ghost button —
+   44px tap target (ground rule 4), visually quiet so the status text stays the focus. */
+.tag-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px;}
+.tag-row .confirmed-tag,.tag-row .skipped-tag{margin-top:0;}
+.tag-undo{min-height:44px;min-width:64px;padding:0 12px;border:1px solid var(--line);background:#fff;border-radius:12px;font:inherit;font-size:12px;font-weight:700;color:var(--sage-deep);cursor:pointer;}
+.tag-undo:active{transform:scale(.96);}
 
 .meta-line{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap;}
 
@@ -191,6 +197,10 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .logitem .li-t{flex:1;font-size:14px;}
 .logitem .li-t small{display:block;color:var(--muted);font-size:12px;margin-top:1px;}
 .logitem .li-k{font-weight:700;font-size:13px;}
+/* FIX 2c (feedback): per-row remove (✕) in "Today so far" — 44px tap target, quiet
+   ghost look (echoes .lib-del but without the warning tint until pressed). */
+.li-x{width:44px;height:44px;min-width:44px;flex:0 0 44px;border:0;border-radius:12px;background:#eef0ec;color:var(--ink-soft);font-size:14px;font-weight:700;cursor:pointer;}
+.li-x:active{transform:scale(.94);background:#f6e6dc;color:#b25e35;}
 
 /* insights */
 .stat{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;}
