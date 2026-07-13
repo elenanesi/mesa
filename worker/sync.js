@@ -53,6 +53,7 @@ const ALLOWED_ORIGINS = [
 
 const ACCESS_EMAILS = ['elenanesi55@gmail.com', 'angelucci88@gmail.com'];
 const ACCESS_BOOTSTRAP_KEY = 'access-bootstrap:v2:mesa-household';
+const ICON_180_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADR0lEQVR42u3dQWobQRBA0blnNrlBdiG3yJFtdABBHKRx9a9X8LfC1DyGtka2rmv4/Pr7+0NzugywwAMswCEW3CALbJC1AraLpAxsF0YJ1C6GMrBdAGVQW7wyqC1cGdQWrQxqC1YGtcUqg9pClUFtkUqhtkRlQFugMqgtTinUlqYMaAtTCrVlKQPaopRCbUnKgLag9/UYe7gZteW8HvGzsR+gM5ihvgG0xQCdQm0przvn/us4nwM9/pz71XE+B3r0seC7MW9F7e78BhgT7s7u0u7OL4HxP3PC+RzoEOav4JiEef2xA2aYgQZ63C+CQC8D/a5z7rS7M9Awwwy0o8ZE0OufFjpu3PPe87SfO4sa5nueDMIMNNBAAz0VnaeCQI8H7TE30O7QQAM99fx88t0faHdod2iggQYa6CToaW8JAu0cnXptoIEe+1gd6GWg3aWB9mm7Ba8NtM9Dj/54KtSLQL8bx6mvDbSjh6MH0DtAT3nHA2io3aWB9vTQ43Cg0//brvDaQAMNNNBnoN762kCHcHttoCWgJaAloAW0BLQEtAS0BLSAloCWgJaAloAW0KP68eenbgxokMEGGmigF4EGCmp3aLlDA61nnfJ3i0e9y/EYuO6HfNIf4V4nYTbfO0ADDTTQQAMNtAEaaAM00EADDTXMQAMN9IaPjxqYgTZAA22AhhpmoIEGGmgDdOuvvg3MQBugoYYZaKCBBhpqmIGmD+je/7YzMANtgIYaZqChhhlooIEGGurlmLP/wd/sxJz+SgqzD3P+O1bMLswrvjTI7MG85luwzA7Mq77WzXysuM6rvqcQZqChhhlosEEGGmqYgQYbZKCTsF0/oBOwXS+gE7BdH6ATsF0PoI/Hbe9AHw3cXoE+Ar49AL3qLm2XQCfP03YLdO6XQzsGGmgBDTTQAhpoqGEG2tt2AlpAS0BLA0E/xiKUwQy0gJaAloCWgBbQFiKgpZGgoVYKM9ACWgJaugk01EphBlpAS5NBQ60UZqCVAw21UpiBVg401EphBlo50FArhRlq5TADrRxoqJXCDLVymKFWDjPUymGGWjnMUCuHGWrlMEOtHGawlYMMtZKYwVYOMthKQgZbSchw69o2LjrAwAvYJ/MJTjzqeR+ro3sAAAAASUVORK5CYII=';
 
 // ~1MB cap (plan: "Payload cap ~1 MB") — measured on the raw request body text, before
 // JSON.parse, so an oversized payload is rejected without ever paying to parse it.
@@ -106,6 +107,17 @@ function normalizeHouseholdCode(raw){
   return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
+function iconResponse(){
+  const bin = atob(ICON_180_PNG_BASE64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Response(bytes, {
+    headers: {
+      'Content-Type': 'image/png',
+      'Cache-Control': 'public, max-age=31536000, immutable'
+    }
+  });
+}
 
 async function readStored(env, code){
   try{
@@ -211,6 +223,10 @@ export default {
 
     if(request.method === 'OPTIONS'){
       return new Response(null, {status: 204, headers: corsHeaders(origin)});
+    }
+
+    if(url.pathname === '/assets/icon-180.png' && (request.method === 'GET' || request.method === 'HEAD')){
+      return iconResponse();
     }
 
     if(url.pathname === '/bootstrap' && request.method === 'POST'){

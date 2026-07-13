@@ -732,17 +732,18 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const anchor = PERSON_ANCHOR[person];
   const pool = Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
-    return r.slot === slot && id !== currentId && !recipeHitsAvoid(r, avoidL) && swapSearchText(id).indexOf(q) !== -1;
+    return r.slot === slot && id !== currentId && swapSearchText(id).indexOf(q) !== -1;
   });
   const scored = pool.map(function(id){
     const base = dbBaseNutrition(id);
     const bp = bestPortion(base.kcal, currentKcal, anchor, SLOT_MAX_PORTION[slot]);
     const protein = base.protein * bp.portion;
-    return {id: id, title: RECIPES_DB[id].title, custom: id.indexOf('cr-') === 0, portion: bp.portion, kcal: bp.kcal, protein: protein,
+    return {id: id, title: RECIPES_DB[id].title, custom: id.indexOf('cr-') === 0, avoidHit: recipeHitsAvoid(RECIPES_DB[id], avoidL), portion: bp.portion, kcal: bp.kcal, protein: protein,
       kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
   });
   scored.sort(function(a, b){
     if(a.custom !== b.custom) return a.custom ? -1 : 1;
+    if(a.avoidHit !== b.avoidHit) return a.avoidHit ? 1 : -1;
     if(a.title !== b.title) return a.title < b.title ? -1 : 1;
     return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
   });
@@ -797,11 +798,12 @@ function swapRecipeRowHtml(a){
   const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   const yours = a.custom ? '<span class="pill terra">Yours</span>' : '';
+  const avoid = a.avoidHit ? '<span class="pill ghost">Contains avoided</span>' : '';
   return '<div class="altrow" onclick="chooseSwapRecipe(\'' + jsAttr(a.id) + '\')">'
     + '<div class="ae">' + r.emoji + '</div>'
     + '<div class="at"><div class="an">' + r.title + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
-    + '<div class="tags">' + yours + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
+    + '<div class="tags">' + yours + avoid + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
     + '</div></div>';
 }
 
@@ -814,7 +816,7 @@ function buildSwapSearchResults(){
   }
   const matches = buildSwapSearchOptions(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, q, swapCtx.weekStartDate);
   if(!matches.length){
-    return '<p class="sub">No ' + slotLabel + ' recipe matches that search without hitting what you avoid.</p>';
+    return '<p class="sub">No ' + slotLabel + ' recipe matches that search.</p>';
   }
   const shown = matches.slice(0, 8);
   let html = '<p class="sub" style="margin-top:8px">' + matches.length + ' match' + (matches.length === 1 ? '' : 'es') + (matches.length > shown.length ? ' · showing first ' + shown.length : '') + '</p>';
