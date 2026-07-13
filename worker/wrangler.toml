@@ -7,10 +7,6 @@ name = "mesa-sync"
 main = "sync.js"
 compatibility_date = "2026-07-13"
 
-# TODO(S2): replace with the real KV namespace id once one is created
-# (`wrangler kv namespace create MESA_KV`) under the mesa Cloudflare account — blocked on
-# the token permission bump above. `wrangler dev --local` doesn't need a real id (miniflare
-# simulates KV in-memory), so this placeholder is fine for S1's local verification.
 kv_namespaces = [
-  { binding = "MESA_KV", id = "TODO_REPLACE_WITH_REAL_KV_NAMESPACE_ID" }
+  { binding = "MESA_KV", id = "2f868b0b17374dffaef6798410c0ab38" }
 ]

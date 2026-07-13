@@ -2,7 +2,7 @@
 
 A free, installable, offline-first PWA that plans a week of Mediterranean meals for Elena and Andrea (couple with different calorie/macro targets, shared dinners), generates one household shopping list, and logs what was actually eaten. **Every number is computed, never typed in** — Mifflin-St Jeor for targets, sums over the food DB for nutrition.
 
-**Live:** https://mesa-9y5.pages.dev (Cloudflare Pages, behind Cloudflare Access — only elenanesi55@gmail.com and angelucci88@gmail.com). Legacy public URL https://elenanesi.github.io/mesa/ (to be retired once Elena confirms Access login works → then make the GitHub repo private).
+**Live:** https://mesa-9y5.pages.dev/app/ (Cloudflare Pages, behind Cloudflare Access — only elenanesi55@gmail.com and angelucci88@gmail.com). Couple sync backend: https://mesa-sync.elenanesi55.workers.dev (Cloudflare Worker + KV). Legacy public URL https://elenanesi.github.io/mesa/ (to be retired once Elena confirms Access login works → then make the GitHub repo private).
 
 ## How agents work on this repo
 
@@ -30,8 +30,8 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 ## STATUS (maintained — integrate & prune when tasks complete)
 
-**Done through 2026-07-13** (sw CACHE mesa-v7): Phase 1 MVP shipped + post-MVP batches — custom food/recipe library with auto-derived tags; editable log (breakfast normal slot, Undo everywhere, Today/Log/Insights parity from logHistory); Week screen starts with the plan (coverage cards on Insights); two-week horizon (This/Next week toggle, per-week shopping, cross-week variety filter, advance swaps survive rollover); swap-anything sheet (best matches + all slot options); merge-only library import; Cloudflare Pages + Access migration done; UI feedback batch — Confirm/Skip/Undo directly on the Today screen cards (same logHistory funnel as Log, verified both directions) + every numeric stepper field also directly typeable with decimals (comma AND dot accepted, inputmode=decimal, ≥16px inputs); **Phase 2 S1 done** — couple sync (Worker + KV + `js/sync.js` client + Profile "Couple sync" UI) verified end-to-end locally via `wrangler dev --local`, no CF auth needed.
+**Done through 2026-07-13** (sw CACHE mesa-v8): Phase 1 MVP shipped + post-MVP batches — custom food/recipe library with auto-derived tags; editable log (breakfast normal slot, Undo everywhere, Today/Log/Insights parity from logHistory); Week screen starts with the plan (coverage cards on Insights); two-week horizon (This/Next week toggle, per-week shopping, cross-week variety filter, advance swaps survive rollover); swap-anything sheet (best matches + all slot options); merge-only library import; Cloudflare Pages + Access migration done; UI feedback batch — Confirm/Skip/Undo directly on the Today screen cards (same logHistory funnel as Log, verified both directions) + every numeric stepper field also directly typeable with decimals (comma AND dot accepted, inputmode=decimal, ≥16px inputs); **Phase 2 S1/S2 done** — couple sync client + Worker/KV deployed at `mesa-sync.elenanesi55.workers.dev`, Profile "Couple sync" UI enabled, CORS verified for the Pages origin.
 
 **In progress / next:**
-- Awaiting Elena: Access login test on https://mesa-9y5.pages.dev → then make GitHub repo private + retire legacy URL in docs.
-- **Phase 2 S2 next**: deploy the Worker + KV to Cloudflare and point the app at it (`worker/wrangler.toml`'s KV id + `app/js/sync.js`'s `SYNC_URL` are both TODO placeholders for this). Blocked on: CF token needs added perms (Workers Scripts Edit + Workers KV Storage Edit). After sync: LLM endpoint (needs an Anthropic API key from Elena, proxied by a Worker — key never ships in the app).
+- Awaiting Elena: confirm Access login + couple sync on the real phones at https://mesa-9y5.pages.dev/app/ → then make GitHub repo private + retire legacy URL in docs.
+- Next Phase 2 item: LLM endpoint (needs an Anthropic API key from Elena, proxied by a Worker — key never ships in the app).

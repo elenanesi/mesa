@@ -40,11 +40,7 @@
    =================================================================== */
 
 /* ---------------- config ---------------- */
-// TODO(S2): once the worker is deployed (blocked on the mesa-deploy API token needing
-// Workers Scripts:Edit + Workers KV Storage:Edit — see README.md STATUS), replace this
-// with the production URL, e.g. 'https://mesa-sync.<subdomain>.workers.dev', and bump
-// sw.js's CACHE again so installed clients pick up the change.
-const SYNC_URL = 'http://127.0.0.1:8787';
+const SYNC_URL = 'https://mesa-sync.elenanesi55.workers.dev';
 
 const SYNC_SECTIONS = ['library', 'plans', 'shopping', 'profile:elena', 'profile:partner', 'log:elena', 'log:partner'];
 const SYNC_DEBOUNCE_MS = 2000;
