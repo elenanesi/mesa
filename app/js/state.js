@@ -245,23 +245,56 @@ const HOUSEHOLD_STYLES = ['balanced', 'protein', 'lowcarb'];
 let householdStyle = 'balanced';
 let activeMenu = null;
 
-/* ---------------- the week plan (task C2) ----------------
-   Source of truth for every meal both people eat this week. Built by
-   js/planner.js:generateWeek(), kept fresh by js/planner.js:ensureWeekPlan() (regenerates
-   on style/avoid-list/calorie-target changes or when the stored week is from a previous
-   week), and read by renderWeek/renderTodayMeals/renderLogPlan/computeShoppingList
-   (rendering) and buildRebalanceSheet/applyRebalance (nutrient-coverage solver).
+/* ---------------- the week plan(s) (task C2, generalized for the two-week horizon) ----------------
+   weekPlans is the source of truth for every meal both people eat, keyed by the Monday
+   ('YYYY-MM-DD') that week starts — currently holds at most two entries: the CURRENT week
+   and NEXT week (owner feedback: "I need to see both this and next week's menu to shop on
+   the weekend"). Built by js/planner.js:generateWeek(), kept fresh per-week by
+   js/planner.js:ensureWeekPlan(mondayISO) (regenerates a given week when style/avoid-list/
+   calorie-target/library changes, or when nothing's been generated for that Monday yet).
+   Weeks older than the current Monday are pruned on load/save (pruneOldWeekPlans(), below)
+   so the store never accumulates past weeks.
 
-   Shape: { v:1, weekStartDate:'YYYY-MM-DD' (the Monday this week starts), signature
-   (opaque string capturing the inputs that should trigger a regen), days: [ {date,
-   meals:{breakfast,lunch,dinner,snack}}, ...7 ] }. Each `meals[slot]` is either
-   {shared:true, recipeId, elena:{recipeId,portion,kcal,protein}, partner:{...}} (one
-   dish, two portions) or {shared:false, elena:{recipeId,portion,kcal,protein},
-   partner:{...}} (two different dishes). portion is the same "servings" unit
-   engine.js:recipeNutrition() scales ingredients by (1 = the recipe as written in
-   RECIPES_DB); kcal/protein are that recipe at that portion, already computed — never
-   re-derived from a static table. null until ensureWeekPlan() first runs (app.js boot). */
+   Each entry's shape (unchanged from the single-weekPlan era): { v:1,
+   weekStartDate:'YYYY-MM-DD', signature (opaque string capturing the inputs that should
+   trigger a regen), days: [ {date, meals:{breakfast,lunch,dinner,snack}}, ...7 ] }. Each
+   `meals[slot]` is either {shared:true, recipeId, elena:{recipeId,portion,kcal,protein},
+   partner:{...}} (one dish, two portions) or {shared:false, elena:{...}, partner:{...}}
+   (two different dishes). portion is the "servings" unit engine.js:recipeNutrition()
+   scales ingredients by; kcal/protein are that recipe at that portion, already computed.
+
+   COMPATIBILITY GETTER: `weekPlan` is kept as a bare variable that always mirrors
+   weekPlans[the CURRENT week's Monday] — see js/planner.js:ensureWeekPlan() for exactly
+   how it's kept in sync. Every pre-two-week-horizon code path (Today, Log, recipe screen,
+   re-balance, todayDayIndex, computeActiveMenu…) reads/writes this bare name and needed
+   ZERO changes for this feature; only the Week screen (both weeks) and the shopping sheet
+   (both weeks) read weekPlans directly / pass an explicit mondayISO through
+   ensureWeekPlan()/computeShoppingList()/buildSwapAlternatives()/applySwap(). null until
+   ensureWeekPlan() first runs (app.js boot). */
+let weekPlans = {};
 let weekPlan = null;
+
+// Drops any weekPlans entry (and its per-week shopping-checked state, checkedShopByWeek)
+// older than the CURRENT week's Monday — called from loadState() (right after weekPlans is
+// populated, so a stale "current" week from a previous visit never survives a rollover)
+// and from persist() (mirrors pruneLogHistory()'s pattern), so the store never accumulates
+// past weeks. String comparison is safe: ISO Mondays sort lexicographically.
+function pruneOldWeekPlans(){
+  const cutoff = mondayOfWeek(todayISO());
+  Object.keys(weekPlans).forEach(function(k){
+    if(k < cutoff){
+      delete weekPlans[k];
+      delete checkedShopByWeek[k];
+    }
+  });
+}
+
+function isValidWeekPlanShape(p){
+  return !!p && typeof p === 'object'
+    && typeof p.weekStartDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.weekStartDate)
+    && typeof p.signature === 'string'
+    && Array.isArray(p.days) && p.days.length === 7;
+}
 
 let recipeOrigin = 'today';
 let currentRecipeKey = 'salmon';
@@ -361,10 +394,26 @@ const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 // future schema change (same version this store's `v` field already carried since D1).
 // v3 (feedback FIX 1): breakfast is no longer auto-logged — see
 // migrateRemoveAutoBreakfast() below for the one-time v2->v3 migration this bump gates.
-const CURRENT_STORE_VERSION = 3;
+// v4 (two-week horizon): single `weekPlan` -> keyed `weekPlans`, single flat
+// `shopping.checked` -> per-week `shopping.checkedByWeek` — see loadState() below for
+// both one-time v3->v4 migrations this bump gates.
+const CURRENT_STORE_VERSION = 4;
 
 let onboarded = false;
-let checkedShopNames = {};   // ingredient name -> true, for shopping-list checks
+// Shopping-list checked state, keyed PER WEEK (task: "shopping list per week" — checked
+// items for next week's list are independent of this week's, and are pruned along with
+// their week by pruneOldWeekPlans()): weekStartDate ('YYYY-MM-DD') -> {ingredientName:
+// true}. Ids in the shopping sheet are positional and change whenever the list recomputes,
+// so checked state is tracked by ingredient NAME within each week's bucket, same
+// convention the single-week version used.
+let checkedShopByWeek = {};
+// Returns (creating on first touch) the checked-name set for one week's shopping list —
+// every reader/writer of shopping-check state goes through this so a week with no checks
+// yet doesn't need a null-check dance.
+function checkedSetForWeek(weekStartDate){
+  if(!checkedShopByWeek[weekStartDate]) checkedShopByWeek[weekStartDate] = {};
+  return checkedShopByWeek[weekStartDate];
+}
 
 /* ---------------- user content library (post-MVP: ingredients + recipes) ----------------
    customFoods: id 'cf-<slug>' -> food object, same shape as a data/foods.js FOODS entry
@@ -629,15 +678,22 @@ function buildSnapshot(){
     PERSIST_PROFILE_FIELDS.forEach(function(f){ out[f] = (f === 'avoid') ? (p.avoid || []).slice() : p[f]; });
     profiles[key] = out;
   });
+  const checkedByWeek = {};
+  Object.keys(checkedShopByWeek).forEach(function(wk){
+    const names = Object.keys(checkedShopByWeek[wk]).filter(function(n){ return checkedShopByWeek[wk][n]; });
+    if(names.length) checkedByWeek[wk] = names;
+  });
   return {
-    v: CURRENT_STORE_VERSION, // task D1: bumped from 1 — `log` (single-day) replaced by `logHistory` (rolling)
+    v: CURRENT_STORE_VERSION, // v4: weekPlans (keyed) + shopping.checkedByWeek (keyed) — see loadState() migrations
     currentProf: currentProf,
     onboarded: onboarded,
     householdStyle: householdStyle,
     shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
-    shopping: { checked: Object.keys(checkedShopNames).filter(function(n){ return checkedShopNames[n]; }) },
+    // Per-week checked-item state (task: "shopping list per week") — see checkedShopByWeek
+    // above for the shape; keyed the same way weekPlans is, by that week's Monday.
+    shopping: { checkedByWeek: checkedByWeek },
     // user content library (post-MVP): plain JSON data, stored verbatim — see the block
     // above for the shape. Exported/imported for free as part of the whole store (task F2).
     customFoods: customFoods,
@@ -647,19 +703,23 @@ function buildSnapshot(){
     // LOG_HISTORY_RETENTION_DAYS by pruneLogHistory() (called from persist() below) before
     // every write.
     logHistory: logHistory,
-    // weekPlan (task C2): the generated week is plain JSON data (no functions), so it's
-    // stored verbatim; ensureWeekPlan() (js/planner.js) re-validates its signature and
-    // weekStartDate against the live profile/style/avoid/SHARED state on every load and
-    // regenerates when stale — this is just the last-known plan, not a cache that's
-    // trusted blindly.
-    weekPlan: weekPlan
+    // weekPlans (two-week horizon): keyed by weekStartDate — see the block above for the
+    // shape and the `weekPlan` compat getter. Plain JSON data (no functions), stored
+    // verbatim; ensureWeekPlan(mondayISO) (js/planner.js) re-validates each entry's
+    // signature and weekStartDate against the live profile/style/avoid/SHARED state on
+    // every load and regenerates when stale — this is just the last-known plans, not a
+    // cache that's trusted blindly. Pruned to the current + future weeks before every
+    // write (pruneOldWeekPlans(), called from persist() below).
+    weekPlans: weekPlans
   };
 }
 
 // Single write-through: gathers current values and writes once. Prunes old log-history
-// days first (task D1) so the store never grows unbounded.
+// days (task D1) and past week-plans (two-week horizon) first so the store never grows
+// unbounded.
 function persist(){
   pruneLogHistory();
+  pruneOldWeekPlans();
   try{
     localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot()));
   }catch(e){
@@ -720,9 +780,28 @@ function loadState(){
     });
   }
 
-  if(saved.shopping && Array.isArray(saved.shopping.checked)){
-    checkedShopNames = {};
-    saved.shopping.checked.forEach(function(name){ if(typeof name === 'string') checkedShopNames[name] = true; });
+  // Shopping-checked state (two-week horizon: keyed per week, shopping.checkedByWeek).
+  // v3->v4 migration: an old flat `shopping.checked` array belonged to whatever week the
+  // old single `weekPlan` pointed at — recover that week's Monday from `saved.weekPlan`
+  // (still present raw on an un-migrated v3 store) so those checks land on the right
+  // week's list instead of being silently dropped; falls back to the current Monday if
+  // that's missing/invalid. No-ops once `shopping.checkedByWeek` is already present.
+  checkedShopByWeek = {};
+  if(saved.shopping && typeof saved.shopping === 'object' && saved.shopping.checkedByWeek && typeof saved.shopping.checkedByWeek === 'object'){
+    Object.keys(saved.shopping.checkedByWeek).forEach(function(wk){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(wk)) return;
+      const arr = saved.shopping.checkedByWeek[wk];
+      if(!Array.isArray(arr)) return;
+      const set = {};
+      arr.forEach(function(name){ if(typeof name === 'string') set[name] = true; });
+      checkedShopByWeek[wk] = set;
+    });
+  } else if(saved.shopping && Array.isArray(saved.shopping.checked)){
+    const legacyWeek = (saved.weekPlan && typeof saved.weekPlan === 'object' && typeof saved.weekPlan.weekStartDate === 'string')
+      ? saved.weekPlan.weekStartDate : mondayOfWeek(todayISO());
+    const set = {};
+    saved.shopping.checked.forEach(function(name){ if(typeof name === 'string') set[name] = true; });
+    checkedShopByWeek[legacyWeek] = set;
   }
 
   // user content library: structurally-wrong ids/entries are dropped rather than trusted
@@ -747,16 +826,30 @@ function loadState(){
   }
   customRev = (typeof saved.customRev === 'number' && isFinite(saved.customRev)) ? saved.customRev : 0;
 
-  // weekPlan (task C2) is resolved BEFORE the log-history block below since v1->v2
-  // migration needs it (recovers recipeId+portion for today's confirmed slots).
-  if(saved.weekPlan && typeof saved.weekPlan === 'object'
-     && typeof saved.weekPlan.weekStartDate === 'string'
-     && typeof saved.weekPlan.signature === 'string'
-     && Array.isArray(saved.weekPlan.days) && saved.weekPlan.days.length === 7){
-    weekPlan = saved.weekPlan;
-  } else {
-    weekPlan = null;
+  // weekPlans (two-week horizon) is resolved BEFORE the log-history block below since
+  // v1->v2 migration needs the raw saved.weekPlan (recovers recipeId+portion for today's
+  // confirmed slots) — untouched by this block, which reads saved.weekPlan/saved.weekPlans
+  // but never mutates `saved` itself.
+  //
+  // v3->v4 migration: a pre-two-week-horizon store has a single `weekPlan`, not a keyed
+  // `weekPlans` — that single plan becomes weekPlans[its own weekStartDate] (exactly what
+  // ensureWeekPlan(mondayISO) would have produced had this feature always existed, since
+  // the plan's own weekStartDate field is authoritative). No-ops once `weekPlans` is
+  // already present (a v4+ store). Anything structurally wrong (wrong shape, wrong day
+  // count, mismatched key) is dropped rather than trusted, same defensive posture as
+  // logHistory below — a corrupt store can't crash rendering; ensureWeekPlan() just
+  // regenerates whatever's missing on first read.
+  weekPlans = {};
+  if(saved.weekPlans && typeof saved.weekPlans === 'object'){
+    Object.keys(saved.weekPlans).forEach(function(k){
+      const p = saved.weekPlans[k];
+      if(isValidWeekPlanShape(p) && p.weekStartDate === k) weekPlans[k] = p;
+    });
+  } else if(isValidWeekPlanShape(saved.weekPlan)){
+    weekPlans[saved.weekPlan.weekStartDate] = saved.weekPlan;
   }
+  pruneOldWeekPlans(); // drop anything older than the current week (also prunes its checkedShopByWeek entry)
+  weekPlan = weekPlans[mondayOfWeek(todayISO())] || null; // compat getter's initial value; ensureWeekPlan() (app.js boot, via applyProf()) validates/refreshes it against live state right after
 
   // log history (task D1): migrate a v1 single-day `log` first (no-ops if `logHistory`
   // is already present), then load whatever `logHistory` ended up in `saved` (empty {}

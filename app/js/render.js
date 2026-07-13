@@ -131,15 +131,45 @@ function markEatenFromRecipe(){
 // maps straight onto Mon..Sun.
 const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
-// Paints the 7-day list for the CURRENT person from weekPlan (task C2): every kcal
-// shown is that person's portion-scaled computed value, day totals are real sums over
-// the four slots, and "today" follows weekPlan's day index rather than a hardcoded row.
+// Two-week horizon (owner feedback: "I need to see both this and next week's menu to shop
+// on the weekend"): which week the Week screen's "This week | Next week" segmented control
+// (index.html #weekSeg, reusing the existing .seg style) currently shows. Default is
+// CURRENT week on every fresh render of the screen (app.js:go() doesn't reset it on
+// re-visit, matching how every other screen's local view state — e.g. quickAdd — persists
+// across tab switches within a session).
+let weekScreenShowsNext = false;
+
+function setWeekScreenMode(mode, el){
+  weekScreenShowsNext = (mode === 'next');
+  if(el){
+    el.parentNode.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
+    el.classList.add('on');
+  }
+  renderWeek();
+}
+
+// "Mon 20" — weekday abbreviation + day-of-month, used for next week's day rows (task:
+// "show weekday names with dates") since "Today"-relative labels like the current week's
+// don't make sense a week out. parseISODate (planner.js) is in the same shared global
+// scope (classic <script> tags, no modules).
+function dayDateLabel(dateISO){
+  const d = parseISODate(dateISO);
+  return DAY_NAMES[(d.getDay() + 6) % 7] + ' ' + d.getDate();
+}
+
+// Paints the 7-day list for the CURRENT person, for whichever week the segmented control
+// currently selects (task C2 origin; two-week horizon adds the week parameter): every
+// kcal shown is that person's portion-scaled computed value, day totals are real sums
+// over the four slots. "Today" only ever highlights on the CURRENT week's row — next
+// week has no "today". Each meal row gets an inline 🔁 swap icon (weekStartDate-aware —
+// see openWeekSwap below) so a swap works on whichever week is displayed, not just today.
 function renderWeek(){
-  ensureWeekPlan();
-  const todayIdx = todayDayIndex();
+  const mondayISO = weekScreenShowsNext ? nextMondayISO() : mondayOfWeek(todayISO());
+  const plan = ensureWeekPlan(mondayISO);
+  const todayIdx = weekScreenShowsNext ? -1 : todayDayIndex();
   const person = currentProf;
   const el = document.getElementById('weekList');
-  el.innerHTML = weekPlan.days.map(function(day, di){
+  el.innerHTML = plan.days.map(function(day, di){
     let dayKcal = 0;
     const titles = [];
     const rows = SLOT_ORDER.map(function(slot){
@@ -150,18 +180,49 @@ function renderWeek(){
       dayKcal += entry.kcal;
       titles.push(r.title);
       const together = m.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
-      return '<div class="day-meal-row" onclick="event.stopPropagation();openRecipe(\''+entry.recipeId+'\',\'week\')">'
+      const swapBtn = '<button class="dm-swap" aria-label="Swap this meal" onclick="event.stopPropagation();openWeekSwap(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\')">🔁</button>';
+      return '<div class="day-meal-row" onclick="openRecipe(\''+entry.recipeId+'\',\'week\')">'
         + '<div class="dm-e">'+r.emoji+'</div>'
         + '<div class="dm-t">'+r.title+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
-        + '<div class="dm-k">'+Math.round(entry.kcal)+'</div></div>';
+        + '<div class="dm-k">'+Math.round(entry.kcal)+'</div>'
+        + swapBtn + '</div>';
     }).join('');
-    const label = DAY_NAMES[di] + (di === todayIdx ? ' · Today' : '');
+    const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" onclick="toggleDay('+di+')">'
       + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(dayKcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+rows+'</div></div>';
   }).join('');
+  // Nutrient coverage chips always reflect the CURRENT week regardless of which week is
+  // toggled on-screen (renderNutrientChips reads the `weekPlan` compat getter, which only
+  // ever mirrors the current week — planner.js:ensureWeekPlan) — no change needed there.
   renderNutrientChips();
+  updateWeekActionsForMode();
+}
+
+// Re-balance is defined as CURRENT-week-only (planner.js:proposeRebalanceSwaps always
+// operates on the `weekPlan` compat getter): hide the button and show the cap-note instead
+// whenever next week is the one on screen, so there's no dead/confusing action to tap.
+function updateWeekActionsForMode(){
+  const btn = document.getElementById('rebalanceBtn');
+  const note = document.getElementById('rebalanceCapNote');
+  if(btn) btn.style.display = weekScreenShowsNext ? 'none' : '';
+  if(note) note.style.display = weekScreenShowsNext ? 'block' : 'none';
+}
+
+// Opens the swap sheet for one meal on a SPECIFIC week (current or next) — the Week
+// screen's inline 🔁 per meal row. Unlike openSwap() (Today/Log/recipe-screen entry
+// points, which always target today's plan via resolveSwapContext), this carries an
+// explicit weekStartDate through swapCtx so chooseSwap (planner.js) applies the swap to
+// the right week's plan, and — for next week — skips the "correct today's log entry" step
+// entirely (there's nothing logged for a future date).
+function openWeekSwap(weekStartDate, dayIndex, slot, person){
+  const ctx = {dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate};
+  swapCtx = {dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate, targetElId: null};
+  document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
 }
 
 // The "Weekly nutrient coverage" card (FIX 3: moved from the Week screen to the TOP of
@@ -230,24 +291,45 @@ function closeSheet(){
   document.getElementById('sheet').classList.remove('show');
 }
 
+// Two-week horizon: which week the shopping sheet currently shows ('current'|'next').
+// Reset every time the sheet is opened fresh (openShopping()) to whichever week the Week
+// screen was showing at that moment (task: "default: the week currently shown on the Week
+// screen when opened from there") — setShopWeek() then lets the sheet's own segmented
+// control switch it without closing/reopening. currentShopWeekStartDate is the resolved
+// Monday for whichever mode is active right now — toggleShop() writes into that week's
+// checked-set, so it's always kept in sync with buildShopSheet()'s own resolution.
+let shopWeekMode = 'current';
+let currentShopWeekStartDate = null;
+
 function openShopping(){
+  shopWeekMode = weekScreenShowsNext ? 'next' : 'current';
   document.getElementById('sheetBody').innerHTML = buildShopSheet();
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
 }
 
+// Switches the shopping sheet's own "This week | Next week" control without closing the
+// sheet — same pattern as setWeekScreenMode() on the Week screen, just scoped to the sheet.
+function setShopWeek(mode){
+  shopWeekMode = mode;
+  document.getElementById('sheetBody').innerHTML = buildShopSheet();
+}
+
 // Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list
 // recomputes (different week, different servings), so checked state is tracked and
-// persisted by ingredient NAME (checkedShopNames, state.js) — the DOM class is just
-// this render's presentation of that.
+// persisted by ingredient NAME, PER WEEK (checkedShopByWeek/checkedSetForWeek, state.js)
+// — the DOM class is just this render's presentation of that. Writes into whichever
+// week's bucket buildShopSheet() most recently resolved (currentShopWeekStartDate), so
+// checking an item on next week's list never touches this week's checks and vice versa.
 function toggleShop(id, name){
   const el = document.getElementById(id);
   if(!el) return;
   el.classList.toggle('done');
-  if(name){
-    if(el.classList.contains('done')) checkedShopNames[name] = true;
-    else delete checkedShopNames[name];
+  if(name && currentShopWeekStartDate){
+    const checked = checkedSetForWeek(currentShopWeekStartDate);
+    if(el.classList.contains('done')) checked[name] = true;
+    else delete checked[name];
     persist();
   }
 }
@@ -256,17 +338,25 @@ function toggleShop(id, name){
 function jsAttr(s){ return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
 
 function buildShopSheet(){
-  const list = computeShoppingList();
+  const weekStartDate = shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO());
+  currentShopWeekStartDate = weekStartDate; // toggleShop() writes into this week's checked-set
+  const list = computeShoppingList(weekStartDate);
+  const checked = checkedSetForWeek(weekStartDate);
   const byCat = {};
   Object.keys(list.totals).forEach(function(name){
     const cat = foodCategoryForName(name); // real FOODS[..].cat, no hand-typed map (task C2)
     (byCat[cat] = byCat[cat] || []).push(name);
   });
-  // Task C3 item 4: the week date range, computed from weekPlan.weekStartDate (never
-  // typed in — computeShoppingList() above already called ensureWeekPlan()).
-  const weekRange = fmtShopWeekRange(weekPlan.weekStartDate);
+  // Task C3 item 4 (generalized for the two-week horizon): the week date range, computed
+  // from the week actually being shown, never the current week by default.
+  const weekRange = fmtShopWeekRange(list.weekStartDate);
+  const weekLabel = shopWeekMode === 'next' ? 'next week\'s' : 'this week\'s';
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Shopping list <span class="chip-computed">✓ computed</span></h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub"><b>' + weekRange + '</b> · For both of you · 7 days · totals summed from this week\'s plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
+    + '<div class="seg" style="width:100%;margin-top:10px">'
+    + '<button style="flex:1" class="'+(shopWeekMode === 'current' ? 'on' : '')+'" onclick="setShopWeek(\'current\')">This week</button>'
+    + '<button style="flex:1" class="'+(shopWeekMode === 'next' ? 'on' : '')+'" onclick="setShopWeek(\'next\')">Next week</button>'
+    + '</div>'
+    + '<p class="sub" style="margin-top:10px"><b>' + weekRange + '</b> · For both of you · 7 days · totals summed from ' + weekLabel + ' plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
   let idx = 0;
   SHOP_CAT_ORDER.forEach(function(cat){
     const names = byCat[cat];
@@ -276,7 +366,7 @@ function buildShopSheet(){
     names.forEach(function(name){
       const t = list.totals[name];
       const id = 'sh-' + (idx++);
-      const done = checkedShopNames[name] ? ' done' : '';
+      const done = checked[name] ? ' done' : '';
       html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
     });
   });
@@ -285,7 +375,7 @@ function buildShopSheet(){
     html += '<div class="shop-cat">Pantry staples — check you have these</div>';
     stapleNames.forEach(function(name){
       const id = 'sh-' + (idx++);
-      const done = checkedShopNames[name] ? ' done' : '';
+      const done = checked[name] ? ' done' : '';
       html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div></div>';
     });
   }
@@ -347,7 +437,15 @@ function applyRebalance(){
   if(!rebalanceProposal || !rebalanceProposal.swaps.length){ closeSheet(); return; }
   const g = rebalanceProposal.gapInfo;
   const afterText = rebalanceValueAfter(rebalanceProposal);
-  weekPlan = rebalanceProposal.resultPlan; // same signature — ensureWeekPlan won't discard it
+  // Re-balance is CURRENT-week-only (proposeRebalanceSwaps always works from the
+  // `weekPlan` compat getter) — write the result into BOTH weekPlans (the real store) and
+  // the bare `weekPlan` compat getter it mirrors, so the next ensureWeekPlan() call (e.g.
+  // the next renderWeek()) doesn't silently overwrite this with the pre-rebalance plan
+  // still sitting in weekPlans[currentMonday]. Same signature either way — ensureWeekPlan
+  // won't consider it stale.
+  const currentMonday = mondayOfWeek(todayISO());
+  weekPlans[currentMonday] = rebalanceProposal.resultPlan;
+  weekPlan = weekPlans[currentMonday];
   rebalanceProposal = null;
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);

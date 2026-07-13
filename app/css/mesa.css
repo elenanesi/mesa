@@ -166,6 +166,12 @@ h2{font-size:18px;margin:22px 0 10px;letter-spacing:-.2px;}
 .day-meal-row .dm-t{flex:1;font-size:13.5px;min-width:0;}
 .day-meal-row .dm-t small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
 .day-meal-row .dm-k{font-size:12px;font-weight:700;color:var(--ink-soft);}
+/* Two-week horizon: inline per-meal swap icon on the Week screen's day rows (works on
+   whichever week — current or next — is displayed; render.js:openWeekSwap). 44x44
+   tap target (ground rule: iPhone Safari targets >=44px); event.stopPropagation() on the
+   button's onclick keeps the row's own openRecipe() tap separate. */
+.day-meal-row .dm-swap{flex:0 0 44px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;font-size:15px;line-height:1;cursor:pointer;border-radius:10px;color:var(--ink-soft);}
+.day-meal-row .dm-swap:active{background:#e9e4d7;}
 
 /* recipe detail */
 .hero{height:170px;border-radius:24px;margin-top:8px;display:grid;place-items:center;font-size:74px;background:linear-gradient(135deg,#e8efe7,#f6e6dc);}

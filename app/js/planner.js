@@ -81,6 +81,10 @@ function mondayOfWeek(iso){
   d.setDate(d.getDate() + shift);
   return fmtISODate(d);
 }
+// The Monday one week after the current week's Monday — the one other week the two-week
+// horizon feature (owner feedback: "I need to see both this and next week's menu to shop
+// on the weekend") ever shows or generates a plan for.
+function nextMondayISO(){ return addDaysISO(mondayOfWeek(todayISO()), 7); }
 
 function unionAvoid(a, b){
   const set = {};
@@ -148,20 +152,52 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex){
   return pool.filter(function(id){ return gaps[id] === maxGap; });
 }
 
+// Cross-week variety (two-week horizon) — a HARD filter, the same mechanism the
+// within-week variety rule above uses. A rotation-score nudge was tried first and
+// verified to change NOTHING for the default household (0/28 slot choices differed):
+// the #1-vs-#2 candidate score gap at every decision was 7-82 points, far beyond any
+// tie-break term's reach — so cross-week variety must be a filter, not a score term.
+// When generating week N, the recipe chosen for the SAME (day, slot[, person]) in the
+// PREVIOUS week's stored plan (weekPlans[weekStartDate − 7d]) is excluded from the
+// candidate pool. Relaxation identical to the within-week rule: if the exclusion empties
+// the pool, fall back to the full pool — constraints and the ±5%/day guarantee always
+// win over variety. If the previous week isn't in the store at all (first-ever
+// generation, or pruned — the normal case when regenerating the CURRENT week, since last
+// week is pruned on load), the filter is skipped. Deterministic: the previous week's
+// stored plan is itself a deterministic input, so same inputs -> same exclusions ->
+// byte-identical output.
+function applyCrossWeekFilter(pool, excludeId){
+  if(!excludeId) return pool;
+  const filtered = pool.filter(function(id){ return id !== excludeId; });
+  return filtered.length ? filtered : pool;
+}
+
 // Weighted so priority (c) kcal-fit > (d) protein-fit; variety (e) is the hard filter
 // above. The tiny rotation term only breaks ties that survive both (deterministic — a
-// stable hash of day/slot/recipe id, no randomness).
-function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIndex, slotIndex, recipeId){
+// stable hash of day/slot/recipe id folded with a stable hash of the WEEK's Monday, no
+// randomness). weekSeed shifts those tie-breaks between weeks; it is a SECONDARY
+// mechanism only — the primary cross-week variety is applyCrossWeekFilter() above (a
+// score-sized nudge can't outvote the kcal term; a hard filter doesn't have to).
+function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIndex, slotIndex, recipeId, weekSeed){
   const kcalErr = Math.abs(actualKcal - desiredKcal) / Math.max(Math.abs(desiredKcal), 1);
   const proteinShort = desiredProtein > 0 ? Math.max(0, desiredProtein - actualProtein) / desiredProtein : 0;
-  const rotation = ((dayIndex * 7 + slotIndex + stableHash(recipeId)) % 97) / 97;
+  const rotation = ((dayIndex * 7 + slotIndex + stableHash(recipeId) + (weekSeed || 0)) % 97) / 97;
   return -(kcalErr * 1000) - (proteinShort * 100) + rotation * 0.5;
 }
 
 /* ---------------- week generation ---------------- */
 // seed = {weekStartDate, signature} — pure function of these plus the live PROF/SHARED/
-// householdStyle state; no Math.random/Date.now inside, so calling this twice with the
-// same PROF/SHARED/householdStyle and the same weekStartDate yields byte-identical JSON.
+// householdStyle state AND weekPlans[weekStartDate − 7d] (the previous week's stored
+// plan, read-only input to the cross-week variety filter; itself deterministic). No
+// Math.random/Date.now inside, so calling this twice with the same PROF/SHARED/
+// householdStyle, the same weekStartDate and the same stored previous week yields
+// byte-identical JSON.
+//
+// ORDERING IMPLICATION (two-week horizon): generating NEXT week consults the CURRENT
+// week's stored plan — so the current week must be resolved first. ensureWeekPlan()
+// (below) guarantees that ordering: it always freshens the current week before any
+// other week, and eagerly re-freshens a stored next week whenever the current week
+// just regenerated (signature change), so the pair stays consistent.
 function generateWeek(seed){
   const weekStartDate = seed.weekStartDate;
   const signature = seed.signature;
@@ -178,6 +214,22 @@ function generateWeek(seed){
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
 
+  // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
+  // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
+  const weekSeed = stableHash(weekStartDate);
+
+  // Cross-week variety filter input: the PREVIOUS week's stored plan, if any (see
+  // applyCrossWeekFilter doc). prevRecipeId(d, slot, person) is what that person ate at
+  // the same (day, slot) last week — null when there's no stored previous week, which
+  // disables the filter for that pick.
+  const prevPlan = weekPlans[addDaysISO(weekStartDate, -7)] || null;
+  function prevRecipeId(dayIndex, slot, person){
+    if(!prevPlan || !prevPlan.days || !prevPlan.days[dayIndex]) return null;
+    const m = prevPlan.days[dayIndex].meals && prevPlan.days[dayIndex].meals[slot];
+    if(!m) return null;
+    return m.shared ? m.recipeId : ((m[person] && m[person].recipeId) || null);
+  }
+
   const days = [];
   for(let d = 0; d < 7; d++){
     const remainingKcal = {elena: dayTarget.elena.kcal, partner: dayTarget.partner.kcal};
@@ -189,7 +241,9 @@ function generateWeek(seed){
       const shared = !!SHARED[slot];
       if(shared){
         const pool = candidatesFor(slot, styleKey, unionAvoid(avoidList.elena, avoidList.partner));
-        const chosen = pickSharedMeal(pool, slot, d, si, remainingKcal, remainingProtein, remainingWeight, history);
+        // For shared slots both people ate the same dish last week — Elena's entry stands
+        // for both (same convention as the variety filter's history handling).
+        const chosen = pickSharedMeal(pool, slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
         dayMeals[slot] = chosen;
         remainingKcal.elena -= chosen.elena.kcal; remainingKcal.partner -= chosen.partner.kcal;
         remainingProtein.elena -= chosen.elena.protein; remainingProtein.partner -= chosen.partner.protein;
@@ -197,8 +251,8 @@ function generateWeek(seed){
       } else {
         const poolE = candidatesFor(slot, styleKey, avoidList.elena);
         const poolA = candidatesFor(slot, styleKey, avoidList.partner);
-        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, []), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history);
-        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, []), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history);
+        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, []), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, []), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
         remainingKcal.elena -= chE.kcal; remainingKcal.partner -= chA.kcal;
         remainingProtein.elena -= chE.protein; remainingProtein.partner -= chA.protein;
@@ -211,14 +265,16 @@ function generateWeek(seed){
   return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days};
 }
 
-function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainingProtein, remainingWeight, history){
+function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludePrevWeekId){
   const w = SLOT_WEIGHT[slot];
   const desiredE = remainingKcal.elena * (w / remainingWeight);
   const desiredA = remainingKcal.partner * (w / remainingWeight);
   const desiredProtE = remainingProtein.elena * (w / remainingWeight);
   const desiredProtA = remainingProtein.partner * (w / remainingWeight);
-  // Variety filter over Elena's history — for shared slots both histories are written
-  // in sync, so hers stands for both.
+  // Cross-week filter first (falls back to the full pool if it would empty it), then the
+  // within-week variety filter over Elena's history — for shared slots both histories are
+  // written in sync, so hers stands for both.
+  pool = applyCrossWeekFilter(pool, excludePrevWeekId);
   pool = applyVarietyFilter(pool, history, 'elena', slot, dayIndex);
   let best = null;
   pool.forEach(function(id){
@@ -226,8 +282,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[slot]);
     const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[slot]);
     const proteinE = base.protein * bpE.portion, proteinA = base.protein * bpA.portion;
-    const scoreE = mealScore(bpE.kcal, desiredE, proteinE, desiredProtE, dayIndex, slotIndex, id);
-    const scoreA = mealScore(bpA.kcal, desiredA, proteinA, desiredProtA, dayIndex, slotIndex, id);
+    const scoreE = mealScore(bpE.kcal, desiredE, proteinE, desiredProtE, dayIndex, slotIndex, id, weekSeed);
+    const scoreA = mealScore(bpA.kcal, desiredA, proteinA, desiredProtA, dayIndex, slotIndex, id, weekSeed);
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && id < best.id);
     if(better) best = {id: id, total: total, portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal, kcalA: bpA.kcal, proteinE: proteinE, proteinA: proteinA};
@@ -241,18 +297,20 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     partner: {recipeId: best.id, portion: best.portionA, kcal: best.kcalA, protein: best.proteinA}};
 }
 
-function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, remainingProteinP, remainingWeight, history){
+function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, remainingProteinP, remainingWeight, history, weekSeed, excludePrevWeekId){
   const w = SLOT_WEIGHT[slot];
   const desired = remainingKcalP * (w / remainingWeight);
   const desiredProt = remainingProteinP * (w / remainingWeight);
   const anchor = PERSON_ANCHOR[person];
+  // Cross-week filter first (with its own full-pool fallback), then within-week variety.
+  pool = applyCrossWeekFilter(pool, excludePrevWeekId);
   pool = applyVarietyFilter(pool, history, person, slot, dayIndex);
   let best = null;
   pool.forEach(function(id){
     const base = dbBaseNutrition(id);
     const bp = bestPortion(base.kcal, desired, anchor, SLOT_MAX_PORTION[slot]);
     const protein = base.protein * bp.portion;
-    const score = mealScore(bp.kcal, desired, protein, desiredProt, dayIndex, slotIndex, id);
+    const score = mealScore(bp.kcal, desired, protein, desiredProt, dayIndex, slotIndex, id, weekSeed);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && id < best.id);
     if(better) best = {id: id, score: score, portion: bp.portion, kcal: bp.kcal, protein: protein};
   });
@@ -283,20 +341,62 @@ function computePlanSignature(){
   ].join('|');
 }
 
-// Call before reading weekPlan anywhere. Regenerates when: the plan signature above has
-// changed (style/avoid-list/calorie-or-protein-target/shared-toggle), or weekStartDate
-// no longer matches this week's Monday (a new week has started). Cheap when nothing
-// changed — recomputeProf() is pure math, and the signature check is a string compare.
-function ensureWeekPlan(){
+// Call before reading a week's plan anywhere. Generalized (two-week horizon feature) to
+// take an optional mondayISO — the week to ensure/return — defaulting to the CURRENT
+// week's Monday when omitted, so every pre-existing call site (`ensureWeekPlan()`, no
+// args — Today/Log/computeActiveMenu/computeShoppingList/buildSwapAlternatives'
+// unqualified callers) keeps meaning exactly what it always meant. Regenerates
+// weekPlans[monday] when: the plan signature above has changed (style/avoid-list/
+// calorie-or-protein-target/shared-toggle/library change), or nothing has been generated
+// for that Monday yet. Cheap when nothing changed — recomputeProf() is pure math, and the
+// signature check is a string compare.
+//
+// ORDERING (cross-week variety filter): generateWeek(next Monday) consults
+// weekPlans[current Monday], so the CURRENT week is always freshened FIRST here,
+// whichever week was asked for. And whenever the current week just regenerated
+// (signature change / first generation), any STORED next week is eagerly re-freshened
+// right after — its stored signature is stale by construction, so the same signature
+// logic regenerates it against the NEW current week. The pair therefore always stays
+// consistent: next week's plan is always derived from the current week's plan as it
+// exists now, never from one that was discarded.
+//
+// COMPATIBILITY GETTER: `weekPlan` (state.js) is kept as a bare global that always mirrors
+// weekPlans[the CURRENT week's Monday] — every pre-two-week-horizon code path (Today, Log,
+// recipe screen, re-balance, todayDayIndex, computeActiveMenu…) reads/writes that bare
+// variable and is completely unaware weekPlans exists, so those paths needed zero changes.
+// It's re-synced on every call (same object reference as weekPlans[currentMonday], so
+// in-place mutations like applySwapToPlan() stay consistent from both names). Asking for
+// a DIFFERENT week (e.g. next week) returns that week's plan without repointing
+// `weekPlan`, so current-week code is unaffected by next-week reads/writes.
+function ensureWeekPlan(mondayISO){
   recomputeProf('elena');
   recomputeProf('partner');
   const sig = computePlanSignature();
-  const wantStart = mondayOfWeek(todayISO());
-  const stale = !weekPlan || weekPlan.signature !== sig || weekPlan.weekStartDate !== wantStart;
-  if(stale){
-    weekPlan = generateWeek({weekStartDate: wantStart, signature: sig});
+  const currentMonday = mondayOfWeek(todayISO());
+  const wantStart = mondayISO || currentMonday;
+
+  function freshen(monday){
+    let plan = weekPlans[monday];
+    const stale = !plan || plan.signature !== sig || plan.weekStartDate !== monday;
+    if(stale){
+      plan = generateWeek({weekStartDate: monday, signature: sig});
+      weekPlans[monday] = plan;
+    }
+    return {plan: plan, regenerated: stale};
   }
-  return weekPlan;
+
+  // Current week first, always — it's both the compat getter's value and the cross-week
+  // filter's input for any later week.
+  const cur = freshen(currentMonday);
+  weekPlan = cur.plan; // compat getter — see doc above
+  // Pair consistency: a just-regenerated current week invalidates a stored next week
+  // (its signature no longer matches), so regenerate it right away against the new
+  // current week rather than leaving a plan derived from a discarded one in the store.
+  const nextMonday = addDaysISO(currentMonday, 7);
+  if(cur.regenerated && weekPlans[nextMonday]) freshen(nextMonday);
+
+  if(wantStart === currentMonday) return cur.plan;
+  return freshen(wantStart).plan;
 }
 
 function todayDayIndex(){
@@ -479,13 +579,18 @@ function foodCategoryForName(name){
   return SHOP_CAT_ORDER.indexOf(cat) !== -1 ? cat : 'Pantry';
 }
 
-// Walks the full 7-day weekPlan for BOTH people and aggregates identical ingredient
-// (food) names. Shared slots: one recipe cooked at (Elena's portion + Andrea's portion)
+// Walks the full 7-day plan for BOTH people and aggregates identical ingredient (food)
+// names. Shared slots: one recipe cooked at (Elena's portion + Andrea's portion)
 // combined — cooked once, counted once, same convention as before. Solo slots: each
 // person's own recipe at their own portion. Portions come from the plan itself now
 // (per-meal, per-day), not a single global svE/svM factor.
-function computeShoppingList(){
-  ensureWeekPlan();
+//
+// Parameterized by week (task: "shopping list per week") — weekStartDate defaults to the
+// CURRENT week's Monday when omitted, so any caller that predates the two-week horizon
+// feature keeps computing exactly what it always computed. Passing nextMondayISO()
+// aggregates NEXT week's plan instead, over the exact same RECIPES_DB/FOODS logic.
+function computeShoppingList(weekStartDate){
+  const plan = ensureWeekPlan(weekStartDate);
   const totals = {};  // food display name -> {qty, unit}
   const staples = {}; // food display name -> true (toTaste garnish, unquantified)
   function addRecipe(recipeId, factor){
@@ -506,7 +611,7 @@ function computeShoppingList(){
     });
     (r.toTaste || []).forEach(function(t){ staples[capitalizeFirst(t)] = true; });
   }
-  weekPlan.days.forEach(function(day){
+  plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
       if(m.shared){
@@ -517,7 +622,7 @@ function computeShoppingList(){
       }
     });
   });
-  return {totals: totals, staples: staples};
+  return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate};
 }
 
 // Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs),
@@ -561,9 +666,11 @@ function applySwapToPlan(plan, unit, newRecipeId){
 // Alternatives = same slot, same style, avoid-respecting, excluding the current recipe
 // and anything already planned elsewhere today for this person; ranked by closest
 // computed kcal to what's currently planned (deterministic tie-break by id).
-function buildSwapAlternatives(dayIndex, slot, person){
-  ensureWeekPlan();
-  const day = weekPlan.days[dayIndex];
+// weekStartDate (optional, defaults to the current week — same compat contract as
+// ensureWeekPlan) lets the Week screen's swap sheet operate on NEXT week's plan too.
+function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
+  const plan = ensureWeekPlan(weekStartDate);
+  const day = plan.days[dayIndex];
   const m = day.meals[slot];
   const shared = m.shared;
   const currentId = shared ? m.recipeId : m[person].recipeId;
@@ -594,14 +701,17 @@ function buildSwapAlternatives(dayIndex, slot, person){
   return scored.slice(0, 5);
 }
 
-// Applies the swap to the live weekPlan and returns a display-ready view (title/emoji/
-// tags/kcal/protein) for the caller to paint. Does NOT persist — callers persist().
-function applySwap(dayIndex, slot, person, newRecipeId){
-  ensureWeekPlan();
+// Applies the swap to the live plan (weekStartDate optional, defaults to the current
+// week) and returns a display-ready view (title/emoji/tags/kcal/protein) for the caller
+// to paint. Does NOT persist — callers persist(). Mutates weekPlans[weekStartDate] in
+// place (applySwapToPlan) — when weekStartDate resolves to the current week, `weekPlan`
+// (the compat getter) is the exact same object, so both names see the swap.
+function applySwap(dayIndex, slot, person, newRecipeId, weekStartDate){
+  const plan = ensureWeekPlan(weekStartDate);
   const unit = {dayIndex: dayIndex, slot: slot, shared: !!SHARED[slot], person: person};
-  applySwapToPlan(weekPlan, unit, newRecipeId);
+  applySwapToPlan(plan, unit, newRecipeId);
   const r = RECIPES[newRecipeId];
-  const entry = weekPlan.days[dayIndex].meals[slot][person];
+  const entry = plan.days[dayIndex].meals[slot][person];
   return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: r.tags, kcal: Math.round(entry.kcal), protein: Math.round(entry.protein)};
 }
 
@@ -619,7 +729,7 @@ function resolveSwapContext(mealKey){
 let swapCtx = null;
 
 function buildSwapSheet(ctx){
-  const alts = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person);
+  const alts = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
   if(swapCtx) swapCtx.alts = alts;
   let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Same slot, same style, respects what you avoid — ranked by closest computed calories to what\'s planned now.</p>';
   if(!alts.length){
@@ -644,18 +754,28 @@ function chooseSwap(i){
   if(!swapCtx || !swapCtx.alts) return;
   const alt = swapCtx.alts[i];
   if(!alt) return;
-  const view = applySwap(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, alt.id);
+  // swapCtx.weekStartDate is set by openWeekSwap() (render.js — the Week screen's inline
+  // swap, current OR next week); undefined for every pre-existing swap entry point
+  // (Today/Log cards, the recipe screen), which always target the current week/today —
+  // applySwap()'s own default keeps that behavior byte-for-byte unchanged.
+  const weekStartDate = swapCtx.weekStartDate;
+  const view = applySwap(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, alt.id, weekStartDate);
 
   // If this slot is already confirmed today (any slot — breakfast included since FIX 1
   // made it a normal meal), correct its LogEntry in place (task D1: a swap edits today's
-  // history, it never duplicates it — logPlanEntry/upsertLogEntry replace by slot).
-  if(swapCtx.dayIndex === todayDayIndex() && slotLogStatus(todayISO(), swapCtx.person, swapCtx.slot) === 'confirmed'){
+  // history, it never duplicates it — logPlanEntry/upsertLogEntry replace by slot). Only
+  // relevant when the swap actually landed on the CURRENT week — a swap on next week's
+  // plan has no log entry to correct (nothing is logged for a future date).
+  const isCurrentWeek = !weekStartDate || weekStartDate === mondayOfWeek(todayISO());
+  if(isCurrentWeek && swapCtx.dayIndex === todayDayIndex() && slotLogStatus(todayISO(), swapCtx.person, swapCtx.slot) === 'confirmed'){
     const planEntry = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot][swapCtx.person];
     logPlanEntry(todayISO(), swapCtx.person, swapCtx.slot, planEntry.recipeId, planEntry.portion);
   }
 
   // Re-render every surface that shows the plan; consumed-so-far follows the plan's
-  // current recipes, so it's refreshed too.
+  // current recipes, so it's refreshed too. renderWeek() repaints whichever week is
+  // currently toggled on-screen (render.js:weekScreenShowsNext), so a next-week swap is
+  // reflected immediately without touching Today/Log (both strictly current-week).
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
@@ -663,7 +783,7 @@ function chooseSwap(i){
   renderLogPlan();
   renderWeek();
   const recipeScreen = document.getElementById('recipe');
-  if(recipeScreen && recipeScreen.classList.contains('active')) renderRecipe(view.recipeId);
+  if(recipeScreen && recipeScreen.classList.contains('active') && isCurrentWeek) renderRecipe(view.recipeId);
   persist();
   closeSheet();
   toast('🔁 Swapped to ' + view.title + ' (' + (alt.kcalDelta >= 0 ? '+' : '') + Math.round(alt.kcalDelta) + ' kcal)');

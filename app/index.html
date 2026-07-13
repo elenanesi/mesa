@@ -136,11 +136,22 @@
       <h1>This week</h1>
       <p class="sub">A balanced 7-day rhythm. Nutrient coverage evens out across days, not just within one.</p>
 
+      <!-- Two-week horizon (owner feedback: "I need to see both this and next week's menu
+           to shop on the weekend") — reuses the .seg style already used for the profile
+           switch. Default: This week. render.js:setWeekScreenMode() re-renders weekList
+           for whichever week is selected; renderWeek() also drives this control's own
+           this/next state on every repaint via updateWeekActionsForMode(). -->
+      <div class="seg" id="weekSeg" style="width:100%;margin-top:10px">
+        <button class="on" style="flex:1" onclick="setWeekScreenMode('current',this)">This week</button>
+        <button style="flex:1" onclick="setWeekScreenMode('next',this)">Next week</button>
+      </div>
+
       <h2>7-day plan</h2>
       <div class="week" id="weekList"></div>
 
       <button class="cta ghostbtn" onclick="openShopping()">🛒 Generate shopping list</button>
-      <button class="cta" onclick="openRebalanceSheet()">✨ Re-balance my week</button>
+      <button class="cta" id="rebalanceBtn" onclick="openRebalanceSheet()">✨ Re-balance my week</button>
+      <p class="sub cap-note" id="rebalanceCapNote" style="display:none;text-align:center;margin-top:8px">Re-balance works on the running week.</p>
     </section>
 
     <!-- ============ RECIPE DETAIL ============ -->
