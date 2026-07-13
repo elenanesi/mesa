@@ -1,0 +1,16 @@
+# Mesa couple-sync worker (Phase 2, task S1).
+# Local verification: `npx --yes wrangler@latest dev --local --port 8787` (miniflare, no
+# Cloudflare auth needed). Real deploy is task S2 — blocked on the mesa-deploy API token
+# needing Workers Scripts:Edit + Workers KV Storage:Edit (see README.md / PHASE2-plan.md).
+
+name = "mesa-sync"
+main = "sync.js"
+compatibility_date = "2026-07-13"
+
+# TODO(S2): replace with the real KV namespace id once one is created
+# (`wrangler kv namespace create MESA_KV`) under the mesa Cloudflare account — blocked on
+# the token permission bump above. `wrangler dev --local` doesn't need a real id (miniflare
+# simulates KV in-memory), so this placeholder is fine for S1's local verification.
+kv_namespaces = [
+  { binding = "MESA_KV", id = "TODO_REPLACE_WITH_REAL_KV_NAMESPACE_ID" }
+]

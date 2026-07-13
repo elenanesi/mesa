@@ -1121,6 +1121,7 @@ function applyProf(key){
   renderSplitEditor();
   renderAvoidEditor();  // task C3: "Foods to avoid" pills for whichever profile is now active
   if(typeof renderFoodLibraryCount === 'function') renderFoodLibraryCount(); // js/library.js: "N built-in · M yours"
+  if(typeof renderCoupleSync === 'function') renderCoupleSync(); // js/sync.js (task S1): "Couple sync" section
   renderTodayMeals();
   renderLogPlan();
   renderWeek();

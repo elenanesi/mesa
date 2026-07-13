@@ -397,7 +397,13 @@ const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 // v4 (two-week horizon): single `weekPlan` -> keyed `weekPlans`, single flat
 // `shopping.checked` -> per-week `shopping.checkedByWeek` — see loadState() below for
 // both one-time v3->v4 migrations this bump gates.
-const CURRENT_STORE_VERSION = 4;
+// v5 (Phase 2 task S1, couple sync): adds `sync` (syncState above) and, inside each
+// logHistory day, a per-person `tomb` (tombstone) list + an `id` on quick-add LogEntrys —
+// see entryIdentity()/tombstoneEntry()/genId() below. All additive with safe defaults
+// (getDayLog() back-fills `tomb` on old records, entryIdentity() falls back to a composite
+// key for entries logged before `id` existed), so there is no gated one-time migration
+// function for v4->v5 — "migration trivial" per the task brief.
+const CURRENT_STORE_VERSION = 5;
 
 let onboarded = false;
 // Shopping-list checked state, keyed PER WEEK (task: "shopping list per week" — checked
@@ -430,6 +436,20 @@ function checkedSetForWeek(weekStartDate){
 let customFoods = {};
 let customRecipes = {};
 let customRev = 0;
+
+/* ---------------- couple sync (Phase 2, task S1) ----------------
+   Client-side sync bookkeeping — the household code plus, per SECTION name
+   (see js/sync.js: SYNC_SECTIONS — 'library'/'plans'/'shopping'/
+   'profile:elena'/'profile:partner'/'log:elena'/'log:partner'), the local
+   content revision and its last-changed timestamp. state.js only declares
+   and persists this (same split as customFoods/customRecipes above,
+   mutated by library.js): all sync BEHAVIOR — bumping revs when content
+   actually changes, pushing/pulling, per-section merge rules — lives in
+   js/sync.js. sectionRevs/sectionUpdatedAt are opaque string-keyed maps
+   here deliberately, so state.js never needs to know the section-name
+   list (js/sync.js owns that). code is null (and nothing syncs) until the
+   user creates or joins a household from Profile → "Couple sync". */
+let syncState = {code: null, lastSyncedAt: null, sectionRevs: {}, sectionUpdatedAt: {}};
 
 function todayISO(){
   const d = new Date();
@@ -474,7 +494,7 @@ function nowHHMM(){
 }
 
 function emptyDayLog(){
-  return {elena: [], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}};
+  return {elena: [], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}, tomb: {elena: [], partner: []}};
 }
 
 // Returns logHistory[dateISO], creating (and back-filling any missing sub-keys on) an
@@ -484,9 +504,42 @@ function getDayLog(dateISO){
   const day = logHistory[dateISO];
   if(!day.targets) day.targets = {elena: null, partner: null};
   if(!day.skipped) day.skipped = {elena: {}, partner: {}};
+  if(!day.tomb) day.tomb = {elena: [], partner: []}; // task S1: back-fill on records logged before couple sync existed
   if(!Array.isArray(day.elena)) day.elena = [];
   if(!Array.isArray(day.partner)) day.partner = [];
   return day;
+}
+
+/* ---------------- couple sync (task S1): entry identity + tombstones ----------------
+   Two devices append LogEntrys to the same logHistory independently; merging (js/sync.js)
+   needs a stable identity per entry so the SAME confirm/quick-add isn't duplicated when
+   both sides' copies are unioned, and a per-day "tombstone" list so a DELETE on one phone
+   (undo a confirm, remove a "Today so far" row) propagates as a delete on the other
+   instead of the removed entry silently reappearing next merge.
+
+   kind:'plan' entries are naturally singleton-per-slot (upsertLogEntry replaces in place),
+   so their identity is just the slot name. kind:'food' (quick-add) entries can repeat
+   (logging the same food twice today is normal), so they get a random `id` at creation
+   (genId(), assigned in logFoodEntry below) and identity is keyed on that; entries logged
+   before this existed have no `id` — entryIdentity() falls back to a composite of their
+   fields, good enough to dedupe/tombstone without being a perfect UUID. */
+function genId(){
+  if(typeof crypto !== 'undefined' && crypto.getRandomValues){
+    const bytes = new Uint8Array(6);
+    crypto.getRandomValues(bytes);
+    return Array.prototype.map.call(bytes, function(b){ return b.toString(16).padStart(2, '0'); }).join('');
+  }
+  return Math.random().toString(16).slice(2, 14); // fallback for a non-secure-context or old browser
+}
+
+function entryIdentity(e){
+  if(e.kind === 'plan') return 'plan:' + e.slot;
+  return 'food:' + (e.id || (e.ref + '|' + e.grams + '|' + e.t + '|' + e.kcal));
+}
+
+function tombstoneEntry(dateISO, personKey, identity){
+  const day = getDayLog(dateISO);
+  if(day.tomb[personKey].indexOf(identity) === -1) day.tomb[personKey].push(identity);
 }
 
 // Freezes personKey's kcal TARGET for dateISO the first time they log anything that day
@@ -535,10 +588,12 @@ function logPlanEntry(dateISO, personKey, slot, recipeId, portion){
 }
 
 // Quick-add (task D1 item 2): a food-kind LogEntry from FOODS, computed via foodMacros().
+// `id` (task S1): a random identity token so couple sync can merge/dedupe/tombstone this
+// specific entry across two devices — see entryIdentity() above.
 function logFoodEntry(dateISO, personKey, foodId, grams){
   const nut = foodMacros(foodId, grams);
   return upsertLogEntry(dateISO, personKey, {
-    kind: 'food', ref: foodId, grams: grams,
+    kind: 'food', ref: foodId, grams: grams, id: genId(),
     kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
     fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
     t: nowHHMM()
@@ -560,20 +615,32 @@ function markSlotSkipped(dateISO, personKey, slot){
 // every surface (Today ring/macros, Log pill, "Today so far", Insights) re-derives from
 // logHistory, so callers just re-render + persist() afterwards (same convention as every
 // other mutator in this file).
+// Task S1 (couple sync): records a tombstone for whatever this actually undid — a
+// confirmed plan entry ('plan:'+slot) and/or a skipped flag ('skip:'+slot) — so the undo
+// propagates to the other phone instead of the other side's still-standing copy quietly
+// resurrecting the entry/skip on the next merge (js/sync.js:mergeLogSection()).
 function removeLoggedSlot(dateISO, personKey, slot){
   const day = getDayLog(dateISO);
+  const hadPlan = day[personKey].some(function(e){ return e.kind === 'plan' && e.slot === slot; });
+  const hadSkip = !!day.skipped[personKey][slot];
   day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
   delete day.skipped[personKey][slot];
+  if(hadPlan) tombstoneEntry(dateISO, personKey, 'plan:' + slot);
+  if(hadSkip) tombstoneEntry(dateISO, personKey, 'skip:' + slot);
 }
 
 // Removes ONE specific entry by its index in the day's per-person array — the "Today so
 // far" ✕ (quick-added foods AND confirmed plan meals alike). Returns the removed entry
 // (or null) so the caller can toast and, for a plan entry, restore the matching Log
-// card's actions.
+// card's actions. Task S1: tombstones the removed entry's identity (see entryIdentity()
+// above) so this delete propagates on the next couple sync rather than the entry
+// reappearing from the other phone's still-standing copy.
 function removeLogEntryAt(dateISO, personKey, index){
   const arr = getDayLog(dateISO)[personKey];
   if(!(index >= 0 && index < arr.length)) return null;
-  return arr.splice(index, 1)[0];
+  const removed = arr.splice(index, 1)[0];
+  tombstoneEntry(dateISO, personKey, entryIdentity(removed));
+  return removed;
 }
 
 // 'confirmed' | 'skipped' | null — drives the Log screen's per-slot restore (app.js:
@@ -710,16 +777,35 @@ function buildSnapshot(){
     // every load and regenerates when stale — this is just the last-known plans, not a
     // cache that's trusted blindly. Pruned to the current + future weeks before every
     // write (pruneOldWeekPlans(), called from persist() below).
-    weekPlans: weekPlans
+    weekPlans: weekPlans,
+    // couple sync (task S1) — see syncState's doc above. Opaque per-section rev/updatedAt
+    // maps; js/sync.js owns what the keys mean and bumps them (via the onMesaBeforePersist
+    // hook below) whenever it detects a section's live content actually changed.
+    sync: {
+      code: syncState.code,
+      lastSyncedAt: syncState.lastSyncedAt,
+      sectionRevs: syncState.sectionRevs,
+      sectionUpdatedAt: syncState.sectionUpdatedAt
+    }
   };
 }
 
 // Single write-through: gathers current values and writes once. Prunes old log-history
 // days (task D1) and past week-plans (two-week horizon) first so the store never grows
 // unbounded.
+//
+// Two optional hooks (task S1, couple sync — both defined in js/sync.js when that file is
+// loaded, no-ops otherwise so state.js has zero hard dependency on sync.js):
+//   onMesaBeforePersist() runs first so any per-section rev bump it makes (because it
+//     noticed live content differs from what it last saw) is captured in THIS SAME write —
+//     bumping revs after the localStorage write would risk losing the bump entirely if the
+//     app closes before the next persist() ever fires.
+//   onMesaAfterPersist() runs last, once state is safely on disk, to schedule a debounced
+//     sync push.
 function persist(){
   pruneLogHistory();
   pruneOldWeekPlans();
+  if(typeof onMesaBeforePersist === 'function') onMesaBeforePersist();
   try{
     localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot()));
   }catch(e){
@@ -727,6 +813,7 @@ function persist(){
     // degrade to in-memory only rather than crashing the app.
     console.warn('Mesa: could not persist state to localStorage', e);
   }
+  if(typeof onMesaAfterPersist === 'function') onMesaAfterPersist();
 }
 
 // Deep-merges saved values over the in-code defaults above: only known,
@@ -879,6 +966,14 @@ function loadState(){
           }
         });
       }
+      // Task S1 (couple sync): per-person tombstone list — absent on any pre-v5 record
+      // (getDayLog()'s back-fill already covers that at read time, but load it here too so
+      // a v5+ store's tombstones survive a reload rather than being silently dropped).
+      if(d.tomb && typeof d.tomb === 'object'){
+        ['elena', 'partner'].forEach(function(person){
+          if(Array.isArray(d.tomb[person])) clean.tomb[person] = d.tomb[person].filter(function(x){ return typeof x === 'string'; });
+        });
+      }
       logHistory[date] = clean;
     });
   }
@@ -888,5 +983,27 @@ function loadState(){
     onboarded = saved.onboarded;
   } else {
     try{ onboarded = !!localStorage.getItem(LEGACY_ONBOARD_KEY); }catch(e){ onboarded = false; }
+  }
+
+  // couple sync (task S1) — see syncState's doc above. Absent entirely on any pre-v5
+  // store (fresh install or an app that's never configured sync), in which case it stays
+  // the in-code default (code: null) — js/sync.js's initSync() then never schedules a
+  // push, so "never configured" behaves exactly like today, no network calls.
+  syncState = {code: null, lastSyncedAt: null, sectionRevs: {}, sectionUpdatedAt: {}};
+  if(saved.sync && typeof saved.sync === 'object'){
+    if(typeof saved.sync.code === 'string' && saved.sync.code) syncState.code = saved.sync.code;
+    if(typeof saved.sync.lastSyncedAt === 'number' && isFinite(saved.sync.lastSyncedAt)) syncState.lastSyncedAt = saved.sync.lastSyncedAt;
+    if(saved.sync.sectionRevs && typeof saved.sync.sectionRevs === 'object'){
+      Object.keys(saved.sync.sectionRevs).forEach(function(k){
+        const v = saved.sync.sectionRevs[k];
+        if(typeof v === 'number' && isFinite(v)) syncState.sectionRevs[k] = v;
+      });
+    }
+    if(saved.sync.sectionUpdatedAt && typeof saved.sync.sectionUpdatedAt === 'object'){
+      Object.keys(saved.sync.sectionUpdatedAt).forEach(function(k){
+        const v = saved.sync.sectionUpdatedAt[k];
+        if(typeof v === 'number' && isFinite(v)) syncState.sectionUpdatedAt[k] = v;
+      });
+    }
   }
 }

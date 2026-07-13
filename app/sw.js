@@ -5,7 +5,7 @@
    needs to change to invalidate old installs.
    =================================================================== */
 
-const CACHE = 'mesa-v6';
+const CACHE = 'mesa-v7';
 
 // The full app shell — everything needed to boot and run with zero network.
 const SHELL_FILES = [
@@ -18,6 +18,7 @@ const SHELL_FILES = [
   'js/planner.js',
   'js/render.js',
   'js/library.js',
+  'js/sync.js',
   'js/app.js',
   'data/foods.js',
   'data/recipes.js',

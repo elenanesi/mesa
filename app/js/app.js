@@ -161,6 +161,11 @@ renderRecipe('salmon');
 recipeOrigin = 'today';
 maybeShowOnboarding();
 
+// Task S1 (couple sync): a no-op wherever js/sync.js isn't loaded or a household was
+// never configured (syncState.code stays null — see state.js) — no network calls happen
+// in that case, per the ground rule that sync is an enhancement, never a dependency.
+if(typeof initSync === 'function') initSync();
+
 /* ---------------- service worker registration (task E1) ---------------- */
 // Offline shell + installability. Guarded so it's a silent no-op wherever it
 // can't work: browsers without SW support, and file:// (not a secure context —
