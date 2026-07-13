@@ -11,7 +11,7 @@ Mesa is live as a free PWA — no App Store, no accounts, works offline:
 Andrea does the exact same on his phone. A few things to know:
 
 - **Updates are automatic**: when the app changes, you get the new version on the next open (occasionally it takes one extra open — the offline cache refreshes in the background).
-- **Move your data between phones**: Profile → **Your data** → *Export my data* (share the file via AirDrop) → on the other phone, *Import data*. That's how you two stay in sync until the real couple-sync arrives in Phase 2.
+- **Move your data between phones**: Profile → **Your data** → *Export my data* (share the file via AirDrop) → on the other phone, *Import data*. You'll be asked to choose: **Replace everything** (the old behavior — overwrites the whole phone with the backup) or **Merge food library only** — to share just your recipes with each other, use *Merge food library only*: it only adds the backup's custom ingredients & recipes to what's already there, no other data is touched. That's how you two stay in sync until the real couple-sync arrives in Phase 2.
 - **First on-device pass — worth an eye check** (things that can't be tested outside a real iPhone): the Add-to-Home-Screen flow itself, the home-screen icon look, the status bar in standalone mode, and that Export opens the share sheet.
 
 The sections below are the older mockup-testing paths, kept for reference.

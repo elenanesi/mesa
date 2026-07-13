@@ -216,11 +216,14 @@ function updateWeekActionsForMode(){
 // explicit weekStartDate through swapCtx so chooseSwap (planner.js) applies the swap to
 // the right week's plan, and — for next week — skips the "correct today's log entry" step
 // entirely (there's nothing logged for a future date).
+// 'tall' (not 'remove'): the sheet now has a "Best matches" + "All <slot> options" section
+// (FEATURE: swap anything) which can be long — same tall/scrollable treatment as the
+// shopping list and library sheets.
 function openWeekSwap(weekStartDate, dayIndex, slot, person){
   const ctx = {dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate};
   swapCtx = {dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate, targetElId: null};
   document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
-  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
 }
@@ -277,11 +280,12 @@ function toggleDay(i){
 // screen) — planner.js:resolveSwapContext maps either to (dayIndex, slot, person) on
 // TODAY's plan for the current person. buildSwapSheet stores the computed alternatives
 // on swapCtx so chooseSwap (planner.js) applies exactly what was shown.
+// 'tall': see openWeekSwap's doc above — the sheet can now be long (FEATURE: swap anything).
 function openSwap(mealKey, targetElId){
   const ctx = resolveSwapContext(mealKey);
   swapCtx = {dayIndex: ctx.dayIndex, slot: ctx.slot, person: ctx.person, targetElId: targetElId};
   document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
-  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
 }
@@ -1309,11 +1313,19 @@ function handleImportFile(input){
   reader.readAsText(file);
 }
 
+// FEATURE (owner feedback): two import modes, not one. "Merge food library only" (new —
+// js/library.js:mergeImportedLibrary()) is the safe default action for the common case
+// ("share just a recipe with each other") — it only ever ADDS to customFoods/
+// customRecipes, nothing else on this phone changes. "Replace everything" is the
+// original F2 behavior, unchanged (confirmImport() below), for the rarer full-phone-sync
+// case — kept as the ghost/secondary button precisely because it's destructive.
 function buildImportConfirmSheet(dateLabel){
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Import backup</h2><button class="backbtn" style="margin:0" onclick="cancelImport()">✕ Close</button></div>'
-    + '<p class="sub">This replaces everything on this phone with the backup from <b>' + dateLabel + '</b>. Your current data on this phone will be lost.</p>'
-    + '<button class="cta" onclick="confirmImport()">Replace with backup</button>'
-    + '<button class="cta ghostbtn" onclick="cancelImport()">Cancel</button>';
+    + '<p class="sub">Backup from <b>' + dateLabel + '</b>. Choose how to bring it in.</p>'
+    + '<button class="cta" onclick="confirmMergeImport()">🔀 Merge food library only</button>'
+    + '<button class="cta ghostbtn" style="margin-top:10px" onclick="confirmImport()">⚠️ Replace everything</button>'
+    + '<p class="sub" style="margin-top:10px">Merge adds this backup\'s custom ingredients &amp; recipes to what\'s already on this phone — nothing else changes, and it\'s safe to run more than once. Replace everything overwrites ALL data on this phone (profiles, plans, log history, library) with the backup — your current data here will be lost.</p>'
+    + '<button class="cta ghostbtn" style="margin-top:14px" onclick="cancelImport()">Cancel</button>';
 }
 
 function openImportConfirm(dateLabel){
@@ -1343,4 +1355,29 @@ function confirmImport(){
   }
   pendingImportRaw = null;
   location.reload();
+}
+
+// Merge-only import (FEATURE, owner feedback): parses the SAME pending backup
+// validateBackupStructure() already accepted for structural soundness, hands it to
+// js/library.js:mergeImportedLibrary() (customFoods/customRecipes ONLY — see that
+// function's doc for the full merge-rule spec: identical-content skip, '-2' conflict
+// copies with ingredient remap, " (imported)" on name collisions), then persists +
+// re-renders via applyProf() — the exact same pattern saveNewFood()/saveNewRecipe()/
+// deleteCustomFood()/deleteCustomRecipe() (js/library.js) already use for every other
+// library mutation. Unlike confirmImport() above (full replace + hard reload), this
+// never reloads: it's a pure in-place library merge, so everything else already on this
+// phone (profile edits, plans, log history) is completely undisturbed.
+function confirmMergeImport(){
+  if(!pendingImportRaw){ closeSheet(); return; }
+  let parsed;
+  try{ parsed = JSON.parse(pendingImportRaw); }
+  catch(e){ toast("That file isn't a valid Mesa backup"); pendingImportRaw = null; closeSheet(); return; }
+  const result = mergeImportedLibrary(parsed);
+  pendingImportRaw = null;
+  applyProf(currentProf); // bumped customRev (if anything was added) regenerates the week, persists either way
+  closeSheet();
+  const parts = [];
+  if(result.addedRecipes) parts.push(result.addedRecipes + ' recipe' + (result.addedRecipes === 1 ? '' : 's'));
+  if(result.addedFoods) parts.push(result.addedFoods + ' ingredient' + (result.addedFoods === 1 ? '' : 's'));
+  toast(parts.length ? '✓ Added ' + parts.join(' and ') + ' from the backup' : 'Nothing new in that backup — already on this phone');
 }

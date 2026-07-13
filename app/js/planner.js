@@ -701,6 +701,62 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   return scored.slice(0, 5);
 }
 
+// FEATURE ("Swap anything", owner feedback: "for lunch I had something that is not in
+// the options of swap" — buildSwapAlternatives above only ever offered same-STYLE
+// closest-kcal matches, so most of the recipe book — including a person's own custom
+// recipes — was unreachable from a swap). This is the swap sheet's SECOND section: every
+// OTHER recipe for this slot across ALL plan styles (RECIPES_DB is already the merged
+// built-in + custom pool — js/library.js:applyCustomRecipes merges customRecipes in), not
+// just the household's current style. Excludes the same HARD things buildSwapAlternatives
+// excludes — the currently planned recipe, this person's other dishes already planned
+// today, and anything on the relevant avoid-list (allergies/dislikes never relax) — but
+// deliberately does NOT apply the style filter: a manual swap is explicit user intent,
+// and user choice beats the style filter here (the style filter exists to keep AUTOMATIC
+// generation/re-balance on-plan, not to limit what a person is allowed to manually pick).
+// `bestIds` (the ids already shown in "Best matches") are excluded too, purely so the two
+// sections never show the same recipe twice — this also means, by construction:
+//   (any-style pool after current/same-day/avoid exclusions) === best.length + this.length
+// which is exactly the arithmetic the swap sheet's "N more options" count line reports.
+// Sorted alphabetically by title (not by kcal-fit — this section is for browsing, not
+// closest-match ranking) with a stable id tie-break for identically-titled recipes.
+function buildSwapAllOptions(dayIndex, slot, person, bestIds, weekStartDate){
+  const plan = ensureWeekPlan(weekStartDate);
+  const day = plan.days[dayIndex];
+  const m = day.meals[slot];
+  const shared = m.shared;
+  const currentId = shared ? m.recipeId : m[person].recipeId;
+  const currentKcal = m[person].kcal, currentProtein = m[person].protein;
+  const avoidL = shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[person].avoid || []);
+  const plannedToday = {};
+  SLOT_ORDER.forEach(function(s){
+    if(s === slot) return;
+    const other = day.meals[s];
+    const id = other.shared ? other.recipeId : other[person].recipeId;
+    if(id) plannedToday[id] = true;
+  });
+  const bestSet = {};
+  (bestIds || []).forEach(function(id){ bestSet[id] = true; });
+  const anchor = PERSON_ANCHOR[person];
+  const pool = Object.keys(RECIPES_DB).filter(function(id){
+    const r = RECIPES_DB[id];
+    return r.slot === slot && id !== currentId && !plannedToday[id] && !bestSet[id] && !recipeHitsAvoid(r, avoidL);
+  });
+  const scored = pool.map(function(id){
+    const base = dbBaseNutrition(id);
+    // Same portion-fitting logic as "Best matches" — reused, not reimplemented — so a
+    // manual pick still lands on a sane portion near what was planned, same as any swap.
+    const bp = bestPortion(base.kcal, currentKcal, anchor, SLOT_MAX_PORTION[slot]);
+    const protein = base.protein * bp.portion;
+    return {id: id, title: RECIPES_DB[id].title, portion: bp.portion, kcal: bp.kcal, protein: protein,
+      kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
+  });
+  scored.sort(function(a, b){
+    if(a.title !== b.title) return a.title < b.title ? -1 : 1;
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  });
+  return scored;
+}
+
 // Applies the swap to the live plan (weekStartDate optional, defaults to the current
 // week) and returns a display-ready view (title/emoji/tags/kcal/protein) for the caller
 // to paint. Does NOT persist — callers persist(). Mutates weekPlans[weekStartDate] in
@@ -728,25 +784,57 @@ function resolveSwapContext(mealKey){
 
 let swapCtx = null;
 
+// Renders one alternative row — shared by both sheet sections so "Best matches" and "All
+// options" look identical (same emoji/title/kcal-delta/protein-delta/tags layout); `i` is
+// the row's index into the COMBINED alts array swapCtx.alts holds, so chooseSwap(i) works
+// identically no matter which section the tap came from.
+function swapAltRowHtml(a, i){
+  const r = RECIPES[a.id];
+  const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
+  const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
+  return '<div class="altrow" onclick="chooseSwap(' + i + ')">'
+    + '<div class="ae">' + r.emoji + '</div>'
+    + '<div class="at"><div class="an">' + r.title + '</div>'
+    + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
+    + '<div class="tags">' + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
+    + '</div></div>';
+}
+
+// FEATURE ("Swap anything"): the sheet now has two sections — "Best matches" (unchanged
+// logic: same style, closest computed kcal to what's planned now) and, below it, "All
+// <slot> options" (buildSwapAllOptions above: every other slot recipe, any style, custom
+// recipes included). swapCtx.alts holds BOTH lists concatenated so chooseSwap(i) (below)
+// needs no change — either section goes through the exact same applySwap path, so a
+// manual off-style pick persists identically to a same-style one. The sheet is opened
+// with the 'tall' class (openSwap/openWeekSwap, render.js) since the second section can
+// be long — it's scrollable, no search box needed at this size (per brief).
 function buildSwapSheet(ctx){
-  const alts = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
-  if(swapCtx) swapCtx.alts = alts;
-  let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Same slot, same style, respects what you avoid — ranked by closest computed calories to what\'s planned now.</p>';
-  if(!alts.length){
+  const best = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
+  const bestIds = best.map(function(a){ return a.id; });
+  const rest = buildSwapAllOptions(ctx.dayIndex, ctx.slot, ctx.person, bestIds, ctx.weekStartDate);
+  const combined = best.concat(rest);
+  if(swapCtx) swapCtx.alts = combined;
+
+  const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
+  let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Respects what you avoid. Best matches are same style, closest computed calories — All options covers the whole recipe book.</p>';
+
+  if(!combined.length){
     html += '<p class="sub">No other option fits this slot today.</p>';
     return html;
   }
-  alts.forEach(function(a, i){
-    const r = RECIPES[a.id];
-    const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
-    const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
-    html += '<div class="altrow" onclick="chooseSwap(' + i + ')">'
-      + '<div class="ae">' + r.emoji + '</div>'
-      + '<div class="at"><div class="an">' + r.title + '</div>'
-      + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
-      + '<div class="tags">' + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
-      + '</div></div>';
-  });
+
+  if(best.length){
+    html += '<div class="shop-cat">Best matches</div>';
+    html += best.map(function(a, i){ return swapAltRowHtml(a, i); }).join('');
+  }
+
+  html += '<div class="shop-cat">All ' + slotLabel + ' options</div>';
+  if(rest.length){
+    html += '<p class="sub" style="margin-top:-6px">' + rest.length + (best.length ? ' more option' : ' option') + (rest.length === 1 ? '' : 's') + '</p>';
+    html += rest.map(function(a, i){ return swapAltRowHtml(a, best.length + i); }).join('');
+  } else {
+    html += '<p class="sub">Nothing else fits this slot without hitting what you avoid.</p>';
+  }
   return html;
 }
 

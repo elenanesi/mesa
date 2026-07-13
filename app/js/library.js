@@ -576,6 +576,166 @@ function addIngredientToRecipe(foodId){
   renderRecipeBuilderSheet();
 }
 
+/* ===================================================================
+   FEATURE (owner feedback): merge-only import — the counterpart to
+   render.js's exportData()/confirmImport() (task F2's full-store
+   export/import). "Replace everything" (confirmImport) overwrites the
+   WHOLE store, which is a heavy hammer just to hand your partner one
+   recipe. This — mergeImportedLibrary(), wired up from render.js's
+   import-confirm sheet as confirmMergeImport() — imports ONLY
+   customFoods + customRecipes from an already-validated backup file
+   (render.js:validateBackupStructure), ADDING them to this device's
+   library. No other state (profiles, plans, log history, shopping
+   checks) is read or written — Elena and Andrea can now share just a
+   recipe across their two phones pre-couple-sync without either
+   phone's plan/log/settings being clobbered.
+
+   Merge rules (owner brief), applied per incoming entry, foods first
+   (so recipe ingredient references can be remapped against the result):
+   - an incoming id that already exists locally is SKIPPED — not
+     counted as added — when its content is byte-for-byte identical
+     (deepEqualJSON below: order-independent for plain-object keys,
+     order-sensitive for arrays, i.e. real JSON-equality, not just
+     JSON.stringify() comparison which would false-negative on key
+     order).
+   - an incoming id that already exists locally with DIFFERENT content
+     is kept as a SEPARATE entry: re-idded with a '-2' suffix (bumped
+     to '-3', '-4'… via freeConflictId if a lower suffix is already
+     taken, e.g. from an earlier merge). If the conflict was on a FOOD
+     id, every INCOMING recipe's ingredient list is remapped from the
+     old food id to the new one (foodIdRemap) — otherwise a freshly
+     imported recipe would silently reference this device's PRE-
+     EXISTING (different) food under that id. Existing local recipes
+     are untouched: they already correctly reference their own local
+     food by its unchanged id.
+   - a NAME collision (same display name — case/whitespace-insensitive
+     — as any existing or already-merged-this-pass entry, regardless of
+     id) gets " (imported)" appended to the incoming entry's name/title,
+     so the library never ends up with two identically-named rows.
+   - customRev (state.js) is bumped ONCE at the end if anything was
+     actually added (not on a no-op merge) — never per item — so the
+     planner regenerates the week exactly once; applyCustomFoods()/
+     applyCustomRecipes() (above) are likewise called once each.
+   Returns {addedFoods, addedRecipes} (counts of ACTUAL additions —
+   identical-content skips don't count) for the caller's toast.
+   =================================================================== */
+
+// Real structural equality for the plain-JSON shapes customFoods/customRecipes entries
+// are (no functions, no cycles) — NOT a JSON.stringify() string comparison, which would
+// incorrectly report two objects with the same keys in a different insertion order as
+// different.
+function deepEqualJSON(a, b){
+  if(a === b) return true;
+  if(typeof a !== typeof b || a === null || b === null) return a === b;
+  if(Array.isArray(a) !== Array.isArray(b)) return false;
+  if(Array.isArray(a)){
+    if(a.length !== b.length) return false;
+    for(let i = 0; i < a.length; i++){ if(!deepEqualJSON(a[i], b[i])) return false; }
+    return true;
+  }
+  if(typeof a === 'object'){
+    const ak = Object.keys(a), bk = Object.keys(b);
+    if(ak.length !== bk.length) return false;
+    return ak.every(function(k){ return Object.prototype.hasOwnProperty.call(b, k) && deepEqualJSON(a[k], b[k]); });
+  }
+  return a === b;
+}
+
+// Finds the first free 'baseId-2', 'baseId-3', … per the merge rules' id-conflict
+// handling above. `isTaken(candidateId)` decides — callers check both the live DB and
+// anything already claimed earlier in the SAME merge pass, so two incoming entries that
+// both conflict with the same local id don't collide with each other either.
+function freeConflictId(baseId, isTaken){
+  let n = 2, candidate = baseId + '-' + n;
+  while(isTaken(candidate)){ n++; candidate = baseId + '-' + n; }
+  return candidate;
+}
+
+function mergeImportedLibrary(parsed){
+  const incomingFoods = {}, incomingRecipes = {};
+  if(parsed && parsed.customFoods && typeof parsed.customFoods === 'object'){
+    Object.keys(parsed.customFoods).forEach(function(id){
+      const v = parsed.customFoods[id];
+      if(typeof id === 'string' && id.indexOf('cf-') === 0 && v && typeof v === 'object') incomingFoods[id] = v;
+    });
+  }
+  if(parsed && parsed.customRecipes && typeof parsed.customRecipes === 'object'){
+    Object.keys(parsed.customRecipes).forEach(function(id){
+      const v = parsed.customRecipes[id];
+      if(typeof id === 'string' && id.indexOf('cr-') === 0 && v && typeof v === 'object') incomingRecipes[id] = v;
+    });
+  }
+
+  // Existing display names (built-in + current custom), normalized — extended as entries
+  // are merged in, so two incoming entries sharing a name don't both land unrenamed.
+  const existingFoodNames = Object.keys(FOODS).map(function(id){ return String(FOODS[id].name || '').trim().toLowerCase(); });
+  const existingRecipeNames = Object.keys(RECIPES_DB).map(function(id){ return String(RECIPES_DB[id].title || '').trim().toLowerCase(); });
+
+  const foodIdRemap = {}; // incoming (old) food id -> final local id, only set when re-idded
+  let addedFoods = 0, addedRecipes = 0;
+
+  function commitFood(targetId, incoming){
+    const food = JSON.parse(JSON.stringify(incoming));
+    const nameNorm = String(food.name || '').trim().toLowerCase();
+    if(existingFoodNames.indexOf(nameNorm) !== -1) food.name = food.name + ' (imported)';
+    existingFoodNames.push(String(food.name).trim().toLowerCase());
+    customFoods[targetId] = food;
+    addedFoods++;
+  }
+
+  Object.keys(incomingFoods).sort().forEach(function(id){
+    const incoming = incomingFoods[id];
+    if(customFoods[id]){
+      if(deepEqualJSON(customFoods[id], incoming)) return; // identical — skip, not added
+      const newId = freeConflictId(id, function(cand){ return !!customFoods[cand] || !!incomingFoods[cand]; });
+      foodIdRemap[id] = newId;
+      commitFood(newId, incoming);
+    } else {
+      commitFood(id, incoming);
+    }
+  });
+
+  // Remaps an incoming recipe's ingredient food-ids through foodIdRemap (a no-op for any
+  // ingredient whose food id wasn't actually re-idded above) before it's compared/stored —
+  // see the merge-rules doc above for why this has to happen before the identical-content
+  // check, not after.
+  function remapIngredients(recipe){
+    if(!recipe || !Array.isArray(recipe.ingredients)) return recipe;
+    const r = JSON.parse(JSON.stringify(recipe));
+    r.ingredients = r.ingredients.map(function(ing){
+      const fid = ing && ing[0];
+      return (fid && foodIdRemap[fid]) ? [foodIdRemap[fid], ing[1]] : ing;
+    });
+    return r;
+  }
+
+  function commitRecipe(targetId, recipe){
+    const nameNorm = String(recipe.title || '').trim().toLowerCase();
+    if(existingRecipeNames.indexOf(nameNorm) !== -1) recipe.title = recipe.title + ' (imported)';
+    existingRecipeNames.push(String(recipe.title).trim().toLowerCase());
+    customRecipes[targetId] = recipe;
+    addedRecipes++;
+  }
+
+  Object.keys(incomingRecipes).sort().forEach(function(id){
+    const remapped = remapIngredients(incomingRecipes[id]);
+    if(customRecipes[id]){
+      if(deepEqualJSON(customRecipes[id], remapped)) return; // identical — skip, not added
+      const newId = freeConflictId(id, function(cand){ return !!customRecipes[cand] || !!incomingRecipes[cand]; });
+      commitRecipe(newId, remapped);
+    } else {
+      commitRecipe(id, remapped);
+    }
+  });
+
+  if(addedFoods || addedRecipes){
+    customRev++;
+    applyCustomFoods();
+    applyCustomRecipes();
+  }
+  return {addedFoods: addedFoods, addedRecipes: addedRecipes};
+}
+
 function saveNewRecipe(){
   const rb = recipeBuilder;
   const name = (rb.name || '').trim();
