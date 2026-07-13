@@ -15,6 +15,23 @@ function toast(msg){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
 }
 
+/* ---------------- FIX 2 (feedback): typeable numeric fields ----------------
+   Every field that used to be stepper-only (+/- only) now also accepts direct
+   typing, with BOTH comma and dot as the decimal separator ("7,4" -> 7.4, the
+   Italian keyboard's native decimal key). One parser shared by every commit
+   function below (ingredient macros in library.js, recipe-builder/quick-add
+   grams, profile height/weight/calories) so "what counts as a valid number"
+   never drifts between fields. Returns null for anything that isn't a finite
+   number (blank, "abc", "-", "7,4,2"…) — callers treat null (and, per field,
+   negative numbers) as invalid and revert with a toast rather than guessing. */
+function parseDecimalInput(str){
+  if(typeof str !== 'string') return null;
+  const cleaned = str.trim().replace(/\s+/g, '').replace(',', '.');
+  if(cleaned === '' || cleaned === '-' || cleaned === '.' || cleaned === '-.') return null;
+  const n = Number(cleaned);
+  return isFinite(n) ? n : null;
+}
+
 // goal toggles
 function tog(el){ el.classList.toggle('sel'); el.querySelector('.ck').textContent = el.classList.contains('sel')?'✓':''; }
 
@@ -515,7 +532,41 @@ function refreshAfterLogChange(){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderLogPlan(); // rebuilds cards + replays statuses, then updates pill + "Today so far"
+  renderTodayCardActions(); // FIX 1 (feedback): keep the Today cards' own affordance in sync too
   persist();
+}
+
+/* ---------------- FIX 1 (feedback): Confirm/Skip directly on the Today cards ----------------
+   Owner: "lo skip si vede solo se clicco su '+', ma non in 'today'" — the four Today cards
+   only opened the recipe before. This paints a compact action row into each card, driven
+   by the EXACT SAME funnel the Log screen uses (logConfirm/logSkip/undoLogSlot,
+   slotLogStatus — logHistory is the one source of truth), so Today and Log can never
+   disagree: whichever screen you tap on, both re-derive from the same state.
+   Re-derives all four slots fresh from slotLogStatus() every call (cheap — 4 lookups), so
+   it's safe to call after ANY log-affecting action regardless of which surface triggered
+   it (Today tap, Log tap, Undo, swap, profile switch, rebalance…) without tracking which
+   slot changed. */
+const TODAY_CARD_ACTION_EL = {breakfast: 'taBreakfast', lunch: 'taLunch', dinner: 'taDinner', snack: 'taSnack'};
+
+function renderTodayCardActions(){
+  SLOT_ORDER.forEach(function(slot){
+    const wrap = document.getElementById(TODAY_CARD_ACTION_EL[slot]);
+    if(!wrap) return;
+    const status = slotLogStatus(todayISO(), currentProf, slot);
+    if(status === 'confirmed'){
+      wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Logged</span>'
+        + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
+    } else if(status === 'skipped'){
+      wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
+        + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
+    } else {
+      const label = SLOT_LABEL[slot] || slot;
+      wrap.innerHTML = '<div class="ta-actions">'
+        + '<button class="ta-btn ta-confirm" aria-label="Confirm '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')">✓</button>'
+        + '<button class="ta-btn ta-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')">✕</button>'
+        + '</div>';
+    }
+  });
 }
 
 // FIX 2a/2b (feedback): "Undo" on a confirmed or skipped Log card — clears the slot's
@@ -585,6 +636,7 @@ function logConfirm(key, silent){
   refreshRingAndBars();
   updateLogTotalPill();
   renderTodaySoFar();
+  renderTodayCardActions(); // FIX 1: mirror the confirm onto the Today card (both directions)
   persist();
 }
 
@@ -596,6 +648,7 @@ function logSkip(key, silent){
   if(!silent) toast('Skipped — your plan stays balanced');
 
   markSlotSkipped(todayISO(), currentProf, key);
+  renderTodayCardActions(); // FIX 1: mirror the skip onto the Today card (both directions)
   persist();
 }
 
@@ -699,6 +752,8 @@ function renderTodayMeals(){
   document.getElementById('snackKcalEl').textContent = snv.kcal;
   document.getElementById('snackDescEl').textContent = 'Snack · ' + snv.protein + 'g protein';
   document.getElementById('snackTags').innerHTML = tagsHtml(sn, 'snack', 'pillSnack');
+
+  renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
 }
 
 /* ---------------- editable basics ---------------- */
@@ -712,8 +767,8 @@ function renderBasics(){
   document.getElementById('pfDob').textContent = 'Born ' + MONTHS[p.dobM-1] + ' ' + p.dobY + ' · ' + ageOf(p);
   document.getElementById('dobMVal').textContent = MONTHS[p.dobM-1];
   document.getElementById('dobYVal').textContent = p.dobY;
-  document.getElementById('hVal').textContent = p.heightCm + ' cm';
-  document.getElementById('wVal').textContent = p.weightKg + ' kg';
+  document.getElementById('hVal').value = p.heightCm;
+  document.getElementById('wVal').value = p.weightKg;
   document.getElementById('actOpts').innerHTML = ACTIVITY_LEVELS.map(function(a, i){
     const sel = p.activity === a.f;
     return '<div class="opt'+(sel ? ' sel' : '')+'" style="margin-top:'+(i===0?'6':'9')+'px" onclick="setActivity('+i+')">'
@@ -721,7 +776,7 @@ function renderBasics(){
       + '<div><div class="ot">'+a.t+'</div><div class="od">'+a.d+'</div></div></div>';
   }).join('');
   // daily target row
-  document.getElementById('pfCals').textContent = p.cals;
+  document.getElementById('pfCals').value = p.calGoalNum;
   const isCustom = p.calCustom !== null;
   const chip = document.getElementById('calChip');
   chip.textContent = isCustom ? 'custom' : '✓ computed';
@@ -779,15 +834,37 @@ function stepDob(part, delta){
   afterBasicsChange('Born ' + MONTHS[p.dobM-1] + ' ' + p.dobY + ' (age ' + ageOf(p) + ')');
 }
 
+// Bounds widened to match the typed-input clamp (FIX 2 brief: height 120–230, weight
+// 30–250) so stepping and typing can never land in a state the other path disagrees with.
 function stepBody(field, delta){
   const p = PROF[currentProf];
   if(field === 'height'){
-    p.heightCm = Math.min(220, Math.max(130, p.heightCm + delta));
+    p.heightCm = Math.min(230, Math.max(120, p.heightCm + delta));
     afterBasicsChange('Height ' + p.heightCm + ' cm');
   } else {
-    p.weightKg = Math.min(200, Math.max(40, +(p.weightKg + delta).toFixed(1)));
+    p.weightKg = Math.min(250, Math.max(30, +(p.weightKg + delta).toFixed(1)));
     afterBasicsChange('Weight ' + p.weightKg + ' kg');
   }
+}
+
+// FIX 2 (feedback): height/weight typeable directly. Invalid text (empty, "abc") or a
+// negative number reverts to the previous value with a toast; a parseable value clamps to
+// the same band stepBody() uses (height integer 120–230cm, weight 1-decimal 30–250kg) —
+// so "type 64,5" lands on exactly the same weightKg a stepper run would, and every
+// downstream recompute (BMR, target calories, macro grams) fires the same way either way.
+function commitHeight(raw){
+  const p = PROF[currentProf];
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter a height in cm, e.g. 168'); renderBasics(); return; }
+  p.heightCm = Math.round(Math.min(230, Math.max(120, n)));
+  afterBasicsChange('Height ' + p.heightCm + ' cm');
+}
+function commitWeight(raw){
+  const p = PROF[currentProf];
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter a weight in kg, e.g. 64.5'); renderBasics(); return; }
+  p.weightKg = +(Math.min(250, Math.max(30, n))).toFixed(1);
+  afterBasicsChange('Weight ' + p.weightKg + ' kg');
 }
 
 function setActivity(i){
@@ -803,6 +880,30 @@ function stepCal(delta){
   const p = PROF[currentProf];
   const band = calBand(p);
   let next = p.calGoalNum + delta;
+  if(next < band[0]){
+    next = band[0];
+    p.calNote = 'Held at ' + fmtKcal(band[0]) + ' — Mesa won’t plan below ~110% of your BMR. Gentle beats drastic.';
+  } else if(next > band[1]){
+    next = band[1];
+    p.calNote = 'Held at ' + fmtKcal(band[1]) + ' — beyond maintenance + 600 kcal adds fat faster than muscle.';
+  } else {
+    p.calNote = '';
+  }
+  p.calCustom = (next === p.recCal) ? null : next;
+  applyProf(currentProf);
+  if(p.calCustom === null) toast('✓ Back on Mesa’s recommendation');
+}
+
+// FIX 2 (feedback): daily calorie target typeable directly, reusing stepCal's exact
+// calBand clamp + cap-note copy (owner brief: "calories keep the calBand clamp + existing
+// cap-note") so typing "2000" and stepping to 2000 in ±50 taps land on the identical
+// p.calCustom / p.calNote state and produce the identical toast.
+function commitCalories(raw){
+  const p = PROF[currentProf];
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter a calorie target, e.g. 2000'); renderBasics(); return; }
+  const band = calBand(p);
+  let next = Math.round(n);
   if(next < band[0]){
     next = band[0];
     p.calNote = 'Held at ' + fmtKcal(band[0]) + ' — Mesa won’t plan below ~110% of your BMR. Gentle beats drastic.';
@@ -1188,8 +1289,20 @@ function selectQuickAddFood(id){
   document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
 }
 
+// FIX 2 (feedback): grams typeable directly, integer 1–2000 (same bound the stepper now
+// clamps to as well, so typing and tapping can never disagree). Invalid/empty text reverts
+// to the previous grams with a toast; a valid typed value re-renders through the exact same
+// sheet builder a stepper tap uses, so the live kcal/protein/carbs/fat preview recomputes
+// identically either way.
+function commitQuickAddGrams(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter grams, e.g. 125'); document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet(); return; }
+  quickAdd.grams = Math.max(1, Math.min(2000, Math.round(n)));
+  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
+}
+
 function stepQuickAddGrams(delta){
-  quickAdd.grams = Math.max(10, Math.min(2000, quickAdd.grams + delta));
+  quickAdd.grams = Math.max(1, Math.min(2000, quickAdd.grams + delta));
   document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
 }
 
@@ -1202,7 +1315,8 @@ function buildGramsStepperSheet(){
     + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">Amount</div>'
     + '<div class="sv-stepper"><button onclick="stepQuickAddGrams(-10)" aria-label="Decrease grams">–</button>'
-    + '<span class="sv-val">'+quickAdd.grams+'g'+pieceHint+'</span>'
+    + '<input class="sv-val" type="text" inputmode="decimal" value="'+quickAdd.grams+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitQuickAddGrams(this.value)" aria-label="Grams">'
+    + '<span class="sv-unit">g'+pieceHint+'</span>'
     + '<button onclick="stepQuickAddGrams(10)" aria-label="Increase grams">+</button></div></div></div>'
     + '<div class="nutri" style="margin-top:16px">'
     + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'

@@ -109,6 +109,18 @@ h2{font-size:18px;margin:22px 0 10px;letter-spacing:-.2px;}
 
 .meta-line{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap;}
 
+/* FIX 1 (feedback): Confirm/Skip round buttons directly on the Today cards — same color
+   language as .swap/.logactions (sage=confirm, terra=skip) but round like .sv-stepper
+   button, sized to the 44px tap-target minimum (ground rule 4) since these sit right next
+   to the card's own recipe-open tap target. */
+.today-actions{margin-top:9px;}
+.ta-actions{display:flex;gap:10px;}
+.ta-btn{width:44px;height:44px;border-radius:50%;border:0;font-size:17px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
+.ta-btn:active{transform:scale(.92);}
+.ta-confirm{background:var(--sage);color:#fff;}
+.ta-skip{background:#f6e6dc;color:#b25e35;}
+.today-actions .tag-row{margin-top:0;}
+
 /* log plan actions */
 .logactions{display:flex;gap:7px;margin-top:11px;width:100%;}
 .logactions button{flex:1;border:0;border-radius:12px;padding:10px 4px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;min-height:38px;}
@@ -192,6 +204,15 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .sv-stepper button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;font-weight:700;color:var(--sage-deep);cursor:pointer;line-height:1;}
 .sv-stepper button:active{transform:scale(.9);}
 .sv-stepper .sv-val{font-size:14px;font-weight:700;min-width:34px;}
+/* FIX 2 (feedback): the stepper's value is now directly typeable (owner: "permetti di
+   scrivere direttamente l'importo"). Same look as the plain .sv-val span it replaces
+   (centered, bold, no chrome) except font-size is forced to >=16px — iPhone Safari
+   auto-zooms the page on focusing any input under 16px, which would be jarring inside a
+   bottom sheet. `input.sv-val` (type + class) beats the plain `.sv-stepper .sv-val`
+   two-class rule above on specificity, so this reliably wins regardless of source order. */
+.sv-stepper input.sv-val{font-size:16px;width:4.4em;border:0;background:transparent;color:inherit;text-align:center;padding:2px 0;box-sizing:border-box;-webkit-appearance:none;appearance:none;}
+.sv-stepper input.sv-val:focus{outline:2px solid var(--sage);outline-offset:1px;border-radius:6px;background:#fff;}
+.sv-unit{font-size:13px;font-weight:600;color:var(--ink-soft);margin-left:-6px;}
 
 /* log screen */
 .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:6px;}

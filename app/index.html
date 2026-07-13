@@ -85,6 +85,11 @@
         <span class="pill ghost">Auto-balanced</span>
       </div>
 
+      <!-- FIX 1 (feedback): each Today card gets a compact Confirm/Skip (or Logged/Skipped +
+           Undo) row — painted by render.js:renderTodayCardActions() into the #ta* container,
+           wired to the SAME funnel the Log screen uses (logConfirm/logSkip/undoLogSlot,
+           logHistory as the one source of truth). Its buttons stopPropagation so tapping them
+           never also triggers the card's own openXRecipe() tap. -->
       <div class="card meal" id="todayBreakfastCard" onclick="openBreakfastRecipe()">
         <div class="thumb" id="bfEmoji">🥣</div>
         <div class="info">
@@ -93,6 +98,7 @@
           <div class="tags" id="bfTags">
             <span class="pill">Low-GI</span><span class="pill berry">Skin-supporting</span><span class="pill terra">High protein</span>
           </div>
+          <div class="today-actions" id="taBreakfast"></div>
         </div>
       </div>
 
@@ -102,6 +108,7 @@
           <div class="row between"><span class="t" id="lunchTitle">Lentil & roasted veg salad</span><span class="kcal" id="lunchKcal">430</span></div>
           <div class="d" id="lunchDesc">Lunch · 19g protein</div>
           <div class="tags" id="lunchTags"></div>
+          <div class="today-actions" id="taLunch"></div>
         </div>
       </div>
 
@@ -111,6 +118,7 @@
           <div class="row between"><span class="t" id="dinnerTitle">Baked salmon, quinoa & greens</span><span class="kcal" id="dinnerKcal">520</span></div>
           <div class="d" id="dinnerDesc">Dinner · 38g protein</div>
           <div class="tags" id="dinnerTags"></div>
+          <div class="today-actions" id="taDinner"></div>
         </div>
       </div>
 
@@ -120,6 +128,7 @@
           <div class="row between"><span class="t" id="snackTitleEl">Snack · 2 Brazil nuts + apple</span><span class="kcal" id="snackKcalEl">130</span></div>
           <div class="d" id="snackDescEl">Covers your daily selenium target</div>
           <div class="tags" id="snackTags"></div>
+          <div class="today-actions" id="taSnack"></div>
         </div>
         <button class="swap" onclick="openSwap('snack','todaySnack')">Swap</button>
       </div>
@@ -339,11 +348,16 @@
         </div>
         <div class="cap-note">Age is computed from your birth date — no need to update it, ever.</div>
       </div>
+      <!-- FIX 2 (feedback): value is now a typeable input (comma OR dot decimals accepted,
+           parsed/clamped by render.js:commitHeight/commitWeight/commitCalories), flanked by
+           the same +/- steppers as before — see PWA-MVP-plan.md ground rules + the feedback
+           batch brief for the parse/clamp/revert contract. -->
       <div class="field"><label>Height</label>
         <div class="inp"><span>Height</span>
           <span class="sv-stepper" style="margin:0">
             <button onclick="stepBody('height',-1)" aria-label="Decrease height">–</button>
-            <span class="sv-val" id="hVal" style="min-width:62px">168 cm</span>
+            <input class="sv-val" id="hVal" type="text" inputmode="decimal" style="min-width:52px" value="168" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitHeight(this.value)" aria-label="Height in centimeters">
+            <span class="sv-unit">cm</span>
             <button onclick="stepBody('height',1)" aria-label="Increase height">+</button>
           </span>
         </div>
@@ -352,7 +366,8 @@
         <div class="inp"><span>Weight</span>
           <span class="sv-stepper" style="margin:0">
             <button onclick="stepBody('weight',-0.5)" aria-label="Decrease weight">–</button>
-            <span class="sv-val" id="wVal" style="min-width:62px">64 kg</span>
+            <input class="sv-val" id="wVal" type="text" inputmode="decimal" style="min-width:52px" value="64" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitWeight(this.value)" aria-label="Weight in kilograms">
+            <span class="sv-unit">kg</span>
             <button onclick="stepBody('weight',0.5)" aria-label="Increase weight">+</button>
           </span>
         </div>
@@ -364,7 +379,8 @@
         <div class="inp"><span>Calories <span id="calChip" class="chip-computed" style="margin-left:6px">✓ computed</span></span>
           <span class="sv-stepper" style="margin:0">
             <button onclick="stepCal(-50)" aria-label="Decrease daily calorie target">–</button>
-            <span class="sv-val" id="pfCals" style="min-width:82px">1,820 kcal</span>
+            <input class="sv-val" id="pfCals" type="text" inputmode="decimal" style="min-width:64px" value="1820" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitCalories(this.value)" aria-label="Daily calorie target">
+            <span class="sv-unit">kcal</span>
             <button onclick="stepCal(50)" aria-label="Increase daily calorie target">+</button>
           </span>
         </div>

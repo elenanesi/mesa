@@ -307,13 +307,18 @@ function buildNewFoodFormSheet(){
     + FOOD_CATEGORIES.map(function(c){ return '<button class="pill ghost chip-preset' + (f.cat === c ? ' chipsel' : '') + '" onclick="setNewFoodCat(\'' + c + '\')">' + c + '</button>'; }).join('')
     + '</div></div>';
 
+  // FIX 2 (feedback, owner: "prova a creare un ingrediente con 100 calorie usando il +…
+  // permetti di scrivere direttamente l'importo… anche i decimali (es: 7,4 grassi)"): each
+  // value is now a typeable input (comma OR dot decimals, commitNewFoodField below), flanked
+  // by the same +/- steppers as before.
   [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat'], ['satFat', 'Sat. fat'], ['fiber', 'Fiber']].forEach(function(pair){
     const key = pair[0], label = pair[1];
     html += '<div class="field"><label>' + label + ' (g / 100g)</label><div class="inp">'
       + '<span>' + label + '</span>'
       + '<span class="sv-stepper" style="margin:0">'
       + '<button onclick="stepNewFoodField(\'' + key + '\',-1)" aria-label="Decrease ' + label + '">–</button>'
-      + '<span class="sv-val">' + f[key] + 'g</span>'
+      + '<input class="sv-val" type="text" inputmode="decimal" value="' + f[key] + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitNewFoodField(\'' + key + '\',this.value)" aria-label="' + label + ' grams per 100 grams">'
+      + '<span class="sv-unit">g</span>'
       + '<button onclick="stepNewFoodField(\'' + key + '\',1)" aria-label="Increase ' + label + '">+</button>'
       + '</span></div></div>';
   });
@@ -340,7 +345,19 @@ function toggleNewFoodFlag(fl){
   renderNewFoodFormSheet();
 }
 function stepNewFoodField(key, delta){
-  newFoodForm[key] = Math.max(0, +(newFoodForm[key] + delta).toFixed(1));
+  newFoodForm[key] = Math.max(0, Math.min(100, +(newFoodForm[key] + delta).toFixed(1)));
+  renderNewFoodFormSheet();
+}
+
+// FIX 2 (feedback): typed macro value, 0–100g/100g with 1 decimal, comma OR dot accepted
+// ("7,4" -> 7.4). Invalid text (empty, "abc") or a negative number ("-3") reverts to the
+// previous value with a toast rather than guessing; the satFat<=fat / fiber<=carbs / sum<=100
+// cross-field checks are unchanged — they still run at save time (saveNewFood) and their
+// live cap-note already re-derives on every renderNewFoodFormSheet() this triggers.
+function commitNewFoodField(key, raw){
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter a number, e.g. 7.4 or 7,4'); renderNewFoodFormSheet(); return; }
+  newFoodForm[key] = Math.max(0, Math.min(100, +n.toFixed(1)));
   renderNewFoodFormSheet();
 }
 
@@ -490,7 +507,8 @@ function buildRecipeBuilderSheet(){
     html += '<div class="field"><div class="inp"><span>' + escapeHtml(food.name) + '</span>'
       + '<span class="sv-stepper" style="margin:0">'
       + '<button onclick="stepRecipeIngredientGrams(' + i + ',-10)" aria-label="Decrease grams">–</button>'
-      + '<span class="sv-val">' + row.grams + 'g' + pieceHint + '</span>'
+      + '<input class="sv-val" type="text" inputmode="decimal" value="' + row.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitRecipeIngredientGrams(' + i + ',this.value)" aria-label="Grams of ' + htmlAttr(food.name) + '">'
+      + '<span class="sv-unit">g' + pieceHint + '</span>'
       + '<button onclick="stepRecipeIngredientGrams(' + i + ',10)" aria-label="Increase grams">+</button>'
       + '<button class="lib-del" style="margin-left:4px" aria-label="Remove ' + htmlAttr(food.name) + '" onclick="removeRecipeIngredient(' + i + ')">✕</button>'
       + '</span></div></div>';
@@ -528,7 +546,20 @@ function stepRecipeTime(delta){ recipeBuilder.time = Math.max(2, Math.min(180, r
 function stepRecipeIngredientGrams(i, delta){
   const row = recipeBuilder.ingredients[i];
   if(!row) return;
-  row.grams = Math.max(10, row.grams + delta);
+  row.grams = Math.max(1, Math.min(2000, row.grams + delta));
+  renderRecipeBuilderSheet();
+}
+
+// FIX 2 (feedback): typed grams, integer 1–2000 (same bound the stepper now clamps to),
+// comma OR dot accepted. Invalid/negative reverts with a toast; a valid value re-renders
+// through the same builder sheet a stepper tap would, so the live per-serving nutrition
+// card and auto-tags recompute identically either way.
+function commitRecipeIngredientGrams(i, raw){
+  const row = recipeBuilder.ingredients[i];
+  if(!row) return;
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter grams, e.g. 125'); renderRecipeBuilderSheet(); return; }
+  row.grams = Math.max(1, Math.min(2000, Math.round(n)));
   renderRecipeBuilderSheet();
 }
 function removeRecipeIngredient(i){
