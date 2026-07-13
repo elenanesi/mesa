@@ -22,7 +22,7 @@ Read `README.md` first, then `PWA-MVP-plan.md` → "Ground rules" (still binding
 
 **Tasks:**
 - **S1 — Worker + client, verified locally.** Build worker/sync.js + app/js/sync.js + Profile UI. Verify with `wrangler dev --local` (miniflare, no CF auth needed) on port 8787 + two browser profiles simulating the two phones: create household on A, join on B, verify: recipe created on A appears on B; shopping check on A appears on B; A's profile edit doesn't clobber B's; log entries merge; offline phone catches up on reopen; leaving household stops syncing. sw.js: network calls to the sync endpoint must BYPASS the cache-first fetch handler (it's cross-origin → already passes through; verify).
-- **S2 — Deploy worker + KV to Cloudflare, point the app at it, ship.** Done 2026-07-13: KV namespace `MESA_KV` bound in `worker/wrangler.toml`, Worker deployed at `https://mesa-sync.elenanesi55.workers.dev`, `app/js/sync.js` points at production, `app/sw.js` bumped to `mesa-v8`, and Worker CORS verified for `https://mesa-9y5.pages.dev`.
+- **S2 — Deploy worker + KV to Cloudflare, point the app at it, ship.** Done 2026-07-13: KV namespace `MESA_KV` bound in `worker/wrangler.toml`, Worker deployed at `https://mesa-sync.elenanesi55.workers.dev`, `app/js/sync.js` points at production, `app/sw.js` bumped to `mesa-v9`, and Worker CORS verified for `https://mesa-9y5.pages.dev`. Follow-up added: Cloudflare Access bootstrap registers/restores the household code for the two allowed login emails so reinstalling the iOS PWA can pull profile/plan/library data before pushing defaults.
 
 ## Part L — LLM at the edges (after S2)
 

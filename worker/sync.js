@@ -18,6 +18,11 @@
    model as "share this code with your partner".
 
    Endpoints:
+     POST /bootstrap -> body {email, existingCode?}. For the two Access
+                       allow-listed emails, returns/stores the household
+                       code associated with this Cloudflare Access login.
+                       This lets an iOS reinstall recover the same sync
+                       household even after localStorage was wiped.
      GET  /sync/:code  -> 200 {sections: {...}} | 404 {error} if the
                           code has never been POSTed to.
      POST /sync/:code  -> body {sections: {name: {rev, updatedAt, data}}}
@@ -45,6 +50,9 @@ const ALLOWED_ORIGINS = [
   'http://127.0.0.1:8322',
   'http://localhost:8322'
 ];
+
+const ACCESS_EMAILS = ['elenanesi55@gmail.com', 'angelucci88@gmail.com'];
+const ACCESS_BOOTSTRAP_KEY = 'access-bootstrap:v2:mesa-household';
 
 // ~1MB cap (plan: "Payload cap ~1 MB") — measured on the raw request body text, before
 // JSON.parse, so an oversized payload is rejected without ever paying to parse it.
@@ -91,6 +99,13 @@ function winner(existing, incoming){
 }
 
 function kvKey(code){ return 'household:' + code; }
+function normalizeEmail(email){ return String(email || '').trim().toLowerCase(); }
+function isAllowedAccessEmail(email){ return ACCESS_EMAILS.indexOf(normalizeEmail(email)) !== -1; }
+
+function normalizeHouseholdCode(raw){
+  return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
 
 async function readStored(env, code){
   try{
@@ -148,6 +163,40 @@ async function handlePost(request, env, code, origin){
   return json({sections: merged}, 200, origin);
 }
 
+async function handleBootstrap(request, env, origin){
+  let parsed;
+  try{
+    parsed = JSON.parse(await request.text());
+  }catch(e){
+    return json({error: 'invalid_json'}, 400, origin);
+  }
+  if(!isPlainObject(parsed) || !isAllowedAccessEmail(parsed.email)){
+    return json({error: 'not_allowed'}, 403, origin);
+  }
+
+  let code = null;
+  try{
+    const stored = await env.MESA_KV.get(ACCESS_BOOTSTRAP_KEY);
+    if(stored) code = normalizeHouseholdCode(stored);
+  }catch(e){
+    code = null;
+  }
+
+  const existingCode = normalizeHouseholdCode(parsed.existingCode);
+  if(existingCode.length >= 8 && existingCode !== code){
+    code = existingCode;
+    try{
+      await env.MESA_KV.put(ACCESS_BOOTSTRAP_KEY, code);
+    }catch(e){
+      return json({error: 'storage_failed'}, 500, origin);
+    }
+  } else if(!code){
+    return json({error: 'not_linked'}, 404, origin);
+  }
+
+  return json({code: code}, 200, origin);
+}
+
 // Matches exactly "/sync/<code>" (an optional trailing slash), <code> being one non-empty
 // path segment (no further slashes) — anything else 404s.
 function matchSyncRoute(pathname){
@@ -162,6 +211,10 @@ export default {
 
     if(request.method === 'OPTIONS'){
       return new Response(null, {status: 204, headers: corsHeaders(origin)});
+    }
+
+    if(url.pathname === '/bootstrap' && request.method === 'POST'){
+      return handleBootstrap(request, env, origin);
     }
 
     const code = matchSyncRoute(url.pathname);

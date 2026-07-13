@@ -41,6 +41,7 @@
 
 /* ---------------- config ---------------- */
 const SYNC_URL = 'https://mesa-sync.elenanesi55.workers.dev';
+const ACCESS_IDENTITY_URL = '/cdn-cgi/access/get-identity';
 
 const SYNC_SECTIONS = ['library', 'plans', 'shopping', 'profile:elena', 'profile:partner', 'log:elena', 'log:partner'];
 const SYNC_DEBOUNCE_MS = 2000;
@@ -333,6 +334,15 @@ function buildSyncPayload(){
   return payload;
 }
 
+function seedSyncBookkeeping(rev){
+  const now = Date.now();
+  SYNC_SECTIONS.forEach(function(sec){
+    syncState.sectionRevs[sec] = rev;
+    syncState.sectionUpdatedAt[sec] = now;
+    lastKnownSectionSignature[sec] = computeSectionSignature(sec);
+  });
+}
+
 // After a merge (library/shopping/log:*) produces content that's a strict superset of
 // what the server had, bump our rev past remote's so the NEXT sync tick's push outranks
 // it and the merged result actually propagates — otherwise it'd sit forever as "ours,
@@ -467,6 +477,40 @@ function performSync(manual){
   });
 }
 
+function pullHouseholdFirst(code){
+  const normalized = normalizeHouseholdCode(code);
+  if(!normalized) return Promise.resolve(false);
+  syncState.code = normalized;
+  syncState.lastSyncedAt = null;
+  const sent = buildSyncPayload();
+
+  return fetch(SYNC_URL + '/sync/' + encodeURIComponent(normalized), {
+    method: 'GET'
+  }).then(function(res){
+    if(res.status === 404){
+      seedSyncBookkeeping(1);
+      persist();
+      renderCoupleSync();
+      scheduleSync(0);
+      return true;
+    }
+    if(!res.ok) throw new Error('sync pull http ' + res.status);
+    return res.json().then(function(body){
+      const remoteSections = (body && body.sections) || {};
+      const changed = applySyncResponse(sent, remoteSections);
+      SYNC_SECTIONS.forEach(function(sec){ lastSyncedRev[sec] = syncState.sectionRevs[sec] || 0; });
+      syncState.lastSyncedAt = Date.now();
+      persist();
+      postSyncRerender(changed);
+      return true;
+    });
+  }).catch(function(err){
+    syncState.code = null;
+    console.warn('Mesa sync: could not restore household from cloud login', err);
+    return false;
+  });
+}
+
 function syncNow(){
   if(!syncState.code) return;
   toast('Syncing…');
@@ -591,23 +635,61 @@ function joinHousehold(){
   if(code.length < 8){ toast('Enter the code your partner shared'); return; }
   syncState.code = code;
   syncState.lastSyncedAt = null;
-  const now = Date.now();
-  SYNC_SECTIONS.forEach(function(sec){
-    // Start every section's rev at 1 with "now" — this device's current local content
-    // (whatever it is: fresh-install defaults, or its own prior solo use) becomes what it
-    // offers into the merge. For LWW sections it will almost always lose to an
-    // already-established household's higher rev (adopted via applySyncResponse); for the
-    // merge-type sections it's unioned/appended in, never discarded.
-    syncState.sectionRevs[sec] = 1;
-    syncState.sectionUpdatedAt[sec] = now;
-    lastKnownSectionSignature[sec] = computeSectionSignature(sec);
-  });
+  // Start every section's rev at 1 with "now" — this device's current local content
+  // (whatever it is: fresh-install defaults, or its own prior solo use) becomes what it
+  // offers into the merge. For LWW sections it will almost always lose to an
+  // already-established household's higher rev (adopted via applySyncResponse); for the
+  // merge-type sections it's unioned/appended in, never discarded.
+  seedSyncBookkeeping(1);
   codeRevealed = false;
   closeJoinHousehold();
   persist();
   renderCoupleSync();
   scheduleSync(0);
   toast('✓ Joined — syncing now');
+}
+
+function accessIdentityEmail(){
+  if(location.protocol === 'file:') return Promise.resolve(null);
+  return fetch(ACCESS_IDENTITY_URL, {
+    method: 'GET',
+    credentials: 'same-origin',
+    cache: 'no-store'
+  }).then(function(res){
+    if(!res.ok) return null;
+    return res.json();
+  }).then(function(body){
+    return body && typeof body.email === 'string' ? body.email : null;
+  }).catch(function(){ return null; });
+}
+
+function bootstrapAccessHousehold(){
+  return accessIdentityEmail().then(function(email){
+    if(!email) return false;
+    return fetch(SYNC_URL + '/bootstrap', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({email: email, existingCode: syncState.code || null})
+    }).then(function(res){
+      if(!res.ok) throw new Error('bootstrap http ' + res.status);
+      return res.json();
+    }).then(function(body){
+      const code = body && typeof body.code === 'string' ? normalizeHouseholdCode(body.code) : '';
+      if(!code) return false;
+      if(syncState.code){
+        if(syncState.code !== code) syncState.code = code;
+        persist();
+        return false;
+      }
+      return pullHouseholdFirst(code).then(function(restored){
+        if(restored) toast('✓ Restored your Mesa data from Cloudflare login');
+        return restored;
+      });
+    });
+  }).catch(function(err){
+    console.warn('Mesa sync: Cloudflare Access bootstrap skipped', err);
+    return false;
+  });
 }
 
 function buildLeaveHouseholdConfirmSheet(){
@@ -642,5 +724,7 @@ function confirmLeaveHousehold(){
 function initSync(){
   SYNC_SECTIONS.forEach(function(sec){ lastKnownSectionSignature[sec] = computeSectionSignature(sec); });
   renderCoupleSync();
-  if(syncState.code) scheduleSync(0);
+  bootstrapAccessHousehold().then(function(restored){
+    if(!restored && syncState.code) scheduleSync(0);
+  });
 }
