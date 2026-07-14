@@ -1015,6 +1015,90 @@ function coverageGaps(cov){
   };
 }
 
+/* ---------------- T6: week diet-summary line ---------------- */
+// Deterministic, single-person read of a given plan: the same 28 meals renderWeek() lists
+// for `personKey` (day.meals[slot][personKey] — already the portion-scaled view render.js
+// uses), tallying (a) recipe tag frequency for the "what this week leans toward" chips and
+// (b) the SAME headline metrics/thresholds as Insights (planner.js:buildInsightCallouts /
+// coverageGaps) so the wording never disagrees with the Insights screen:
+//   fiber >= 25 g/day · sat fat <= 33% of fat · protein >= personal goal · omega-3 >= 3 meals/wk
+// Nothing here is typed in — every number comes from recipeNutrition()/PROF[personKey].targetP.
+const WEEK_SUMMARY_THRESHOLDS = {fiberMinPerDay: 25, satFatMaxShare: 0.33, omega3MinPerWeek: 3};
+
+function summarizeWeekPlan(plan, personKey){
+  const tagCounts = {};
+  let fiberSum = 0, proteinSum = 0, fatSum = 0, satFatSum = 0, omega3Count = 0;
+  const mealCount = plan.days.length * SLOT_ORDER.length;
+
+  plan.days.forEach(function(day){
+    SLOT_ORDER.forEach(function(slot){
+      const entry = day.meals[slot][personKey];
+      const r = RECIPES_DB[entry.recipeId];
+      if(!r) return;
+      (r.tags || []).forEach(function(t){ tagCounts[t] = (tagCounts[t] || 0) + 1; });
+      const nut = recipeNutrition(entry.recipeId, entry.portion).totals;
+      fiberSum += nut.fiber; proteinSum += nut.protein; fatSum += nut.fat; satFatSum += nut.satFat;
+      if(recipeHasFlag(entry.recipeId, 'omega3')) omega3Count++;
+    });
+  });
+
+  const days = plan.days.length || 7;
+  const avgFiberPerDay = fiberSum / days;
+  const avgProteinPerDay = proteinSum / days;
+  const satFatShare = fatSum > 0 ? satFatSum / fatSum : 0;
+  const targetProtein = PROF[personKey] ? PROF[personKey].targetP : 0;
+
+  // Up to 3 headline tags, most-frequent first; ties broken by TAG_PILL_MAP's fixed key
+  // order (stable sort keeps that order for equal counts) so the same plan always renders
+  // the same chip order.
+  const tagOrder = Object.keys(TAG_PILL_MAP);
+  const topTags = Object.keys(tagCounts)
+    .sort(function(a, b){
+      const diff = tagCounts[b] - tagCounts[a];
+      if(diff !== 0) return diff;
+      return tagOrder.indexOf(a) - tagOrder.indexOf(b);
+    })
+    .slice(0, 3)
+    .map(function(t){ return (TAG_PILL_MAP[t] && TAG_PILL_MAP[t][1]) || t; });
+
+  // One hard headline metric — the first of these (fixed priority, matching the T7/Insights
+  // threshold order) that actually clears its target; falls back to the fiber figure
+  // (framed against its goal, not claimed as a win) if none do, so the line is never empty.
+  const T = WEEK_SUMMARY_THRESHOLDS;
+  const metricCandidates = [
+    {
+      good: avgFiberPerDay >= T.fiberMinPerDay,
+      text: '≈' + Math.round(avgFiberPerDay) + 'g fiber/day'
+    },
+    {
+      good: satFatShare <= T.satFatMaxShare,
+      text: 'sat. fat in check — ' + Math.round(satFatShare * 100) + '% of fat'
+    },
+    {
+      good: targetProtein > 0 && avgProteinPerDay >= targetProtein,
+      text: 'protein on target — ' + Math.round(avgProteinPerDay) + 'g/day'
+    },
+    {
+      good: omega3Count >= T.omega3MinPerWeek,
+      text: 'omega-3 ' + omega3Count + ' meals this week'
+    }
+  ];
+  const metric = metricCandidates.find(function(m){ return m.good; })
+    || {good: false, text: Math.round(avgFiberPerDay) + 'g fiber/day (goal ' + T.fiberMinPerDay + 'g)'};
+
+  return {
+    tags: topTags,
+    metricText: metric.text,
+    metricGood: metric.good,
+    mealCount: mealCount,
+    avgFiberPerDay: avgFiberPerDay,
+    avgProteinPerDay: avgProteinPerDay,
+    satFatShare: satFatShare,
+    omega3Count: omega3Count,
+    targetProtein: targetProtein
+  };
+}
+
 function enumerateSwapUnits(plan){
   const units = [];
   for(let d = 0; d < 7; d++){

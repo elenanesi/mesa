@@ -215,11 +215,28 @@ function renderWeek(){
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+rows+'</div></div>';
   }).join('');
+  renderWeekSummaryLine(plan, person);
+
   // Nutrient coverage chips always reflect the CURRENT week regardless of which week is
   // toggled on-screen (renderNutrientChips reads the `weekPlan` compat getter, which only
   // ever mirrors the current week — planner.js:ensureWeekPlan) — no change needed there.
   renderNutrientChips();
   updateWeekActionsForMode();
+}
+
+// T6: paints planner.js:summarizeWeekPlan(plan, person) into #weekSummaryLine as a single
+// (wrappable) line — up to 3 friendly tag chips from the plan's most-common recipe tags,
+// plus one hard metric that clears a T7/Insights threshold (or, failing that, the fiber
+// figure framed against its goal). Called every renderWeek(), so it already tracks the
+// This/Next toggle (`plan`/`person` passed in) and profile switch for free.
+function renderWeekSummaryLine(plan, person){
+  const el = document.getElementById('weekSummaryLine');
+  if(!el) return;
+  const s = summarizeWeekPlan(plan, person);
+  const tagsHtml = s.tags.length
+    ? s.tags.map(function(t){ return '<b>' + escapeHtml(t) + '</b>'; }).join(' <span class="ws-sep">·</span> ')
+    : '<b>Balanced week</b>';
+  el.innerHTML = tagsHtml + ' <span class="ws-sep">·</span> ' + escapeHtml(s.metricText);
 }
 
 // Re-balance is defined as CURRENT-week-only (planner.js:proposeRebalanceSwaps always
@@ -1169,6 +1186,21 @@ function setProf(key, el){
   el.classList.add('on'); applyProf(key);
   // sync top control
   document.querySelectorAll('#profSeg button').forEach(x=>x.classList.toggle('on', x.dataset.prof===key));
+}
+
+// T1: Profile jump-to-section chip bar (index.html #profileNav) — scrolls the target
+// section's <h2> (class="jump-target", scroll-margin-top in mesa.css) to the top edge of
+// the #profile scroll container, clear of the sticky bar. The bar itself is static markup
+// (not re-painted per profile switch/render), so this only needs to track which chip is
+// visually "on".
+function jumpToProfileSection(id, el){
+  const target = document.getElementById(id);
+  if(target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
+  if(el){
+    const bar = document.getElementById('profileNav');
+    if(bar) bar.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
+    el.classList.add('on');
+  }
 }
 
 /* ===================================================================

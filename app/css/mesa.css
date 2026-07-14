@@ -269,6 +269,45 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .badge-mini{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(127,147,100,.14);color:var(--sage-deep);letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
 .chip-computed{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
 
+/* T3: small leading line-SVG icon on Profile/Insights <h2> section headers — same stroke
+   idiom as the tabbar (viewBox 0 0 24 24, stroke=currentColor, stroke-width 2), just
+   recolored to the sage accent and sized down to sit inline with the script h2 font. */
+.h2-ic{width:18px;height:18px;stroke:var(--sage-deep);vertical-align:-3px;margin-right:7px;}
+
+/* T1: Profile jump-to-section chip bar — sticky at the top of the #profile scroll
+   container (position:sticky's containing scroller is .screen, which already scrolls),
+   reusing the .seg pill look with a horizontally-scrollable row instead of a fixed split.
+   Bleeds to the screen's full width (negative margin cancels .screen's own padding) so the
+   background reaches the edges, then re-adds that padding so the chips still align. */
+.profile-nav{
+  position:sticky;top:0;z-index:6;
+  display:flex;gap:8px;overflow-x:auto;
+  margin:8px -18px 14px;padding:8px 18px 10px;
+  background:var(--bg);
+  scrollbar-width:none;-ms-overflow-style:none;
+}
+.profile-nav::-webkit-scrollbar{display:none;}
+.profile-nav button{
+  flex:0 0 auto;border:1px solid rgba(176,146,105,.32);background:#e8dcc8;color:var(--ink-soft);
+  font:inherit;font-size:12.5px;font-weight:600;padding:0 14px;min-height:44px;border-radius:999px;
+  cursor:pointer;white-space:nowrap;transition:.2s;
+}
+.profile-nav button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-soft);border-color:transparent;}
+/* Keeps a jumped-to <h2> clear of the sticky bar above it (bar ≈52px tall + breathing room). */
+.jump-target{scroll-margin-top:64px;}
+
+/* T6: week diet-summary line — one wrap-capable line under the Week screen's intro,
+   painted by renderWeek() from planner.js:summarizeWeekPlan(). Echoes .why's sage
+   reading-note look rather than inventing a new color language. */
+.week-summary{
+  display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;
+  margin-top:10px;padding:10px 13px;
+  background:rgba(237,241,223,.86);border:1px solid rgba(127,147,100,.18);border-radius:14px;
+  font-size:12.5px;color:var(--sage-deep);line-height:1.4;
+}
+.week-summary b{color:var(--sage-deep);}
+.week-summary .ws-sep{color:var(--muted);}
+
 /* profile / onboarding */
 .opt{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid rgba(176,146,105,.38);background:rgba(255,250,240,.9);border-radius:14px;margin-top:9px;cursor:pointer;transition:.15s;min-height:44px;}
 .opt .ck{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:0 0 22px;display:grid;place-items:center;color:#fff;font-size:13px;}

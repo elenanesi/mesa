@@ -222,6 +222,18 @@ function renderFoodLibraryCount(){
    =================================================================== */
 let libFoodQuery = '';
 
+/* ---------------- T5: Ingredients sheet — category/tag filter chips ----------------
+   Multi-select AND-combine with the existing text search (libFoodQuery). Category is a
+   single facet (foods have exactly one `cat`), so multiple active categories are OR'd
+   together; flags are AND'd (a food must carry every active flag) — documented choice,
+   matching the task brief's "AND across flags is fine". View-only: reset every time the
+   sheet (re)opens (openFoodLibrary below), never persisted. */
+let libFoodFilters = {cats: new Set(), flags: new Set()};
+// Full flag facet per the task brief (data/foods.js's actual flag vocabulary) — a
+// superset of FOOD_FORM_FLAGS below, which is only the subset offered when hand-authoring
+// a NEW custom ingredient.
+const FOOD_FILTER_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree', 'highFiber', 'fermented'];
+
 const INGREDIENT_ICON_ASSETS = {
   carrot: 'assets/ingredients/carrot.png',
   eggs: 'assets/ingredients/eggs.png',
@@ -268,6 +280,7 @@ function foodIconHtml(foodId, fallbackEmoji){
 
 function openFoodLibrary(){
   libFoodQuery = '';
+  libFoodFilters = {cats: new Set(), flags: new Set()};
   document.getElementById('sheetBody').innerHTML = buildFoodLibrarySheet();
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -292,17 +305,78 @@ function openAddMenu(){
 function buildFoodLibrarySheet(){
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Ingredients</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(libFoodQuery) + '" oninput="onLibFoodSearchInput(this.value)" autocomplete="off">'
+    + '<div id="libFoodFilterBar">' + renderLibFoodFilterBar() + '</div>'
     + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openNewFoodForm()">＋ New ingredient</button>'
     + '<div id="libFoodList" style="margin-top:4px">' + renderLibFoodListMarkup(libFoodQuery) + '</div>';
 }
 
+// One reusable chip button — pill visual language, but with the 44px min tap-target this
+// sheet's non-form chips need (the same inline-style-override pattern the app already uses
+// for other oversized pills, e.g. #calRestoreBtn) rather than a brand-new class.
+function filterChipHtml(label, active, onclickJs){
+  return '<button class="pill ghost chip-preset' + (active ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="' + onclickJs + '">' + escapeHtml(label) + '</button>';
+}
+
+function countFilteredFoods(query){
+  const byCat = libFoodIdsByCategory(query);
+  return Object.keys(byCat).reduce(function(sum, c){ return sum + byCat[c].length; }, 0);
+}
+
+function renderLibFoodFilterBar(){
+  const anyActive = libFoodFilters.cats.size > 0 || libFoodFilters.flags.size > 0;
+  let html = '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">'
+    + FOOD_CATEGORIES.map(function(c){ return filterChipHtml(c, libFoodFilters.cats.has(c), 'toggleLibFoodCatFilter(\'' + c + '\')'); }).join('')
+    + '</div>';
+  html += '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:7px">'
+    + FOOD_FILTER_FLAGS.map(function(fl){ return filterChipHtml(flagLabel(fl), libFoodFilters.flags.has(fl), 'toggleLibFoodFlagFilter(\'' + fl + '\')'); }).join('')
+    + '</div>';
+  if(anyActive){
+    html += '<div class="row between" style="margin-top:9px">'
+      + '<span class="sub" id="libFoodFilterCount" style="margin:0">' + countFilteredFoods(libFoodQuery) + ' ingredient' + (countFilteredFoods(libFoodQuery) === 1 ? '' : 's') + '</span>'
+      + '<button class="pill ghost chip-preset" style="min-height:44px;padding:0 14px" onclick="clearLibFoodFilters()">✕ Clear</button>'
+      + '</div>';
+  }
+  return html;
+}
+
+function toggleLibFoodCatFilter(cat){
+  if(libFoodFilters.cats.has(cat)) libFoodFilters.cats.delete(cat); else libFoodFilters.cats.add(cat);
+  rerenderLibFoodFilteredView();
+}
+function toggleLibFoodFlagFilter(fl){
+  if(libFoodFilters.flags.has(fl)) libFoodFilters.flags.delete(fl); else libFoodFilters.flags.add(fl);
+  rerenderLibFoodFilteredView();
+}
+function clearLibFoodFilters(){
+  libFoodFilters = {cats: new Set(), flags: new Set()};
+  rerenderLibFoodFilteredView();
+}
+// Live re-render on toggle (same "re-render in place" pattern as onLibFoodSearchInput):
+// repaints both the filter bar (chip on/off + count/Clear) and the list below it.
+function rerenderLibFoodFilteredView(){
+  const bar = document.getElementById('libFoodFilterBar');
+  if(bar) bar.innerHTML = renderLibFoodFilterBar();
+  const list = document.getElementById('libFoodList');
+  if(list) list.innerHTML = renderLibFoodListMarkup(libFoodQuery);
+}
+
+// Extended (task T5) to also drop foods failing the active category set (OR across
+// categories — a food has exactly one) or missing any active flag (AND across flags,
+// documented choice per the task brief) — combined with the existing text search.
 function libFoodIdsByCategory(query){
   const q = (query || '').trim().toLowerCase();
   const byCat = {};
   Object.keys(FOODS).forEach(function(id){
-    if(q && FOODS[id].name.toLowerCase().indexOf(q) === -1) return;
-    const cat = FOODS[id].cat;
-    (byCat[cat] = byCat[cat] || []).push(id);
+    const food = FOODS[id];
+    if(q && food.name.toLowerCase().indexOf(q) === -1) return;
+    if(libFoodFilters.cats.size && !libFoodFilters.cats.has(food.cat)) return;
+    if(libFoodFilters.flags.size){
+      const flags = food.flags || [];
+      let hasAll = true;
+      libFoodFilters.flags.forEach(function(fl){ if(flags.indexOf(fl) === -1) hasAll = false; });
+      if(!hasAll) return;
+    }
+    (byCat[food.cat] = byCat[food.cat] || []).push(id);
   });
   return byCat;
 }
@@ -327,7 +401,7 @@ function renderLibFoodListMarkup(query){
         + '</div>';
     });
   });
-  return out || '<p class="sub" style="margin-top:10px">No ingredients match your search.</p>';
+  return out || '<p class="sub" style="margin-top:10px">No ingredients match your search or filters.</p>';
 }
 
 function onLibFoodSearchInput(v){
@@ -338,8 +412,11 @@ function onLibFoodSearchInput(v){
 
 /* ---------------- new ingredient form ---------------- */
 const FOOD_CATEGORIES = ['Produce', 'Protein', 'Dairy', 'Pantry', 'Bakery', 'Frozen']; // matches data/foods.js ALLOWED_CATS
-const FOOD_FORM_FLAGS = ['lowGI', 'omega3', 'highFiber', 'glutenFree'];
-const FOOD_FLAG_LABELS = {lowGI: 'Low-GI', omega3: 'Omega-3', highFiber: 'High fiber', glutenFree: 'Gluten-free'};
+const FOOD_FORM_FLAGS = ['lowGI', 'omega3', 'highFiber', 'glutenFree']; // offered when hand-authoring a new custom ingredient
+// T5: extended with selenium/highIodine/fermented — the rest of data/foods.js's flag
+// vocabulary, needed for the Ingredients sheet's tag filter (FOOD_FILTER_FLAGS above)
+// even though the new-ingredient form only offers the original 4.
+const FOOD_FLAG_LABELS = {lowGI: 'Low-GI', omega3: 'Omega-3', highFiber: 'High fiber', glutenFree: 'Gluten-free', selenium: 'Selenium', highIodine: 'High iodine', fermented: 'Fermented'};
 function flagLabel(fl){ return FOOD_FLAG_LABELS[fl] || fl; }
 
 let newFoodForm = null;
@@ -480,24 +557,83 @@ function deleteCustomFood(id){
 /* ===================================================================
    FEATURE 2 — My recipes sheet + builder
    =================================================================== */
+/* ---------------- T5: Recipes sheet — meal-slot/tag filter chips ----------------
+   Same pattern as the Ingredients sheet's filters above: Meal (slot) is OR'd (a recipe
+   has exactly one slot), Tag is AND'd (recipe must carry every active tag). Combines with
+   the (currently absent) implicit "all recipes" list — no separate search box exists here,
+   so filters are the only narrowing. View-only: reset every time the sheet opens. */
+let libRecipeFilters = {slots: new Set(), tags: new Set()};
+
 function openMyRecipes(){
+  libRecipeFilters = {slots: new Set(), tags: new Set()};
   document.getElementById('sheetBody').innerHTML = buildMyRecipesSheet();
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
 }
 
-function buildMyRecipesSheet(){
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Recipes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<button class="cta ghostbtn" style="margin-top:10px" onclick="openNewRecipeForm()">＋ New recipe</button>';
-  const ids = Object.keys(RECIPES_DB).sort(function(a, b){
+function filteredRecipeIds(){
+  return Object.keys(RECIPES_DB).filter(function(id){
+    const r = RECIPES_DB[id];
+    if(libRecipeFilters.slots.size && !libRecipeFilters.slots.has(r.slot)) return false;
+    if(libRecipeFilters.tags.size){
+      const tags = r.tags || [];
+      let hasAll = true;
+      libRecipeFilters.tags.forEach(function(t){ if(tags.indexOf(t) === -1) hasAll = false; });
+      if(!hasAll) return false;
+    }
+    return true;
+  }).sort(function(a, b){
     return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
   });
-  if(!ids.length){
-    html += '<p class="sub" style="margin-top:14px">No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.</p>';
-    return html;
+}
+
+function renderLibRecipeFilterBar(){
+  const anyActive = libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0;
+  let html = '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">'
+    + RECIPE_SLOTS.map(function(s){ return filterChipHtml(SLOT_LABEL[s], libRecipeFilters.slots.has(s), 'toggleLibRecipeSlotFilter(\'' + s + '\')'); }).join('')
+    + '</div>';
+  html += '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:7px">'
+    + VALID_TAGS.map(function(t){ return filterChipHtml(tagLabelForPreview(t), libRecipeFilters.tags.has(t), 'toggleLibRecipeTagFilter(\'' + t + '\')'); }).join('')
+    + '</div>';
+  if(anyActive){
+    const n = filteredRecipeIds().length;
+    html += '<div class="row between" style="margin-top:9px">'
+      + '<span class="sub" id="libRecipeFilterCount" style="margin:0">' + n + ' recipe' + (n === 1 ? '' : 's') + '</span>'
+      + '<button class="pill ghost chip-preset" style="min-height:44px;padding:0 14px" onclick="clearLibRecipeFilters()">✕ Clear</button>'
+      + '</div>';
   }
-  html += '<div style="margin-top:4px">' + ids.map(function(id){
+  return html;
+}
+
+function toggleLibRecipeSlotFilter(slot){
+  if(libRecipeFilters.slots.has(slot)) libRecipeFilters.slots.delete(slot); else libRecipeFilters.slots.add(slot);
+  rerenderLibRecipeFilteredView();
+}
+function toggleLibRecipeTagFilter(tag){
+  if(libRecipeFilters.tags.has(tag)) libRecipeFilters.tags.delete(tag); else libRecipeFilters.tags.add(tag);
+  rerenderLibRecipeFilteredView();
+}
+function clearLibRecipeFilters(){
+  libRecipeFilters = {slots: new Set(), tags: new Set()};
+  rerenderLibRecipeFilteredView();
+}
+function rerenderLibRecipeFilteredView(){
+  const bar = document.getElementById('libRecipeFilterBar');
+  if(bar) bar.innerHTML = renderLibRecipeFilterBar();
+  const list = document.getElementById('libRecipeList');
+  if(list) list.innerHTML = renderLibRecipeListMarkup();
+}
+
+function renderLibRecipeListMarkup(){
+  const ids = filteredRecipeIds();
+  if(!ids.length){
+    const anyActive = libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0;
+    return '<p class="sub" style="margin-top:14px">' + (anyActive
+      ? 'No recipes match your filters.'
+      : 'No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.') + '</p>';
+  }
+  return '<div style="margin-top:4px">' + ids.map(function(id){
     const r = RECIPES_DB[id];
     const nut = recipeNutrition(id, 1).totals;
     const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
@@ -508,6 +644,17 @@ function buildMyRecipesSheet(){
       + '<button class="lib-del" aria-label="Delete ' + htmlAttr(r.title) + '" onclick="deleteRecipe(\'' + id + '\')">✕</button>'
       + '</div>';
   }).join('') + '</div>';
+}
+
+function buildMyRecipesSheet(){
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Recipes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<button class="cta ghostbtn" style="margin-top:10px" onclick="openNewRecipeForm()">＋ New recipe</button>'
+    + '<div id="libRecipeFilterBar">' + renderLibRecipeFilterBar() + '</div>';
+  if(!Object.keys(RECIPES_DB).length){
+    html += '<p class="sub" style="margin-top:14px">No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.</p>';
+    return html;
+  }
+  html += '<div id="libRecipeList">' + renderLibRecipeListMarkup() + '</div>';
   return html;
 }
 

@@ -156,6 +156,11 @@
         <button style="flex:1" onclick="setWeekScreenMode('next',this)">Next week</button>
       </div>
 
+      <!-- T6: one-line "what this week accomplishes" summary — painted by renderWeek()
+           (render.js) from planner.js:summarizeWeekPlan(). Recomputed on every renderWeek()
+           call, so it already tracks the This/Next toggle and profile switch for free. -->
+      <div class="week-summary" id="weekSummaryLine"></div>
+
       <h2>7-day plan</h2>
       <div class="week" id="weekList"></div>
 
@@ -298,7 +303,7 @@
 
       <div class="card" id="insightsBarsCard"></div>
 
-      <h2>What's working</h2>
+      <h2><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>What's working</h2>
       <div class="card" style="padding:14px" id="insightsWorking"></div>
 
       <div class="banner">
@@ -317,13 +322,31 @@
       </div>
       <p class="sub">This is what makes the plans <i>yours</i>. Mesa recalculates whenever you change something here.</p>
 
-      <h2>Whose plan</h2>
+      <!-- T1: sticky jump-to-section chip bar — reuses the .seg chip look, one chip per
+           <h2> below. Static markup (not re-rendered on profile switch) so it can never
+           duplicate; jumpToProfileSection() (render.js) scrollIntoView()s the target,
+           whose scroll-margin-top (mesa.css .jump-target) keeps it clear of this bar. -->
+      <div class="profile-nav" id="profileNav">
+        <button class="on" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
+        <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
+        <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
+        <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
+        <button onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
+        <button onclick="jumpToProfileSection('sec-avoid',this)">Foods to avoid</button>
+        <button onclick="jumpToProfileSection('sec-connections',this)">Connections</button>
+        <button onclick="jumpToProfileSection('sec-library',this)">Food library</button>
+        <button onclick="jumpToProfileSection('coupleSyncHeading',this)">Couple sync</button>
+        <button onclick="jumpToProfileSection('sec-data',this)">Your data</button>
+        <button onclick="jumpToProfileSection('sec-about',this)">About</button>
+      </div>
+
+      <h2 id="sec-whose" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5"/><path d="M10 20c0-3 3-5 6-5s6 2 6 5"/></svg>Whose plan</h2>
       <div class="seg" id="profWhoSeg" style="width:100%">
         <button class="on" style="flex:1" onclick="setProf('elena',this)">Elena</button>
         <button style="flex:1" onclick="setProf('partner',this)">Andrea</button>
       </div>
 
-      <h2>Basics</h2>
+      <h2 id="sec-basics" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>Basics</h2>
       <p class="sub">Edit anything here — Mesa recomputes your recommended calories and rebuilds your targets. Every number below is formula, not guesswork.</p>
       <div class="field"><label>Sex</label>
         <div class="seg" style="width:100%;margin-top:6px">
@@ -390,7 +413,7 @@
         <button class="pill gold chip-preset" id="calRestoreBtn" style="display:none;margin-top:8px;padding:11px 14px;font-size:12px" onclick="restoreCal()">↺ Restore recommended (1,820)</button>
       </div>
 
-      <h2>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
+      <h2 id="sec-macro" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
       <p class="sub">Choose where your calories come from — Mesa keeps it adding up to 100% and rebuilds your menu to match.</p>
       <div class="row" id="macroPresets" style="gap:7px;flex-wrap:wrap;margin-top:6px">
         <button class="pill ghost chip-preset" onclick="applyPreset('default')">Mesa default</button>
@@ -426,47 +449,47 @@
       </div>
       <p class="sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Your total calories stay the same — the split changes where they come from.<span class="chip-computed">✓ computed</span></p>
 
-      <h2>Health goals</h2>
+      <h2 id="sec-goals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Health goals</h2>
       <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Gentle fat loss</div><div class="od">~325 kcal below maintenance</div></div></div>
       <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Muscle & protein</div><div class="od">1.6 g protein / kg bodyweight</div></div></div>
       <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Heart & metabolic</div><div class="od">High fiber, low sodium, Mediterranean base</div></div></div>
       <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Beautiful skin</div><div class="od">Low-GI, omega-3 up, dairy/sugar down</div></div></div>
       <div class="opt sel" id="hashiOpt" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Hashimoto's-friendly 🦋</div><div class="od">Selenium, moderate iodine, anti-inflammatory</div></div></div>
 
-      <h2>Meals we share</h2>
+      <h2 id="sec-meals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="12" r="7"/><circle cx="15" cy="12" r="7"/></svg>Meals we share</h2>
       <p class="sub">Shared meals use one recipe with a portion for each of you. Solo meals are planned per person.</p>
       <div class="opt" id="shareBreakfast" onclick="toggleShared('breakfast',this)"><div class="ck"></div><div><div class="ot">Breakfast</div><div class="od">Solo (default)</div></div></div>
       <div class="opt" id="shareLunch" onclick="toggleShared('lunch',this)"><div class="ck"></div><div><div class="ot">Lunch</div><div class="od">Solo (default)</div></div></div>
       <div class="opt sel" id="shareDinner" onclick="toggleShared('dinner',this)"><div class="ck">✓</div><div><div class="ot">Dinner</div><div class="od">Shared (default)</div></div></div>
       <div class="opt" id="shareSnack" onclick="toggleShared('snack',this)"><div class="ck"></div><div><div class="ot">Snack</div><div class="od">Solo (default)</div></div></div>
 
-      <h2>Foods to avoid</h2>
+      <h2 id="sec-avoid" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/></svg>Foods to avoid</h2>
       <p class="sub">Mesa will never suggest a recipe that contains these.</p>
       <div class="row" id="avoidPills" style="gap:7px;flex-wrap:wrap"></div>
       <div class="field"><div class="inp" onclick="toggleAvoidChooser()"><span style="color:var(--muted)">Choose from lactose, gluten, shellfish, nuts, raw onion, spicy…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
       <div class="cap-note">Free-text isn't supported yet — more coming with the AI phase.</div>
       <div class="row" id="avoidChooser" style="gap:7px;flex-wrap:wrap;margin-top:10px;display:none"></div>
 
-      <h2>Connections</h2>
+      <h2 id="sec-connections" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 15l6-6"/><path d="M8 12l-2.5 2.5a3.5 3.5 0 0 0 5 5L13 17"/><path d="M16 12l2.5-2.5a3.5 3.5 0 0 0-5-5L11 7"/></svg>Connections</h2>
       <div class="opt" onclick="toast('Apple Health connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">♥</div><div><div class="ot">Apple Health</div><div class="od">Sync weight, activity & steps → better targets</div></div></div>
       <div class="opt" onclick="toast('Reminders connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔔</div><div><div class="ot">Notifications</div><div class="od">Meal prep nudges & shopping reminders</div></div></div>
       <div class="opt" onclick="toast('Calendar connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">📅</div><div><div class="ot">Calendar</div><div class="od">Lighter prep on busy days</div></div></div>
 
-      <h2>Food library</h2>
+      <h2 id="sec-library" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 6c-1.5-1.2-4-2-7-2v14c3 0 5.5.8 7 2 1.5-1.2 4-2 7-2V4c-3 0-5.5.8-7 2z"/><path d="M12 6v14"/></svg>Food library</h2>
       <p class="sub" id="libFoodCount">75 built-in · 0 yours</p>
       <button class="cta ghostbtn" style="margin-top:6px" onclick="openFoodLibrary()">📖 Browse ingredients</button>
       <button class="cta ghostbtn" style="margin-top:10px" onclick="openMyRecipes()">📋 My recipes</button>
 
-      <h2 id="coupleSyncHeading">Couple sync</h2>
+      <h2 id="coupleSyncHeading" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>Couple sync</h2>
       <div id="coupleSyncSection"></div>
 
-      <h2>Your data</h2>
+      <h2 id="sec-data" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 18a4 4 0 0 1-1-7.9A5 5 0 0 1 16 8a4.5 4.5 0 0 1 1 8.9"/><path d="M12 11v7M9 15l3 3 3-3"/></svg>Your data</h2>
       <p class="sub">Move your plan between phones — export here, AirDrop the file, import on the other phone.</p>
       <button class="cta ghostbtn" style="margin-top:6px" onclick="exportData()">⬇️ Export my data</button>
       <input type="file" id="importFileInput" accept="application/json" style="display:none" onchange="handleImportFile(this)">
       <button class="cta ghostbtn" style="margin-top:10px" onclick="document.getElementById('importFileInput').click()">⬆️ Import data</button>
 
-      <h2>About</h2>
+      <h2 id="sec-about" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.01"/></svg>About</h2>
       <div class="opt" onclick="replayOnboarding()"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔄</div><div><div class="ot">Replay intro</div><div class="od">Watch the welcome walkthrough again</div></div></div>
 
       <button class="cta" onclick="go('today');toast('✓ Plan updated')">Save & rebuild my plan</button>
