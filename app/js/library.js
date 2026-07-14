@@ -40,6 +40,8 @@
    how many custom entries a reload later merges in. */
 const BUILTIN_FOOD_COUNT = Object.keys(FOODS).length;
 const BUILTIN_RECIPE_COUNT = Object.keys(RECIPES_DB).length;
+const BUILTIN_RECIPES_DB = JSON.parse(JSON.stringify(RECIPES_DB));
+const BUILTIN_RECIPE_SLOT_DB = JSON.parse(JSON.stringify(RECIPE_SLOT_DB));
 
 /* ---------------- merge custom content into the live DBs ----------------
    Both functions are full "sync to customFoods/customRecipes" passes (not
@@ -56,20 +58,29 @@ function applyCustomFoods(){
 }
 
 function applyCustomRecipes(){
-  Object.keys(RECIPES_DB).forEach(function(id){
-    if(id.indexOf('cr-') === 0 && !customRecipes[id]){
-      delete RECIPES_DB[id];
-      delete RECIPE_SLOT_DB[id];
-      delete RECIPES[id];
-    }
+  Object.keys(RECIPES_DB).forEach(function(id){ delete RECIPES_DB[id]; });
+  Object.keys(RECIPE_SLOT_DB).forEach(function(id){ delete RECIPE_SLOT_DB[id]; });
+
+  Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
+    if(deletedRecipes[id]) return;
+    const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
+    RECIPES_DB[id] = JSON.parse(JSON.stringify(src));
+    RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
+  });
+  Object.keys(recipeOverrides).forEach(function(id){
+    if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id]) return;
+    RECIPES_DB[id] = JSON.parse(JSON.stringify(recipeOverrides[id]));
+    RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
   Object.keys(customRecipes).forEach(function(id){
-    RECIPES_DB[id] = customRecipes[id];
-    RECIPE_SLOT_DB[id] = customRecipes[id].slot;
+    if(deletedRecipes[id]) return;
+    RECIPES_DB[id] = JSON.parse(JSON.stringify(customRecipes[id]));
+    RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
   // Rebuilds RECIPES[id] for EVERY id in RECIPES_DB (state.js) — custom ids included —
   // so whyText()/renderRecipe()/renderWeek()/shopping list etc. need no special-casing.
   buildLegacyRecipesCompat();
+  Object.keys(RECIPES).forEach(function(id){ if(!RECIPES_DB[id]) delete RECIPES[id]; });
 }
 
 /* ===================================================================
@@ -211,6 +222,50 @@ function renderFoodLibraryCount(){
    =================================================================== */
 let libFoodQuery = '';
 
+const INGREDIENT_ICON_ASSETS = {
+  carrot: 'assets/ingredients/carrot.png',
+  eggs: 'assets/ingredients/eggs.png',
+  milk: 'assets/ingredients/milk.png',
+  pasta: 'assets/ingredients/pasta.png',
+  rice: 'assets/ingredients/rice.png',
+  sugar: 'assets/ingredients/sugar.png'
+};
+
+const FOOD_ICON_KEYS = {
+  carrot: 'carrot',
+  eggs: 'eggs',
+  milk: 'milk',
+  'oat-milk': 'milk',
+  'coconut-milk': 'milk',
+  pasta: 'pasta',
+  'wholegrain-pasta': 'pasta',
+  rice: 'rice',
+  sugar: 'sugar'
+};
+
+function ingredientIconKeyForFood(foodId){
+  const food = FOODS[foodId];
+  if(FOOD_ICON_KEYS[foodId]) return FOOD_ICON_KEYS[foodId];
+  const name = food ? String(food.name || '').toLowerCase() : '';
+  if(/\bcarrots?\b/.test(name)) return 'carrot';
+  if(/\beggs?\b/.test(name)) return 'eggs';
+  if(/^(whole |skimmed |skim |semi-skimmed |low-fat |almond |soy |oat |coconut |rice )?milk\b/.test(name)) return 'milk';
+  if(/\b(pasta|spaghetti|tagliatelle|penne|fusilli)\b/.test(name)) return 'pasta';
+  if(/\brice\b/.test(name)) return 'rice';
+  if(/\bsugar\b/.test(name)) return 'sugar';
+  return null;
+}
+
+function ingredientIconHtml(iconKey, fallbackEmoji){
+  const src = INGREDIENT_ICON_ASSETS[iconKey];
+  if(!src) return fallbackEmoji || '🥕';
+  return '<img class="ingredient-icon" src="' + src + '" alt="" aria-hidden="true" loading="lazy">';
+}
+
+function foodIconHtml(foodId, fallbackEmoji){
+  return ingredientIconHtml(ingredientIconKeyForFood(foodId), fallbackEmoji);
+}
+
 function openFoodLibrary(){
   libFoodQuery = '';
   document.getElementById('sheetBody').innerHTML = buildFoodLibrarySheet();
@@ -219,6 +274,19 @@ function openFoodLibrary(){
   document.getElementById('sheet').classList.add('show');
   const input = document.getElementById('libFoodSearchInput');
   if(input) input.focus();
+}
+
+function openAddMenu(){
+  document.getElementById('sheetBody').innerHTML =
+    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div style="margin-top:10px">'
+    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">🥕</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food with computed calories from macros</div></div></div>'
+    + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">📖</div><div class="at"><div class="an">New recipe</div><div class="ad">Build a recipe from ingredients</div></div></div>'
+    + '<div class="altrow" onclick="openFoodSearch()"><div class="ae">＋</div><div class="at"><div class="an">Log food</div><div class="ad">Quick-add something to today</div></div></div>'
+    + '</div>';
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
 }
 
 function buildFoodLibrarySheet(){
@@ -252,7 +320,7 @@ function renderLibFoodListMarkup(query){
       const isCustom = !!customFoods[id];
       const kcalPer100 = f.unit === 'piece' ? Math.round(f.kcal / f.avgG * 100) : Math.round(f.kcal);
       out += '<div class="altrow" style="cursor:default">'
-        + '<div class="ae">🥕</div>'
+        + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + '</div>'
         + '<div class="ad">' + kcalPer100 + ' kcal / 100' + (f.unit === 'piece' ? 'g' : f.unit) + '</div></div>'
         + (isCustom ? '<button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
@@ -391,11 +459,11 @@ function saveNewFood(){
 
 function deleteCustomFood(id){
   if(!customFoods[id]) return;
-  const usedBy = Object.keys(customRecipes).filter(function(rid){
-    return (customRecipes[rid].ingredients || []).some(function(ing){ return ing[0] === id; });
+  const usedBy = Object.keys(RECIPES_DB).filter(function(rid){
+    return (RECIPES_DB[rid].ingredients || []).some(function(ing){ return ing[0] === id; });
   });
   if(usedBy.length){
-    const names = usedBy.map(function(rid){ return customRecipes[rid].title; }).join(', ');
+    const names = usedBy.map(function(rid){ return RECIPES_DB[rid].title; }).join(', ');
     toast('Can’t delete — used in ' + names + '. Delete that recipe first.');
     return;
   }
@@ -420,31 +488,38 @@ function openMyRecipes(){
 }
 
 function buildMyRecipesSheet(){
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">My recipes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Recipes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<button class="cta ghostbtn" style="margin-top:10px" onclick="openNewRecipeForm()">＋ New recipe</button>';
-  const ids = Object.keys(customRecipes).sort(function(a, b){
-    return customRecipes[a].title < customRecipes[b].title ? -1 : (customRecipes[a].title > customRecipes[b].title ? 1 : 0);
+  const ids = Object.keys(RECIPES_DB).sort(function(a, b){
+    return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
   });
   if(!ids.length){
-    html += '<p class="sub" style="margin-top:14px">No recipes yet — tap ＋ New recipe to add your first one. It’ll show up here and in the planner automatically.</p>';
+    html += '<p class="sub" style="margin-top:14px">No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.</p>';
     return html;
   }
   html += '<div style="margin-top:4px">' + ids.map(function(id){
-    const r = customRecipes[id];
+    const r = RECIPES_DB[id];
     const nut = recipeNutrition(id, 1).totals;
+    const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
     return '<div class="altrow" style="cursor:default"><div class="ae">' + r.emoji + '</div>'
-      + '<div class="at"><div class="an">' + escapeHtml(r.title) + ' <span class="pill mini gold">yours</span></div>'
+      + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
       + '<div class="ad">' + SLOT_LABEL[r.slot] + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
-      + '<button class="lib-del" aria-label="Delete ' + htmlAttr(r.title) + '" onclick="deleteCustomRecipe(\'' + id + '\')">✕</button>'
+      + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(r.title) + '" onclick="openEditRecipeForm(\'' + id + '\')">✎</button>'
+      + '<button class="lib-del" aria-label="Delete ' + htmlAttr(r.title) + '" onclick="deleteRecipe(\'' + id + '\')">✕</button>'
       + '</div>';
   }).join('') + '</div>';
   return html;
 }
 
-function deleteCustomRecipe(id){
-  if(!customRecipes[id]) return;
-  const title = customRecipes[id].title;
-  delete customRecipes[id];
+function deleteRecipe(id){
+  const r = RECIPES_DB[id] || customRecipes[id] || recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
+  if(!r) return;
+  const title = r.title;
+  if(customRecipes[id]) delete customRecipes[id];
+  else {
+    deletedRecipes[id] = true;
+    if(recipeOverrides[id]) delete recipeOverrides[id];
+  }
   customRev++;
   applyCustomRecipes();
   applyProf(currentProf); // signature (customRev) changed -> ensureWeekPlan() regenerates
@@ -457,6 +532,21 @@ function deleteCustomRecipe(id){
 const RECIPE_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
 let recipeBuilder = null;
 
+function recipeToBuilder(id){
+  const r = RECIPES_DB[id];
+  if(!r) return null;
+  return {
+    editingId: id,
+    name: r.title || '',
+    emoji: r.emoji || '🍽️',
+    slot: r.slot || 'dinner',
+    time: r.time || 20,
+    ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
+    stepsText: (r.steps || []).join('\n'),
+    pickerQuery: ''
+  };
+}
+
 function openNewRecipeForm(){
   recipeBuilder = {name: '', emoji: '🍽️', slot: 'dinner', time: 20, ingredients: [], stepsText: '', pickerQuery: ''};
   document.getElementById('sheet').classList.add('tall');
@@ -464,6 +554,17 @@ function openNewRecipeForm(){
   document.getElementById('sheet').classList.add('show');
   renderRecipeBuilderSheet();
 }
+
+function openEditRecipeForm(id){
+  const draft = recipeToBuilder(id);
+  if(!draft){ toast('Recipe not found'); return; }
+  recipeBuilder = draft;
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  renderRecipeBuilderSheet();
+}
+
 function renderRecipeBuilderSheet(){ document.getElementById('sheetBody').innerHTML = buildRecipeBuilderSheet(); }
 
 function computeBuilderTotals(){
@@ -482,7 +583,8 @@ function buildRecipeBuilderSheet(){
   const totals = computeBuilderTotals();
   const meta = deriveRecipeMeta(rb.ingredients, totals, rb.time);
 
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">New recipe</h2><button class="backbtn" style="margin:0" onclick="openMyRecipes()">‹ Back</button></div>';
+  const editing = !!rb.editingId;
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit recipe' : 'New recipe') + '</h2><button class="backbtn" style="margin:0" onclick="openMyRecipes()">‹ Back</button></div>';
 
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(rb.name) + '" oninput="recipeBuilder.name=this.value" placeholder="e.g. Tempeh bowl" autocomplete="off"></div>';
@@ -536,7 +638,7 @@ function buildRecipeBuilderSheet(){
     if(warn) html += '<div class="cap-note" style="color:#b25e35;margin-top:8px">' + warn + '</div>';
   }
 
-  html += '<button class="cta" style="margin-top:16px" onclick="saveNewRecipe()">Save recipe</button>'
+  html += '<button class="cta" style="margin-top:16px" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
     + '<button class="cta ghostbtn" onclick="openMyRecipes()">Cancel</button>';
   return html;
 }
@@ -588,7 +690,7 @@ function renderRecipeIngredientResults(q){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     return '<div class="altrow" onclick="addIngredientToRecipe(\'' + id + '\')">'
-      + '<div class="ae">🥕</div>'
+      + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
       + '<div class="ad">' + Math.round(f.kcal) + ' kcal · ' + f.protein + 'g protein <b>/ ' + per + '</b></div></div>'
       + '</div>';
@@ -696,6 +798,19 @@ function mergeImportedLibrary(parsed){
       if(typeof id === 'string' && id.indexOf('cr-') === 0 && v && typeof v === 'object') incomingRecipes[id] = v;
     });
   }
+  const incomingOverrides = {};
+  if(parsed && parsed.recipeOverrides && typeof parsed.recipeOverrides === 'object'){
+    Object.keys(parsed.recipeOverrides).forEach(function(id){
+      const v = parsed.recipeOverrides[id];
+      if(typeof id === 'string' && v && typeof v === 'object') incomingOverrides[id] = v;
+    });
+  }
+  const incomingDeleted = {};
+  if(parsed && parsed.deletedRecipes && typeof parsed.deletedRecipes === 'object'){
+    Object.keys(parsed.deletedRecipes).forEach(function(id){
+      if(typeof id === 'string' && parsed.deletedRecipes[id]) incomingDeleted[id] = true;
+    });
+  }
 
   // Existing display names (built-in + current custom), normalized — extended as entries
   // are merged in, so two incoming entries sharing a name don't both land unrenamed.
@@ -703,7 +818,7 @@ function mergeImportedLibrary(parsed){
   const existingRecipeNames = Object.keys(RECIPES_DB).map(function(id){ return String(RECIPES_DB[id].title || '').trim().toLowerCase(); });
 
   const foodIdRemap = {}; // incoming (old) food id -> final local id, only set when re-idded
-  let addedFoods = 0, addedRecipes = 0;
+  let addedFoods = 0, addedRecipes = 0, changedRecipeControls = 0;
 
   function commitFood(targetId, incoming){
     const food = JSON.parse(JSON.stringify(incoming));
@@ -759,20 +874,34 @@ function mergeImportedLibrary(parsed){
     }
   });
 
-  if(addedFoods || addedRecipes){
+  Object.keys(incomingOverrides).sort().forEach(function(id){
+    if(deepEqualJSON(recipeOverrides[id], incomingOverrides[id])) return;
+    recipeOverrides[id] = JSON.parse(JSON.stringify(incomingOverrides[id]));
+    if(deletedRecipes[id]) delete deletedRecipes[id];
+    changedRecipeControls++;
+  });
+  Object.keys(incomingDeleted).sort().forEach(function(id){
+    if(deletedRecipes[id]) return;
+    deletedRecipes[id] = true;
+    if(recipeOverrides[id]) delete recipeOverrides[id];
+    if(customRecipes[id]) delete customRecipes[id];
+    changedRecipeControls++;
+  });
+
+  if(addedFoods || addedRecipes || changedRecipeControls){
     customRev++;
     applyCustomFoods();
     applyCustomRecipes();
   }
-  return {addedFoods: addedFoods, addedRecipes: addedRecipes};
+  return {addedFoods: addedFoods, addedRecipes: addedRecipes, changedRecipes: changedRecipeControls};
 }
 
-function saveNewRecipe(){
+function saveRecipeBuilder(){
   const rb = recipeBuilder;
   const name = (rb.name || '').trim();
   if(!name){ toast('Give this recipe a name'); return; }
   const lower = name.toLowerCase();
-  const dup = Object.keys(RECIPES_DB).some(function(id){ return RECIPES_DB[id].title.toLowerCase() === lower; });
+  const dup = Object.keys(RECIPES_DB).some(function(id){ return id !== rb.editingId && RECIPES_DB[id].title.toLowerCase() === lower; });
   if(dup){ toast('“' + name + '” already exists — try a different name'); return; }
   if(rb.ingredients.length < 2){ toast('Add at least 2 ingredients'); return; }
 
@@ -780,8 +909,8 @@ function saveNewRecipe(){
   const meta = deriveRecipeMeta(rb.ingredients, totals, rb.time);
   const stepsArr = (rb.stepsText || '').split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return !!s; });
 
-  const id = uniqueSlug(slugify(name), RECIPES_DB, 'cr-');
-  customRecipes[id] = {
+  const id = rb.editingId || uniqueSlug(slugify(name), RECIPES_DB, 'cr-');
+  const recipe = {
     title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: rb.slot,
     styles: meta.styles, time: rb.time,
     ingredients: rb.ingredients.map(function(r){ return [r.foodId, r.grams]; }),
@@ -789,10 +918,15 @@ function saveNewRecipe(){
     steps: stepsArr.length ? stepsArr : ['Combine and enjoy.'],
     tags: meta.tags, avoid: meta.avoid
   };
+  if(id.indexOf('cr-') === 0) customRecipes[id] = recipe;
+  else {
+    recipeOverrides[id] = recipe;
+    if(deletedRecipes[id]) delete deletedRecipes[id];
+  }
   customRev++;
   applyCustomRecipes();
   applyProf(currentProf); // signature (customRev) changed -> ensureWeekPlan() regenerates, persists
-  toast('✓ ' + name + ' added to My recipes');
+  toast('✓ ' + name + (rb.editingId ? ' updated' : ' added to recipes'));
   recipeBuilder = null;
   openMyRecipes();
   renderFoodLibraryCount();

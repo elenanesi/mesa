@@ -93,7 +93,13 @@ function maskHouseholdCode(code){
 function clone(v){ return JSON.parse(JSON.stringify(v)); }
 
 function librarySectionData(){
-  return {customFoods: clone(customFoods), customRecipes: clone(customRecipes), customRev: customRev};
+  return {
+    customFoods: clone(customFoods),
+    customRecipes: clone(customRecipes),
+    recipeOverrides: clone(recipeOverrides),
+    deletedRecipes: clone(deletedRecipes),
+    customRev: customRev
+  };
 }
 
 function plansSectionData(){
@@ -376,14 +382,19 @@ function applySyncResponse(sent, remoteSections){
 
     if(sec === 'library'){
       const beforeRev = customRev;
-      // REUSE js/library.js's mergeImportedLibrary — merges remote's customFoods/
-      // customRecipes into the LIVE customFoods/customRecipes by id (identical-content
+      // REUSE js/library.js's mergeImportedLibrary — merges remote library data
+      // into the LIVE customFoods/customRecipes/recipeOverrides/deletedRecipes (identical-content
       // skip, conflict re-id + ingredient remap, name-collision " (imported)" suffix),
       // exactly the "library... REUSE library.js's existing mergeImportedLibrary
       // machinery" rule in PHASE2-plan.md. It mutates customFoods/customRecipes/customRev
       // directly and already calls applyCustomFoods()/applyCustomRecipes() when it adds
       // anything, so there's no separate "apply" step needed here.
-      mergeImportedLibrary({customFoods: remote.data.customFoods || {}, customRecipes: remote.data.customRecipes || {}});
+      mergeImportedLibrary({
+        customFoods: remote.data.customFoods || {},
+        customRecipes: remote.data.customRecipes || {},
+        recipeOverrides: remote.data.recipeOverrides || {},
+        deletedRecipes: remote.data.deletedRecipes || {}
+      });
       syncState.sectionRevs[sec] = (customRev !== beforeRev) ? remote.rev + 1 : remote.rev;
       syncState.sectionUpdatedAt[sec] = Date.now();
     } else if(sec === 'shopping'){

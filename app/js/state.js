@@ -403,6 +403,8 @@ const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 // (getDayLog() back-fills `tomb` on old records, entryIdentity() falls back to a composite
 // key for entries logged before `id` existed), so there is no gated one-time migration
 // function for v4->v5 — "migration trivial" per the task brief.
+// Additive library fields (`recipeOverrides`, `deletedRecipes`) also load with safe
+// defaults, so older stores remain valid without a version-gated migration.
 const CURRENT_STORE_VERSION = 5;
 
 let onboarded = false;
@@ -430,11 +432,15 @@ function checkedSetForWeek(weekStartDate){
    avoid) — nutrition is NEVER stored (ground rule 1); tags/styles/avoid are AUTO-DERIVED
    from ingredients at save time (js/library.js:deriveRecipeMeta()). Merged into RECIPES_DB
    the same way via applyCustomRecipes(), which also rebuilds the RECIPES compat view.
+   recipeOverrides: built-in recipe id -> edited recipe object. deletedRecipes:
+   recipe id -> true tombstone for recipes the user removed from their library.
    customRev: monotonic counter, bumped on every library mutation (add/delete a food or
    recipe) — folded into the week-plan signature (planner.js:computePlanSignature()) so a
    library change deterministically regenerates the week. */
 let customFoods = {};
 let customRecipes = {};
+let recipeOverrides = {};
+let deletedRecipes = {};
 let customRev = 0;
 
 /* ---------------- couple sync (Phase 2, task S1) ----------------
@@ -765,6 +771,8 @@ function buildSnapshot(){
     // above for the shape. Exported/imported for free as part of the whole store (task F2).
     customFoods: customFoods,
     customRecipes: customRecipes,
+    recipeOverrides: recipeOverrides,
+    deletedRecipes: deletedRecipes,
     customRev: customRev,
     // logHistory (task D1): plain JSON data (no functions) — stored verbatim, capped at
     // LOG_HISTORY_RETENTION_DAYS by pruneLogHistory() (called from persist() below) before
@@ -909,6 +917,20 @@ function loadState(){
       if(typeof id === 'string' && id.indexOf('cr-') === 0 && saved.customRecipes[id] && typeof saved.customRecipes[id] === 'object'){
         customRecipes[id] = saved.customRecipes[id];
       }
+    });
+  }
+  recipeOverrides = {};
+  if(saved.recipeOverrides && typeof saved.recipeOverrides === 'object'){
+    Object.keys(saved.recipeOverrides).forEach(function(id){
+      if(typeof id === 'string' && saved.recipeOverrides[id] && typeof saved.recipeOverrides[id] === 'object'){
+        recipeOverrides[id] = saved.recipeOverrides[id];
+      }
+    });
+  }
+  deletedRecipes = {};
+  if(saved.deletedRecipes && typeof saved.deletedRecipes === 'object'){
+    Object.keys(saved.deletedRecipes).forEach(function(id){
+      if(typeof id === 'string' && saved.deletedRecipes[id]) deletedRecipes[id] = true;
     });
   }
   customRev = (typeof saved.customRev === 'number' && isFinite(saved.customRev)) ? saved.customRev : 0;

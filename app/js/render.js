@@ -1270,7 +1270,7 @@ function renderFoodSearchResults(){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     return '<div class="altrow" onclick="selectQuickAddFood(\''+id+'\')">'
-      + '<div class="ae">🥄</div>'
+      + '<div class="ae">' + foodIconHtml(id, '🥄') + '</div>'
       + '<div class="at"><div class="an">'+f.name+'</div>'
       + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein <b>/ '+per+'</b></div></div>'
       + '</div>';
@@ -1430,8 +1430,8 @@ function handleImportFile(input){
 
 // FEATURE (owner feedback): two import modes, not one. "Merge food library only" (new —
 // js/library.js:mergeImportedLibrary()) is the safe default action for the common case
-// ("share just a recipe with each other") — it only ever ADDS to customFoods/
-// customRecipes, nothing else on this phone changes. "Replace everything" is the
+// ("share just a recipe with each other") — it merges custom foods/recipes plus recipe
+// edits/deletes, while leaving profiles, plans, logs, and shopping checks alone. "Replace everything" is the
 // original F2 behavior, unchanged (confirmImport() below), for the rarer full-phone-sync
 // case — kept as the ghost/secondary button precisely because it's destructive.
 function buildImportConfirmSheet(dateLabel){
@@ -1474,11 +1474,11 @@ function confirmImport(){
 
 // Merge-only import (FEATURE, owner feedback): parses the SAME pending backup
 // validateBackupStructure() already accepted for structural soundness, hands it to
-// js/library.js:mergeImportedLibrary() (customFoods/customRecipes ONLY — see that
+// js/library.js:mergeImportedLibrary() (library content only — see that
 // function's doc for the full merge-rule spec: identical-content skip, '-2' conflict
 // copies with ingredient remap, " (imported)" on name collisions), then persists +
 // re-renders via applyProf() — the exact same pattern saveNewFood()/saveNewRecipe()/
-// deleteCustomFood()/deleteCustomRecipe() (js/library.js) already use for every other
+// deleteCustomFood()/deleteRecipe() (js/library.js) already use for every other
 // library mutation. Unlike confirmImport() above (full replace + hard reload), this
 // never reloads: it's a pure in-place library merge, so everything else already on this
 // phone (profile edits, plans, log history) is completely undisturbed.
