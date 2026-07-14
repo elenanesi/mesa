@@ -651,18 +651,26 @@ function unitKey(unit){
 // used both by the real swap-sheet apply and by the re-balance solver's what-if search.
 function applySwapToPlan(plan, unit, newRecipeId){
   const m = plan.days[unit.dayIndex].meals[unit.slot];
-  m.t = Date.now(); // mutation stamp — sync.js:mergePlansSection keeps the newer cell
+  const now = Date.now(); // mutation stamp — sync.js:mergePlansSection keeps the newer edit
   const newBase = dbBaseNutrition(newRecipeId);
   if(unit.shared){
     const bpE = bestPortion(newBase.kcal, m.elena.kcal, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[unit.slot]);
     const bpA = bestPortion(newBase.kcal, m.partner.kcal, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[unit.slot]);
+    // Shared dish changes for BOTH people at once, so the whole cell moves together —
+    // stamp the cell (sync.js merges shared cells whole, by this m.t).
     m.recipeId = newRecipeId;
+    m.t = now;
     m.elena = {recipeId: newRecipeId, portion: bpE.portion, kcal: bpE.kcal, protein: newBase.protein * bpE.portion};
     m.partner = {recipeId: newRecipeId, portion: bpA.portion, kcal: bpA.kcal, protein: newBase.protein * bpA.portion};
   } else {
     const person = unit.person;
     const bp = bestPortion(newBase.kcal, m[person].kcal, PERSON_ANCHOR[person], SLOT_MAX_PORTION[unit.slot]);
-    m[person] = {recipeId: newRecipeId, portion: bp.portion, kcal: bp.kcal, protein: newBase.protein * bp.portion};
+    // SOLO meal: only THIS person's half of the slot changes. Stamp the person's half, NOT
+    // the cell — bumping the cell-level t would let the couple-sync merge overwrite the
+    // OTHER person's half of the same slot with a stale copy (the swap-revert bug). Also
+    // clear any stale cell stamp so the merge governs each half purely by per-person time.
+    m[person] = {recipeId: newRecipeId, portion: bp.portion, kcal: bp.kcal, protein: newBase.protein * bp.portion, t: now};
+    delete m.t;
   }
   return m;
 }
@@ -938,7 +946,10 @@ function stepMealServings(slot, delta){
   const next = Math.max(0.5, Math.min(4, +(entry.portion + delta).toFixed(1)));
   if(next === entry.portion) return;
   const base = dbBaseNutrition(entry.recipeId);
-  meal.t = Date.now(); // mutation stamp — sync.js:mergePlansSection keeps the newer cell
+  // Servings are per-person (each plates their own, shared dish or not). For a solo meal
+  // stamp the person's half so the couple-sync merge doesn't clobber the other person's
+  // half; a shared dish still moves as one cell (its recipe is joint), so stamp the cell.
+  if(meal.shared){ meal.t = Date.now(); } else { entry.t = Date.now(); delete meal.t; }
   entry.portion = next;
   entry.kcal = base.kcal * next;
   entry.protein = base.protein * next;

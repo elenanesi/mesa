@@ -257,7 +257,27 @@ function mergePlansSection(local, remote, remoteIsNewer){
       if(!dayL || !dayL.meals || !dayR.meals) return;
       Object.keys(dayR.meals).forEach(function(slot){
         const cL = dayL.meals[slot], cR = dayR.meals[slot];
-        if(cL && cR && (cL.t || 0) > (cR.t || 0)) dayR.meals[slot] = clone(cL);
+        if(!cL || !cR) return;
+        if(cR.shared){
+          // Shared dish: both eat the same recipe and a swap changes it for both, so the
+          // whole cell moves together — keep the newer cell by its stamp (legacy behavior).
+          if((cL.t || 0) > (cR.t || 0)) dayR.meals[slot] = clone(cL);
+          return;
+        }
+        // Solo meal: each person has their OWN dish in this slot. Merge the two halves
+        // independently so one person's swap/re-portion never overwrites the other's (the
+        // couple-sync revert bug). Prefer the per-person stamp; fall back to the legacy
+        // cell-level t for halves that predate per-person stamps.
+        ['elena', 'partner'].forEach(function(P){
+          const lp = cL[P], rp = cR[P];
+          if(!lp || !rp) return;
+          const tl = (typeof lp.t === 'number') ? lp.t : (cL.t || 0);
+          const tr = (typeof rp.t === 'number') ? rp.t : (cR.t || 0);
+          if(tl > tr) dayR.meals[slot][P] = clone(lp);
+        });
+        const cM = dayR.meals[slot];
+        const newest = Math.max(cL.t || 0, cR.t || 0, (cM.elena && cM.elena.t) || 0, (cM.partner && cM.partner.t) || 0);
+        if(newest) cM.t = newest;
       });
     });
   });
