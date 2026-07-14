@@ -32,7 +32,7 @@ Computed in `app/js/engine.js`, never typed in per person.
 - **Recommended calories** (`recommendedCal`, `engine.js:31`): `round10(maintenance + goalAdj)`, rounded to the nearest 10 kcal.
 - **Manual-override safety band** (`calBand`, `engine.js:33`): never below `1.1 × BMR`, never above `maintenance + 600` kcal.
 - **Per-person `goalAdj`** — fixed, not user-editable (`app/js/state.js:326-328, 344, 356`):
-  - Elena: `−325` kcal ("gentle fat loss") — matches the Health-goals copy "~325 kcal below maintenance" (`app/index.html:448`).
+  - Elena: `−325` kcal ("gentle fat loss") — matches the Health-goals copy "~325 kcal below maintenance" (`app/index.html:453`).
   - Andrea: `+60` kcal ("small muscle-gain surplus").
   - Comment (`state.js:327-328`): these two offsets were chosen so the demo profiles land exactly on the familiar 1,820 / 2,480 kcal defaults.
 
@@ -86,23 +86,25 @@ Two extra mechanics worth citing alongside the table:
 - **Call-out selection is deterministic, not exhaustive**: exactly 2 of the 4 rules above surface on Insights at a time, picked by whichever metric's relative distance from target (`magnitude`) is largest, ties broken by a fixed rule order (protein, fiber, satFat, adherence) — `buildInsightCallouts`, `planner.js:506-547`.
 - **Weekly rebalancing** (`proposeRebalanceSwaps`, `planner.js:1049` on) uses the same four metrics/targets via `coverageGaps()` to greedily swap up to 2 meals toward whichever metric has the largest gap (`planner.js:1052-1054`).
 
-### A note on "1.6 g/kg protein"
+### A note on protein for the muscle goal (g/kg)
 
-`WISHLIST-plan.md:123` and `MVP-plan.md:121` both describe the muscle goal as "≈1.6 g/kg protein," and the Health-goals UI literally says **"1.6 g protein / kg bodyweight"** for the Muscle & protein option (`app/index.html:449`). However, **no code path computes protein from bodyweight directly.** The actual mechanism is the %-of-calories split in §1.2 (`targetP = kcal × kP / 100 / 4`, `engine.js:49`). Back-calculating from the shipped defaults: Andrea (78 kg, `kP:26`, `engine.js:49` + `state.js:361`) lands at roughly 161 g protein/day ≈ **2.06 g/kg**, and Elena (64 kg, `kP:26`) lands at roughly 118 g/day ≈ **1.84 g/kg** — both higher than the "1.6 g/kg" the UI copy and planning docs describe. This is a real discrepancy between the marketing/UI copy and the enforced mechanism, not a hidden target — flagging it here rather than inventing a g/kg formula that isn't in the code.
+**No code path computes protein from bodyweight.** Protein is purely the %-of-calories split from §1.2 (`targetP = kcal × kP / 100 / 4`, `engine.js:49`); the Health-goals toggle is a stated intention only — `tog()` (`render.js:36`) just flips a checkmark and changes no numbers. Back-calculating from the shipped defaults: Andrea (78 kg, `kP:26`, `engine.js:49` + `state.js:361`) lands at ~161 g protein/day ≈ **2.06 g/kg**, and Elena (64 kg, `kP:26`) at ~118 g/day ≈ **1.84 g/kg**.
+
+The Muscle & protein UI copy previously said "1.6 g protein / kg bodyweight," which matched neither the mechanism nor the numbers. It was **reconciled to "Protein-forward macro split · ~1.8–2 g/kg"** (`app/index.html:454`) so the copy describes what the code actually does. The older planning docs (`WISHLIST-plan.md:123`, `MVP-plan.md:121`) still carry the aspirational "≈1.6 g/kg" language from the original design intent — left as historical records; this KB and the UI are the current source of truth.
 
 ---
 
 ## 3. Goal profiles & what each tilts
 
-Source: `app/index.html:447-452` (Health goals section) and each profile's fixed fields in `app/js/state.js:341-363`.
+Source: `app/index.html:452-457` (Health goals section) and each profile's fixed fields in `app/js/state.js:341-363`.
 
 | Goal | UI description (`index.html`) | What's actually wired in code |
 |---|---|---|
-| **Gentle fat loss** | "~325 kcal below maintenance" (`index.html:448`) | Elena's `goalAdj: -325` (`state.js:344`) feeds directly into `recommendedCal()` (`engine.js:31`). |
-| **Muscle & protein** | "1.6 g protein / kg bodyweight" (`index.html:449`) | Andrea's `goalAdj: +60` ("small muscle-gain surplus", `state.js:356`) plus a higher `kP` split (26% for both profiles, `state.js:349, 361`) and a higher absolute-calorie base; see the §2 note above on the g/kg gap. Recipe-level: `AUTO_TAG_THRESHOLDS.muscleProteinMinG = 25` g/serving tags a recipe `muscle` (`library.js:102`). |
-| **Heart & metabolic** | "High fiber, low sodium, Mediterranean base" (`index.html:450`) | Enforced via the fiber ≥25g/day and sat-fat ≤33%-of-fat targets in §2. Recipe-level: `AUTO_TAG_THRESHOLDS.heartFiberMinG = 5` AND `heartSatFatMaxShare = 0.33` together tag a recipe `heart` (`library.js:103-104, 155`). (Low-sodium is UI copy only — no sodium field exists in `FOODS`, so it is not code-enforced; see §5.) |
-| **Beautiful skin** | "Low-GI, omega-3 up, dairy/sugar down" (`index.html:451`) | Maps to the `lowGI`/`omega3` food flags (`foods.js:33-34`) and the `skin` recipe tag (hand-tagged in `data/recipes.js`, mapped for display via `TAG_PILL_MAP.skin`, `state.js:184`). No automatic "dairy/sugar down" threshold exists in `deriveRecipeMeta()` — that clause is UI copy, not an enforced rule (see §5). |
-| **Hashimoto's-friendly 🦋** | "Selenium, moderate iodine, anti-inflammatory" (`index.html:452`) | Elena's `hashi:true` (`state.js:347`) gates the selenium ≥3 sources/wk coverage target (§2, `render.js:275`) and the `AUTO_TAG_THRESHOLDS.seleniumMinG = 15` g rule that tags a recipe `thyroid` (`library.js:98, 140`). "Moderate iodine" and "anti-inflammatory" are UI copy without a matching numeric guardrail in the code found (see §5) — `foods.js:33-34` does carry a `highIodine` flag on individual foods, but no code path caps a person's weekly iodine intake. |
+| **Gentle fat loss** | "~325 kcal below maintenance" (`index.html:453`) | Elena's `goalAdj: -325` (`state.js:344`) feeds directly into `recommendedCal()` (`engine.js:31`). |
+| **Muscle & protein** | "Protein-forward macro split · ~1.8–2 g/kg" (`index.html:454`) | Andrea's `goalAdj: +60` ("small muscle-gain surplus", `state.js:356`) plus the `kP` protein split (26% for both profiles, `state.js:349, 361`) and a higher absolute-calorie base; see the §2 note above on how g/kg is derived. Recipe-level: `AUTO_TAG_THRESHOLDS.muscleProteinMinG = 25` g/serving tags a recipe `muscle` (`library.js:102`). |
+| **Heart & metabolic** | "High fiber, low sodium, Mediterranean base" (`index.html:455`) | Enforced via the fiber ≥25g/day and sat-fat ≤33%-of-fat targets in §2. Recipe-level: `AUTO_TAG_THRESHOLDS.heartFiberMinG = 5` AND `heartSatFatMaxShare = 0.33` together tag a recipe `heart` (`library.js:103-104, 155`). (Low-sodium is UI copy only — no sodium field exists in `FOODS`, so it is not code-enforced; see §5.) |
+| **Beautiful skin** | "Low-GI, omega-3 up, dairy/sugar down" (`index.html:456`) | Maps to the `lowGI`/`omega3` food flags (`foods.js:33-34`) and the `skin` recipe tag (hand-tagged in `data/recipes.js`, mapped for display via `TAG_PILL_MAP.skin`, `state.js:184`). No automatic "dairy/sugar down" threshold exists in `deriveRecipeMeta()` — that clause is UI copy, not an enforced rule (see §5). |
+| **Hashimoto's-friendly 🦋** | "Selenium, moderate iodine, anti-inflammatory" (`index.html:457`) | Elena's `hashi:true` (`state.js:347`) gates the selenium ≥3 sources/wk coverage target (§2, `render.js:275`) and the `AUTO_TAG_THRESHOLDS.seleniumMinG = 15` g rule that tags a recipe `thyroid` (`library.js:98, 140`). "Moderate iodine" and "anti-inflammatory" are UI copy without a matching numeric guardrail in the code found (see §5) — `foods.js:33-34` does carry a `highIodine` flag on individual foods, but no code path caps a person's weekly iodine intake. |
 
 ---
 
@@ -151,7 +153,7 @@ From the `app/data/foods.js` header comment (`foods.js:1-42`):
 - **kcal policy**: Atwater 4/4/9 general-factor computation from sourced protein/carb/fat grams, EU-style (fiber counted within carbs) — see §1.3 for the full quote (`foods.js:16-25`).
 - **Deliberate simplification, stated honestly**: computed kcal for very fibrous, low-calorie vegetables can read a little higher than some published USDA "kcal" columns, because USDA sometimes uses refined, food-specific energy factors that discount fiber further than the general 4/4/9 rule. Mesa explicitly keeps the general-factor approach for internal consistency and documents the gap rather than silently deviating per-food (`foods.js:20-25`).
 - **Composite ingredients**: mockup shorthand like "Roasted mixed veg" gets one pragmatic blended entry (a weighted average of its components, documented in that entry's `src` field) *plus* the individual components as their own separate foods, so both recipes and precise substitution keep working (`foods.js:27-30`).
-- **Not yet enforced despite being named in goal copy**: no sodium field exists anywhere in `FOODS`, so "low sodium" (Heart & metabolic, `index.html:450`) is not a coded rule. No weekly iodine cap exists despite the `highIodine` food flag (`foods.js:34`) and "moderate iodine" copy (Hashimoto's, `index.html:452`) — only the selenium coverage target (§2) is actually gated on the thyroid goal.
+- **Not yet enforced despite being named in goal copy**: no sodium field exists anywhere in `FOODS`, so "low sodium" (Heart & metabolic, `index.html:455`) is not a coded rule. No weekly iodine cap exists despite the `highIodine` food flag (`foods.js:34`) and "moderate iodine" copy (Hashimoto's, `index.html:457`) — only the selenium coverage target (§2) is actually gated on the thyroid goal.
 - **Design-doc vs. shipped gap**: `MVP-plan.md:120-123` describes calorie-goal offsets as *ranges* ("−300–500 kcal for fat loss, +200–300 for muscle gain") and protein as bodyweight-derived; the shipped code instead uses two **fixed** per-person constants (`goalAdj -325`/`+60`, `state.js:344, 356`) and a %-of-calorie split (§1.2, §2 note) — not a live recompute from the selected goal set. Both are real numbers in the app; they just aren't the same mechanism the earlier planning doc sketched.
 
 ---
