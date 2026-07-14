@@ -5,7 +5,7 @@
    needs to change to invalidate old installs.
    =================================================================== */
 
-const CACHE = 'mesa-v14';
+const CACHE = 'mesa-v15';
 
 // The full app shell — everything needed to boot and run with zero network.
 const SHELL_FILES = [
@@ -37,11 +37,13 @@ const SHELL_FILES = [
   'icons/icon-512-maskable.png'
 ];
 
+// No skipWaiting() here: the new worker parks in "waiting" until the page posts
+// SKIP_WAITING (below), so activation + the controllerchange reload happen exactly
+// once, driven by the page — never mid-session behind the user's back.
 self.addEventListener('install', function(event){
   event.waitUntil(
     caches.open(CACHE)
       .then(function(cache){ return cache.addAll(SHELL_FILES); })
-      .then(function(){ return self.skipWaiting(); })
   );
 });
 
@@ -54,8 +56,14 @@ self.addEventListener('activate', function(event){
               .map(function(key){ return caches.delete(key); })
         );
       })
+      // claim() fires controllerchange on open pages; app.js reloads on that.
+      // That is the single reload path — no client.navigate() here on top of it.
       .then(function(){ return self.clients.claim(); })
   );
+});
+
+self.addEventListener('message', function(event){
+  if(event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('fetch', function(event){
@@ -64,6 +72,21 @@ self.addEventListener('fetch', function(event){
   // Only handle same-origin GETs — everything else (cross-origin, POST, etc.)
   // passes straight through untouched.
   if(req.method !== 'GET' || new URL(req.url).origin !== self.location.origin){
+    return;
+  }
+
+  if(req.mode === 'navigate'){
+    event.respondWith(
+      fetch(req).then(function(res){
+        if(res && res.ok && res.type === 'basic'){
+          const copy = res.clone();
+          caches.open(CACHE).then(function(cache){ cache.put('index.html', copy); });
+        }
+        return res;
+      }).catch(function(){
+        return caches.match('index.html');
+      })
+    );
     return;
   }
 

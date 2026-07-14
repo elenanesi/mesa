@@ -133,13 +133,18 @@ function syncServeHighlight(){
   sm.classList.toggle('me', currentProf === 'partner');
 }
 
+// Log cards are keyed by SLOT (log-breakfast...), not recipe id — resolve the slot
+// first, and only confirm when this recipe really is today's plan for that slot
+// (otherwise the old code toasted "Logged" without ever writing a LogEntry).
 function markEatenFromRecipe(){
-  const k = currentRecipeKey;
-  const card = document.getElementById('log-' + k);
+  const slot = RECIPE_SLOT_DB[currentRecipeKey];
+  const planned = slot && activeMenu && activeMenu[slot] && activeMenu[slot].recipeId === currentRecipeKey;
+  if(!planned){ toast('Not on today’s plan — confirm meals from the Log tab'); return; }
+  const card = document.getElementById('log-' + slot);
   if(card && !card.classList.contains('done') && !card.classList.contains('skipped')){
-    logConfirm(k);
+    logConfirm(slot);
   } else {
-    toast('✓ Logged to today');
+    toast('Already logged for today');
   }
 }
 
@@ -198,7 +203,7 @@ function renderWeek(){
       titles.push(r.title);
       const together = m.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
       const swapBtn = '<button class="dm-swap" aria-label="Swap this meal" onclick="event.stopPropagation();openWeekSwap(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\')">🔁</button>';
-      return '<div class="day-meal-row" onclick="openRecipe(\''+entry.recipeId+'\',\'week\')">'
+      return '<div class="day-meal-row" onclick="openRecipe(\''+entry.recipeId+'\',\'week\',{weekStartDate:\''+plan.weekStartDate+'\',dayIndex:'+di+',slot:\''+slot+'\',person:\''+person+'\'})">'
         + '<div class="dm-e">'+r.emoji+'</div>'
         + '<div class="dm-t">'+r.title+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
         + '<div class="dm-k">'+Math.round(entry.kcal)+'</div>'
@@ -299,8 +304,13 @@ function toggleDay(i){
 // on swapCtx so chooseSwap (planner.js) applies exactly what was shown.
 // 'tall': see openWeekSwap's doc above — the sheet can now be long (FEATURE: swap anything).
 function openSwap(mealKey, targetElId){
-  const ctx = resolveSwapContext(mealKey);
-  swapCtx = {dayIndex: ctx.dayIndex, slot: ctx.slot, person: ctx.person, targetElId: targetElId};
+  // Recipe screen reached from a Week row carries that row's day (recipeDayCtx) —
+  // swap THAT day/week, not today. Every other entry point still resolves to today.
+  const fromWeekRow = recipeDayCtx && SLOT_ORDER.indexOf(mealKey) === -1;
+  const ctx = fromWeekRow
+    ? {dayIndex: recipeDayCtx.dayIndex, slot: recipeDayCtx.slot, person: recipeDayCtx.person, weekStartDate: recipeDayCtx.weekStartDate}
+    : resolveSwapContext(mealKey);
+  swapCtx = {dayIndex: ctx.dayIndex, slot: ctx.slot, person: ctx.person, weekStartDate: ctx.weekStartDate, targetElId: targetElId};
   document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -678,6 +688,9 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc){
   const card = document.getElementById('log-' + slot);
   card.className = 'card meal';
   card.style.cursor = 'default';
+  // Servings-eaten stepper (FEATURE: recipe servings) — the plan entry's portion is
+  // "servings of the recipe", user-adjustable before confirming.
+  const portion = (activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1;
   card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
     + '<div class="row between"><span class="t">'+title+'</span><span class="kcal">'+kcal+'</span></div>'
     + '<div class="d">'+desc+'</div>'
@@ -685,6 +698,11 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc){
     + '<button class="la-confirm" onclick="logConfirm(\''+slot+'\')">Confirm</button>'
     + '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>'
     + '<button class="la-skip" onclick="logSkip(\''+slot+'\')">Skip</button>'
+    + '<span class="sv-stepper" style="margin-left:auto">'
+    + '<button onclick="stepMealServings(\''+slot+'\',-0.5)" aria-label="Fewer servings">–</button>'
+    + '<span class="sv-val">'+portion+'×</span>'
+    + '<button onclick="stepMealServings(\''+slot+'\',0.5)" aria-label="More servings">+</button>'
+    + '</span>'
     + '</div></div>';
 }
 

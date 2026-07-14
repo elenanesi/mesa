@@ -541,6 +541,7 @@ function recipeToBuilder(id){
     emoji: r.emoji || '🍽️',
     slot: r.slot || 'dinner',
     time: r.time || 20,
+    servings: r.servings || 1,
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
     stepsText: (r.steps || []).join('\n'),
     pickerQuery: ''
@@ -548,7 +549,7 @@ function recipeToBuilder(id){
 }
 
 function openNewRecipeForm(){
-  recipeBuilder = {name: '', emoji: '🍽️', slot: 'dinner', time: 20, ingredients: [], stepsText: '', pickerQuery: ''};
+  recipeBuilder = {name: '', emoji: '🍽️', slot: 'dinner', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
@@ -581,7 +582,14 @@ function computeBuilderTotals(){
 function buildRecipeBuilderSheet(){
   const rb = recipeBuilder;
   const totals = computeBuilderTotals();
-  const meta = deriveRecipeMeta(rb.ingredients, totals, rb.time);
+  // The ingredient list is the whole batch; every displayed/derived number below is
+  // per serving (batch / rb.servings) — same convention as engine.js:recipeNutrition().
+  const perServing = {};
+  Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / (rb.servings || 1); });
+  const perServingIngredients = rb.ingredients.map(function(row){
+    return {foodId: row.foodId, grams: row.grams / (rb.servings || 1)};
+  });
+  const meta = deriveRecipeMeta(perServingIngredients, perServing, rb.time);
 
   const editing = !!rb.editingId;
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit recipe' : 'New recipe') + '</h2><button class="backbtn" style="margin:0" onclick="openMyRecipes()">‹ Back</button></div>';
@@ -600,6 +608,12 @@ function buildRecipeBuilderSheet(){
     + '<span class="sv-stepper" style="margin:0">'
     + '<button onclick="stepRecipeTime(-5)" aria-label="Decrease time">–</button><span class="sv-val">' + rb.time + ' min</span>'
     + '<button onclick="stepRecipeTime(5)" aria-label="Increase time">+</button></span></div></div>';
+
+  html += '<div class="field"><label>Makes</label><div class="inp"><span>Servings</span>'
+    + '<span class="sv-stepper" style="margin:0">'
+    + '<button onclick="stepRecipeServings(-1)" aria-label="Decrease servings">–</button><span class="sv-val">' + rb.servings + '</span>'
+    + '<button onclick="stepRecipeServings(1)" aria-label="Increase servings">+</button></span></div>'
+    + '<div class="sub" style="margin-top:4px">Enter ingredients for the whole batch — nutrition below is per serving.</div></div>';
 
   html += '<h2 style="margin-top:18px">Ingredients <span class="sub" style="font-weight:400;font-size:12px">(' + rb.ingredients.length + ', need at least 2)</span></h2>';
   rb.ingredients.forEach(function(row, i){
@@ -621,12 +635,12 @@ function buildRecipeBuilderSheet(){
     + '<textarea class="inp" style="width:100%;box-sizing:border-box;min-height:90px;border:1px solid var(--line);margin-top:6px;display:block;resize:vertical;font:inherit" oninput="recipeBuilder.stepsText=this.value" placeholder="Combine and enjoy.">' + escapeHtml(rb.stepsText) + '</textarea></div>';
 
   html += '<div class="card" style="padding:14px;margin-top:14px">'
-    + '<div class="row between"><b style="font-size:13px">Per serving</b><span class="chip-computed">✓ computed</span></div>'
+    + '<div class="row between"><b style="font-size:13px">Per serving' + (rb.servings > 1 ? ' <span class="sub" style="font-weight:400">(makes ' + rb.servings + ')</span>' : '') + '</b><span class="chip-computed">✓ computed</span></div>'
     + '<div class="nutri" style="margin-top:8px">'
-    + '<div class="n"><div class="nt"><span>Calories</span><b>' + Math.round(totals.kcal) + ' kcal</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Protein</span><b>' + Math.round(totals.protein) + ' g</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Carbs</span><b>' + Math.round(totals.carbs) + ' g</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Fat</span><b>' + Math.round(totals.fat) + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>' + Math.round(perServing.kcal) + ' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>' + Math.round(perServing.protein) + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Carbs</span><b>' + Math.round(perServing.carbs) + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Fat</span><b>' + Math.round(perServing.fat) + ' g</b></div></div>'
     + '</div>'
     + '<div class="sub" style="margin-top:8px">Auto tags: ' + (meta.tags.length ? meta.tags.map(tagLabelForPreview).join(', ') : '—') + '</div>'
     + '<div class="sub" style="margin-top:2px">Styles: ' + meta.styles.join(', ') + '</div>'
@@ -634,7 +648,7 @@ function buildRecipeBuilderSheet(){
     + '</div>';
 
   if(rb.ingredients.length){
-    const warn = kcalBandWarning(rb.slot, totals.kcal);
+    const warn = kcalBandWarning(rb.slot, perServing.kcal);
     if(warn) html += '<div class="cap-note" style="color:#b25e35;margin-top:8px">' + warn + '</div>';
   }
 
@@ -645,6 +659,7 @@ function buildRecipeBuilderSheet(){
 
 function setRecipeSlot(s){ recipeBuilder.slot = s; renderRecipeBuilderSheet(); }
 function stepRecipeTime(delta){ recipeBuilder.time = Math.max(2, Math.min(180, recipeBuilder.time + delta)); renderRecipeBuilderSheet(); }
+function stepRecipeServings(delta){ recipeBuilder.servings = Math.max(1, Math.min(12, recipeBuilder.servings + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeIngredientGrams(i, delta){
   const row = recipeBuilder.ingredients[i];
   if(!row) return;
@@ -906,13 +921,19 @@ function saveRecipeBuilder(){
   if(rb.ingredients.length < 2){ toast('Add at least 2 ingredients'); return; }
 
   const totals = computeBuilderTotals();
-  const meta = deriveRecipeMeta(rb.ingredients, totals, rb.time);
+  // Tags/styles/kcal thresholds are per-serving quantities — derive from batch/servings.
+  const yieldN = rb.servings || 1;
+  const perServing = {};
+  Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / yieldN; });
+  const meta = deriveRecipeMeta(
+    rb.ingredients.map(function(r){ return {foodId: r.foodId, grams: r.grams / yieldN}; }),
+    perServing, rb.time);
   const stepsArr = (rb.stepsText || '').split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return !!s; });
 
   const id = rb.editingId || uniqueSlug(slugify(name), RECIPES_DB, 'cr-');
   const recipe = {
     title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: rb.slot,
-    styles: meta.styles, time: rb.time,
+    styles: meta.styles, time: rb.time, servings: yieldN,
     ingredients: rb.ingredients.map(function(r){ return [r.foodId, r.grams]; }),
     toTaste: [],
     steps: stepsArr.length ? stepsArr : ['Combine and enjoy.'],

@@ -596,8 +596,11 @@ function computeShoppingList(weekStartDate){
   function addRecipe(recipeId, factor){
     const r = RECIPES_DB[recipeId];
     if(!r || !(factor > 0)) return;
+    // `factor` is servings eaten; ingredients are the whole batch, which makes
+    // r.servings servings — buy batch/servings per serving eaten.
+    const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
     r.ingredients.forEach(function(ing){
-      const foodId = ing[0], grams = ing[1];
+      const foodId = ing[0], grams = ing[1] / batchYield;
       const food = FOODS[foodId];
       if(!food) return;
       const name = food.name;
@@ -648,6 +651,7 @@ function unitKey(unit){
 // used both by the real swap-sheet apply and by the re-balance solver's what-if search.
 function applySwapToPlan(plan, unit, newRecipeId){
   const m = plan.days[unit.dayIndex].meals[unit.slot];
+  m.t = Date.now(); // mutation stamp — sync.js:mergePlansSection keeps the newer cell
   const newBase = dbBaseNutrition(newRecipeId);
   if(unit.shared){
     const bpE = bestPortion(newBase.kcal, m.elena.kcal, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[unit.slot]);
@@ -891,9 +895,17 @@ function chooseSwapRecipe(recipeId, alt){
   // relevant when the swap actually landed on the CURRENT week — a swap on next week's
   // plan has no log entry to correct (nothing is logged for a future date).
   const isCurrentWeek = !weekStartDate || weekStartDate === mondayOfWeek(todayISO());
-  if(isCurrentWeek && swapCtx.dayIndex === todayDayIndex() && slotLogStatus(todayISO(), swapCtx.person, swapCtx.slot) === 'confirmed'){
-    const planEntry = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot][swapCtx.person];
-    logPlanEntry(todayISO(), swapCtx.person, swapCtx.slot, planEntry.recipeId, planEntry.portion);
+  if(isCurrentWeek && swapCtx.dayIndex === todayDayIndex()){
+    // A shared-slot swap changes BOTH people's dish (applySwapToPlan rewrites
+    // m.elena and m.partner), so correct every person's confirmed entry — not just
+    // the swapper's — or the other person's Log card keeps the old dish forever.
+    const meal = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot];
+    const people = meal.shared ? ['elena', 'partner'] : [swapCtx.person];
+    people.forEach(function(person){
+      if(slotLogStatus(todayISO(), person, swapCtx.slot) !== 'confirmed') return;
+      const planEntry = meal[person];
+      logPlanEntry(todayISO(), person, swapCtx.slot, planEntry.recipeId, planEntry.portion);
+    });
   }
 
   // Re-render every surface that shows the plan; consumed-so-far follows the plan's
@@ -911,6 +923,35 @@ function chooseSwapRecipe(recipeId, alt){
   persist();
   closeSheet();
   toast('🔁 Swapped to ' + view.title + ' (' + (alt.kcalDelta >= 0 ? '+' : '') + Math.round(alt.kcalDelta) + ' kcal)');
+}
+
+/* ---------------- servings eaten (FEATURE: recipe servings) ---------------- */
+// User-set "how many servings am I eating" for one of today's meals — a manual
+// override of the auto-picked portion for the CURRENT person only (each person
+// plates their own amount, shared dish or not). kcal/protein recompute from the
+// per-serving base; a slot already confirmed today gets its LogEntry corrected in
+// place (same contract as a swap). 0.5-serving steps, 0.5–4.
+function stepMealServings(slot, delta){
+  ensureWeekPlan();
+  const meal = weekPlan.days[todayDayIndex()].meals[slot];
+  const entry = meal[currentProf];
+  const next = Math.max(0.5, Math.min(4, +(entry.portion + delta).toFixed(1)));
+  if(next === entry.portion) return;
+  const base = dbBaseNutrition(entry.recipeId);
+  meal.t = Date.now(); // mutation stamp — sync.js:mergePlansSection keeps the newer cell
+  entry.portion = next;
+  entry.kcal = base.kcal * next;
+  entry.protein = base.protein * next;
+  if(slotLogStatus(todayISO(), currentProf, slot) === 'confirmed'){
+    logPlanEntry(todayISO(), currentProf, slot, entry.recipeId, entry.portion);
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
 }
 
 /* ---------------- re-balance (task C2 item 4) ---------------- */

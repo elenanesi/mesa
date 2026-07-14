@@ -7,8 +7,14 @@
      - library            : merge by id (REUSES js/library.js's
                              mergeImportedLibrary — identical-content
                              skip, conflict re-id, ingredient remap).
-     - plans               : LWW, whole blob (weekPlans + SHARED +
-                             householdStyle + servings).
+     - plans               : per-meal-cell merge of weekPlans (each mutated
+                             cell carries a `t` stamp; newer cell wins), so
+                             two phones swapping DIFFERENT meals both keep
+                             their swap. SHARED + householdStyle + servings
+                             stay LWW (remote wins), as do weeks whose
+                             signatures differ (a regenerated week replaces
+                             wholesale — cell stamps aren't comparable
+                             across generations).
      - shopping            : union-merge of checked item names, per week.
      - profile:elena/partner: LWW each, one section per person so an
                              edit to Elena's profile can never clobber a
@@ -226,6 +232,38 @@ function mergeShoppingSection(local, remote){
   return {checkedByWeek: merged};
 }
 
+// plans (FIX: cross-device swap consistency): two phones can swap DIFFERENT meals in
+// the same week between syncs — the old whole-blob LWW silently discarded the losing
+// phone's swap. Each mutated meal cell carries a `t` stamp (planner.js:applySwapToPlan/
+// stepMealServings); per (week, day, slot) the later-touched cell wins. Weeks whose
+// signatures differ were REGENERATED (targets/library/shared toggles changed) — their
+// cells aren't comparable, so the newer SECTION wins that week whole (old LWW
+// behavior). SHARED/householdStyle/servings sub-fields also keep the old LWW rule
+// (remote wins) — merged starts as a clone of remote.
+function mergePlansSection(local, remote, remoteIsNewer){
+  const merged = clone(remote || {});
+  merged.weekPlans = merged.weekPlans || {};
+  const localPlans = (local && local.weekPlans) || {};
+  Object.keys(localPlans).forEach(function(wk){
+    const L = localPlans[wk], R = merged.weekPlans[wk];
+    if(!isValidWeekPlanShape(L)) return;
+    if(!R){ merged.weekPlans[wk] = clone(L); return; }
+    if(L.signature !== R.signature){
+      if(!remoteIsNewer) merged.weekPlans[wk] = clone(L);
+      return;
+    }
+    (R.days || []).forEach(function(dayR, di){
+      const dayL = L.days && L.days[di];
+      if(!dayL || !dayL.meals || !dayR.meals) return;
+      Object.keys(dayR.meals).forEach(function(slot){
+        const cL = dayL.meals[slot], cR = dayR.meals[slot];
+        if(cL && cR && (cL.t || 0) > (cR.t || 0)) dayR.meals[slot] = clone(cL);
+      });
+    });
+  });
+  return merged;
+}
+
 // log:elena / log:partner: append-merge by entry identity (state.js:entryIdentity — 'plan:'
 // slot, or 'food:'+id), per day, with tombstone-aware exclusion. A same-identity conflict
 // (rare: both phones touched the exact same slot before either synced) keeps whichever
@@ -407,9 +445,10 @@ function applySyncResponse(sent, remoteSections){
       applyLogSectionData(personKey, merged);
       applyMergedRevBookkeeping(sec, merged, remote);
     } else if(sec === 'plans'){
-      applyPlansSectionData(remote.data);
-      syncState.sectionRevs[sec] = remote.rev;
-      syncState.sectionUpdatedAt[sec] = remote.updatedAt;
+      const remoteIsNewer = (remote.updatedAt || 0) >= (syncState.sectionUpdatedAt[sec] || 0);
+      const merged = mergePlansSection(sentEntry.data, remote.data, remoteIsNewer);
+      applyPlansSectionData(merged);
+      applyMergedRevBookkeeping(sec, merged, remote);
     } else if(sec === 'profile:elena' || sec === 'profile:partner'){
       const personKey = sec === 'profile:elena' ? 'elena' : 'partner';
       applyProfileSectionData(personKey, remote.data);
@@ -738,4 +777,18 @@ function initSync(){
   bootstrapAccessHousehold().then(function(restored){
     if(!restored && syncState.code) scheduleSync(0);
   });
+
+  // Proactive pull (FIX: cross-device swap consistency). Without these, an open-but-
+  // idle phone only syncs after its OWN next local edit — the partner's swap never
+  // arrives until this phone is reloaded. Every sync is a push-pull round trip, so a
+  // pull with nothing dirty is a cheap no-op merge.
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState === 'visible' && syncState.code) scheduleSync(0);
+  });
+  window.addEventListener('online', function(){
+    if(syncState.code) scheduleSync(0);
+  });
+  setInterval(function(){
+    if(syncState.code && document.visibilityState === 'visible') performSync(false);
+  }, 120 * 1000);
 }

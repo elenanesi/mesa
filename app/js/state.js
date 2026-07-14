@@ -203,10 +203,13 @@ function buildLegacyRecipesCompat(){
     const src = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[id] : undefined;
     if(!src){ console.error('buildLegacyRecipesCompat: "' + id + '" not found in RECIPES_DB'); return; }
 
-    const base = recipeNutrition(id, 1).totals; // "the recipe as written" = 1 legacy serving
+    const base = recipeNutrition(id, 1).totals; // one serving (batch / src.servings)
 
+    // Ingredient quantities per serving, matching the per-serving nutrition the
+    // recipe screen scales both by the same servings steppers.
+    const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
     const ingredients = src.ingredients.map(function(ing){
-      const foodId = ing[0], grams = ing[1];
+      const foodId = ing[0], grams = +(ing[1] / batchYield).toFixed(1);
       const food = FOODS[foodId];
       if(!food){ console.error('buildLegacyRecipesCompat: "' + id + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
       if(food.unit === 'piece') return [food.name, +(grams / food.avgG).toFixed(2), ''];
@@ -297,6 +300,10 @@ function isValidWeekPlanShape(p){
 }
 
 let recipeOrigin = 'today';
+// Day context for a recipe opened from a Week row ({weekStartDate, dayIndex, slot,
+// person}), so the recipe screen's swap button targets THAT day, not today. null for
+// every other origin (Today/Log/library) — those really do mean today.
+let recipeDayCtx = null;
 let currentRecipeKey = 'salmon';
 let svE = 1, svM = 1.5, svS = 1;
 
@@ -405,7 +412,11 @@ const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 // function for v4->v5 — "migration trivial" per the task brief.
 // Additive library fields (`recipeOverrides`, `deletedRecipes`) also load with safe
 // defaults, so older stores remain valid without a version-gated migration.
-const CURRENT_STORE_VERSION = 5;
+// v6 (recipe servings + plan-cell merge): adds `recipe.servings` (batch yield, absent
+// = 1 — every read site defaults, engine.js:recipeNutrition divides by it) and a `t`
+// mutation stamp on weekPlan meal cells (sync.js:mergePlansSection). Both additive
+// with safe defaults — no gated migration, old local/synced data loads unchanged.
+const CURRENT_STORE_VERSION = 6;
 
 let onboarded = false;
 // Shopping-list checked state, keyed PER WEEK (task: "shopping list per week" — checked

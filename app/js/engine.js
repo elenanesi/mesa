@@ -93,9 +93,11 @@ function foodMacros(foodId, grams){
 }
 
 // Sums a recipe's `ingredients` (never `toTaste` — unquantified garnish, see
-// data/recipes.js) at `servings`x the as-written recipe. Returns both the scaled
-// `totals` and the servings-invariant `perServing` (totals/servings always equals "the
-// recipe as written" — the same base unit the UI's servings steppers scale against).
+// data/recipes.js) at `servings` SERVINGS eaten. A recipe's ingredient list is the
+// batch as written; `recipe.servings` (default 1 — every pre-servings recipe wrote
+// its batch as one serving) says how many servings that batch yields, so one serving
+// = batch/yield. Returns both the scaled `totals` (what `servings` servings add up
+// to) and the servings-invariant `perServing`.
 // kcal is computed 4/4/9 from the SUMMED macros — same policy as foods.js — so a
 // recipe's kcal always stays internally consistent with its own protein/carbs/fat
 // instead of drifting from summing each ingredient's already-rounded kcal field.
@@ -110,9 +112,10 @@ function recipeNutrition(recipeId, servings){
     console.error('recipeNutrition: unknown recipe id "' + recipeId + '"');
     return {totals: Object.assign({}, zero), perServing: Object.assign({}, zero)};
   }
+  const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
   const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
   (r.ingredients || []).forEach(function(ing){
-    const m = foodMacros(ing[0], ing[1] * servings);
+    const m = foodMacros(ing[0], ing[1] * servings / batchYield);
     totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
     totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
   });

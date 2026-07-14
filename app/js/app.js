@@ -24,8 +24,9 @@ function go(id, el){
 }
 
 /* ---------------- open a recipe from a tap ---------------- */
-function openRecipe(key, origin){
+function openRecipe(key, origin, dayCtx){
   recipeOrigin = origin || 'today';
+  recipeDayCtx = dayCtx || null;
   renderRecipe(key);
   go('recipe');
 }
@@ -172,7 +173,38 @@ if(typeof initSync === 'function') initSync();
 // registration throws there, e.g. opening index.html directly on a phone).
 if('serviceWorker' in navigator && location.protocol !== 'file:'){
   window.addEventListener('load', function(){
-    navigator.serviceWorker.register('sw.js').catch(function(err){
+    let refreshing = false;
+    navigator.serviceWorker.addEventListener('controllerchange', function(){
+      if(refreshing) return;
+      refreshing = true;
+      location.reload();
+    });
+    navigator.serviceWorker.register('sw.js', {updateViaCache: 'none'}).then(function(reg){
+      // A worker can already be parked in "waiting" from a previous session
+      // (installed while the app was closing) — release it immediately.
+      if(reg.waiting && navigator.serviceWorker.controller){
+        reg.waiting.postMessage({type: 'SKIP_WAITING'});
+      }
+      reg.addEventListener('updatefound', function(){
+        const worker = reg.installing;
+        if(!worker) return;
+        worker.addEventListener('statechange', function(){
+          if(worker.state === 'installed' && navigator.serviceWorker.controller){
+            worker.postMessage({type: 'SKIP_WAITING'});
+          }
+        });
+      });
+      reg.update();
+      // iOS standalone PWAs often resume a suspended WebView without firing
+      // 'load' again, so 'next open' isn't 'next update check' — re-check on
+      // every re-foreground and hourly while foregrounded.
+      document.addEventListener('visibilitychange', function(){
+        if(document.visibilityState === 'visible') reg.update();
+      });
+      setInterval(function(){
+        if(document.visibilityState === 'visible') reg.update();
+      }, 60 * 60 * 1000);
+    }).catch(function(err){
       console.warn('Mesa: service worker registration failed', err);
     });
   });

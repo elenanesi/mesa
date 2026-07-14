@@ -56,9 +56,12 @@ function recipeMacros(recipeId) {
 
   const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0 };
   let resolved = true;
+  // Ingredients describe the whole batch; r.servings (default 1) is how many
+  // servings that batch makes. All checks here are per-serving quantities.
+  const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
 
   (r.ingredients || []).forEach(function (ing) {
-    const foodId = ing[0], grams = ing[1];
+    const foodId = ing[0], grams = ing[1] / batchYield;
     const food = FOODS[foodId];
     if (!food) { resolved = false; return; }
     // Recipe quantities are always grams. Foods are per 100g/100ml, except
@@ -117,6 +120,8 @@ function validateData() {
     if (typeof r.title !== 'string' || !r.title) errors.push(prefix + 'title missing/empty');
     if (typeof r.emoji !== 'string' || !r.emoji) errors.push(prefix + 'emoji missing/empty');
     if (typeof r.time !== 'number' || r.time <= 0) errors.push(prefix + 'time must be a positive number');
+    // servings (batch yield) is optional — absent means 1.
+    if ('servings' in r && (typeof r.servings !== 'number' || r.servings <= 0)) errors.push(prefix + 'servings must be a positive number');
 
     const slotValid = typeof r.slot === 'string' && VALID_SLOTS.indexOf(r.slot) !== -1;
     if (!slotValid) errors.push(prefix + 'invalid slot "' + r.slot + '"');
