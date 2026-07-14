@@ -1195,10 +1195,20 @@ function setProf(key, el){
 // visually "on".
 function jumpToProfileSection(id, el){
   const target = document.getElementById(id);
-  if(target) target.scrollIntoView({behavior: 'smooth', block: 'start'});
-  if(el){
-    const bar = document.getElementById('profileNav');
-    if(bar) bar.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
+  const screen = document.getElementById('profile');
+  const bar = document.getElementById('profileNav');
+  // scrollIntoView() and scrollTo({behavior:'smooth'}) both no-op inside the absolutely-
+  // positioned .screen scroller in iOS WebKit; only a direct scrollTop assignment moves it
+  // reliably. target.offsetParent is #profile itself, so offsetTop already IS the scroll
+  // offset — subtract the sticky bar height + a small gap so the section lands just under
+  // the nav rather than hidden behind it. Instant (not animated): rAF-based tweening is
+  // paused whenever the page is backgrounded, so a direct set is the dependable choice.
+  if(target && screen){
+    const offset = (bar ? bar.offsetHeight : 0) + 12;
+    screen.scrollTop = Math.max(0, target.offsetTop - offset);
+  }
+  if(el && bar){
+    bar.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
     el.classList.add('on');
   }
 }

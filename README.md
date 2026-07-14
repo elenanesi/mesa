@@ -25,6 +25,7 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 - `install-and-test-guide.md` — user-facing install/test guide
 - `MVP-plan.md` — product vision, accuracy architecture, research sources
 - `ux-research-notes.md` — UX research behind the design
+- `KNOWLEDGE-BASE.md` — how Mesa determines a healthy diet: targets, goal profiles, tag thresholds, sourcing (every number cited to file:line)
 
 ---
 
