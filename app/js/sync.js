@@ -223,7 +223,7 @@ function applyLogSectionData(personKey, mergedByDate){
     const src = mergedByDate[date];
     const day = getDayLog(date); // state.js — creates + back-fills tomb/targets/skipped on first touch
     day[personKey] = (src.entries || []).filter(isValidLogEntry);
-    day.tomb[personKey] = (src.tomb || []).filter(function(x){ return typeof x === 'string'; });
+    day.tomb[personKey] = (src.tomb || []).filter(isValidLogTombstone);
     if(typeof src.target === 'number') day.targets[personKey] = src.target;
     day.skipped[personKey] = {};
     Object.keys(src.skipped || {}).forEach(function(slot){ if(src.skipped[slot]) day.skipped[personKey][slot] = true; });
@@ -335,14 +335,25 @@ function mergeLogSection(local, remote){
     const L = (local && local[date]) || {entries: [], tomb: [], target: null, skipped: {}};
     const R = (remote && remote[date]) || {entries: [], tomb: [], target: null, skipped: {}};
     const tomb = {};
-    (L.tomb || []).forEach(function(t){ tomb[t] = true; });
-    (R.tomb || []).forEach(function(t){ tomb[t] = true; });
+    function ingestTombs(tombs){
+      (tombs || []).forEach(function(t){
+        const id = logTombstoneId(t);
+        if(!id) return;
+        const u = logTombstoneTime(t);
+        if(!tomb[id] || u > tomb[id].u) tomb[id] = {id: id, u: u};
+      });
+    }
+    ingestTombs(L.tomb);
+    ingestTombs(R.tomb);
 
     const byIdentity = {};
     function ingest(entries){
       (entries || []).forEach(function(e){
         const id = entryIdentity(e); // state.js
-        if(tomb[id]) return; // deleted on one side — never resurrected by the other's copy
+        const deletedAt = tomb[id] ? tomb[id].u : 0;
+        const updatedAt = typeof e.u === 'number' ? e.u : 0;
+        if(tomb[id] && deletedAt >= updatedAt) return; // deleted after this copy — do not resurrect it
+        if(tomb[id] && updatedAt > deletedAt) delete tomb[id]; // re-logged after a delete/undo — the new fact wins
         const existing = byIdentity[id];
         if(!existing || logEntryIsNewer(e, existing)) byIdentity[id] = e;
       });
@@ -353,10 +364,11 @@ function mergeLogSection(local, remote){
     const skipped = {};
     Object.keys(L.skipped || {}).forEach(function(slot){ if(L.skipped[slot] && !tomb['skip:' + slot]) skipped[slot] = true; });
     Object.keys(R.skipped || {}).forEach(function(slot){ if(R.skipped[slot] && !tomb['skip:' + slot]) skipped[slot] = true; });
+    Object.keys(skipped).forEach(function(slot){ if(byIdentity['plan:' + slot]) delete skipped[slot]; });
 
     merged[date] = {
       entries: Object.keys(byIdentity).map(function(k){ return byIdentity[k]; }),
-      tomb: Object.keys(tomb),
+      tomb: Object.keys(tomb).map(function(k){ return tomb[k]; }),
       target: (typeof L.target === 'number') ? L.target : R.target,
       skipped: skipped
     };
@@ -536,7 +548,7 @@ function seedSyncBookkeeping(rev){
 // Legacy tombstones were a bare `true` (pre-timestamp); new ones are Date.now(). Treated
 // as epoch 1 so any real (epoch-ms) entry `u`/tombstone from after 1970 outranks it, while
 // still comparing >0 (truthy "is a delete") against an entry that has no `u` at all (0).
-function tombstoneTime(v){
+function libraryTombstoneTime(v){
   if(v === true) return 1;
   if(typeof v === 'number' && isFinite(v)) return v;
   return 0;
@@ -572,14 +584,14 @@ function mergeEntryMap(localMap, remoteMap){
 
 // Unions two tombstone maps (deletedRecipes or deletedFoods), keeping the LATER timestamp
 // per id when both sides deleted it (harmless — a delete is a delete) — legacy `true`
-// entries collapse to epoch 1 via tombstoneTime().
+// entries collapse to epoch 1 via libraryTombstoneTime().
 function mergeTombstones(localTomb, remoteTomb){
   const out = {};
   const ids = {};
   Object.keys(localTomb || {}).forEach(function(id){ ids[id] = true; });
   Object.keys(remoteTomb || {}).forEach(function(id){ ids[id] = true; });
   Object.keys(ids).forEach(function(id){
-    const t = Math.max(tombstoneTime((localTomb || {})[id]), tombstoneTime((remoteTomb || {})[id]));
+    const t = Math.max(libraryTombstoneTime((localTomb || {})[id]), libraryTombstoneTime((remoteTomb || {})[id]));
     if(t) out[id] = t;
   });
   return out;

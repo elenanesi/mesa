@@ -462,7 +462,7 @@ function checkedSetForWeek(weekStartDate){
    same idea for custom cf- foods (js/library.js:deleteCustomFood()) — new in this
    version, so always numeric (no legacy `true` values can exist for it). Tombstone
    values are either the legacy `true` (pre-couple-sync deletes — treated as epoch 1,
-   js/sync.js:tombstoneTime()) or a Date.now() epoch ms, so couple sync's per-id merge
+   js/sync.js:libraryTombstoneTime()) or a Date.now() epoch ms, so couple sync's per-id merge
    (js/sync.js:mergeLibrarySection) can tell a delete from one phone apart from a
    recreate-after-delete from the other by comparing timestamps, instead of a plain
    boolean that a union-by-id merge would otherwise just resurrect.
@@ -584,9 +584,35 @@ function entryIdentity(e){
   return 'food:' + (e.id || (e.ref + '|' + e.grams + '|' + e.t + '|' + e.kcal));
 }
 
+function logTombstoneId(t){
+  if(typeof t === 'string') return t;
+  return (t && typeof t === 'object' && typeof t.id === 'string') ? t.id : '';
+}
+
+function logTombstoneTime(t){
+  return (t && typeof t === 'object' && typeof t.u === 'number' && isFinite(t.u)) ? t.u : 0;
+}
+
+function isValidLogTombstone(t){
+  return typeof t === 'string'
+    || !!(t && typeof t === 'object' && typeof t.id === 'string' && typeof t.u === 'number' && isFinite(t.u));
+}
+
+function removeLogTombstone(dateISO, personKey, identity){
+  const day = getDayLog(dateISO);
+  day.tomb[personKey] = day.tomb[personKey].filter(function(t){ return logTombstoneId(t) !== identity; });
+}
+
 function tombstoneEntry(dateISO, personKey, identity){
   const day = getDayLog(dateISO);
-  if(day.tomb[personKey].indexOf(identity) === -1) day.tomb[personKey].push(identity);
+  const now = Date.now();
+  let replaced = false;
+  day.tomb[personKey] = day.tomb[personKey].map(function(t){
+    if(logTombstoneId(t) !== identity) return t;
+    replaced = true;
+    return {id: identity, u: Math.max(now, logTombstoneTime(t))};
+  });
+  if(!replaced) day.tomb[personKey].push({id: identity, u: now});
 }
 
 // Freezes personKey's kcal TARGET for dateISO the first time they log anything that day
@@ -606,9 +632,13 @@ function ensureTargetSnapshot(dateISO, personKey){
 // (same convention as every other mutating action in render.js/planner.js).
 function upsertLogEntry(dateISO, personKey, entry){
   ensureTargetSnapshot(dateISO, personKey);
-  const arr = getDayLog(dateISO)[personKey];
+  const day = getDayLog(dateISO);
+  const arr = day[personKey];
   if(typeof entry.u !== 'number') entry.u = Date.now();
   if(entry.kind === 'plan' && entry.slot){
+    removeLogTombstone(dateISO, personKey, 'plan:' + entry.slot);
+    removeLogTombstone(dateISO, personKey, 'skip:' + entry.slot);
+    delete day.skipped[personKey][entry.slot];
     const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === entry.slot; });
     if(idx !== -1){
       entry.t = arr[idx].t || entry.t; // keep the original log time on an edit (e.g. a post-confirm swap)
@@ -655,6 +685,8 @@ function logFoodEntry(dateISO, personKey, foodId, grams){
 // slot (shouldn't normally happen, but keeps the two states mutually exclusive).
 function markSlotSkipped(dateISO, personKey, slot){
   const day = getDayLog(dateISO);
+  removeLogTombstone(dateISO, personKey, 'skip:' + slot);
+  tombstoneEntry(dateISO, personKey, 'plan:' + slot);
   day.skipped[personKey][slot] = true;
   day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
 }
@@ -1098,7 +1130,7 @@ function loadState(){
       // a v5+ store's tombstones survive a reload rather than being silently dropped).
       if(d.tomb && typeof d.tomb === 'object'){
         ['elena', 'partner'].forEach(function(person){
-          if(Array.isArray(d.tomb[person])) clean.tomb[person] = d.tomb[person].filter(function(x){ return typeof x === 'string'; });
+          if(Array.isArray(d.tomb[person])) clean.tomb[person] = d.tomb[person].filter(isValidLogTombstone);
         });
       }
       logHistory[date] = clean;
