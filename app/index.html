@@ -225,7 +225,10 @@
       <h2>Method</h2>
       <ol class="steps" id="recipeMethod"></ol>
 
-      <button class="cta" onclick="markEatenFromRecipe()">✓ Mark as eaten</button>
+      <!-- Eaten-state CTA: renderRecipeEatenState() (render.js) owns everything inside this
+           wrap and swaps the plain button for a "✓ Eaten today"/"Skipped for today" tag-row
+           once today's plan for this slot is confirmed/skipped — see render.js for the states. -->
+      <div id="recipeEatenWrap"><button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe()">✓ Mark as eaten</button></div>
       <button class="cta ghostbtn" onclick="openSwap(currentRecipeKey, null)">🔁 Swap for something similar</button>
     </section>
 

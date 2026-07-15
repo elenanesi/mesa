@@ -95,6 +95,7 @@ function renderRecipe(key){
   updateRecipeWhy();
   document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+s+'</li>'; }).join('');
   updateServings();
+  renderRecipeEatenState(); // fresh eaten/skipped read every time the recipe screen paints (open, re-render on plan change, swap)
 }
 
 // Task C3: "why this fits you" is per-PERSON (whyText(recipeId, profKey) — state.js), so
@@ -196,6 +197,52 @@ function markEatenFromRecipe(){
   } else {
     toast('Already logged for today');
   }
+  renderRecipeEatenState(); // paint the CTA's new state immediately (button no longer just sits there saying "Mark as eaten")
+}
+
+// Owner feedback: the recipe screen's CTA never reflected that a meal had actually been
+// logged — it kept reading "Mark as eaten" after the tap, and showed the same un-eaten
+// button when re-opening a recipe that was already confirmed today. This re-derives the
+// CTA's state fresh from slotLogStatus() every call (same source of truth as
+// renderTodayCardActions()/renderLogPlan() — logHistory), so it can never drift from the
+// Today/Log screens. Resolves the slot exactly like markEatenFromRecipe() does; the
+// eaten/skipped tag-row ONLY ever appears for TODAY's plan for the CURRENT person — a
+// recipe opened from a Week row for a different day (recipeDayCtx) or one that isn't
+// today's planned slot for this person keeps the plain button + the existing toast path.
+function renderRecipeEatenState(){
+  const wrap = document.getElementById('recipeEatenWrap');
+  if(!wrap) return;
+  const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
+  const planned = slot && displayedTodayRecipeId(slot) === currentRecipeKey;
+  const status = planned ? slotLogStatus(todayISO(), currentProf, slot) : null;
+  if(status === 'confirmed'){
+    wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Eaten today</span>'
+      + '<button class="tag-undo" onclick="undoRecipeEatenSlot(\''+slot+'\')">↺ Undo</button></div>';
+  } else if(status === 'skipped'){
+    wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
+      + '<button class="tag-undo" onclick="undoRecipeEatenSlot(\''+slot+'\')">↺ Undo</button></div>';
+  } else {
+    // not on today's plan, OR on today's plan but not yet logged — same plain CTA either
+    // way; markEatenFromRecipe() itself still tells the two cases apart (toast vs. confirm).
+    wrap.innerHTML = '<button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe()">✓ Mark as eaten</button>';
+  }
+}
+
+// Distinct from undoLogSlot() (which reverses whatever day the Log screen's Today/
+// Yesterday toggle currently points at, via currentLogDateISO()): the recipe screen's
+// eaten/skipped state only ever reflects TODAY's plan (renderRecipeEatenState() above), so
+// this always targets todayISO() regardless of the Log screen's toggle — otherwise tapping
+// Undo here while the Log screen was left on "Yesterday" would silently undo yesterday's
+// slot instead of the one this button is actually showing.
+function undoRecipeEatenSlot(slot){
+  const status = slotLogStatus(todayISO(), currentProf, slot);
+  if(!status) return;
+  removeLoggedSlot(todayISO(), currentProf, slot);
+  refreshAfterLogChange();
+  renderRecipeEatenState();
+  toast(status === 'confirmed'
+    ? '↺ Un-logged ' + (TITLES[slot] || SLOT_LABEL[slot]) + ' — confirm it again anytime'
+    : '↺ ' + SLOT_LABEL[slot] + ' un-skipped');
 }
 
 /* ---------------- week screen rendering ---------------- */
@@ -477,20 +524,33 @@ function openSwap(mealKey, targetElId){
 
 let addMealRecipeCtx = null;
 
-function mealRecipeOptions(slot, entry){
+// (b)/(a) fix: the sheet is now three sections instead of one undifferentiated, slot-
+// filtered pile — "In this meal" (with a remove control per extra), "Sides", and "Full
+// recipes" (every non-side recipe from ANY slot, not just this one — owner complaint (a):
+// "I should always be able to add both sides specifically or full main course recipes").
+// `components` is the meal's CURRENT components (base + extras) so both pick lists exclude
+// what's already in — same resolution openAddMealRecipeSheet already had.
+function mealTitleSort(a, b){
+  return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
+}
+function mealRecipeOptions(components){
   const used = {};
-  (Array.isArray(entry) ? entry : planEntryComponents(entry)).forEach(function(c){ used[c.recipeId] = true; });
-  return Object.keys(RECIPES_DB).filter(function(id){
-    if(used[id]) return false;
-    const r = RECIPES_DB[id];
-    const slots = recipeSlotList(r);
-    return slots.indexOf('side') !== -1 || slots.indexOf(slot) !== -1;
-  }).sort(function(a, b){
-    const aSide = recipeSlotList(RECIPES_DB[a]).indexOf('side') !== -1 ? 0 : 1;
-    const bSide = recipeSlotList(RECIPES_DB[b]).indexOf('side') !== -1 ? 0 : 1;
-    if(aSide !== bSide) return aSide - bSide;
-    return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
-  });
+  (components || []).forEach(function(c){ used[c.recipeId] = true; });
+  const ids = Object.keys(RECIPES_DB).filter(function(id){ return !used[id]; });
+  return {
+    sides: ids.filter(function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') !== -1; }).sort(mealTitleSort),
+    full: ids.filter(function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') === -1; }).sort(mealTitleSort)
+  };
+}
+
+function mealRecipeOptionRowHtml(id){
+  const r = RECIPES_DB[id];
+  const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
+  return '<div class="altrow" onclick="chooseMealExtraRecipe(\'' + id + '\')">'
+    + '<div class="ae">' + r.emoji + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
+    + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+    + '</div>';
 }
 
 function openAddMealRecipeSheet(slot){
@@ -503,21 +563,33 @@ function openAddMealRecipeSheet(slot){
   const loggedComponents = logged
     ? (Array.isArray(logged.components) && logged.components.length ? logged.components : [{recipeId: logged.ref, portion: logged.portion || 1}])
     : null;
+  // Guardrail: filter gracefully if RECIPES_DB is ever missing an id a stored component
+  // still points to (e.g. a since-removed recipe) rather than rendering a broken row.
+  const components = (loggedComponents || planEntryComponents(entry)).filter(function(c){ return c && RECIPES_DB[c.recipeId]; });
   addMealRecipeCtx = {weekStartDate: weekPlan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
-  const options = mealRecipeOptions(slot, loggedComponents || entry);
+  const opts = mealRecipeOptions(components);
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add to ' + (SLOT_LABEL[slot] || slot) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub" style="margin-top:6px">Pick a side or another recipe to add to this meal. Mesa will add its calories and nutrients to the meal total.</p>';
-  if(!options.length) html += '<p class="sub" style="margin-top:14px">No extra recipes available for this meal.</p>';
-  options.forEach(function(id){
-    const r = RECIPES_DB[id];
-    const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
-    const side = recipeSlotList(r).indexOf('side') !== -1 ? 'Side · ' : '';
-    html += '<div class="altrow" onclick="chooseMealExtraRecipe(\'' + id + '\')">'
+    + '<p class="sub" style="margin-top:6px">See what’s in this meal, add a side or a full recipe, or remove something you added earlier. Mesa recalculates the meal’s calories and nutrients either way.</p>';
+
+  html += '<div class="shop-cat">In this meal</div>';
+  components.forEach(function(c, i){
+    const r = RECIPES_DB[c.recipeId];
+    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1).totals);
+    const isBase = i === 0;
+    html += '<div class="altrow" style="cursor:default">'
       + '<div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
-      + '<div class="ad">' + side + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="event.stopPropagation();removeMealExtraRecipe(\'' + c.recipeId + '\')">✕ Remove</button>')
       + '</div>';
   });
+
+  html += '<div class="shop-cat">Sides</div>';
+  html += opts.sides.length ? opts.sides.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No side recipes available.</p>';
+
+  html += '<div class="shop-cat">Full recipes</div>';
+  html += opts.full.length ? opts.full.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No other recipes available.</p>';
+
   document.getElementById('sheetBody').innerHTML = html;
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -544,6 +616,41 @@ function chooseMealExtraRecipe(recipeId){
   toast('＋ Added ' + RECIPES_DB[recipeId].title);
 }
 
+// (b) fix: owner complaint — once an extra (e.g. Greek salad + cucumber salad alongside
+// shakshuka) was added there was no way to take it back off. Symmetric to
+// chooseMealExtraRecipe above, with one extra step for an already-logged meal: the logged
+// entry is a components snapshot taken at confirm time (state.js:logPlanEntry), separate
+// from the still-live plan entry's own extras — removing only from the log would leave a
+// matching extra sitting in today's plan entry, which the Week view AND
+// computeShoppingList (planner.js) both still read via planEntryComponents, so it would
+// keep counting phantom ingredients on the shopping list. We remove from both, treating
+// the plan-side removal as best-effort (a no-op, via removeExtraRecipeFromMeal's own
+// false return, if that extra was never mirrored into the plan — e.g. one added to an
+// already-logged meal via addExtraToLoggedMeal, which never touches the plan).
+// Re-renders the sheet in place afterward (not closeSheet()) so several extras can be
+// removed back-to-back without reopening.
+function removeMealExtraRecipe(recipeId){
+  if(!addMealRecipeCtx) return;
+  const ctx = addMealRecipeCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  const title = RECIPES_DB[recipeId] ? RECIPES_DB[recipeId].title : 'item';
+  if(ctx.logged){
+    if(!removeExtraFromLoggedMeal(dateISO, ctx.person, ctx.slot, recipeId)) return;
+    removeExtraRecipeFromMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId);
+  } else {
+    if(!removeExtraRecipeFromMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId)) return;
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  openAddMealRecipeSheet(ctx.slot);
+  toast('✕ Removed ' + title);
+}
+
 function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
@@ -551,6 +658,30 @@ function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
     ? logged.components.slice()
     : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
   components.push({recipeId: recipeId, portion: 1});
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
+  logged.components = components;
+  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
+  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.u = Date.now();
+  return true;
+}
+
+// Mirror of addExtraToLoggedMeal — removes ONE matching occurrence from the logged entry's
+// components (never index 0, the base recipe) and recomputes totals the same deterministic
+// way (nutritionForRecipeComponents), never hand-set. Searches from the end so duplicates
+// remove the most-recently-added match, same convention as removeLastExtra (planner.js).
+function removeExtraFromLoggedMeal(dateISO, person, slot, recipeId){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = Array.isArray(logged.components) && logged.components.length
+    ? logged.components.slice()
+    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  let idx = -1;
+  for(let i = components.length - 1; i >= 1; i--){
+    if(components[i] && components[i].recipeId === recipeId){ idx = i; break; }
+  }
+  if(idx === -1) return false;
+  components.splice(idx, 1);
   const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
@@ -1018,7 +1149,7 @@ function renderTodayCardActions(){
     const status = slotLogStatus(todayISO(), currentProf, slot);
     if(status === 'confirmed'){
       wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Logged</span>'
-        + '<button class="tag-undo" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋ Side</button>'
+        + '<button class="tag-undo" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋ Add</button>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
     } else if(status === 'skipped'){
       wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
@@ -1027,7 +1158,7 @@ function renderTodayCardActions(){
       const label = SLOT_LABEL[slot] || slot;
       wrap.innerHTML = '<div class="ta-actions">'
         + '<button class="ta-btn ta-confirm" aria-label="Confirm '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')">✓</button>'
-        + '<button class="ta-btn" aria-label="Add side to '+label+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋</button>'
+        + '<button class="ta-btn" aria-label="Add to '+label+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋</button>'
         + '<button class="ta-btn ta-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')">✕</button>'
         + '</div>';
     }
@@ -1154,7 +1285,7 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
   const portion = (typeof portionOverride === 'number') ? portionOverride : ((activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1);
   const isTodayLog = currentLogDateISO() === todayISO();
   const swapAction = isTodayLog ? '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>' : '';
-  const addAction = isTodayLog ? '<button class="la-swap" onclick="openAddMealRecipeSheet(\''+slot+'\')">+ Side</button>' : '';
+  const addAction = isTodayLog ? '<button class="la-swap" onclick="openAddMealRecipeSheet(\''+slot+'\')">+ Add</button>' : '';
   const servingStepper = isTodayLog ? '<span class="sv-stepper" style="margin-left:auto">'
     + '<button onclick="stepMealServings(\''+slot+'\',-0.5)" aria-label="Fewer servings">-</button>'
     + '<span class="sv-val">'+portion+'x</span>'
@@ -1699,6 +1830,7 @@ function applyProf(key){
   renderWeek();
   if(typeof renderInsights === 'function') renderInsights(); // task D1: keep Insights in sync with whoever's now current
   updateRecipeWhy();     // task C3: re-personalize the why-box if the recipe screen is open
+  renderRecipeEatenState(); // eaten/skipped is per-person (slotLogStatus keyed by currentProf) — re-derive on profile switch too
   syncServeHighlight();
   syncProfileToggle(key);
   persist();

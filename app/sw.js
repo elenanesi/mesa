@@ -5,7 +5,7 @@
    needs to change to invalidate old installs.
    =================================================================== */
 
-const CACHE = 'mesa-v32';
+const CACHE = 'mesa-v33';
 
 // The full app shell — everything needed to boot and run with zero network.
 const SHELL_FILES = [

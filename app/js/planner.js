@@ -233,6 +233,49 @@ function addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, recipeId){
   return true;
 }
 
+// Removes the LAST occurrence of recipeId from entry.extras (mirrors addExtraRecipeToMeal's
+// push — duplicates are allowed, so a removal takes back the most-recently-added match).
+// Returns true if something was actually removed.
+function removeLastExtra(entry, recipeId){
+  if(!entry || !Array.isArray(entry.extras)) return false;
+  for(let i = entry.extras.length - 1; i >= 0; i--){
+    if(entry.extras[i] && entry.extras[i].recipeId === recipeId){
+      entry.extras.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+// Mirror image of addExtraRecipeToMeal — same couple-sync stamp semantics, reversed:
+// shared meal -> stamp meal.t and ALSO drop one matching extra from the partner's own
+// entry (mirroring the add, which pushed onto both sides); solo meal -> stamp entry.t and
+// delete meal.t. Getting these backwards resurrects the sync-revert bug fixed in
+// commit 50f6f30, so this intentionally follows addExtraRecipeToMeal branch-for-branch.
+// Unlike addExtraRecipeToMeal, this does NOT require RECIPES_DB[recipeId] to still exist —
+// we're removing a reference that was already in the plan, not inserting a new one, so a
+// recipe that later dropped out of RECIPES_DB should still be removable.
+function removeExtraRecipeFromMeal(weekStartDate, dayIndex, slot, person, recipeId){
+  const plan = editableWeekPlan(weekStartDate);
+  if(!plan || !plan.days[dayIndex]) return false;
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[person]) return false;
+  const entry = meal[person];
+  if(!removeLastExtra(entry, recipeId)) return false;
+  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
+  refreshPlanEntryNutrition(entry);
+  if(meal.shared && meal.partner && person === 'elena'){
+    removeLastExtra(meal.partner, recipeId);
+    refreshPlanEntryNutrition(meal.partner);
+  }
+  if(meal.shared && meal.elena && person === 'partner'){
+    removeLastExtra(meal.elena, recipeId);
+    refreshPlanEntryNutrition(meal.elena);
+  }
+  markWeekPlanEdited(plan);
+  return true;
+}
+
 function refreshPlanNutrition(plan){
   if(!plan || !Array.isArray(plan.days)) return false;
   let changed = false;
