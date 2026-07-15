@@ -79,7 +79,7 @@ function foodMacros(foodId, grams){
   const food = (typeof FOODS !== 'undefined') ? FOODS[foodId] : undefined;
   if(!food){
     console.error('foodMacros: unknown food id "' + foodId + '"');
-    return {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+    return {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown'};
   }
   const factor = (food.unit === 'piece') ? (grams / food.avgG) : (grams / food.per);
   return {
@@ -88,7 +88,10 @@ function foodMacros(foodId, grams){
     carbs: food.carbs * factor,
     fat: food.fat * factor,
     satFat: food.satFat * factor,
-    fiber: food.fiber * factor
+    fiber: food.fiber * factor,
+    sugars: (food.sugars || 0) * factor,
+    freeSugars: (food.freeSugars || 0) * factor,
+    sugarQuality: food.sugarQuality || 'unknown'
   };
 }
 
@@ -106,30 +109,32 @@ function foodMacros(foodId, grams){
 // profile-level *target* split in recomputeProf, which this does not touch).
 function recipeNutrition(recipeId, servings){
   servings = (typeof servings === 'number' && servings > 0) ? servings : 1;
-  const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, goodFat:0};
+  const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown', goodFat:0};
   const r = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[recipeId] : undefined;
   if(!r){
     console.error('recipeNutrition: unknown recipe id "' + recipeId + '"');
     return {totals: Object.assign({}, zero), perServing: Object.assign({}, zero)};
   }
   const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
-  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0};
   (r.ingredients || []).forEach(function(ing){
     const m = foodMacros(ing[0], ing[1] * servings / batchYield);
     totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
     totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
+    totals.sugars += m.sugars || 0; totals.freeSugars += m.freeSugars || 0;
   });
   totals.kcal = 4 * totals.protein + 4 * totals.carbs + 9 * totals.fat;
   totals.goodFat = totals.fat - totals.satFat;
+  totals.sugarQuality = 'unknown';
   const perServing = {};
   Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / servings; });
   return {totals: totals, perServing: perServing};
 }
 
-const NUTRIENT_KEYS = ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'];
+const NUTRIENT_KEYS = ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'];
 
 function nutritionForRecipeComponents(components){
-  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0};
   (components || []).forEach(function(c){
     let nut = null;
     if(c && c.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId]){
@@ -141,16 +146,18 @@ function nutritionForRecipeComponents(components){
     NUTRIENT_KEYS.forEach(function(k){ totals[k] += nut[k] || 0; });
   });
   totals.goodFat = totals.fat - totals.satFat;
+  totals.sugarQuality = 'unknown';
   return totals;
 }
 
 function fallbackNutritionTotals(src){
-  const out = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  const out = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown'};
   NUTRIENT_KEYS.forEach(function(k){
     const v = src && typeof src[k] === 'number' && isFinite(src[k]) ? src[k] : 0;
     out[k] = v;
   });
   out.goodFat = Math.max(0, out.fat - out.satFat);
+  out.sugarQuality = (src && typeof src.sugarQuality === 'string') ? src.sugarQuality : 'unknown';
   return out;
 }
 
@@ -158,6 +165,7 @@ function roundedNutritionTotals(src){
   const out = {};
   NUTRIENT_KEYS.forEach(function(k){ out[k] = Math.round((src && src[k]) || 0); });
   out.goodFat = Math.max(0, Math.round((src && src.goodFat !== undefined) ? src.goodFat : (out.fat - out.satFat)));
+  out.sugarQuality = (src && typeof src.sugarQuality === 'string') ? src.sugarQuality : 'unknown';
   return out;
 }
 

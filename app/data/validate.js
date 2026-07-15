@@ -12,7 +12,7 @@
      - coverage: counts by slot, by style, by slot x style, and by
                  slot x style after Elena's avoid-list is applied.
 
-   recipeMacros(recipeId) -> {kcal, protein, carbs, fat, satFat, fiber,
+   recipeMacros(recipeId) -> {kcal, protein, carbs, fat, satFat, fiber, sugars, freeSugars,
    kcalFromMacros, resolved} | null
      Sums FOODS[foodId] * grams/100 over a recipe's `ingredients` (never
      `toTaste`, per the recipe-data convention). `resolved` is false if
@@ -55,7 +55,7 @@ function recipeMacros(recipeId) {
   if (!r) return null;
   if (typeof FOODS === 'undefined') return null;
 
-  const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0 };
+  const totals = { kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0 };
   let resolved = true;
   // Ingredients describe the whole batch; r.servings (default 1) is how many
   // servings that batch makes. All checks here are per-serving quantities.
@@ -75,6 +75,8 @@ function recipeMacros(recipeId) {
     totals.fat += (food.fat || 0) * factor;
     totals.satFat += (food.satFat || 0) * factor;
     totals.fiber += (food.fiber || 0) * factor;
+    totals.sugars += (food.sugars || 0) * factor;
+    totals.freeSugars += (food.freeSugars || 0) * factor;
   });
 
   totals.resolved = resolved;
@@ -103,6 +105,19 @@ function validateData() {
   const foodsLoaded = typeof FOODS !== 'undefined';
   if (!foodsLoaded) {
     warnings.push('foods.js not loaded — skipping ingredient-id resolution and kcal-band checks.');
+  }
+  const sugarQualities = {intrinsic: true, 'added/free': true, mixed: true, unknown: true};
+
+  if(foodsLoaded){
+    Object.keys(FOODS).forEach(function(foodId){
+      const food = FOODS[foodId];
+      const prefix = 'Food "' + foodId + '": ';
+      if(typeof food.sugars !== 'number' || !isFinite(food.sugars) || food.sugars < 0) errors.push(prefix + 'sugars must be a valid non-negative number');
+      if(typeof food.freeSugars !== 'number' || !isFinite(food.freeSugars) || food.freeSugars < 0) errors.push(prefix + 'freeSugars must be a valid non-negative number');
+      if(typeof food.sugarQuality !== 'string' || !sugarQualities[food.sugarQuality]) errors.push(prefix + 'invalid sugarQuality "' + food.sugarQuality + '"');
+      if(typeof food.carbs === 'number' && food.sugars > food.carbs + 1e-9) errors.push(prefix + 'sugars must be <= carbs');
+      if(food.freeSugars > food.sugars + 1e-9) errors.push(prefix + 'freeSugars must be <= sugars');
+    });
   }
 
   const ids = Object.keys(RECIPES_DB);
@@ -171,6 +186,16 @@ function validateData() {
         }
         if (foodsLoaded && !FOODS[ing[0]]) errors.push(prefix + 'ingredient id "' + ing[0] + '" not found in FOODS');
       });
+    }
+
+    if(foodsLoaded){
+      const m = recipeMacros(id);
+      if(m && m.resolved){
+        if(typeof m.sugars !== 'number' || !isFinite(m.sugars) || m.sugars < 0) errors.push(prefix + 'computed sugars must be a valid non-negative number');
+        if(typeof m.freeSugars !== 'number' || !isFinite(m.freeSugars) || m.freeSugars < 0) errors.push(prefix + 'computed freeSugars must be a valid non-negative number');
+        if(m.sugars > m.carbs + 1e-9) errors.push(prefix + 'computed sugars must be <= carbs');
+        if(m.freeSugars > m.sugars + 1e-9) errors.push(prefix + 'computed freeSugars must be <= sugars');
+      }
     }
 
     if (foodsLoaded) {

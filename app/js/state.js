@@ -448,7 +448,8 @@ function checkedSetForWeek(weekStartDate){
 
 /* ---------------- user content library (post-MVP: ingredients + recipes) ----------------
    customFoods: id 'cf-<slug>' -> food object, same shape as a data/foods.js FOODS entry
-   (per, unit, kcal, protein, carbs, fat, satFat, fiber, flags, cat, src). Merged into the
+   (per, unit, kcal, protein, carbs, fat, satFat, fiber, sugars, freeSugars, sugarQuality,
+   flags, cat, src). Merged into the
    global FOODS object at boot and after every add/delete via js/library.js:applyCustomFoods().
    customRecipes: id 'cr-<slug>' -> recipe object, same shape as a data/recipes.js
    RECIPES_DB entry (title, emoji, slot, styles, time, ingredients, toTaste, steps, tags,
@@ -483,6 +484,20 @@ let deletedRecipes = {};
 let deletedFoods = {};
 let recipePrefs = {};
 let customRev = 0;
+
+function normalizeFood(food){
+  if(!food || typeof food !== 'object') return food;
+  const out = Object.assign({}, food);
+  ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(k){
+    if(typeof out[k] !== 'number' || !isFinite(out[k])) out[k] = 0;
+  });
+  if(out.sugars < 0) out.sugars = 0;
+  if(out.freeSugars < 0) out.freeSugars = 0;
+  if(out.sugars > out.carbs) out.sugars = out.carbs;
+  if(out.freeSugars > out.sugars) out.freeSugars = out.sugars;
+  if(typeof out.sugarQuality !== 'string' || ['intrinsic', 'added/free', 'mixed', 'unknown'].indexOf(out.sugarQuality) === -1) out.sugarQuality = 'unknown';
+  return out;
+}
 
 /* ---------------- couple sync (Phase 2, task S1) ----------------
    Client-side sync bookkeeping — the household code plus, per SECTION name
@@ -520,7 +535,7 @@ function todayISO(){
    }
 
    LogEntry = {kind:'plan'|'food', ref: recipeId|foodId, portion?, grams?, kcal, protein,
-     carbs, fat, satFat, fiber, slot?, t:'HH:MM'|null, u: epochMs}. Every macro number is computed
+     carbs, fat, satFat, fiber, sugars, freeSugars, slot?, t:'HH:MM'|null, u: epochMs}. Every macro number is computed
    ONCE, at log time, via recipeNutrition()/foodMacros() (engine.js) and stored verbatim —
    never re-derived from the live recipe/food DB on a later read, so editing a recipe or
    swapping a plan meal never rewrites a past day's history (ground rule 1 + task D1's
@@ -663,6 +678,7 @@ function logPlanEntry(dateISO, personKey, slot, recipeId, portion, components){
     kind: 'plan', ref: recipeId, portion: portion, components: parts,
     kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
     fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
+    sugars: nut.sugars, freeSugars: nut.freeSugars,
     slot: slot, t: nowHHMM()
   });
 }
@@ -676,6 +692,7 @@ function logFoodEntry(dateISO, personKey, foodId, grams){
     kind: 'food', ref: foodId, grams: grams, id: genId(),
     kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
     fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
+    sugars: nut.sugars, freeSugars: nut.freeSugars,
     t: nowHHMM()
   });
 }
@@ -745,11 +762,22 @@ function pruneLogHistory(){
   });
 }
 
-function isValidLogEntry(e){
+function normalizeLogEntry(e){
   if(!e || typeof e !== 'object') return false;
   if(e.kind !== 'plan' && e.kind !== 'food') return false;
   if(typeof e.ref !== 'string') return false;
-  return ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].every(function(k){ return typeof e[k] === 'number' && isFinite(e[k]); });
+  if(!['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].every(function(k){ return typeof e[k] === 'number' && isFinite(e[k]); })) return false;
+  const out = Object.assign({}, e);
+  ['sugars', 'freeSugars'].forEach(function(k){
+    if(typeof out[k] !== 'number' || !isFinite(out[k])) out[k] = 0;
+    if(out[k] < 0) out[k] = 0;
+  });
+  if(out.freeSugars > out.sugars) out.freeSugars = out.sugars;
+  return out;
+}
+
+function isValidLogEntry(e){
+  return !!normalizeLogEntry(e);
 }
 
 // v1 -> v2 migration: v1 stored only TODAY's plan-first confirm/skip status, un-keyed by
@@ -989,7 +1017,7 @@ function loadState(){
   if(saved.customFoods && typeof saved.customFoods === 'object'){
     Object.keys(saved.customFoods).forEach(function(id){
       if(typeof id === 'string' && id.indexOf('cf-') === 0 && saved.customFoods[id] && typeof saved.customFoods[id] === 'object'){
-        customFoods[id] = saved.customFoods[id];
+        customFoods[id] = normalizeFood(saved.customFoods[id]);
       }
     });
   }
@@ -997,7 +1025,7 @@ function loadState(){
   if(saved.foodOverrides && typeof saved.foodOverrides === 'object'){
     Object.keys(saved.foodOverrides).forEach(function(id){
       if(typeof id === 'string' && saved.foodOverrides[id] && typeof saved.foodOverrides[id] === 'object'){
-        foodOverrides[id] = saved.foodOverrides[id];
+        foodOverrides[id] = normalizeFood(saved.foodOverrides[id]);
       }
     });
   }
@@ -1111,7 +1139,7 @@ function loadState(){
       if(!d || typeof d !== 'object') return;
       const clean = emptyDayLog();
       ['elena', 'partner'].forEach(function(person){
-        if(Array.isArray(d[person])) clean[person] = d[person].filter(isValidLogEntry);
+        if(Array.isArray(d[person])) clean[person] = d[person].map(normalizeLogEntry).filter(Boolean);
       });
       if(d.targets && typeof d.targets === 'object'){
         ['elena', 'partner'].forEach(function(person){

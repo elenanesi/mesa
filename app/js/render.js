@@ -222,6 +222,8 @@ function updateNutritionGrid(total){
     ['Calories', fmtKcal(Math.round(nut.kcal))],
     ['Protein', Math.round(nut.protein) + ' g'],
     ['Carbs', Math.round(nut.carbs) + ' g'],
+    ['Sugars', Math.round(nut.sugars) + ' g'],
+    ['Free sugars', Math.round(nut.freeSugars) + ' g'],
     ['Fat', Math.round(nut.fat) + ' g'],
     ['Good fats (unsat.)', Math.round(nut.goodFat) + ' g'],
     ['Sat. fat', Math.round(nut.satFat) + ' g'],
@@ -447,14 +449,11 @@ function renderWeekSummaryLine(plan, person){
   el.innerHTML = tagsHtml + ' <span class="ws-sep">·</span> ' + escapeHtml(s.metricText);
 }
 
-// Re-balance is defined as CURRENT-week-only (planner.js:proposeRebalanceSwaps always
-// operates on the `weekPlan` compat getter): hide the button and show the cap-note instead
-// whenever next week is the one on screen, so there's no dead/confusing action to tap.
 function updateWeekActionsForMode(){
   const btn = document.getElementById('rebalanceBtn');
   const note = document.getElementById('rebalanceCapNote');
-  if(btn) btn.style.display = weekScreenShowsNext ? 'none' : '';
-  if(note) note.style.display = weekScreenShowsNext ? 'block' : 'none';
+  if(btn) btn.textContent = weekScreenShowsNext ? '✨ Re-balance next week' : '✨ Re-balance this week';
+  if(note) note.style.display = 'none';
 }
 
 // Opens the swap sheet for one meal on a SPECIFIC week (current or next) — the Week
@@ -575,18 +574,28 @@ function clearMealRoutine(){
 function coverageValueText(g){
   if(g.key === 'fiber') return g.value + ' g/day';
   if(g.key === 'satFat') return g.value + '% of fat';
+  if(g.key === 'freeSugars' || g.key === 'freeSugarsWarn'){
+    const kcal = (PROF && PROF[currentProf] && PROF[currentProf].calGoalNum) || 0;
+    const grams = kcal > 0 ? Math.round((g.value / 100) * kcal / 4) : 0;
+    return grams + ' g/day (' + g.value + '% of kcal)';
+  }
   return g.value + '/wk';
 }
 function coverageTargetText(g){
   if(g.key === 'fiber') return g.target + ' g/day';
   if(g.key === 'satFat') return '≤' + g.target + '%';
+  if(g.key === 'freeSugars' || g.key === 'freeSugarsWarn'){
+    const kcal = (PROF && PROF[currentProf] && PROF[currentProf].calGoalNum) || 0;
+    const grams = kcal > 0 ? Math.round((g.target / 100) * kcal / 4) : 0;
+    return (g.key === 'freeSugars' ? '≈' : '≤') + grams + ' g/day (' + g.target + '% of kcal)';
+  }
   return '≥' + g.target + '/wk';
 }
 function renderNutrientChips(){
   const wrap = document.getElementById('nutriChips');
   if(!wrap) return;
   const gaps = coverageGaps(computeWeeklyCoverage(weekPlan));
-  const order = ['omega3', 'selenium', 'fiber', 'satFat'].filter(function(k){
+  const order = ['omega3', 'selenium', 'fiber', 'satFat', 'freeSugars', 'freeSugarsWarn'].filter(function(k){
     return k !== 'selenium' || PROF.elena.hashi; // selenium target tracked only with the thyroid goal on
   });
   wrap.innerHTML = order.map(function(k){
@@ -604,7 +613,7 @@ function renderNutrientChips(){
   if(note){
     note.innerHTML = worst.gap > 1e-9
       ? '📌 <b>' + worst.label + ' is the biggest gap</b> — at ' + coverageValueText(worst) + ' vs a ' + coverageTargetText(worst) + ' target. “Re-balance my week” proposes the fewest swaps to close it.'
-      : '✅ <b>All coverage targets met this week.</b> Omega-3, ' + (PROF.elena.hashi ? 'selenium, ' : '') + 'fiber and saturated fat are all where they should be.';
+      : '✅ <b>All coverage targets are on track this week.</b> Omega-3, ' + (PROF.elena.hashi ? 'selenium, ' : '') + 'fiber, saturated fat and free sugars are all within the current guide.';
   }
 }
 
@@ -905,6 +914,7 @@ function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
   logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
 }
@@ -920,6 +930,7 @@ function addFoodExtraToLoggedMeal(dateISO, person, slot, foodId, grams){
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
   logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
 }
@@ -944,6 +955,7 @@ function removeExtraFromLoggedMeal(dateISO, person, slot, recipeId){
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
   logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
 }
@@ -964,6 +976,7 @@ function removeFoodExtraFromLoggedMeal(dateISO, person, slot, foodId){
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
   logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
 }
@@ -986,6 +999,7 @@ function setExtraPortionInLoggedMeal(dateISO, person, slot, recipeId, newPortion
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
   logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
 }
@@ -1006,6 +1020,7 @@ function setFoodExtraGramsInLoggedMeal(dateISO, person, slot, foodId, grams){
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
   logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
 }
@@ -1199,9 +1214,9 @@ function buildShopSheet(){
 }
 
 /* ---------------- re-balance week (task C2 item 4 — real solver) ---------------- */
-// buildRebalanceSheet asks planner.js:proposeRebalanceSwaps() for the real worst
-// coverage gap and the ≤2 swaps (same avoid/style/kcal-fit rules as generation) that
-// most improve it; applyRebalance() commits the proposed plan, persists, and re-renders
+// buildRebalanceSheet asks planner.js:proposeRebalanceSuggestions() for the real worst
+// coverage gap and a small deterministic set of swap/side suggestions that improve it;
+// applyRebalance() commits only the accepted suggestions, persists, and re-renders
 // every surface that shows the plan (chips included).
 let rebalanceProposal = null;
 
@@ -1211,32 +1226,77 @@ function rebalanceValueAfter(prop){
   return coverageValueText(gaps[prop.metricKey]);
 }
 
+function rebalanceProposalLabel(){
+  return rebalanceProposal && rebalanceProposal.weekStartDate === nextMondayISO() ? 'next week' : 'this week';
+}
+
+function rebalanceSuggestionLabel(s){
+  if(s.kind === 'swap'){
+    const to = RECIPES[s.toRecipeId];
+    return DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + ' → ' + escapeHtml(to.title);
+  }
+  const side = RECIPES[s.sideRecipeId];
+  return DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + ' + side ' + escapeHtml(side.title);
+}
+
+function rebalanceAcceptedPlan(prop){
+  if(!prop) return null;
+  const basePlan = ensureWeekPlan(prop.weekStartDate);
+  const resultPlan = JSON.parse(JSON.stringify(basePlan));
+  prop.suggestions.forEach(function(s){
+    if(s.accepted === false) return;
+    if(s.kind === 'swap') applySwapToPlan(resultPlan, s.unit, s.toRecipeId);
+    else addSideToPlan(resultPlan, s.unit, s.sideRecipeId);
+  });
+  return resultPlan;
+}
+
+function setRebalanceSuggestionChoice(index, accepted){
+  if(!rebalanceProposal || !rebalanceProposal.suggestions || !rebalanceProposal.suggestions[index]) return;
+  rebalanceProposal.suggestions[index].accepted = !!accepted;
+  document.getElementById('sheetBody').innerHTML = renderRebalanceSheet();
+}
+
 function buildRebalanceSheet(){
-  rebalanceProposal = proposeRebalanceSwaps();
+  const weekStartDate = weekScreenShowsNext ? nextMondayISO() : mondayOfWeek(todayISO());
+  rebalanceProposal = proposeRebalanceSuggestions(weekStartDate);
+  return renderRebalanceSheet();
+}
+
+function renderRebalanceSheet(){
+  if(!rebalanceProposal) return '';
   const g = rebalanceProposal.gapInfo;
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance this week</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
-  if(!rebalanceProposal.swaps.length){
+  const acceptedPlan = rebalanceAcceptedPlan(rebalanceProposal);
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  if(!rebalanceProposal.suggestions.length){
     const allMet = g.gap <= 1e-9;
     html += '<p class="sub">' + (allMet
       ? 'Nothing to fix — all four weekly coverage targets are already met. Nicely balanced.'
-      : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal swap (same slot & style, respecting avoid-lists) improves it this week.')
+      : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal suggestion improves it for this week.')
       + '</p>'
       + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
     return html;
   }
-  html += '<p class="sub">Keeps fixed: pinned meals, your daily calories & protein, foods you avoid, shared meals. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Changes as few meals as possible.</p>'
+  html += '<p class="sub">Keeps fixed: pinned meals, logged or skipped slots, foods you avoid, and past dates. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Suggestions stay conservative and week-aware.</p>'
     + '<div class="card" style="padding:14px">'
-    + '<b style="font-size:13px">Would change ' + rebalanceProposal.swaps.length + ' meal' + (rebalanceProposal.swaps.length > 1 ? 's' : '') + '</b>';
-  rebalanceProposal.swaps.forEach(function(s, i){
-    const to = RECIPES[s.toRecipeId];
+    + '<b style="font-size:13px">Suggestions</b>';
+  rebalanceProposal.suggestions.forEach(function(s, i){
+    const accepted = s.accepted !== false;
     const who = s.unit.shared ? '' : (s.unit.person === 'elena' ? ' (Elena)' : ' (Andrea)');
-    const last = i === rebalanceProposal.swaps.length - 1;
-    html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + to.emoji + '</div>'
-      + '<div class="li-t">' + DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + who + ' → ' + escapeHtml(to.title)
-      + '<small>+ ' + g.label + '</small></div></div>';
+    const last = i === rebalanceProposal.suggestions.length - 1;
+    const kind = s.kind === 'swap' ? 'swap' : 'side';
+    const icon = s.kind === 'swap' ? RECIPES[s.toRecipeId].emoji : RECIPES[s.sideRecipeId].emoji;
+    html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + icon + '</div>'
+      + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
+      + '<small>' + (kind === 'swap' ? 'Swap' : 'Add side') + ' · +' + g.label + '</small></div>'
+      + '<div class="row" style="gap:8px">'
+      + '<button class="backbtn' + (accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
+      + '<button class="backbtn' + (!accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'
+      + '</div></div>';
   });
+  const acceptedGap = coverageGaps(computeWeeklyCoverage(acceptedPlan))[rebalanceProposal.metricKey];
   html += '</div>'
-    + '<p class="sub">' + g.label + ' after these swaps: <b>' + rebalanceValueAfter(rebalanceProposal) + '</b> (now ' + coverageValueText(g) + ').</p>'
+    + '<p class="sub">' + g.label + ' after accepted suggestions: <b>' + coverageValueText(acceptedGap) + '</b> (now ' + coverageValueText(g) + ').</p>'
     + '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
   return html;
@@ -1250,20 +1310,17 @@ function openRebalanceSheet(){
 }
 
 function applyRebalance(){
-  if(!rebalanceProposal || !rebalanceProposal.swaps.length){ closeSheet(); return; }
+  if(!rebalanceProposal || !rebalanceProposal.suggestions.length){ closeSheet(); return; }
   const g = rebalanceProposal.gapInfo;
-  const afterText = rebalanceValueAfter(rebalanceProposal);
-  // Re-balance is CURRENT-week-only (proposeRebalanceSwaps always works from the
-  // `weekPlan` compat getter) — write the result into BOTH weekPlans (the real store) and
-  // the bare `weekPlan` compat getter it mirrors, so the next ensureWeekPlan() call (e.g.
-  // the next renderWeek()) doesn't silently overwrite this with the pre-rebalance plan
-  // still sitting in weekPlans[currentMonday]. Same signature either way — ensureWeekPlan
-  // won't consider it stale.
-  const currentMonday = mondayOfWeek(todayISO());
-  preserveLoggedSlots(weekPlans[currentMonday] || weekPlan, rebalanceProposal.resultPlan);
-  markWeekPlanEdited(rebalanceProposal.resultPlan);
-  weekPlans[currentMonday] = rebalanceProposal.resultPlan;
-  weekPlan = weekPlans[currentMonday];
+  const accepted = rebalanceProposal.suggestions.filter(function(s){ return s.accepted !== false; });
+  if(!accepted.length){ closeSheet(); return; }
+  const basePlan = ensureWeekPlan(rebalanceProposal.weekStartDate);
+  const resultPlan = rebalanceAcceptedPlan(rebalanceProposal);
+  const afterText = coverageValueText(coverageGaps(computeWeeklyCoverage(resultPlan))[rebalanceProposal.metricKey]);
+  preserveLoggedSlots(basePlan, resultPlan);
+  markWeekPlanEdited(resultPlan);
+  weekPlans[rebalanceProposal.weekStartDate] = resultPlan;
+  if(rebalanceProposal.weekStartDate === mondayOfWeek(todayISO())) weekPlan = resultPlan;
   rebalanceProposal = null;
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
@@ -1306,7 +1363,7 @@ function updateLogTotalPill(){
 
 function macroSummaryFromTotals(nut){
   nut = roundedNutritionTotals(nut || {});
-  return nut.protein + 'g protein · ' + nut.carbs + 'g carbs · ' + nut.fat + 'g fat';
+  return nut.protein + 'g protein · ' + nut.carbs + 'g carbs · ' + nut.sugars + 'g sugars · ' + nut.fat + 'g fat';
 }
 
 function beverageCountsForToday(){
@@ -1490,6 +1547,7 @@ function buildEditTodayFoodSheet(){
     + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
     + '<div class="n"><div class="nt"><span>Protein</span><b>'+Math.round(nut.protein)+' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Carbs</span><b>'+Math.round(nut.carbs)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Sugars</span><b>'+Math.round(nut.sugars)+' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
     + '</div>'
     + '<button class="cta" onclick="saveEditTodayFood()">Save</button>'
@@ -1510,7 +1568,7 @@ function saveEditTodayFood(){
   if(!base) return;
   const nut = roundedNutritionTotals(foodMacros(editTodayFoodCtx.ref, editTodayFoodCtx.grams));
   base.grams = editTodayFoodCtx.grams;
-  base.kcal = nut.kcal; base.protein = nut.protein; base.carbs = nut.carbs; base.fat = nut.fat; base.satFat = nut.satFat; base.fiber = nut.fiber; base.u = Date.now();
+  base.kcal = nut.kcal; base.protein = nut.protein; base.carbs = nut.carbs; base.fat = nut.fat; base.satFat = nut.satFat; base.fiber = nut.fiber; base.sugars = nut.sugars; base.freeSugars = nut.freeSugars; base.u = Date.now();
   editTodayFoodCtx.indices.slice(1).sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
   editTodayFoodCtx = null;
   refreshAfterLogChange();
@@ -1760,6 +1818,8 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
       fat: nut.fat,
       satFat: nut.satFat,
       fiber: nut.fiber,
+      sugars: nut.sugars,
+      freeSugars: nut.freeSugars,
       portion: (typeof logged.portion === 'number') ? logged.portion : 1,
       shared: planned ? !!planned.shared : false,
       logged: true
@@ -1779,6 +1839,8 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
     fat: nut ? nut.fat : 0,
     satFat: nut ? nut.satFat : 0,
     fiber: nut ? nut.fiber : 0,
+    sugars: nut ? nut.sugars : 0,
+    freeSugars: nut ? nut.freeSugars : 0,
     portion: planned ? planned.portion : 1,
     shared: planned ? !!planned.shared : false,
     logged: false
@@ -2437,7 +2499,7 @@ function renderFoodSearchResults(){
     return '<div class="altrow" onclick="selectQuickAddFood(\''+id+'\')">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">'+escapeHtml(f.name)+'</div>'
-      + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein <b>/ '+per+'</b></div></div>'
+      + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein · '+Math.round(f.sugars || 0)+'g sugars <b>/ '+per+'</b></div></div>'
       + '</div>';
   }).join('');
 }
@@ -2488,6 +2550,7 @@ function buildGramsStepperSheet(){
     + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
     + '<div class="n"><div class="nt"><span>Protein</span><b>'+Math.round(nut.protein)+' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Carbs</span><b>'+Math.round(nut.carbs)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Sugars</span><b>'+Math.round(nut.sugars)+' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
     + '</div>'
     + '<button class="cta" onclick="confirmQuickAdd()">Add to today</button>'

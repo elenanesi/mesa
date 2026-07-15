@@ -777,6 +777,38 @@ const RECIPES_DB = {
     tags: ['veggie', 'quick'],
     avoid: []
   },
+  'pak-choy-butter-side': {
+    title: 'Pak choy sautéed in butter', emoji: '🥬', slot: 'side',
+    slots: ['side', 'lunch', 'dinner'],
+    styles: ['balanced', 'lowcarb'], time: 10,
+    ingredients: [['pak-choy', 220], ['butter', 12], ['soy-sauce', 8]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Trim and halve the pak choy.', 'Sauté it in butter until just tender and glossy.', 'Finish with soy sauce, garlic and black pepper.'],
+    tags: ['veggie', 'quick'],
+    avoid: ['lactose']
+  },
+  lasagna: {
+    title: 'Lasagna', emoji: '🍝', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
+    occasional: true,
+    styles: ['balanced'], time: 60,
+    ingredients: [['lasagna-sheets', 90], ['beef-mince-lean', 160], ['tomato-passata', 220], ['ricotta', 90], ['mozzarella', 80], ['parmesan', 20], ['olive-oil', 10]],
+    toTaste: ['onion', 'garlic', 'nutmeg', 'basil'],
+    steps: ['Cook the beef with a little onion and garlic, then add the passata.', 'Layer sauce, sheets, ricotta, mozzarella and parmesan in a baking dish.', 'Bake until bubbling and golden on top.', 'Rest before slicing.'],
+    tags: ['muscle'],
+    avoid: ['gluten', 'lactose']
+  },
+  'cena-cinese': {
+    title: 'Cena cinese', emoji: '🥡', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
+    occasional: true,
+    styles: ['balanced'], time: 35,
+    ingredients: [['spaghetti', 70], ['chicken-breast', 150], ['almonds', 18], ['soy-sauce', 16], ['pak-choy', 140], ['ravioli', 80], ['spring-rolls', 90], ['olive-oil', 8]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Cook the spaghetti and toss with a little soy sauce.', 'Stir-fry the chicken with almonds until golden, then add pak choy.', 'Pan-crisp the ravioli and warm the spring rolls.', 'Serve everything together as one mixed dinner.'],
+    tags: ['muscle'],
+    avoid: ['gluten', 'nuts']
+  },
 
   /* ================= SNACK (6) ================= */
 

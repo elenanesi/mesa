@@ -4,7 +4,8 @@
    Global `const FOODS = {...}` keyed by stable kebab-case id. Values
    are per 100g/100ml edible portion unless unit:'piece' (see 'eggs'),
    in which case `per`, `kcal`, `protein`, `carbs`, `fat`, `satFat`,
-   `fiber` are all PER PIECE (avgG documents the assumed piece weight).
+   `fiber`, `sugars` and `freeSugars` are all PER PIECE (avgG documents
+   the assumed piece weight).
 
    Sourcing: standard published tables — mostly USDA FoodData Central
    (FDC id noted per entry where a specific match exists; "-style"
@@ -49,7 +50,7 @@ const FOODS = {
 
   'mixed-berries': {
     name: 'Mixed berries (strawberry, blueberry, raspberry)', per: 100, unit: 'g',
-    kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5,
+    kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5, sugars: 7.0, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
   },
   'bell-pepper': {
@@ -104,7 +105,7 @@ const FOODS = {
   },
   'cavolo-nero': {
     name: 'Cavolo nero / kale, raw', per: 100, unit: 'g',
-    kcal: 49, protein: 4.3, carbs: 8.8, fat: 0.9, satFat: 0.1, fiber: 3.6,
+    kcal: 61, protein: 4.3, carbs: 8.8, fat: 0.9, satFat: 0.1, fiber: 3.6,
     flags: ['highFiber', 'glutenFree'], cat: 'Produce', season: 'winter/autumn', iconKey: 'cavolo-nero', src: 'USDA FDC 168421-style (kale, raw); kcal per 4/4/9'
   },
   'green-beans': {
@@ -119,18 +120,23 @@ const FOODS = {
   },
   'peaches': {
     name: 'Peaches, raw', per: 100, unit: 'g',
-    kcal: 44, protein: 0.9, carbs: 10.1, fat: 0.3, satFat: 0.0, fiber: 1.5,
+    kcal: 44, protein: 0.9, carbs: 10.1, fat: 0.3, satFat: 0.0, fiber: 1.5, sugars: 8.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
   },
   'pears': {
     name: 'Pears, raw', per: 100, unit: 'g',
-    kcal: 59, protein: 0.4, carbs: 15.2, fat: 0.1, satFat: 0.0, fiber: 3.1,
+    kcal: 59, protein: 0.4, carbs: 15.2, fat: 0.1, satFat: 0.0, fiber: 3.1, sugars: 9.8, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
   },
   'mushrooms': {
     name: 'Mushrooms, raw', per: 100, unit: 'g',
     kcal: 26, protein: 3.1, carbs: 3.3, fat: 0.3, satFat: 0.1, fiber: 1.0,
     flags: [], cat: 'Produce', iconKey: 'mushrooms', src: 'USDA FDC 169251 (mushrooms, white, raw); kcal per 4/4/9'
+  },
+  'pak-choy': {
+    name: 'Pak choy / bok choy, raw', per: 100, unit: 'g',
+    kcal: 17, protein: 1.5, carbs: 2.2, fat: 0.2, satFat: 0.0, fiber: 1.0, sugars: 1.2, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['glutenFree'], cat: 'Produce', season: 'winter/autumn', iconKey: 'pak-choy', iconAsset: 'assets/ingredients/pak-choy.png', src: 'USDA FDC-style (bok choy / pak choy, raw); kcal per 4/4/9'
   },
   'pumpkin': {
     name: 'Pumpkin / squash, raw', per: 100, unit: 'g',
@@ -179,17 +185,17 @@ const FOODS = {
   },
   'oranges': {
     name: 'Oranges, raw', per: 100, unit: 'g',
-    kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4,
+    kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4, sugars: 9.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
   },
   'apples': {
     name: 'Apples, raw, with skin', per: 100, unit: 'g',
-    kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4,
+    kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4, sugars: 10.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
   },
   'bananas': {
     name: 'Bananas, raw', per: 100, unit: 'g',
-    kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6,
+    kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6, sugars: 12.2, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Produce', iconKey: 'bananas', src: 'USDA FDC 173944 (banana, raw)'
   },
   'rocket-arugula': {
@@ -324,12 +330,12 @@ const FOODS = {
 
   'greek-yogurt': {
     name: 'Greek yogurt, plain (2%)', per: 100, unit: 'g',
-    kcal: 72, protein: 9.9, carbs: 3.9, fat: 1.9, satFat: 1.2, fiber: 0,
+    kcal: 72, protein: 9.9, carbs: 3.9, fat: 1.9, satFat: 1.2, fiber: 0, sugars: 3.5, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['lowGI', 'fermented'], cat: 'Dairy', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
   },
   'skyr': {
     name: 'Skyr, plain', per: 100, unit: 'g',
-    kcal: 62, protein: 11.0, carbs: 4.0, fat: 0.2, satFat: 0.1, fiber: 0,
+    kcal: 62, protein: 11.0, carbs: 4.0, fat: 0.2, satFat: 0.1, fiber: 0, sugars: 4.0, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['lowGI', 'fermented'], cat: 'Dairy', src: 'Icelandic dairy standard table (skyr, plain)'
   },
   'feta-cheese': {
@@ -372,6 +378,11 @@ const FOODS = {
     kcal: 166, protein: 8.8, carbs: 3.5, fat: 13.0, satFat: 8.3, fiber: 0,
     flags: [], cat: 'Dairy', src: 'USDA FDC 173439 (cheese, ricotta, whole milk)'
   },
+  'butter': {
+    name: 'Butter, salted', per: 100, unit: 'g',
+    kcal: 717, protein: 0.9, carbs: 0.1, fat: 81.0, satFat: 51.4, fiber: 0, sugars: 0.1, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', iconKey: 'butter', iconAsset: 'assets/ingredients/butter.png', src: 'USDA FDC 173410-style (butter, salted)'
+  },
   'gorgonzola': {
     name: 'Gorgonzola / blue cheese', per: 100, unit: 'g',
     kcal: 351, protein: 21.4, carbs: 2.3, fat: 28.7, satFat: 18.7, fiber: 0,
@@ -379,12 +390,12 @@ const FOODS = {
   },
   'milk': {
     name: 'Milk, whole (3.5% fat)', per: 100, unit: 'ml',
-    kcal: 65, protein: 3.3, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0,
+    kcal: 65, protein: 3.3, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0, sugars: 4.8, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'milk', src: 'USDA FDC 746782 (milk, whole, 3.25-3.5% fat)'
   },
   'oat-milk': {
     name: 'Oat milk, unsweetened', per: 100, unit: 'ml',
-    kcal: 43, protein: 0.6, carbs: 6.7, fat: 1.5, satFat: 0.2, fiber: 0.8,
+    kcal: 43, protein: 0.6, carbs: 6.7, fat: 1.5, satFat: 0.2, fiber: 0.8, sugars: 3.3, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic oat milk, unsweetened, manufacturer label average'
   },
   'espresso-unsweetened': {
@@ -394,7 +405,7 @@ const FOODS = {
   },
   'cappuccino-unsweetened': {
     name: 'Cappuccino, no sugar', per: 1, unit: 'piece', avgG: 1,
-    kcal: 65, protein: 3.4, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0,
+    kcal: 65, protein: 3.4, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0, sugars: 4.8, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'cappuccino-unsweetened', src: 'Composite: espresso + ~100ml whole milk, no sugar'
   },
 
@@ -430,17 +441,17 @@ const FOODS = {
 
   'granola': {
     name: 'Granola, plain', per: 100, unit: 'g',
-    kcal: 476, protein: 10.0, carbs: 64.0, fat: 20.0, satFat: 3.5, fiber: 7.0,
+    kcal: 476, protein: 10.0, carbs: 64.0, fat: 20.0, satFat: 3.5, fiber: 7.0, sugars: 20.0, freeSugars: 10.0, sugarQuality: 'mixed',
     flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 173977-style (granola, plain)'
   },
   'honey': {
     name: 'Honey', per: 100, unit: 'g',
-    kcal: 331, protein: 0.3, carbs: 82.4, fat: 0, satFat: 0, fiber: 0.2,
+    kcal: 331, protein: 0.3, carbs: 82.4, fat: 0, satFat: 0, fiber: 0.2, sugars: 82.1, freeSugars: 82.1, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', src: 'USDA FDC 169640 (honey)'
   },
   'maple-syrup': {
     name: 'Maple syrup', per: 100, unit: 'ml',
-    kcal: 276, protein: 0.0, carbs: 67.0, fat: 0.1, satFat: 0.0, fiber: 0,
+    kcal: 276, protein: 0.0, carbs: 67.0, fat: 0.1, satFat: 0.0, fiber: 0, sugars: 60.5, freeSugars: 60.5, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', src: 'USDA FDC 169661-style (maple syrup); kcal per 4/4/9'
   },
   'chia-seeds': {
@@ -468,10 +479,35 @@ const FOODS = {
     kcal: 364, protein: 13.0, carbs: 74.7, fat: 1.5, satFat: 0.3, fiber: 3.2,
     flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC 168927-style (pasta, dry, unenriched)'
   },
+  'spaghetti': {
+    name: 'Spaghetti, dry', per: 100, unit: 'g',
+    kcal: 364, protein: 13.0, carbs: 74.7, fat: 1.5, satFat: 0.3, fiber: 3.2, sugars: 2.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC-style (spaghetti, dry); matched to dry pasta average'
+  },
   'wholegrain-pasta': {
     name: 'Wholegrain pasta, dry', per: 100, unit: 'g',
     kcal: 328, protein: 13.4, carbs: 63.0, fat: 2.5, satFat: 0.5, fiber: 8.0,
     flags: ['highFiber', 'lowGI'], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC 168928-style (pasta, whole wheat, dry)'
+  },
+  'lasagna-sheets': {
+    name: 'Lasagna sheets, dry', per: 100, unit: 'g',
+    kcal: 364, protein: 13.0, carbs: 74.7, fat: 1.5, satFat: 0.3, fiber: 3.2, sugars: 2.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC-style (lasagna sheets, dry); matched to dry pasta average'
+  },
+  'ravioli': {
+    name: 'Ravioli, egg pasta with filling, fresh', per: 100, unit: 'g',
+    kcal: 263, protein: 11.0, carbs: 36.0, fat: 8.0, satFat: 3.0, fiber: 2.0, sugars: 2.0, freeSugars: 0.5, sugarQuality: 'mixed',
+    flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC-style (ravioli, cheese-filled, fresh); representative filled-pasta average'
+  },
+  'spring-rolls': {
+    name: 'Spring rolls, vegetable, baked', per: 100, unit: 'g',
+    kcal: 218, protein: 4.0, carbs: 30.0, fat: 9.0, satFat: 1.4, fiber: 3.0, sugars: 3.5, freeSugars: 1.5, sugarQuality: 'mixed',
+    flags: [], cat: 'Frozen', iconKey: 'pasta-filo', src: 'USDA FDC-style (vegetable spring rolls, baked/frozen); representative appetizer average'
+  },
+  'tomato-passata': {
+    name: 'Tomato passata', per: 100, unit: 'g',
+    kcal: 29, protein: 1.4, carbs: 5.0, fat: 0.2, satFat: 0.0, fiber: 1.4, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Pantry', iconKey: 'cherry-tomatoes', src: 'USDA FDC-style (tomato puree / passata, unsalted)'
   },
   'rice': {
     name: 'Rice, white, dry', per: 100, unit: 'g',
@@ -505,7 +541,7 @@ const FOODS = {
   },
   'balsamic-vinegar': {
     name: 'Balsamic vinegar', per: 100, unit: 'ml',
-    kcal: 90, protein: 0.5, carbs: 22.0, fat: 0, satFat: 0, fiber: 0,
+    kcal: 90, protein: 0.5, carbs: 22.0, fat: 0, satFat: 0, fiber: 0, sugars: 15.0, freeSugars: 15.0, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'balsamic-vinegar', src: 'USDA FDC 172387-style (vinegar, balsamic); kcal per 4/4/9'
   },
   'soy-sauce': {
@@ -525,12 +561,12 @@ const FOODS = {
   },
   'dark-chocolate-85': {
     name: 'Dark chocolate, 85% cocoa', per: 100, unit: 'g',
-    kcal: 591, protein: 7.8, carbs: 23.0, fat: 52.0, satFat: 31.0, fiber: 11.0,
+    kcal: 591, protein: 7.8, carbs: 23.0, fat: 52.0, satFat: 31.0, fiber: 11.0, sugars: 7.0, freeSugars: 7.0, sugarQuality: 'mixed',
     flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 170272-style (chocolate, dark, 85% cacao)'
   },
   'chocolate-hazelnut-spread': {
     name: 'Chocolate hazelnut spread', per: 100, unit: 'g',
-    kcal: 533, protein: 6.3, carbs: 57.5, fat: 30.9, satFat: 10.6, fiber: 3.4,
+    kcal: 533, protein: 6.3, carbs: 57.5, fat: 30.9, satFat: 10.6, fiber: 3.4, sugars: 56.0, freeSugars: 50.0, sugarQuality: 'mixed',
     flags: [], cat: 'Pantry', src: 'Generic Nutella-style chocolate hazelnut spread label average; kcal per 4/4/9'
   },
   'whey-protein-powder': {
@@ -540,22 +576,22 @@ const FOODS = {
   },
   'gelato-chocolate': {
     name: 'Gelato, chocolate', per: 100, unit: 'g',
-    kcal: 206, protein: 4.0, carbs: 25.0, fat: 10.0, satFat: 6.5, fiber: 1.5,
+    kcal: 206, protein: 4.0, carbs: 25.0, fat: 10.0, satFat: 6.5, fiber: 1.5, sugars: 22.0, freeSugars: 18.0, sugarQuality: 'mixed',
     flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (chocolate)'
   },
   'gelato-stracciatella': {
     name: 'Gelato, stracciatella', per: 100, unit: 'g',
-    kcal: 209, protein: 3.5, carbs: 24.0, fat: 11.0, satFat: 7.0, fiber: 0.5,
+    kcal: 209, protein: 3.5, carbs: 24.0, fat: 11.0, satFat: 7.0, fiber: 0.5, sugars: 21.0, freeSugars: 17.0, sugarQuality: 'mixed',
     flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (stracciatella)'
   },
   'gelato-yogurt': {
     name: 'Gelato, yogurt', per: 100, unit: 'g',
-    kcal: 173, protein: 4.0, carbs: 28.0, fat: 5.0, satFat: 3.2, fiber: 0,
+    kcal: 173, protein: 4.0, carbs: 28.0, fat: 5.0, satFat: 3.2, fiber: 0, sugars: 25.0, freeSugars: 19.0, sugarQuality: 'mixed',
     flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (yogurt)'
   },
   'gelato-crema': {
     name: 'Gelato, crema', per: 100, unit: 'g',
-    kcal: 192, protein: 4.0, carbs: 26.0, fat: 8.0, satFat: 5.0, fiber: 0,
+    kcal: 192, protein: 4.0, carbs: 26.0, fat: 8.0, satFat: 5.0, fiber: 0, sugars: 23.0, freeSugars: 18.0, sugarQuality: 'mixed',
     flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (crema)'
   },
   'fast-food-beef-burger': {
@@ -570,12 +606,12 @@ const FOODS = {
   },
   'cola': {
     name: 'Cola', per: 100, unit: 'ml',
-    kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0,
+    kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0, sugars: 10.6, freeSugars: 10.6, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'cola', src: 'USDA FDC 174819-style cola soft drink'
   },
   'brownie': {
     name: 'Brownie', per: 100, unit: 'g',
-    kcal: 417, protein: 5.0, carbs: 52.0, fat: 21.0, satFat: 8.0, fiber: 2.2,
+    kcal: 417, protein: 5.0, carbs: 52.0, fat: 21.0, satFat: 8.0, fiber: 2.2, sugars: 37.0, freeSugars: 30.0, sugarQuality: 'mixed',
     flags: [], cat: 'Bakery', iconKey: 'brownie', src: 'USDA FDC 167982-style brownie, commercial'
   },
   'capers': {
@@ -658,6 +694,22 @@ const FOODS = {
   }
 
 };
+
+const SUGAR_QUALITY_VALUES = {intrinsic: true, 'added/free': true, mixed: true, unknown: true};
+
+function normalizeFoodSugarFields(food){
+  if(!food || typeof food !== 'object') return food;
+  if(typeof food.sugars !== 'number' || !isFinite(food.sugars)) food.sugars = 0;
+  if(typeof food.freeSugars !== 'number' || !isFinite(food.freeSugars)) food.freeSugars = 0;
+  if(food.sugars < 0) food.sugars = 0;
+  if(food.freeSugars < 0) food.freeSugars = 0;
+  if(typeof food.carbs === 'number' && isFinite(food.carbs) && food.sugars > food.carbs) food.sugars = food.carbs;
+  if(food.freeSugars > food.sugars) food.freeSugars = food.sugars;
+  if(typeof food.sugarQuality !== 'string' || !SUGAR_QUALITY_VALUES[food.sugarQuality]) food.sugarQuality = 'unknown';
+  return food;
+}
+
+Object.keys(FOODS).forEach(function(id){ normalizeFoodSugarFields(FOODS[id]); });
 
 /* ===================================================================
    FOOD_ALIASES — every ingredient-name string used in RECIPES
@@ -748,9 +800,12 @@ function validateFoods(){
     if (typeof f.name !== 'string' || !f.name) errors.push(where + ': name missing/invalid');
     if (typeof f.per !== 'number') errors.push(where + ': per missing/not a number');
     if (typeof f.unit !== 'string' || !f.unit) errors.push(where + ': unit missing/invalid');
-    ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].forEach(function(field){
+    ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(field){
       if (typeof f[field] !== 'number' || Number.isNaN(f[field])) errors.push(where + ': ' + field + ' missing/not a number');
     });
+    if (typeof f.sugarQuality !== 'string' || !SUGAR_QUALITY_VALUES[f.sugarQuality]) {
+      errors.push(where + ': sugarQuality missing/invalid');
+    }
     if (!Array.isArray(f.flags)) errors.push(where + ': flags missing/not an array');
     if (typeof f.cat !== 'string' || !f.cat) errors.push(where + ': cat missing/invalid');
     if (typeof f.src !== 'string' || !f.src) errors.push(where + ': src missing/invalid');
@@ -767,6 +822,12 @@ function validateFoods(){
     }
     if (typeof f.fiber === 'number' && typeof f.carbs === 'number' && f.fiber > f.carbs + EPS) {
       errors.push(where + ': fiber (' + f.fiber + ') > carbs (' + f.carbs + ')');
+    }
+    if (typeof f.sugars === 'number' && typeof f.carbs === 'number' && f.sugars > f.carbs + EPS) {
+      errors.push(where + ': sugars (' + f.sugars + ') > carbs (' + f.carbs + ')');
+    }
+    if (typeof f.freeSugars === 'number' && typeof f.sugars === 'number' && f.freeSugars > f.sugars + EPS) {
+      errors.push(where + ': freeSugars (' + f.freeSugars + ') > sugars (' + f.sugars + ')');
     }
 
     if (typeof f.protein === 'number' && typeof f.carbs === 'number' && typeof f.fat === 'number' && typeof f.kcal === 'number') {

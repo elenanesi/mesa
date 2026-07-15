@@ -712,6 +712,17 @@ function inferOffFlags(product, food){
   return flags;
 }
 
+function inferSugarQuality(product){
+  const hay = [
+    product.ingredients_text || '',
+    product.ingredients_text_it || '',
+    product.labels_tags || []
+  ].join(' ').toLowerCase();
+  if(/\b(no added sugar|without added sugar|senza zuccheri aggiunti|sans sucres ajoutés)\b/.test(hay)) return 'intrinsic';
+  if(/\b(sugar|zuccheri|zucchero|glucose|fructose|syrup|sciroppo|dextrose|maltodextrin|maltodestrina)\b/.test(hay)) return 'mixed';
+  return 'unknown';
+}
+
 function openFoodFactsProductToFood(product, barcode){
   const nutriments = product.nutriments || {};
   const protein = offNum(nutriments, 'proteins');
@@ -720,6 +731,9 @@ function openFoodFactsProductToFood(product, barcode){
   if(protein === null || carbs === null || fat === null) return null;
   const satFat = offNum(nutriments, 'saturated-fat') || 0;
   const fiber = offNum(nutriments, 'fiber') || 0;
+  const sugars = offNum(nutriments, 'sugars');
+  const addedSugars = offNum(nutriments, 'added-sugars');
+  const freeSugars = addedSugars !== null ? addedSugars : null;
   const labelKcal = offNum(nutriments, 'energy-kcal');
   const name = firstText(product.product_name_it, product.product_name, product.generic_name_it, product.generic_name, 'Product ' + barcode);
   const food = {
@@ -731,10 +745,13 @@ function openFoodFactsProductToFood(product, barcode){
     fat: +fat.toFixed(1),
     satFat: +Math.min(satFat, fat).toFixed(1),
     fiber: +Math.min(fiber, carbs).toFixed(1),
+    sugars: sugars === null ? 0 : +Math.min(sugars, carbs).toFixed(1),
+    freeSugars: freeSugars === null ? 0 : +Math.min(freeSugars, sugars === null ? carbs : sugars).toFixed(1),
+    sugarQuality: inferSugarQuality(product),
     flags: [],
     cat: inferOffCategory(product),
     season: 'evergreen',
-    src: 'Open Food Facts barcode ' + barcode + '; kcal computed by Mesa from label macros',
+    src: 'Open Food Facts barcode ' + barcode + '; kcal computed by Mesa from label macros; sugars are informational',
     barcode: barcode,
     offBarcode: barcode,
     offUrl: product.url || ('https://world.openfoodfacts.org/product/' + barcode),
@@ -773,9 +790,10 @@ function renderBarcodeProductPreview(){
     + '<div class="n"><div class="nt"><span>Calories</span><b>' + f.kcal + ' kcal</b></div></div>'
     + '<div class="n"><div class="nt"><span>Protein</span><b>' + f.protein + ' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Carbs</span><b>' + f.carbs + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Sugars</span><b>' + Math.round(f.sugars || 0) + ' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Fat</span><b>' + f.fat + ' g</b></div></div>'
     + '</div>'
-    + '<div class="sub" style="margin-top:8px">Per 100g · ' + escapeHtml(f.cat) + ' · ' + seasonLabel(foodSeason(f)) + (f.flags.length ? ' · ' + f.flags.map(flagLabel).join(', ') : '') + '</div>'
+    + '<div class="sub" style="margin-top:8px">Per 100g · ' + escapeHtml(f.cat) + ' · ' + seasonLabel(foodSeason(f)) + ' · ' + sugarQualityLabel(f.sugarQuality) + (f.flags.length ? ' · ' + f.flags.map(flagLabel).join(', ') : '') + '</div>'
     + labelDiff
     + (f.ingredientsText ? '<div class="field"><label>Ingredients from label</label><div class="why" style="margin-top:6px">' + escapeHtml(f.ingredientsText) + '</div></div>' : '<p class="sub" style="margin-top:10px">No ingredient text was available for this product.</p>')
     + '<button class="cta" onclick="saveBarcodeProductAsFood()">Save ingredient</button>'
@@ -943,12 +961,12 @@ function renderLibFoodListMarkup(query){
       const kcalPer100 = f.unit === 'piece' ? Math.round(f.kcal / f.avgG * 100) : Math.round(f.kcal);
       const factor = f.unit === 'piece' ? (100 / f.avgG) : (100 / f.per);
       const macroLine = Math.round((f.protein || 0) * factor) + 'g P · '
-        + Math.round((f.carbs || 0) * factor) + 'g C · '
+        + Math.round((f.carbs || 0) * factor) + 'g C, of which ' + Math.round((f.sugars || 0) * factor) + 'g sugars · '
         + Math.round((f.fat || 0) * factor) + 'g F · '
         + Math.round((f.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
       out += '<div class="altrow" style="cursor:default">'
         + '<div class="ae">' + foodIconHtml(id) + '</div>'
-        + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + '</div>'
+        + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + ' <span class="pill mini">' + sugarQualityLabel(f.sugarQuality) + '</span></div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
         + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button>'
         + (isEdited ? '<button class="lib-del" aria-label="Reset ' + htmlAttr(f.name) + '" onclick="resetFoodOverride(\'' + id + '\')">↺</button>' : '')
@@ -973,11 +991,17 @@ const FOOD_FORM_FLAGS = ['lowGI', 'omega3', 'highFiber', 'glutenFree']; // offer
 // even though the new-ingredient form only offers the original 4.
 const FOOD_FLAG_LABELS = {lowGI: 'Low-GI', omega3: 'Omega-3', highFiber: 'High fiber', glutenFree: 'Gluten-free', selenium: 'Selenium', highIodine: 'High iodine', fermented: 'Fermented'};
 function flagLabel(fl){ return FOOD_FLAG_LABELS[fl] || fl; }
+function sugarQualityLabel(q){
+  if(q === 'intrinsic') return 'Intrinsic sugars';
+  if(q === 'added/free') return 'Added/free sugars';
+  if(q === 'mixed') return 'Mixed sugars';
+  return 'Sugar quality unknown';
+}
 
 let newFoodForm = null;
 
 function openNewFoodForm(){
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, flags: []};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: []};
   renderNewFoodFormSheet();
 }
 
@@ -995,6 +1019,9 @@ function openEditFoodForm(id){
     fat: +((f.fat || 0) * factor).toFixed(1),
     satFat: +((f.satFat || 0) * factor).toFixed(1),
     fiber: +((f.fiber || 0) * factor).toFixed(1),
+    sugars: +((f.sugars || 0) * factor).toFixed(1),
+    freeSugars: +((f.freeSugars || 0) * factor).toFixed(1),
+    sugarQuality: f.sugarQuality || 'unknown',
     flags: Array.isArray(f.flags) ? f.flags.slice() : []
   };
   renderNewFoodFormSheet();
@@ -1007,6 +1034,8 @@ function newFoodCapNotes(f){
   const notes = [];
   if(f.satFat > f.fat + 1e-9) notes.push('Sat. fat can’t be more than total fat.');
   if(f.fiber > f.carbs + 1e-9) notes.push('Fiber can’t be more than total carbs.');
+  if(f.sugars > f.carbs + 1e-9) notes.push('Sugars can’t be more than total carbs.');
+  if(f.freeSugars > f.sugars + 1e-9) notes.push('Free sugars can’t be more than total sugars.');
   if(f.protein + f.carbs + f.fat > 100 + 1e-9) notes.push('Protein + carbs + fat can’t add up to more than 100g per 100g.');
   return notes;
 }
@@ -1028,11 +1057,17 @@ function buildNewFoodFormSheet(){
     + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(f.season) === s ? ' chipsel' : '') + '" onclick="setNewFoodSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
     + '</div></div>';
 
+  html += '<div class="field"><label>Sugar quality</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + [['intrinsic','Intrinsic'], ['added/free','Added/free'], ['mixed','Mixed'], ['unknown','Unknown']].map(function(pair){
+      return '<button class="pill ghost chip-preset' + (f.sugarQuality === pair[0] ? ' chipsel' : '') + '" onclick="setNewFoodSugarQuality(\'' + pair[0] + '\')">' + pair[1] + '</button>';
+    }).join('')
+    + '</div></div>';
+
   // FIX 2 (feedback, owner: "prova a creare un ingrediente con 100 calorie usando il +…
   // permetti di scrivere direttamente l'importo… anche i decimali (es: 7,4 grassi)"): each
   // value is now a typeable input (comma OR dot decimals, commitNewFoodField below), flanked
   // by the same +/- steppers as before.
-  [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat'], ['satFat', 'Sat. fat'], ['fiber', 'Fiber']].forEach(function(pair){
+  [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat'], ['satFat', 'Sat. fat'], ['fiber', 'Fiber'], ['sugars', 'Sugars'], ['freeSugars', 'Free sugars']].forEach(function(pair){
     const key = pair[0], label = pair[1];
     html += '<div class="field"><label>' + label + ' (g / 100g)</label><div class="inp">'
       + '<span>' + label + '</span>'
@@ -1061,6 +1096,7 @@ function buildNewFoodFormSheet(){
 
 function setNewFoodCat(c){ newFoodForm.cat = c; renderNewFoodFormSheet(); }
 function setNewFoodSeason(season){ newFoodForm.season = normalizeSeason(season); renderNewFoodFormSheet(); }
+function setNewFoodSugarQuality(value){ newFoodForm.sugarQuality = value; renderNewFoodFormSheet(); }
 function toggleNewFoodFlag(fl){
   const i = newFoodForm.flags.indexOf(fl);
   if(i === -1) newFoodForm.flags.push(fl); else newFoodForm.flags.splice(i, 1);
@@ -1090,9 +1126,11 @@ function saveNewFood(){
   const lower = name.toLowerCase();
   const dup = Object.keys(FOODS).some(function(id){ return id !== f.editingId && FOODS[id].name.toLowerCase() === lower; });
   if(dup){ toast('“' + name + '” already exists — try a different name'); return; }
-  if(f.protein < 0 || f.carbs < 0 || f.fat < 0 || f.satFat < 0 || f.fiber < 0){ toast('Values must be zero or more'); return; }
+  if(f.protein < 0 || f.carbs < 0 || f.fat < 0 || f.satFat < 0 || f.fiber < 0 || f.sugars < 0 || f.freeSugars < 0){ toast('Values must be zero or more'); return; }
   if(f.satFat > f.fat + 1e-9){ toast('Sat. fat can’t exceed total fat'); return; }
   if(f.fiber > f.carbs + 1e-9){ toast('Fiber can’t exceed total carbs'); return; }
+  if(f.sugars > f.carbs + 1e-9){ toast('Sugars can’t exceed total carbs'); return; }
+  if(f.freeSugars > f.sugars + 1e-9){ toast('Free sugars can’t exceed total sugars'); return; }
   if(f.protein + f.carbs + f.fat > 100 + 1e-9){ toast('Protein + carbs + fat can’t exceed 100g per 100g'); return; }
 
   const id = f.editingId || uniqueSlug(slugify(name), FOODS, 'cf-');
@@ -1102,6 +1140,7 @@ function saveNewFood(){
   const saved = Object.assign({}, existing, {
     name: name, per: 100, unit: 'g',
     kcal: kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, satFat: f.satFat, fiber: f.fiber,
+    sugars: f.sugars, freeSugars: f.freeSugars, sugarQuality: f.sugarQuality || 'unknown',
     flags: f.flags.slice(), cat: f.cat, season: normalizeSeason(f.season), src: 'User-added ingredient',
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   });
@@ -1693,6 +1732,13 @@ function mergeImportedLibrary(parsed){
     const food = JSON.parse(JSON.stringify(incoming));
     const nameNorm = String(food.name || '').trim().toLowerCase();
     if(existingFoodNames.indexOf(nameNorm) !== -1) food.name = food.name + ' (imported)';
+    if(typeof food.sugars !== 'number' || !isFinite(food.sugars)) food.sugars = 0;
+    if(typeof food.freeSugars !== 'number' || !isFinite(food.freeSugars)) food.freeSugars = 0;
+    if(typeof food.sugarQuality !== 'string' || ['intrinsic','added/free','mixed','unknown'].indexOf(food.sugarQuality) === -1) food.sugarQuality = 'unknown';
+    if(food.sugars < 0) food.sugars = 0;
+    if(food.freeSugars < 0) food.freeSugars = 0;
+    if(food.sugars > (food.carbs || 0)) food.sugars = food.carbs || 0;
+    if(food.freeSugars > food.sugars) food.freeSugars = food.sugars;
     existingFoodNames.push(String(food.name).trim().toLowerCase());
     customFoods[targetId] = food;
     addedFoods++;

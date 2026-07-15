@@ -145,6 +145,8 @@ function planEntryView(entry, shared){
     fat: nut.fat,
     satFat: nut.satFat,
     fiber: nut.fiber,
+    sugars: nut.sugars,
+    freeSugars: nut.freeSugars,
     shared: !!shared
   };
 }
@@ -1142,6 +1144,26 @@ function applySwapToPlan(plan, unit, newRecipeId){
   return m;
 }
 
+function addSideToPlan(plan, unit, sideRecipeId){
+  const m = plan.days[unit.dayIndex].meals[unit.slot];
+  const now = Date.now();
+  const stampSide = function(entry, stampEntry){
+    entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
+    entry.extras.push({recipeId: sideRecipeId, portion: 1});
+    refreshPlanEntryNutrition(entry);
+    if(stampEntry) entry.t = now;
+  };
+  if(unit.shared){
+    stampSide(m.elena, false);
+    stampSide(m.partner, false);
+    m.t = now;
+  } else {
+    stampSide(m[unit.person], true);
+    delete m.t;
+  }
+  return m;
+}
+
 // Alternatives = same slot, same style, avoid-respecting, excluding the current recipe
 // and anything already planned elsewhere today for this person; ranked by closest
 // computed kcal to what's currently planned (deterministic tie-break by id).
@@ -1487,12 +1509,12 @@ function recipeHasFlag(recipeId, flag){
 // Real weekly nutrient coverage over a given plan (defaults to the live weekPlan):
 // omega-3 / selenium meal counts (a meal counts if EITHER person's dish that slot
 // contains the flag — for shared meals that's the one dish both eat), fiber g/day
-// average per person, and the household's saturated-fat share of total fat.
+// average per person, and the household's saturated-fat + free-sugar share of total energy.
 function computeWeeklyCoverage(plan){
   plan = plan || weekPlan;
   let omega3Count = 0, seleniumCount = 0;
   let fiberSumE = 0, fiberSumA = 0;
-  let fatSum = 0, satFatSum = 0;
+  let fatSum = 0, satFatSum = 0, freeSugarKcal = 0, totalKcal = 0;
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
@@ -1511,13 +1533,16 @@ function computeWeeklyCoverage(plan){
       fiberSumE += nutE.fiber; fiberSumA += nutA.fiber;
       fatSum += nutE.fat + nutA.fat;
       satFatSum += nutE.satFat + nutA.satFat;
+      freeSugarKcal += (nutE.freeSugars + nutA.freeSugars) * 4;
+      totalKcal += nutE.kcal + nutA.kcal;
     });
   });
   return {
     omega3PerWeek: omega3Count,
     seleniumPerWeek: seleniumCount,
     fiberAvgPerDay: {elena: fiberSumE / 7, partner: fiberSumA / 7},
-    satFatShareOfFat: fatSum > 0 ? satFatSum / fatSum : 0
+    satFatShareOfFat: fatSum > 0 ? satFatSum / fatSum : 0,
+    freeSugarShareOfKcal: totalKcal > 0 ? freeSugarKcal / totalKcal : 0
   };
 }
 
@@ -1528,6 +1553,7 @@ function coverageGaps(cov){
   const worstFiberPerson = cov.fiberAvgPerDay.elena <= cov.fiberAvgPerDay.partner ? 'elena' : 'partner';
   const worstFiberVal = cov.fiberAvgPerDay[worstFiberPerson];
   const satPct = cov.satFatShareOfFat * 100;
+  const sugarPct = cov.freeSugarShareOfKcal * 100;
   return {
     omega3: {key: 'omega3', label: 'Omega-3 meals', value: cov.omega3PerWeek, target: 3, unit: '/wk',
       gap: Math.max(0, (3 - cov.omega3PerWeek) / 3), pct: Math.min(100, Math.round(cov.omega3PerWeek / 3 * 100))},
@@ -1536,7 +1562,11 @@ function coverageGaps(cov){
     fiber: {key: 'fiber', label: 'Fiber', value: Math.round(worstFiberVal), target: 25, unit: 'g/day', person: worstFiberPerson,
       gap: Math.max(0, (25 - worstFiberVal) / 25), pct: Math.min(100, Math.round(worstFiberVal / 25 * 100))},
     satFat: {key: 'satFat', label: 'Sat. fat', value: Math.round(satPct), target: 33, unit: '% of fat', cap: true,
-      gap: Math.max(0, (satPct - 33) / 33), pct: Math.min(100, Math.round(satPct / 33 * 100))}
+      gap: Math.max(0, (satPct - 33) / 33), pct: Math.min(100, Math.round(satPct / 33 * 100))},
+    freeSugars: {key: 'freeSugars', label: 'Free sugars', value: Math.round(sugarPct), target: Math.round(6), unit: '% of kcal',
+      gap: Math.max(0, (sugarPct - 6) / 6), pct: Math.min(100, Math.round(sugarPct / 6 * 100)), cap: true, note: 'target from current profile calories'},
+    freeSugarsWarn: {key: 'freeSugarsWarn', label: 'Free sugars ceiling', value: Math.round(sugarPct), target: Math.round(10), unit: '% of kcal',
+      gap: Math.max(0, (sugarPct - 10) / 10), pct: Math.min(100, Math.round(sugarPct / 10 * 100)), cap: true}
   };
 }
 
@@ -1653,30 +1683,98 @@ function objectiveFor(metricKey, plan, fixedPerson){
   if(metricKey === 'selenium') return cov.seleniumPerWeek;
   if(metricKey === 'fiber') return cov.fiberAvgPerDay[fixedPerson];
   if(metricKey === 'satFat') return -cov.satFatShareOfFat;
+  if(metricKey === 'freeSugars' || metricKey === 'freeSugarsWarn') return -cov.freeSugarShareOfKcal;
   return 0;
 }
 
-// Greedy hill-climb: finds the single best-improving legal swap (same avoid/style rules
-// as generation, via candidatesFor) for the worst metric, applies it to a working copy,
-// then repeats once more (≤2 swaps total per the spec), stopping early once nothing
-// improves. Fully deterministic — enumerates units/candidates in a fixed order and
-// tie-breaks by (day, slot, person, recipe id).
-function proposeRebalanceSwaps(){
-  ensureWeekPlan();
-  const cov0 = computeWeeklyCoverage(weekPlan);
+function dailyTotalsForPlan(plan){
+  return plan.days.map(function(day){
+    return {
+      elena: SLOT_ORDER.reduce(function(sum, slot){ return sum + planEntryNutrition(day.meals[slot].elena).kcal; }, 0),
+      partner: SLOT_ORDER.reduce(function(sum, slot){ return sum + planEntryNutrition(day.meals[slot].partner).kcal; }, 0)
+    };
+  });
+}
+
+function dailyBandState(plan){
+  return dailyTotalsForPlan(plan).map(function(day, di){
+    const dateISO = plan.days[di].date;
+    const state = {};
+    ['elena', 'partner'].forEach(function(person){
+      const band = calBand(PROF[person]);
+      state[person] = {
+        total: day[person],
+        min: band[0],
+        max: band[1],
+        inBand: day[person] >= band[0] && day[person] <= band[1]
+      };
+    });
+    return state;
+  });
+}
+
+function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson){
+  const m = plan.days[unit.dayIndex].meals[unit.slot];
+  const dateISO = plan.days[unit.dayIndex].date;
+  if(diffDaysISO(dateISO, todayISO()) < 0) return [];
+  if(unit.shared){
+    if(loggedSlotLocked(dateISO, 'elena', unit.slot) || loggedSlotLocked(dateISO, 'partner', unit.slot)) return [];
+    if(isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, 'shared')) return [];
+  } else {
+    if(loggedSlotLocked(dateISO, unit.person, unit.slot)) return [];
+    if(isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, unit.person)) return [];
+  }
+  const currentEntry = unit.shared ? m.elena : m[unit.person];
+  const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
+  const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
+  const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+  const currentDaily = dailyBandState(plan)[unit.dayIndex];
+  const sidePool = candidatesFor('side', styleKey, avoidL).filter(function(id){
+    return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
+  });
+  const results = [];
+  sidePool.forEach(function(sideId){
+    const trial = JSON.parse(JSON.stringify(plan));
+    addSideToPlan(trial, unit, sideId);
+    const trialDaily = dailyBandState(trial)[unit.dayIndex];
+    const people = unit.shared ? ['elena', 'partner'] : [unit.person];
+    const calorieSafe = people.every(function(personKey){
+      const beforeInBand = currentDaily[personKey].inBand;
+      const afterInBand = trialDaily[personKey].inBand;
+      if(beforeInBand && !afterInBand) return false;
+      if(!beforeInBand && !afterInBand) return false;
+      return true;
+    });
+    if(!calorieSafe) return;
+    const improved = objectiveFor(metricKey, trial, fixedPerson) - baseObjective;
+    if(improved <= 1e-9) return;
+    results.push({
+      kind: 'addSide',
+      unit: unit,
+      sideRecipeId: sideId,
+      improvement: improved,
+      trial: trial
+    });
+  });
+  return results;
+}
+
+function proposeRebalanceSuggestions(weekStartDate){
+  const plan = ensureWeekPlan(weekStartDate);
+  const cov0 = computeWeeklyCoverage(plan);
   const gaps0 = coverageGaps(cov0);
   const worstKey = Object.keys(gaps0).reduce(function(a, b){ return gaps0[b].gap > gaps0[a].gap ? b : a; });
   const worst = gaps0[worstKey];
   const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
   if(worst.gap <= 1e-9){
-    return {metricKey: worstKey, gapInfo: worst, swaps: [], before: cov0, after: cov0};
+    return {weekStartDate: plan.weekStartDate, metricKey: worstKey, gapInfo: worst, suggestions: [], before: cov0, after: cov0, resultPlan: plan};
   }
-  let planCopy = JSON.parse(JSON.stringify(weekPlan));
+  let planCopy = JSON.parse(JSON.stringify(plan));
   const applied = [];
   const fixedPerson = worst.person; // only meaningful for 'fiber'
   for(let round = 0; round < 2; round++){
     const baseObjective = objectiveFor(worstKey, planCopy, fixedPerson);
-    let best = null;
+    const candidates = [];
     enumerateSwapUnits(planCopy).forEach(function(unit){
       const m = planCopy.days[unit.dayIndex].meals[unit.slot];
       const currentId = unit.shared ? m.recipeId : m[unit.person].recipeId;
@@ -1687,16 +1785,28 @@ function proposeRebalanceSwaps(){
         applySwapToPlan(trial, unit, candId);
         const improvement = objectiveFor(worstKey, trial, fixedPerson) - baseObjective;
         if(improvement > 1e-9){
-          const better = !best || improvement > best.improvement + 1e-9
-            || (Math.abs(improvement - best.improvement) <= 1e-9 && unitKey(unit) < unitKey(best.unit))
-            || (Math.abs(improvement - best.improvement) <= 1e-9 && unitKey(unit) === unitKey(best.unit) && candId < best.candId);
-          if(better) best = {unit: unit, candId: candId, improvement: improvement, trial: trial, fromRecipeId: currentId};
+          candidates.push({kind:'swap', unit: unit, candId: candId, improvement: improvement, trial: trial, fromRecipeId: currentId});
         }
       });
+      sideCandidatesForUnit(planCopy, unit, worstKey, baseObjective, fixedPerson).forEach(function(s){
+        candidates.push(s);
+      });
+    });
+    let best = null;
+    candidates.forEach(function(c){
+      const cKey = c.kind === 'swap' ? unitKey(c.unit) + ':' + c.candId : unitKey(c.unit) + ':side:' + c.sideRecipeId;
+      const bKey = best ? (best.kind === 'swap' ? unitKey(best.unit) + ':' + best.candId : unitKey(best.unit) + ':side:' + best.sideRecipeId) : '';
+      const better = !best || c.improvement > best.improvement + 1e-9 || (Math.abs(c.improvement - best.improvement) <= 1e-9 && cKey < bKey);
+      if(better) best = c;
     });
     if(!best) break;
     planCopy = best.trial;
-    applied.push({unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement});
+    if(best.kind === 'swap') applied.push({kind:'swap', unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement});
+    else applied.push({kind:'addSide', unit: best.unit, sideRecipeId: best.sideRecipeId, improvement: best.improvement});
   }
-  return {metricKey: worstKey, gapInfo: worst, swaps: applied, before: cov0, after: computeWeeklyCoverage(planCopy), resultPlan: planCopy};
+  return {weekStartDate: plan.weekStartDate, metricKey: worstKey, gapInfo: worst, suggestions: applied, before: cov0, after: computeWeeklyCoverage(planCopy), resultPlan: planCopy};
+}
+
+function proposeRebalanceSwaps(){
+  return proposeRebalanceSuggestions();
 }
