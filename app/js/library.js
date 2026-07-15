@@ -386,8 +386,6 @@ function openFoodLibrary(){
   libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
   libFoodFiltersOpen = false;
   setIngredientsScreenHtml(buildFoodLibrarySheet());
-  const input = document.getElementById('libFoodSearchInput');
-  if(input) input.focus();
 }
 
 function openAddMenu(){
