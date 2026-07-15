@@ -88,6 +88,8 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 **Done 2026-07-15** (sw CACHE mesa-v53): **Watercolor app icon** — replaced the flat bowl app icon with a minimal watercolor cornucopia across PWA/icon PNG sizes, SVG fallbacks, and the Worker-served iOS `apple-touch-icon`; remember that iPhone icon updates need both the Pages HTML cache-buster and the Worker `/assets/icon-180.png` base64 updated/deployed.
 
+**Done 2026-07-15** (sw CACHE mesa-v54): **Reinstall profile restore hardening** — Cloudflare Access bootstrap now creates a household code automatically for allowed users if none exists yet, so profile/plan/log data starts syncing without requiring the user to manually create Couple sync first. Reinstall still cannot recover data that only ever lived in deleted localStorage; after this deploy, opening the current install once is enough to seed the cloud backup for future reinstalls.
+
 **In progress / next:**
 - **Watercolor icons (T2/T4, "Elena generates, agent wires")**: for future non-produce gaps, continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png`, setting `iconKey` on the relevant `FOODS` records, bumping `app/sw.js`, and seeding/readback-checking D1; no hardcoded icon maps in `library.js`.
 - Awaiting Elena: confirm Access login + couple sync on the real phones at https://mesa-9y5.pages.dev/app/ → then make GitHub repo private + retire legacy URL in docs.

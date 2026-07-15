@@ -402,6 +402,7 @@ const PROF = {
    =================================================================== */
 const STORE_KEY = 'mesa.v1';
 const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
+let hadStoredStateOnBoot = false;
 // Task F2 (export/import): the schema version buildSnapshot() writes and loadState() /
 // the import validator (render.js:validateBackupStructure) accept. Bump alongside any
 // future schema change (same version this store's `v` field already carried since D1).
@@ -882,6 +883,7 @@ function loadState(){
     const raw = localStorage.getItem(STORE_KEY);
     if(raw) saved = JSON.parse(raw);
   }catch(e){ saved = null; }
+  hadStoredStateOnBoot = !!(saved && typeof saved === 'object');
   if(!saved || typeof saved !== 'object') saved = {};
 
   if(typeof saved.currentProf === 'string' && PROF[saved.currentProf]) currentProf = saved.currentProf;

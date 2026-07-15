@@ -996,7 +996,7 @@ function bootstrapAccessHousehold(){
       return false;
     }
     return pullHouseholdFirst(code).then(function(restored){
-      if(restored) toast('✓ Restored your Mesa data from Cloudflare login');
+      if(restored) toast(hadStoredStateOnBoot ? '✓ Cloud backup connected' : '✓ Restored your Mesa data from Cloudflare login');
       return restored;
     });
   }).catch(function(err){

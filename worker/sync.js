@@ -28,12 +28,14 @@
                        a client-supplied email, since this Worker itself
                        sits on a bare workers.dev hostname and can't be
                        put behind Access. For the two allow-listed
-                       emails found in the VERIFIED token, returns/
-                       stores the household code associated with this
-                       Cloudflare Access login. This lets an iOS
-                       reinstall recover the same sync household even
-                       after localStorage was wiped. Rate-limited to
-                       ~10 attempts/hour per IP (bootstrapRateLimited).
+                       emails found in the VERIFIED token, returns,
+                       stores, or creates the household code associated
+                       with this Cloudflare Access login. This lets an
+                       iOS reinstall recover the same sync household
+                       after localStorage was wiped, and auto-seeds the
+                       first cloud backup without requiring the user to
+                       create Couple sync manually. Rate-limited to ~10
+                       attempts/hour per IP (bootstrapRateLimited).
      GET  /sync/:code  -> 200 {sections: {...}} | 404 {error} if the
                           code has never been POSTed to.
      POST /sync/:code  -> body {sections: {name: {rev, updatedAt, data}}}
@@ -118,8 +120,19 @@ function kvKey(code){ return 'household:' + code; }
 function normalizeEmail(email){ return String(email || '').trim().toLowerCase(); }
 function isAllowedAccessEmail(email){ return ACCESS_EMAILS.indexOf(normalizeEmail(email)) !== -1; }
 
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+const CODE_LENGTH = 24;
+
 function normalizeHouseholdCode(raw){
   return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+}
+
+function generateHouseholdCode(){
+  let out = '';
+  const bytes = new Uint8Array(CODE_LENGTH);
+  crypto.getRandomValues(bytes);
+  for(let i = 0; i < CODE_LENGTH; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  return out;
 }
 
 function iconResponse(){
@@ -505,7 +518,12 @@ async function handleBootstrap(request, env, origin){
       return json({error: 'storage_failed'}, 500, origin);
     }
   } else if(!code){
-    return json({error: 'not_linked'}, 404, origin);
+    code = generateHouseholdCode();
+    try{
+      await env.MESA_KV.put(ACCESS_BOOTSTRAP_KEY, code);
+    }catch(e){
+      return json({error: 'storage_failed'}, 500, origin);
+    }
   }
 
   return json({code: code}, 200, origin);
