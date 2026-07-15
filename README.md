@@ -82,7 +82,9 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 **Done 2026-07-15** (sw CACHE mesa-v50): **Ingredients search keyboard fix** — opening Library → Ingredients no longer auto-focuses the search input, so mobile Safari does not open the keyboard until the user taps Search.
 
+**Done 2026-07-15** (sw CACHE mesa-v51): **Produce watercolor icon completion** — added custom watercolor PNGs for the remaining built-in produce ingredients that still fell back to the generic icon (mixed berries, spinach, red onion, lemon juice, green beans, peaches, pears, mushrooms, pumpkin/squash, escarole/endive, romaine lettuce, garlic, potatoes, oranges, rocket/arugula, ginger, sweet potato), wired them via `FOODS` `iconKey`, and mirrored the metadata to D1 so Library/Ingredients reflects the same DB-driven mapping.
+
 **In progress / next:**
-- **Watercolor icons (T2/T4, "Elena generates, agent wires")**: continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png` and setting `iconKey` on the relevant `FOODS` records; no hardcoded icon maps in `library.js`.
+- **Watercolor icons (T2/T4, "Elena generates, agent wires")**: for future non-produce gaps, continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png`, setting `iconKey` on the relevant `FOODS` records, bumping `app/sw.js`, and seeding/readback-checking D1; no hardcoded icon maps in `library.js`.
 - Awaiting Elena: confirm Access login + couple sync on the real phones at https://mesa-9y5.pages.dev/app/ → then make GitHub repo private + retire legacy URL in docs.
 - Next Phase 2 item: LLM endpoint (needs an Anthropic API key from Elena, proxied by a Worker — key never ships in the app).

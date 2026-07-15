@@ -50,7 +50,7 @@ const FOODS = {
   'mixed-berries': {
     name: 'Mixed berries (strawberry, blueberry, raspberry)', per: 100, unit: 'g',
     kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5,
-    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
+    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
   },
   'bell-pepper': {
     name: 'Bell pepper, red, raw', per: 100, unit: 'g',
@@ -60,7 +60,7 @@ const FOODS = {
   'spinach': {
     name: 'Spinach, baby leaf, raw', per: 100, unit: 'g',
     kcal: 30, protein: 2.9, carbs: 3.6, fat: 0.4, satFat: 0.1, fiber: 2.2,
-    flags: [], cat: 'Produce', src: 'USDA FDC 168462 (spinach, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', iconKey: 'spinach', src: 'USDA FDC 168462 (spinach, raw); kcal per 4/4/9'
   },
   'courgette': {
     name: 'Courgette / zucchini, raw', per: 100, unit: 'g',
@@ -75,12 +75,12 @@ const FOODS = {
   'red-onion': {
     name: 'Onion, red, raw', per: 100, unit: 'g',
     kcal: 43, protein: 1.1, carbs: 9.3, fat: 0.1, satFat: 0.0, fiber: 1.7,
-    flags: [], cat: 'Produce', src: 'USDA FDC 170000-style (onion, red, raw)'
+    flags: [], cat: 'Produce', iconKey: 'red-onion', src: 'USDA FDC 170000-style (onion, red, raw)'
   },
   'lemon-juice': {
     name: 'Lemon juice, raw', per: 100, unit: 'ml',
     kcal: 31, protein: 0.4, carbs: 6.9, fat: 0.2, satFat: 0.0, fiber: 0.3,
-    flags: [], cat: 'Produce', src: 'USDA FDC 167747 (lemon juice, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', iconKey: 'lemon-juice', src: 'USDA FDC 167747 (lemon juice, raw); kcal per 4/4/9'
   },
   'cherry-tomatoes': {
     name: 'Cherry tomatoes, raw', per: 100, unit: 'g',
@@ -110,7 +110,7 @@ const FOODS = {
   'green-beans': {
     name: 'Green beans, cooked', per: 100, unit: 'g',
     kcal: 42, protein: 1.9, carbs: 7.9, fat: 0.3, satFat: 0.1, fiber: 3.2,
-    flags: ['highFiber', 'glutenFree'], cat: 'Produce', season: 'spring/summer', src: 'USDA FDC 169961-style (green beans, cooked, boiled); kcal per 4/4/9'
+    flags: ['highFiber', 'glutenFree'], cat: 'Produce', season: 'spring/summer', iconKey: 'green-beans', src: 'USDA FDC 169961-style (green beans, cooked, boiled); kcal per 4/4/9'
   },
   'carrots': {
     name: 'Carrots, raw', per: 100, unit: 'g',
@@ -120,22 +120,22 @@ const FOODS = {
   'peaches': {
     name: 'Peaches, raw', per: 100, unit: 'g',
     kcal: 44, protein: 0.9, carbs: 10.1, fat: 0.3, satFat: 0.0, fiber: 1.5,
-    flags: [], cat: 'Produce', season: 'spring/summer', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
   },
   'pears': {
     name: 'Pears, raw', per: 100, unit: 'g',
     kcal: 59, protein: 0.4, carbs: 15.2, fat: 0.1, satFat: 0.0, fiber: 3.1,
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', src: 'USDA FDC 169118 (pears, raw)'
+    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
   },
   'mushrooms': {
     name: 'Mushrooms, raw', per: 100, unit: 'g',
     kcal: 26, protein: 3.1, carbs: 3.3, fat: 0.3, satFat: 0.1, fiber: 1.0,
-    flags: [], cat: 'Produce', src: 'USDA FDC 169251 (mushrooms, white, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', iconKey: 'mushrooms', src: 'USDA FDC 169251 (mushrooms, white, raw); kcal per 4/4/9'
   },
   'pumpkin': {
     name: 'Pumpkin / squash, raw', per: 100, unit: 'g',
     kcal: 30, protein: 1.0, carbs: 6.5, fat: 0.1, satFat: 0.0, fiber: 0.5,
-    flags: ['glutenFree'], cat: 'Produce', season: 'winter/autumn', src: 'USDA FDC 168448-style (pumpkin, raw); kcal per 4/4/9'
+    flags: ['glutenFree'], cat: 'Produce', season: 'winter/autumn', iconKey: 'pumpkin', src: 'USDA FDC 168448-style (pumpkin, raw); kcal per 4/4/9'
   },
   'asparagus': {
     name: 'Asparagus, raw', per: 100, unit: 'g',
@@ -150,17 +150,17 @@ const FOODS = {
   'escarole': {
     name: 'Escarole / endive, raw', per: 100, unit: 'g',
     kcal: 21, protein: 1.3, carbs: 3.4, fat: 0.2, satFat: 0.0, fiber: 3.1,
-    flags: ['highFiber', 'glutenFree'], cat: 'Produce', season: 'winter/autumn', src: 'USDA FDC 169992-style (endive/escarole, raw); kcal per 4/4/9'
+    flags: ['highFiber', 'glutenFree'], cat: 'Produce', season: 'winter/autumn', iconKey: 'escarole', src: 'USDA FDC 169992-style (endive/escarole, raw); kcal per 4/4/9'
   },
   'lettuce': {
     name: 'Lettuce, romaine, raw', per: 100, unit: 'g',
     kcal: 20, protein: 1.2, carbs: 3.3, fat: 0.3, satFat: 0.0, fiber: 2.1,
-    flags: ['glutenFree'], cat: 'Produce', src: 'USDA FDC 169247 (lettuce, romaine, raw); kcal per 4/4/9'
+    flags: ['glutenFree'], cat: 'Produce', iconKey: 'lettuce', src: 'USDA FDC 169247 (lettuce, romaine, raw); kcal per 4/4/9'
   },
   'garlic': {
     name: 'Garlic, raw', per: 100, unit: 'g',
     kcal: 163, protein: 6.4, carbs: 33.1, fat: 0.5, satFat: 0.1, fiber: 2.1,
-    flags: [], cat: 'Produce', src: 'USDA FDC 169230 (garlic, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', iconKey: 'garlic', src: 'USDA FDC 169230 (garlic, raw); kcal per 4/4/9'
   },
   'avocado': {
     name: 'Avocado, raw', per: 100, unit: 'g',
@@ -175,12 +175,12 @@ const FOODS = {
   'potatoes': {
     name: 'Potatoes, raw', per: 100, unit: 'g',
     kcal: 77, protein: 2.0, carbs: 17.0, fat: 0.1, satFat: 0.0, fiber: 2.2,
-    flags: ['glutenFree'], cat: 'Produce', src: 'USDA FDC 170026 (potato, flesh and skin, raw)'
+    flags: ['glutenFree'], cat: 'Produce', iconKey: 'potatoes', src: 'USDA FDC 170026 (potato, flesh and skin, raw)'
   },
   'oranges': {
     name: 'Oranges, raw', per: 100, unit: 'g',
     kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4,
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', src: 'USDA FDC 169918 (orange, raw)'
+    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
   },
   'apples': {
     name: 'Apples, raw, with skin', per: 100, unit: 'g',
@@ -195,7 +195,7 @@ const FOODS = {
   'rocket-arugula': {
     name: 'Rocket / arugula, raw', per: 100, unit: 'g',
     kcal: 32, protein: 2.6, carbs: 3.7, fat: 0.7, satFat: 0.1, fiber: 1.6,
-    flags: [], cat: 'Produce', src: 'USDA FDC 168435 (arugula, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', iconKey: 'rocket-arugula', src: 'USDA FDC 168435 (arugula, raw); kcal per 4/4/9'
   },
   'basil': {
     name: 'Basil, fresh', per: 100, unit: 'g',
@@ -516,7 +516,7 @@ const FOODS = {
   'ginger': {
     name: 'Ginger, fresh', per: 100, unit: 'g',
     kcal: 84, protein: 1.8, carbs: 17.8, fat: 0.8, satFat: 0.2, fiber: 2.0,
-    flags: [], cat: 'Produce', src: 'USDA FDC 169231 (ginger root, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', iconKey: 'ginger', src: 'USDA FDC 169231 (ginger root, raw); kcal per 4/4/9'
   },
   'mustard': {
     name: 'Mustard', per: 100, unit: 'g',
@@ -581,7 +581,7 @@ const FOODS = {
   'sweet-potato': {
     name: 'Sweet potato', per: 100, unit: 'g',
     kcal: 88, protein: 1.6, carbs: 20.1, fat: 0.1, satFat: 0, fiber: 3.0,
-    flags: ['highFiber', 'glutenFree'], cat: 'Produce', src: 'USDA FDC 168482 (sweet potato, raw); kcal via 4/4/9 policy'
+    flags: ['highFiber', 'glutenFree'], cat: 'Produce', iconKey: 'sweet-potato', src: 'USDA FDC 168482 (sweet potato, raw); kcal via 4/4/9 policy'
   },
   'brazil-nuts': {
     name: 'Brazil nuts', per: 100, unit: 'g',

@@ -5,7 +5,7 @@
    needs to change to invalidate old installs.
    =================================================================== */
 
-const CACHE = 'mesa-v50';
+const CACHE = 'mesa-v51';
 
 // The full app shell — everything needed to boot and run with zero network.
 const SHELL_FILES = [
@@ -64,10 +64,27 @@ const SHELL_FILES = [
   'assets/ingredients/cucumber.png',
   'assets/ingredients/eggs.png',
   'assets/ingredients/espresso-unsweetened.png',
+  'assets/ingredients/escarole.png',
+  'assets/ingredients/garlic.png',
+  'assets/ingredients/ginger.png',
+  'assets/ingredients/green-beans.png',
+  'assets/ingredients/lemon-juice.png',
+  'assets/ingredients/lettuce.png',
   'assets/ingredients/milk.png',
+  'assets/ingredients/mixed-berries.png',
+  'assets/ingredients/mushrooms.png',
+  'assets/ingredients/oranges.png',
   'assets/ingredients/pasta.png',
+  'assets/ingredients/peaches.png',
+  'assets/ingredients/pears.png',
+  'assets/ingredients/potatoes.png',
+  'assets/ingredients/pumpkin.png',
   'assets/ingredients/rice.png',
+  'assets/ingredients/red-onion.png',
+  'assets/ingredients/rocket-arugula.png',
+  'assets/ingredients/spinach.png',
   'assets/ingredients/sugar.png',
+  'assets/ingredients/sweet-potato.png',
   'icons/icon.svg',
   'icons/icon-maskable.svg',
   'icons/icon-180.png',
