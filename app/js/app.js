@@ -31,14 +31,18 @@ function openRecipe(key, origin, dayCtx){
   go('recipe');
 }
 
+function todayRecipeCtx(slot){
+  return {weekStartDate: mondayOfWeek(todayISO()), dayIndex: todayDayIndex(), slot: slot, person: currentProf};
+}
+
 function openBreakfastRecipe(){
-  openRecipe(activeMenu.breakfast.recipeId, 'today');
+  openRecipe(displayedTodayRecipeId('breakfast') || activeMenu.breakfast.recipeId, 'today', todayRecipeCtx('breakfast'));
 }
 function openLunchRecipe(){
-  openRecipe(activeMenu.lunch.recipeId, 'today');
+  openRecipe(displayedTodayRecipeId('lunch') || activeMenu.lunch.recipeId, 'today', todayRecipeCtx('lunch'));
 }
 function openDinnerRecipe(){
-  openRecipe(activeMenu.dinner.recipeId, 'today');
+  openRecipe(displayedTodayRecipeId('dinner') || activeMenu.dinner.recipeId, 'today', todayRecipeCtx('dinner'));
 }
 
 // top segmented control (Today screen profile switch)
@@ -112,10 +116,11 @@ function maybeShowOnboarding(){
 // now). FIX 1 (feedback): breakfast is a normal meal now — replayed here exactly like
 // every other slot (the old auto-log path, ensureTodayBreakfastLogged, is gone).
 function restoreTodayLog(){
+  const dateISO = (typeof currentLogDateISO === 'function') ? currentLogDateISO() : todayISO();
   SLOT_ORDER.forEach(function(slot){
-    const status = slotLogStatus(todayISO(), currentProf, slot);
+    const status = slotLogStatus(dateISO, currentProf, slot);
     if(status === 'confirmed'){
-      const entry = getDayLog(todayISO())[currentProf].find(function(e){ return e.kind === 'plan' && e.slot === slot; });
+      const entry = getDayLog(dateISO)[currentProf].find(function(e){ return e.kind === 'plan' && e.slot === slot; });
       const r = entry && RECIPES[entry.ref];
       const card = document.getElementById('log-' + slot);
       if(card && r){
@@ -123,7 +128,7 @@ function restoreTodayLog(){
         const th = card.querySelector('.thumb'); if(th) th.textContent = r.emoji;
       }
       if(r){ TITLES[slot] = r.title; EMOJI[slot] = r.emoji; }
-      if(entry) LOGKCAL[slot] = entry.kcal;
+      if(entry) LOGKCAL[slot] = Math.round(logEntryNutrition(entry).kcal);
       logConfirm(slot, true);
     } else if(status === 'skipped'){
       logSkip(slot, true);

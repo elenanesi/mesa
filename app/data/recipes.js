@@ -11,7 +11,10 @@
    Shape (see PWA-MVP-plan.md B2 for the authoritative contract):
      title   — display name
      emoji   — single emoji shown in menu/plan cards
-     slot    — 'breakfast' | 'lunch' | 'dinner' | 'snack'
+     slot    — primary 'breakfast' | 'lunch' | 'dinner' | 'snack'
+     slots   — optional array of slots this recipe can serve; defaults to [slot]
+     occasional — optional true for honest-log treats / fast food that should
+               remain searchable/loggable but not enter automatic week planning
      styles  — subset of ['balanced','highprotein','lowcarb']; which
                household plan styles this recipe can serve (can overlap)
      time    — prep+cook minutes
@@ -148,6 +151,7 @@ const RECIPES_DB = {
 
   lentil: {
     title: 'Lentil & roasted veg salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 20,
     ingredients: [['cooked-lentils', 150], ['courgette', 75], ['bell-pepper', 75], ['feta-cheese', 40], ['rocket-arugula', 20], ['olive-oil', 10]],
     toTaste: ['lemon'],
@@ -157,6 +161,7 @@ const RECIPES_DB = {
   },
   chickenfarro: {
     title: 'Chicken & farro bowl', emoji: '🍲', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['highprotein'], time: 22,
     ingredients: [['chicken-breast', 150], ['farro-cooked', 120], ['courgette', 50], ['bell-pepper', 50], ['olive-oil', 5]],
     toTaste: ['lemon'],
@@ -166,6 +171,7 @@ const RECIPES_DB = {
   },
   tunasalad: {
     title: 'Tuna & avocado chopped salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 12,
     ingredients: [['tuna-in-olive-oil', 120], ['avocado', 80], ['cherry-tomatoes', 100], ['cucumber', 50], ['olive-oil', 5]],
     toTaste: ['lemon'],
@@ -175,6 +181,7 @@ const RECIPES_DB = {
   },
   'chicken-couscous-salad': {
     title: 'Chicken & couscous salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['chicken-breast', 130], ['couscous', 80], ['cherry-tomatoes', 80], ['cucumber', 60], ['olive-oil', 5]],
     toTaste: ['lemon', 'herbs'],
@@ -184,6 +191,7 @@ const RECIPES_DB = {
   },
   'white-bean-tuna-salad': {
     title: 'White bean & tuna salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 10,
     ingredients: [['cannellini-beans', 150], ['tuna-in-olive-oil', 100], ['cherry-tomatoes', 60], ['rocket-arugula', 20], ['olive-oil', 5]],
     toTaste: ['lemon'],
@@ -202,6 +210,7 @@ const RECIPES_DB = {
   },
   'sardine-white-bean-salad': {
     title: 'Sardine & white bean salad', emoji: '🐟', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 10,
     ingredients: [['sardines', 120], ['cannellini-beans', 100], ['rocket-arugula', 30], ['cherry-tomatoes', 60], ['olive-oil', 5]],
     toTaste: ['lemon'],
@@ -211,6 +220,7 @@ const RECIPES_DB = {
   },
   'greek-salad-big': {
     title: 'Big Greek salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner', 'side'],
     styles: ['lowcarb', 'balanced'], time: 10,
     ingredients: [['cucumber', 100], ['cherry-tomatoes', 100], ['bell-pepper', 60], ['feta-cheese', 70], ['olives', 40], ['olive-oil', 15]],
     toTaste: ['oregano', 'lemon'],
@@ -220,6 +230,7 @@ const RECIPES_DB = {
   },
   'chicken-caprese-salad': {
     title: 'Chicken caprese salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 15,
     ingredients: [['chicken-breast', 130], ['mozzarella', 60], ['cherry-tomatoes', 100], ['rocket-arugula', 20], ['olive-oil', 10]],
     toTaste: ['basil'],
@@ -229,6 +240,7 @@ const RECIPES_DB = {
   },
   'tuna-egg-salad': {
     title: 'Tuna & egg salad', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 12,
     ingredients: [['tuna-in-olive-oil', 100], ['eggs', 100], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 5]],
     toTaste: ['lemon'],
@@ -241,6 +253,7 @@ const RECIPES_DB = {
 
   salmon: {
     title: 'Baked salmon, quinoa & greens', emoji: '🐟', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['salmon-fillet', 140], ['quinoa-dry', 60], ['spinach', 40], ['broccoli', 100], ['olive-oil', 5]],
     toTaste: ['lemon', 'garlic'],
@@ -250,6 +263,7 @@ const RECIPES_DB = {
   },
   salmongreens: {
     title: 'Salmon & greens, no quinoa', emoji: '🐟', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein'], time: 20,
     ingredients: [['salmon-fillet', 150], ['spinach', 60], ['broccoli', 75], ['courgette', 75], ['olive-oil', 5]],
     toTaste: ['lemon', 'garlic'],
@@ -259,6 +273,7 @@ const RECIPES_DB = {
   },
   'chicken-sweet-potato-broccoli': {
     title: 'Roast chicken, sweet potato & broccoli', emoji: '🍗', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['chicken-breast', 180], ['sweet-potato', 200], ['broccoli', 100], ['olive-oil', 10]],
     toTaste: ['herbs', 'lemon'],
@@ -268,6 +283,7 @@ const RECIPES_DB = {
   },
   'beef-courgette-ragu': {
     title: 'Lean beef & courgette ragu', emoji: '🥩', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein', 'balanced'], time: 25,
     ingredients: [['beef-mince-lean', 180], ['tomatoes', 200], ['courgette', 200], ['olive-oil', 10]],
     toTaste: ['garlic', 'herbs'],
@@ -277,6 +293,7 @@ const RECIPES_DB = {
   },
   'turkey-roasted-veg': {
     title: 'Turkey & roasted veg', emoji: '🍗', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein'], time: 30,
     ingredients: [['turkey-breast', 220], ['courgette', 150], ['bell-pepper', 100], ['olive-oil', 15]],
     toTaste: ['herbs', 'lemon'],
@@ -286,6 +303,7 @@ const RECIPES_DB = {
   },
   'chickpea-veg-stew': {
     title: 'Chickpea & vegetable stew', emoji: '🍲', slot: 'dinner',
+    slots: ['dinner', 'lunch', 'side'],
     styles: ['balanced'], time: 30,
     ingredients: [['chickpeas', 200], ['tomatoes', 150], ['courgette', 80], ['bell-pepper', 80], ['olive-oil', 10]],
     toTaste: ['garlic', 'cumin'],
@@ -295,6 +313,7 @@ const RECIPES_DB = {
   },
   'baked-cod-greens': {
     title: 'Baked cod & greens', emoji: '🐟', slot: 'dinner',
+    slots: ['dinner', 'lunch', 'side'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
     ingredients: [['cod', 220], ['broccoli', 200], ['spinach', 80], ['olive-oil', 15]],
     toTaste: ['lemon', 'garlic'],
@@ -304,6 +323,7 @@ const RECIPES_DB = {
   },
   'prawn-courgette-tomato': {
     title: 'Prawn, courgette & tomato saute', emoji: '🦐', slot: 'dinner',
+    slots: ['dinner', 'lunch', 'side'],
     styles: ['lowcarb', 'highprotein', 'balanced'], time: 20,
     ingredients: [['prawns', 220], ['courgette', 200], ['cherry-tomatoes', 150], ['olive-oil', 15]],
     toTaste: ['garlic', 'parsley'],
@@ -313,6 +333,7 @@ const RECIPES_DB = {
   },
   'pork-loin-farro-veg': {
     title: 'Pork loin, farro & greens', emoji: '🍖', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['pork-loin', 150], ['farro-cooked', 150], ['spinach', 60], ['olive-oil', 8]],
     toTaste: ['garlic', 'herbs'],
@@ -352,6 +373,7 @@ const RECIPES_DB = {
   },
   'hummus-veg-sticks': {
     title: 'Snack: Hummus & veg sticks', emoji: '🥕', slot: 'snack',
+    slots: ['snack', 'side'],
     styles: ['balanced', 'lowcarb'], time: 5,
     ingredients: [['hummus', 60], ['cucumber', 80], ['cherry-tomatoes', 60]],
     toTaste: [],
@@ -376,6 +398,78 @@ const RECIPES_DB = {
     steps: ['Hard-boil the eggs (8-9 min) and cool.', 'Peel and halve the eggs.', 'Slice the cucumber and serve alongside.'],
     tags: ['muscle', 'quick'],
     avoid: []
+  },
+  'gelato-cioccolato': {
+    title: 'Gelato al cioccolato', emoji: '🍨', slot: 'snack',
+    occasional: true,
+    styles: ['balanced'], time: 1,
+    ingredients: [['gelato-chocolate', 120], ['dark-chocolate-85', 10]],
+    toTaste: [],
+    steps: ['Scoop the chocolate gelato into a small bowl.', 'Shave or crumble the dark chocolate over the top.', 'Eat slowly enough that it still feels like a treat.'],
+    tags: [],
+    avoid: ['lactose']
+  },
+  'gelato-stracciatella': {
+    title: 'Gelato stracciatella', emoji: '🍨', slot: 'snack',
+    occasional: true,
+    styles: ['balanced'], time: 1,
+    ingredients: [['gelato-stracciatella', 130], ['dark-chocolate-85', 5]],
+    toTaste: [],
+    steps: ['Scoop the stracciatella gelato into a bowl.', 'Add a few dark chocolate shavings if wanted.', 'Serve straight away.'],
+    tags: [],
+    avoid: ['lactose']
+  },
+  'gelato-yogurt': {
+    title: 'Gelato allo yogurt', emoji: '🍦', slot: 'snack',
+    occasional: true,
+    styles: ['balanced'], time: 2,
+    ingredients: [['gelato-yogurt', 130], ['mixed-berries', 30]],
+    toTaste: [],
+    steps: ['Scoop the yogurt gelato into a bowl.', 'Add the berries on top.', 'Serve immediately.'],
+    tags: [],
+    avoid: ['lactose']
+  },
+  'gelato-crema': {
+    title: 'Gelato alla crema', emoji: '🍨', slot: 'snack',
+    occasional: true,
+    styles: ['balanced'], time: 1,
+    ingredients: [['gelato-crema', 130], ['vanilla-cinnamon', 1]],
+    toTaste: [],
+    steps: ['Scoop the crema gelato into a bowl.', 'Dust with a tiny pinch of vanilla or cinnamon if wanted.', 'Serve immediately.'],
+    tags: [],
+    avoid: ['lactose']
+  },
+  'brownie-dessert': {
+    title: 'Brownie', emoji: '🍫', slot: 'snack',
+    occasional: true,
+    styles: ['balanced'], time: 2,
+    ingredients: [['brownie', 80], ['milk', 80]],
+    toTaste: [],
+    steps: ['Cut one brownie portion.', 'Serve with a small glass of milk if wanted.', 'Log it without making a moral drama out of it.'],
+    tags: [],
+    avoid: ['gluten', 'lactose']
+  },
+  'mcdonald-menu': {
+    title: "McDonald's menu", emoji: '🍔', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
+    occasional: true,
+    styles: ['balanced'], time: 5,
+    ingredients: [['fast-food-beef-burger', 180], ['fast-food-fries', 110], ['cola', 400]],
+    toTaste: [],
+    steps: ['Order the burger, fries and cola.', 'Use the menu as a single loggable meal.', 'Adjust portions later with servings if the actual order was larger or smaller.'],
+    tags: [],
+    avoid: ['gluten', 'lactose']
+  },
+  'burger-king-menu': {
+    title: 'Burger King menu', emoji: '🍔', slot: 'dinner',
+    slots: ['dinner', 'lunch'],
+    occasional: true,
+    styles: ['balanced'], time: 5,
+    ingredients: [['fast-food-beef-burger', 220], ['fast-food-fries', 110], ['cola', 400]],
+    toTaste: [],
+    steps: ['Order the burger, fries and cola.', 'Use the menu as a single loggable meal.', 'Adjust portions later with servings if the actual order was larger or smaller.'],
+    tags: [],
+    avoid: ['gluten', 'lactose']
   }
 
 };
@@ -383,5 +477,19 @@ const RECIPES_DB = {
 /* meal-slot lookup, mirroring the old RECIPE_SLOT in state.js for the
    10 migrated recipes plus every new one — used by shared-meals logic
    and the planner (task C2). */
+function recipeSlotList(recipe){
+  if(!recipe) return [];
+  const primary = recipe.slot;
+  const raw = Array.isArray(recipe.slots) && recipe.slots.length ? recipe.slots : [primary];
+  const seen = {};
+  const out = [];
+  raw.concat(primary ? [primary] : []).forEach(function(slot){
+    if(!slot || seen[slot]) return;
+    seen[slot] = true;
+    out.push(slot);
+  });
+  return out;
+}
+
 const RECIPE_SLOT_DB = {};
 Object.keys(RECIPES_DB).forEach(function (id) { RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot; });

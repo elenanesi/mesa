@@ -104,6 +104,7 @@ function librarySectionData(){
     customRecipes: clone(customRecipes),
     recipeOverrides: clone(recipeOverrides),
     deletedRecipes: clone(deletedRecipes),
+    recipePrefs: clone(recipePrefs),
     customRev: customRev
   };
 }
@@ -111,6 +112,8 @@ function librarySectionData(){
 function plansSectionData(){
   return {
     weekPlans: clone(weekPlans),
+    mealPins: clone(mealPins),
+    mealRules: clone(mealRules),
     SHARED: {breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack},
     householdStyle: householdStyle,
     servings: {svE: svE, svM: svM, svS: svS}
@@ -161,6 +164,20 @@ function applyPlansSectionData(data){
       if(isValidWeekPlanShape(p) && p.weekStartDate === k) clean[k] = p;
     });
     weekPlans = clean;
+  }
+  if(data.mealPins && typeof data.mealPins === 'object'){
+    mealPins = {};
+    Object.keys(data.mealPins).forEach(function(k){ if(typeof k === 'string' && data.mealPins[k]) mealPins[k] = true; });
+  }
+  if(Array.isArray(data.mealRules)){
+    mealRules = [];
+    data.mealRules.forEach(function(rule){
+      if(!rule || typeof rule !== 'object') return;
+      if(typeof rule.recipeId !== 'string' || typeof rule.slot !== 'string') return;
+      if(['daily', 'alternate', 'weekly'].indexOf(rule.cadence) === -1) return;
+      if(['shared', 'elena', 'partner'].indexOf(rule.person) === -1) return;
+      mealRules.push({recipeId: rule.recipeId, slot: rule.slot, cadence: rule.cadence, person: rule.person, anchorDate: rule.anchorDate || todayISO(), dayIndex: rule.dayIndex || 0});
+    });
   }
   if(data.SHARED && typeof data.SHARED === 'object'){
     Object.keys(SHARED).forEach(function(k){ if(typeof data.SHARED[k] === 'boolean') SHARED[k] = data.SHARED[k]; });
@@ -286,9 +303,19 @@ function mergePlansSection(local, remote, remoteIsNewer){
 
 // log:elena / log:partner: append-merge by entry identity (state.js:entryIdentity — 'plan:'
 // slot, or 'food:'+id), per day, with tombstone-aware exclusion. A same-identity conflict
-// (rare: both phones touched the exact same slot before either synced) keeps whichever
-// side logged LATER that day (t, "HH:MM" — same-day string compare is safe); an exact tie
+// keeps whichever side was UPDATED later (`u`, ms timestamp). Older records that predate
+// `u` fall back to log time (`t`, "HH:MM" — same-day string compare is safe); an exact tie
 // keeps local's copy, arbitrarily but deterministically.
+function logEntryIsNewer(candidate, existing){
+  const candidateHasUpdate = typeof candidate.u === 'number';
+  const existingHasUpdate = existing && typeof existing.u === 'number';
+  if(candidateHasUpdate || existingHasUpdate){
+    if(candidateHasUpdate && existingHasUpdate) return candidate.u > existing.u;
+    return candidateHasUpdate;
+  }
+  return (candidate.t || '') > (existing.t || '');
+}
+
 function mergeLogSection(local, remote){
   const dates = {};
   Object.keys(local || {}).forEach(function(d){ dates[d] = true; });
@@ -307,7 +334,7 @@ function mergeLogSection(local, remote){
         const id = entryIdentity(e); // state.js
         if(tomb[id]) return; // deleted on one side — never resurrected by the other's copy
         const existing = byIdentity[id];
-        if(!existing || (e.t || '') > (existing.t || '')) byIdentity[id] = e;
+        if(!existing || logEntryIsNewer(e, existing)) byIdentity[id] = e;
       });
     }
     ingest(L.entries);
@@ -451,7 +478,8 @@ function applySyncResponse(sent, remoteSections){
         customFoods: remote.data.customFoods || {},
         customRecipes: remote.data.customRecipes || {},
         recipeOverrides: remote.data.recipeOverrides || {},
-        deletedRecipes: remote.data.deletedRecipes || {}
+        deletedRecipes: remote.data.deletedRecipes || {},
+        recipePrefs: remote.data.recipePrefs || {}
       });
       syncState.sectionRevs[sec] = (customRev !== beforeRev) ? remote.rev + 1 : remote.rev;
       syncState.sectionUpdatedAt[sec] = Date.now();
@@ -487,9 +515,9 @@ function applySyncResponse(sent, remoteSections){
 // Re-renders through the existing, already-correct funnels — never a bespoke repaint path
 // of its own, so a synced change is indistinguishable on screen from a local one made the
 // same way. Picking the minimal correct set per section:
-//   library/plans -> applyProf(): re-runs ensureWeekPlan() (the plan signature includes
-//     customRev and the plan blob itself), renderWeek/renderTodayMeals/renderLogPlan,
-//     renderAvoidEditor, the library count line — everything downstream of either.
+//   library/plans -> applyProf(): re-runs ensureWeekPlan() for missing/stale plans without
+//     treating library additions as a reason to reset an existing week, then repaints Week/
+//     Today/Log, renderAvoidEditor, the library count line — everything downstream.
 //   log:* -> refreshAfterLogChange(): Today ring/macros, Log cards+pill, "Today so far".
 //     Cheap even when it was the OTHER profile's log that changed (a pure recompute from
 //     logHistory, not a mutation) — correctness matters more than skipping a redundant call.

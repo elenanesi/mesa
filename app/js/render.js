@@ -36,10 +36,56 @@ function parseDecimalInput(str){
 function tog(el){ el.classList.toggle('sel'); el.querySelector('.ck').textContent = el.classList.contains('sel')?'✓':''; }
 
 /* ---------------- recipe detail rendering ---------------- */
+let recipeServingCtx = null;
+
+function recipeServingContextFor(key){
+  const person = (recipeDayCtx && recipeDayCtx.person) || currentProf;
+  function fromPlan(weekStartDate, dayIndex, slot){
+    const plan = ensureWeekPlan(weekStartDate);
+    const day = plan.days && plan.days[dayIndex];
+    const meal = day && day.meals && day.meals[slot];
+    if(!meal) return null;
+    const dateISO = day.date || addDaysISO(plan.weekStartDate, dayIndex);
+    const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+    if(logged && logged.ref === key){
+      return {slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged'};
+    }
+    if(meal.shared && meal.recipeId === key){
+      return {slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan'};
+    }
+    if(meal[person] && meal[person].recipeId === key){
+      return {slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan'};
+    }
+    return null;
+  }
+
+  if(recipeDayCtx && recipeDayCtx.slot && typeof recipeDayCtx.dayIndex === 'number'){
+    const ctx = fromPlan(recipeDayCtx.weekStartDate || mondayOfWeek(todayISO()), recipeDayCtx.dayIndex, recipeDayCtx.slot);
+    if(ctx) return ctx;
+  }
+
+  const currentPlan = ensureWeekPlan(mondayOfWeek(todayISO()));
+  const todayIdx = todayDayIndex();
+  for(let i = 0; i < SLOT_ORDER.length; i++){
+    const ctx = fromPlan(currentPlan.weekStartDate, todayIdx, SLOT_ORDER[i]);
+    if(ctx) return ctx;
+  }
+  return null;
+}
+
 function renderRecipe(key){
   const r = RECIPES[key] || RECIPES.salmon;
   currentRecipeKey = RECIPES[key] ? key : 'salmon';
   svE = 1; svM = 1.5; svS = 1;
+  recipeServingCtx = recipeServingContextFor(currentRecipeKey);
+  if(recipeServingCtx){
+    if(recipeServingCtx.shared){
+      svE = recipeServingCtx.svE || 1;
+      svM = recipeServingCtx.svM || 1.5;
+    } else {
+      svS = recipeServingCtx.solo || 1;
+    }
+  }
   document.getElementById('recipeHero').textContent = r.emoji;
   document.getElementById('recipeTitle').textContent = r.title;
   document.getElementById('rsTime').textContent = '⏱️ ' + r.time;
@@ -70,7 +116,7 @@ function adjServe(who, delta){
 }
 
 function updateServings(){
-  const shared = isShared(currentRecipeKey);
+  const shared = recipeServingCtx ? recipeServingCtx.shared : isShared(currentRecipeKey);
   document.getElementById('serveRowShared').style.display = shared ? 'flex' : 'none';
   document.getElementById('sharedCaption').style.display = shared ? 'block' : 'none';
   document.getElementById('serveRowSolo').style.display = shared ? 'none' : 'flex';
@@ -81,7 +127,7 @@ function updateServings(){
     total = +(svE + svM).toFixed(1);
     document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
     document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' servings';
-    const slot = RECIPE_SLOT_DB[currentRecipeKey] || 'meal';
+    const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey] || 'meal';
     document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once, plated per target';
   } else {
     document.getElementById('svSoloVal').textContent = svS + '×';
@@ -109,6 +155,10 @@ function updateNutritionGrid(total){
   const header = document.getElementById('nutriHeader');
   if(header) header.textContent = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
   const nut = recipeNutrition(currentRecipeKey, total).totals;
+  const topKcal = document.getElementById('rsKcal');
+  const topProt = document.getElementById('rsProt');
+  if(topKcal) topKcal.textContent = '🔥 ' + fmtKcal(Math.round(nut.kcal)) + ' kcal';
+  if(topProt) topProt.textContent = '💪 ' + Math.round(nut.protein) + 'g protein';
   const rows = [
     ['Calories', fmtKcal(Math.round(nut.kcal))],
     ['Protein', Math.round(nut.protein) + ' g'],
@@ -137,8 +187,8 @@ function syncServeHighlight(){
 // first, and only confirm when this recipe really is today's plan for that slot
 // (otherwise the old code toasted "Logged" without ever writing a LogEntry).
 function markEatenFromRecipe(){
-  const slot = RECIPE_SLOT_DB[currentRecipeKey];
-  const planned = slot && activeMenu && activeMenu[slot] && activeMenu[slot].recipeId === currentRecipeKey;
+  const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
+  const planned = slot && displayedTodayRecipeId(slot) === currentRecipeKey;
   if(!planned){ toast('Not on today’s plan — confirm meals from the Log tab'); return; }
   const card = document.getElementById('log-' + slot);
   if(card && !card.classList.contains('done') && !card.classList.contains('skipped')){
@@ -197,17 +247,22 @@ function renderWeek(){
     const rows = SLOT_ORDER.map(function(slot){
       const m = day.meals[slot];
       const entry = m[person];
-      const r = RECIPES[entry.recipeId];
+      const view = displayedSlotViewForDate(day.date, person, slot, planEntryView(entry, m.shared));
+      const r = view.recipe;
       if(!r) return '';
-      dayKcal += entry.kcal;
-      titles.push(r.title);
-      const together = m.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
+      dayKcal += view.kcal;
+      titles.push(mealTitleWithExtras(view));
+      const together = view.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
+      const pinPerson = mealPinPersonForMeal(m, person);
+      const pinned = isMealPinned(plan.weekStartDate, di, slot, pinPerson);
+      const pinBtn = '<button class="dm-pin'+(pinned ? ' on' : '')+'" aria-label="'+(pinned ? 'Unpin this meal' : 'Pin this meal')+'" onclick="event.stopPropagation();toggleMealPin(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+pinPerson+'\')">'+(pinned ? '📌' : '📍')+'</button>';
+      const routineBtn = '<button class="dm-rule" aria-label="Set meal routine" onclick="event.stopPropagation();openMealRoutineSheet(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\',\''+view.recipeId+'\')">↻</button>';
       const swapBtn = '<button class="dm-swap" aria-label="Swap this meal" onclick="event.stopPropagation();openWeekSwap(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\')">🔁</button>';
-      return '<div class="day-meal-row" onclick="openRecipe(\''+entry.recipeId+'\',\'week\',{weekStartDate:\''+plan.weekStartDate+'\',dayIndex:'+di+',slot:\''+slot+'\',person:\''+person+'\'})">'
+      return '<div class="day-meal-row" onclick="openRecipe(\''+view.recipeId+'\',\'week\',{weekStartDate:\''+plan.weekStartDate+'\',dayIndex:'+di+',slot:\''+slot+'\',person:\''+person+'\'})">'
         + '<div class="dm-e">'+r.emoji+'</div>'
-        + '<div class="dm-t">'+r.title+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
-        + '<div class="dm-k">'+Math.round(entry.kcal)+'</div>'
-        + swapBtn + '</div>';
+        + '<div class="dm-t">'+mealTitleWithExtras(view)+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
+        + '<div class="dm-k">'+Math.round(view.kcal)+'</div>'
+        + pinBtn + routineBtn + swapBtn + '</div>';
     }).join('');
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" onclick="toggleDay('+di+')">'
@@ -265,6 +320,92 @@ function openWeekSwap(weekStartDate, dayIndex, slot, person){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+}
+
+function toggleMealPin(weekStartDate, dayIndex, slot, person){
+  const key = mealPinKey(weekStartDate, dayIndex, slot, person);
+  if(mealPins[key]){ delete mealPins[key]; toast('Meal unpinned'); }
+  else { mealPins[key] = true; toast('Pinned — re-balance will leave it alone'); }
+  renderWeek();
+  persist();
+}
+
+function routineLabel(rule){
+  if(!rule) return 'No routine';
+  if(rule.cadence === 'daily') return 'Every day';
+  if(rule.cadence === 'alternate') return 'Every other day';
+  if(rule.cadence === 'weekly') return 'Every ' + DAY_NAMES[rule.dayIndex];
+  return 'Routine';
+}
+
+function findMealRule(slot, person){
+  for(let i = mealRules.length - 1; i >= 0; i--){
+    const r = mealRules[i];
+    if(r.slot === slot && r.person === person) return r;
+  }
+  return null;
+}
+
+let routineCtx = null;
+
+function openMealRoutineSheet(weekStartDate, dayIndex, slot, person, recipeId){
+  const plan = ensureWeekPlan(weekStartDate);
+  const meal = plan.days[dayIndex].meals[slot];
+  const rulePerson = meal.shared ? 'shared' : person;
+  routineCtx = {weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: rulePerson, recipeId: recipeId};
+  const r = RECIPES[recipeId];
+  const existing = findMealRule(slot, rulePerson);
+  const weeklyLabel = 'Every ' + DAY_NAMES[dayIndex];
+  document.getElementById('sheetBody').innerHTML =
+    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Meal routine</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub">Use <b>' + (r ? r.title : 'this meal') + '</b> as a default for ' + SLOT_LABEL[slot].toLowerCase() + '. It is a preference, not a pin: you or re-balance can still change it unless the meal is pinned.</p>'
+    + '<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><b>Current</b><span class="pill ghost">' + routineLabel(existing) + '</span></div></div>'
+    + '<button class="cta ghostbtn" onclick="setMealRoutine(\'daily\')">Every day</button>'
+    + '<button class="cta ghostbtn" onclick="setMealRoutine(\'alternate\')">Every other day</button>'
+    + '<button class="cta ghostbtn" onclick="setMealRoutine(\'weekly\')">' + weeklyLabel + '</button>'
+    + '<button class="cta ghostbtn" onclick="clearMealRoutine()">Clear this routine</button>';
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function replaceMealRule(rule){
+  mealRules = mealRules.filter(function(r){ return !(r.slot === rule.slot && r.person === rule.person); });
+  mealRules.push(rule);
+}
+
+function refreshAfterMealRules(){
+  applyMealRulesToStoredPlans();
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+}
+
+function setMealRoutine(cadence){
+  if(!routineCtx) return;
+  replaceMealRule({
+    recipeId: routineCtx.recipeId,
+    slot: routineCtx.slot,
+    cadence: cadence,
+    person: routineCtx.person,
+    anchorDate: addDaysISO(routineCtx.weekStartDate, routineCtx.dayIndex),
+    dayIndex: routineCtx.dayIndex
+  });
+  closeSheet();
+  refreshAfterMealRules();
+  toast('Routine saved');
+}
+
+function clearMealRoutine(){
+  if(!routineCtx) return;
+  mealRules = mealRules.filter(function(r){ return !(r.slot === routineCtx.slot && r.person === routineCtx.person); });
+  closeSheet();
+  refreshAfterMealRules();
+  toast('Routine cleared');
 }
 
 // The "Weekly nutrient coverage" card (FIX 3: moved from the Week screen to the TOP of
@@ -332,6 +473,90 @@ function openSwap(mealKey, targetElId){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+}
+
+let addMealRecipeCtx = null;
+
+function mealRecipeOptions(slot, entry){
+  const used = {};
+  (Array.isArray(entry) ? entry : planEntryComponents(entry)).forEach(function(c){ used[c.recipeId] = true; });
+  return Object.keys(RECIPES_DB).filter(function(id){
+    if(used[id]) return false;
+    const r = RECIPES_DB[id];
+    const slots = recipeSlotList(r);
+    return slots.indexOf('side') !== -1 || slots.indexOf(slot) !== -1;
+  }).sort(function(a, b){
+    const aSide = recipeSlotList(RECIPES_DB[a]).indexOf('side') !== -1 ? 0 : 1;
+    const bSide = recipeSlotList(RECIPES_DB[b]).indexOf('side') !== -1 ? 0 : 1;
+    if(aSide !== bSide) return aSide - bSide;
+    return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
+  });
+}
+
+function openAddMealRecipeSheet(slot){
+  editableWeekPlan(mondayOfWeek(todayISO()));
+  const dayIndex = todayDayIndex();
+  const meal = weekPlan.days[dayIndex].meals[slot];
+  const logged = loggedPlanEntryForSlot(todayISO(), currentProf, slot);
+  const entry = meal && meal[currentProf];
+  if(!entry && !logged){ toast('Meal not found'); return; }
+  const loggedComponents = logged
+    ? (Array.isArray(logged.components) && logged.components.length ? logged.components : [{recipeId: logged.ref, portion: logged.portion || 1}])
+    : null;
+  addMealRecipeCtx = {weekStartDate: weekPlan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
+  const options = mealRecipeOptions(slot, loggedComponents || entry);
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add to ' + (SLOT_LABEL[slot] || slot) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub" style="margin-top:6px">Pick a side or another recipe to add to this meal. Mesa will add its calories and nutrients to the meal total.</p>';
+  if(!options.length) html += '<p class="sub" style="margin-top:14px">No extra recipes available for this meal.</p>';
+  options.forEach(function(id){
+    const r = RECIPES_DB[id];
+    const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
+    const side = recipeSlotList(r).indexOf('side') !== -1 ? 'Side · ' : '';
+    html += '<div class="altrow" onclick="chooseMealExtraRecipe(\'' + id + '\')">'
+      + '<div class="ae">' + r.emoji + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
+      + '<div class="ad">' + side + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + '</div>';
+  });
+  document.getElementById('sheetBody').innerHTML = html;
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function chooseMealExtraRecipe(recipeId){
+  if(!addMealRecipeCtx || !RECIPES_DB[recipeId]) return;
+  const ctx = addMealRecipeCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  if(ctx.logged){
+    addExtraToLoggedMeal(dateISO, ctx.person, ctx.slot, recipeId);
+  } else {
+    if(!addExtraRecipeToMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId)) return;
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  closeSheet();
+  toast('＋ Added ' + RECIPES_DB[recipeId].title);
+}
+
+function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = Array.isArray(logged.components) && logged.components.length
+    ? logged.components.slice()
+    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  components.push({recipeId: recipeId, portion: 1});
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
+  logged.components = components;
+  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
+  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.u = Date.now();
+  return true;
 }
 
 function closeSheet(){
@@ -456,7 +681,7 @@ function buildRebalanceSheet(){
       + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
     return html;
   }
-  html += '<p class="sub">Keeps fixed: your daily calories & protein, foods you avoid, shared meals. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Changes as few meals as possible.</p>'
+  html += '<p class="sub">Keeps fixed: pinned meals, your daily calories & protein, foods you avoid, shared meals. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Changes as few meals as possible.</p>'
     + '<div class="card" style="padding:14px">'
     + '<b style="font-size:13px">Would change ' + rebalanceProposal.swaps.length + ' meal' + (rebalanceProposal.swaps.length > 1 ? 's' : '') + '</b>';
   rebalanceProposal.swaps.forEach(function(s, i){
@@ -492,6 +717,8 @@ function applyRebalance(){
   // still sitting in weekPlans[currentMonday]. Same signature either way — ensureWeekPlan
   // won't consider it stale.
   const currentMonday = mondayOfWeek(todayISO());
+  preserveLoggedSlots(weekPlans[currentMonday] || weekPlan, rebalanceProposal.resultPlan);
+  markWeekPlanEdited(rebalanceProposal.resultPlan);
   weekPlans[currentMonday] = rebalanceProposal.resultPlan;
   weekPlan = weekPlans[currentMonday];
   rebalanceProposal = null;
@@ -507,12 +734,107 @@ function applyRebalance(){
 }
 
 /* ---------------- log / plan-first confirm (task D1: writes real LogEntrys) ---------------- */
+let selectedLogDateISO = todayISO();
+let logMenu = null;
+
+function currentLogDateISO(){
+  return selectedLogDateISO || todayISO();
+}
+
+function logDateLabel(){
+  return currentLogDateISO() === todayISO() ? 'Today' : 'Yesterday';
+}
+
+function setLogDateMode(mode, el){
+  selectedLogDateISO = mode === 'yesterday' ? addDaysISO(todayISO(), -1) : todayISO();
+  const seg = document.getElementById('logDateSeg');
+  if(seg) seg.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
+  if(el) el.classList.add('on');
+  renderLogPlan();
+}
+
 // Recomputes the "Today so far" kcal pill straight from today's logHistory entries for
 // currentProf (task D1 item 3) — replaces the old incrementally-accumulated `logTotal`.
 function updateLogTotalPill(){
-  const entries = getDayLog(todayISO())[currentProf];
-  const total = entries.reduce(function(s, e){ return s + e.kcal; }, 0);
-  document.getElementById('logTotalPill').textContent = total + ' kcal';
+  const entries = getDayLog(currentLogDateISO())[currentProf];
+  const total = entries.reduce(function(s, e){ return s + logEntryNutrition(e).kcal; }, 0);
+  document.getElementById('logTotalPill').textContent = Math.round(total) + ' kcal';
+}
+
+function macroSummaryFromTotals(nut){
+  nut = roundedNutritionTotals(nut || {});
+  return nut.protein + 'g protein · ' + nut.carbs + 'g carbs · ' + nut.fat + 'g fat';
+}
+
+function beverageCountsForToday(){
+  const entries = getDayLog(currentLogDateISO())[currentProf];
+  return entries.reduce(function(acc, e){
+    if(e.kind !== 'food' || (e.ref !== 'espresso-unsweetened' && e.ref !== 'cappuccino-unsweetened')) return acc;
+    const food = FOODS[e.ref];
+    const count = food && food.unit === 'piece' ? Math.round(e.grams / food.avgG) : 1;
+    if(e.ref === 'espresso-unsweetened') acc.coffee += count;
+    if(e.ref === 'cappuccino-unsweetened') acc.cappuccino += count;
+    return acc;
+  }, {coffee: 0, cappuccino: 0});
+}
+
+function renderBeverageCounts(){
+  const el = document.getElementById('coffeeCountPill');
+  if(!el) return;
+  const counts = beverageCountsForToday();
+  el.textContent = counts.coffee + ' coffee · ' + counts.cappuccino + ' cappuccino';
+}
+
+function foodAmountLabel(food, grams){
+  if(!food) return grams + 'g';
+  if(food.unit === 'piece' && food.avgG){
+    const count = Math.max(1, Math.round(grams / food.avgG));
+    return count + 'x';
+  }
+  return Math.round(grams) + 'g';
+}
+
+function foodGroupTitle(food, grams){
+  if(!food) return 'Food';
+  if(food === FOODS['espresso-unsweetened']){
+    const count = Math.max(1, Math.round(grams / food.avgG));
+    return count + (count === 1 ? ' coffee' : ' coffees');
+  }
+  if(food === FOODS['cappuccino-unsweetened']){
+    const count = Math.max(1, Math.round(grams / food.avgG));
+    return count + (count === 1 ? ' cappuccino' : ' cappuccinos');
+  }
+  if(food.unit === 'piece' && food.avgG){
+    const count = Math.max(1, Math.round(grams / food.avgG));
+    const plural = count === 1 ? food.name : (food.name + 's');
+    return count + ' ' + plural;
+  }
+  return food.name;
+}
+
+let todayRecordGroups = [];
+let editTodayFoodCtx = null;
+
+function groupedTodayRecords(){
+  const raw = getDayLog(todayISO())[currentProf];
+  const groups = [];
+  const foodByRef = {};
+  raw.forEach(function(e, i){
+    if(e.kind === 'food'){
+      const key = 'food:' + e.ref;
+      if(!foodByRef[key]){
+        foodByRef[key] = {kind: 'food', ref: e.ref, indices: [], grams: 0, kcal: 0, t: e.t || ''};
+        groups.push(foodByRef[key]);
+      }
+      foodByRef[key].indices.push(i);
+      foodByRef[key].grams += e.grams || 0;
+      foodByRef[key].kcal += logEntryNutrition(e).kcal;
+      if((e.t || '') < (foodByRef[key].t || '99:99')) foodByRef[key].t = e.t || '';
+    } else {
+      groups.push({kind: 'plan', entry: e, indices: [i], t: e.t || ''});
+    }
+  });
+  return groups.sort(function(a, b){ return ((a.t || '00:00') < (b.t || '00:00')) ? -1 : 1; });
 }
 
 // "Today so far" list (task D1 item 3): every logged entry for currentProf today —
@@ -523,14 +845,14 @@ function updateLogTotalPill(){
 // entry's ORIGINAL index in the day's array (captured before the sort), so it always
 // removes exactly the entry shown.
 function renderTodaySoFar(){
-  const raw = getDayLog(todayISO())[currentProf];
+  const raw = getDayLog(currentLogDateISO())[currentProf];
   const entries = raw.map(function(e, i){ return {e: e, i: i}; }).sort(function(a, b){
     return ((a.e.t || '00:00') < (b.e.t || '00:00')) ? -1 : 1;
   });
   const list = document.getElementById('todaySoFar');
   if(!list) return;
   if(!entries.length){
-    list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet today.</p>';
+    list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet for ' + logDateLabel().toLowerCase() + '.</p>';
     return;
   }
   list.innerHTML = entries.map(function(row){
@@ -539,15 +861,127 @@ function renderTodaySoFar(){
     if(e.kind === 'plan'){
       const r = RECIPES[e.ref];
       const emoji = r ? r.emoji : '🍽️';
-      const title = r ? r.title : 'Meal';
+      const title = logEntryTitleWithComponents(e);
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + (e.t ? ' · ' + e.t : ' · earlier today');
-      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div>'+removeBtn+'</div>';
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+removeBtn+'</div>';
     }
     const food = FOODS[e.ref];
     const name = food ? food.name : 'Food';
-    const label = 'Quick add · ' + e.grams + 'g' + (e.t ? ' · ' + e.t : '');
-    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+'<small>'+label+'</small></div><div class="li-k">'+e.kcal+'</div>'+removeBtn+'</div>';
+    let amount = e.grams + 'g';
+    if(food && food.unit === 'piece'){
+      const count = Math.max(1, Math.round(e.grams / food.avgG));
+      amount = count + 'x';
+    }
+    const label = (e.ref === 'espresso-unsweetened' || e.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + amount + (e.t ? ' · ' + e.t : '');
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+removeBtn+'</div>';
   }).join('');
+}
+
+function renderTodayRecords(){
+  const raw = getDayLog(todayISO())[currentProf];
+  const list = document.getElementById('todayRecordsList');
+  const pill = document.getElementById('todayRecordsPill');
+  if(!list) return;
+  const total = raw.reduce(function(s, e){ return s + logEntryNutrition(e).kcal; }, 0);
+  if(pill) pill.textContent = Math.round(total) + ' kcal';
+  todayRecordGroups = groupedTodayRecords();
+  if(!todayRecordGroups.length){
+    list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet today.</p>';
+    return;
+  }
+  list.innerHTML = todayRecordGroups.map(function(group, gi){
+    const editBtn = '<button class="li-x" aria-label="Edit this item" onclick="openEditTodayRecord('+gi+')">✎</button>';
+    const deleteBtn = '<button class="li-x" aria-label="Delete this item" onclick="deleteTodayRecordGroup('+gi+')">✕</button>';
+    if(group.kind === 'plan'){
+      const e = group.entry;
+      const r = RECIPES[e.ref];
+      const emoji = r ? r.emoji : '🍽️';
+      const title = logEntryTitleWithComponents(e);
+      const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + ' · ' + macroSummaryFromTotals(logEntryNutrition(e)) + (e.t ? ' · ' + e.t : '');
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+deleteBtn+'</div>';
+    }
+    const food = FOODS[group.ref];
+    const title = foodGroupTitle(food, group.grams);
+    const nut = foodMacros(group.ref, group.grams);
+    const label = (group.ref === 'espresso-unsweetened' || group.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + foodAmountLabel(food, group.grams) + ' · ' + macroSummaryFromTotals(nut);
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(group.kcal)+'</div>'+editBtn+deleteBtn+'</div>';
+  }).join('');
+}
+
+function deleteTodayRecordGroup(groupIndex){
+  const group = todayRecordGroups[groupIndex];
+  if(!group) return;
+  group.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
+  refreshAfterLogChange();
+  toast('✕ Removed item');
+}
+
+function openEditTodayRecord(groupIndex){
+  const group = todayRecordGroups[groupIndex];
+  if(!group) return;
+  if(group.kind === 'plan'){
+    deleteTodayRecordGroup(groupIndex);
+    return;
+  }
+  editTodayFoodCtx = {indices: group.indices.slice(), ref: group.ref, grams: Math.max(1, Math.round(group.grams))};
+  document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function buildEditTodayFoodSheet(){
+  const food = FOODS[editTodayFoodCtx.ref];
+  if(!food) return '<p class="sub">Food not found.</p>';
+  const nut = foodMacros(editTodayFoodCtx.ref, editTodayFoodCtx.grams);
+  const isPiece = food.unit === 'piece' && food.avgG;
+  const amountText = isPiece ? Math.max(1, Math.round(editTodayFoodCtx.grams / food.avgG)) + 'x' : editTodayFoodCtx.grams + 'g';
+  const step = isPiece ? food.avgG : 10;
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Edit ' + food.name + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
+    + '<div class="sv-name">Amount</div>'
+    + '<div class="sv-stepper"><button onclick="stepEditTodayFood(-'+step+')" aria-label="Decrease amount">–</button>'
+    + '<span class="sv-val">' + amountText + '</span>'
+    + '<button onclick="stepEditTodayFood('+step+')" aria-label="Increase amount">+</button></div></div></div>'
+    + '<div class="nutri" style="margin-top:16px">'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>'+Math.round(nut.protein)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Carbs</span><b>'+Math.round(nut.carbs)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
+    + '</div>'
+    + '<button class="cta" onclick="saveEditTodayFood()">Save</button>'
+    + '<button class="cta ghostbtn" onclick="deleteEditingTodayFood()">Delete</button>';
+}
+
+function stepEditTodayFood(delta){
+  if(!editTodayFoodCtx) return;
+  editTodayFoodCtx.grams = Math.max(1, Math.min(2000, Math.round(editTodayFoodCtx.grams + delta)));
+  document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
+}
+
+function saveEditTodayFood(){
+  if(!editTodayFoodCtx) return;
+  const arr = getDayLog(todayISO())[currentProf];
+  const keepIndex = editTodayFoodCtx.indices[0];
+  const base = arr[keepIndex];
+  if(!base) return;
+  const nut = roundedNutritionTotals(foodMacros(editTodayFoodCtx.ref, editTodayFoodCtx.grams));
+  base.grams = editTodayFoodCtx.grams;
+  base.kcal = nut.kcal; base.protein = nut.protein; base.carbs = nut.carbs; base.fat = nut.fat; base.satFat = nut.satFat; base.fiber = nut.fiber; base.u = Date.now();
+  editTodayFoodCtx.indices.slice(1).sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
+  editTodayFoodCtx = null;
+  refreshAfterLogChange();
+  closeSheet();
+  toast('✓ Updated item');
+}
+
+function deleteEditingTodayFood(){
+  if(!editTodayFoodCtx) return;
+  editTodayFoodCtx.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
+  editTodayFoodCtx = null;
+  refreshAfterLogChange();
+  closeSheet();
+  toast('✕ Removed item');
 }
 
 // FIX 2 (feedback): one refresh funnel for every undo/remove — everything below derives
@@ -559,7 +993,9 @@ function refreshAfterLogChange(){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderLogPlan(); // rebuilds cards + replays statuses, then updates pill + "Today so far"
-  renderTodayCardActions(); // FIX 1 (feedback): keep the Today cards' own affordance in sync too
+  renderTodayRecords();
+  renderBeverageCounts();
+  if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // keep Today cards in sync only when editing today
   persist();
 }
 
@@ -582,6 +1018,7 @@ function renderTodayCardActions(){
     const status = slotLogStatus(todayISO(), currentProf, slot);
     if(status === 'confirmed'){
       wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Logged</span>'
+        + '<button class="tag-undo" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋ Side</button>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
     } else if(status === 'skipped'){
       wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
@@ -590,6 +1027,7 @@ function renderTodayCardActions(){
       const label = SLOT_LABEL[slot] || slot;
       wrap.innerHTML = '<div class="ta-actions">'
         + '<button class="ta-btn ta-confirm" aria-label="Confirm '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')">✓</button>'
+        + '<button class="ta-btn" aria-label="Add side to '+label+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋</button>'
         + '<button class="ta-btn ta-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')">✕</button>'
         + '</div>';
     }
@@ -600,9 +1038,9 @@ function renderTodayCardActions(){
 // plan entry / skipped flag (state.js:removeLoggedSlot), which restores the card's
 // Confirm/Swap/Skip actions on the renderLogPlan() rebuild.
 function undoLogSlot(slot){
-  const status = slotLogStatus(todayISO(), currentProf, slot);
+  const status = slotLogStatus(currentLogDateISO(), currentProf, slot);
   if(!status) return;
-  removeLoggedSlot(todayISO(), currentProf, slot);
+  removeLoggedSlot(currentLogDateISO(), currentProf, slot);
   refreshAfterLogChange();
   toast(status === 'confirmed'
     ? '↺ Un-logged ' + (TITLES[slot] || SLOT_LABEL[slot]) + ' — confirm it again anytime'
@@ -614,7 +1052,7 @@ function undoLogSlot(slot){
 // state is re-derived from slotLogStatus on the renderLogPlan() rebuild, same path as
 // undoLogSlot — the two stay consistent by construction).
 function removeTodayEntry(index){
-  const removed = removeLogEntryAt(todayISO(), currentProf, index);
+  const removed = removeLogEntryAt(currentLogDateISO(), currentProf, index);
   if(!removed) return;
   let name = 'entry';
   if(removed.kind === 'plan'){
@@ -651,9 +1089,9 @@ function logConfirm(key, silent){
   appendTagRow(card, key, 'confirmed-tag', silent ? '✓ Logged · earlier today' : '✓ Logged · just now');
 
   if(!silent){
-    const v = activeMenu[key];
-    logPlanEntry(todayISO(), currentProf, key, v.recipeId, v.portion);
-    toast('✓ Logged to today');
+    const v = (logMenu || computeMenuForDate(currentLogDateISO(), currentProf))[key];
+    logPlanEntry(currentLogDateISO(), currentProf, key, v.recipeId, v.portion, v.components);
+    toast('✓ Logged to ' + logDateLabel().toLowerCase());
   }
 
   // Task D1: Today ring/macros/good-sat-fat line and the "Today so far" list all derive
@@ -663,7 +1101,8 @@ function logConfirm(key, silent){
   refreshRingAndBars();
   updateLogTotalPill();
   renderTodaySoFar();
-  renderTodayCardActions(); // FIX 1: mirror the confirm onto the Today card (both directions)
+  renderTodayRecords();
+  if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // mirror the confirm onto Today cards only for today
   persist();
 }
 
@@ -671,11 +1110,11 @@ function logSkip(key, silent){
   const card = document.getElementById('log-' + key);
   if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
   card.classList.add('skipped');
-  appendTagRow(card, key, 'skipped-tag', 'Skipped for today');
+  appendTagRow(card, key, 'skipped-tag', 'Skipped for ' + logDateLabel().toLowerCase());
   if(!silent) toast('Skipped — your plan stays balanced');
 
-  markSlotSkipped(todayISO(), currentProf, key);
-  renderTodayCardActions(); // FIX 1: mirror the skip onto the Today card (both directions)
+  markSlotSkipped(currentLogDateISO(), currentProf, key);
+  if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // mirror the skip onto Today cards only for today
   persist();
 }
 
@@ -688,42 +1127,135 @@ function logSkip(key, silent){
 // lunch/dinner/snack, nothing pre-logged. All four slots go through the same
 // buildLogSlotCard() path (the old breakfast-only "always done" branch is gone).
 function renderLogPlan(){
-  if(!activeMenu) return;
+  logMenu = computeMenuForDate(currentLogDateISO(), currentProf);
+  const title = document.getElementById('logPlanTitle'); if(title) title.textContent = logDateLabel() + "'s plan";
+  const soFar = document.getElementById('logSoFarTitle'); if(soFar) soFar.textContent = logDateLabel() + ' so far';
+  const coffee = document.getElementById('coffeeCountTitle'); if(coffee) coffee.textContent = 'Coffee ' + logDateLabel().toLowerCase();
   SLOT_ORDER.forEach(function(slot){
-    const v = activeMenu[slot], r = RECIPES[v.recipeId];
-    buildLogSlotCard(slot, r.emoji, r.title, v.kcal, SLOT_LABEL[slot] + ' · ' + v.protein + 'g protein');
+    const v = logSlotView(slot);
+    buildLogSlotCard(slot, v.recipe.emoji, mealTitleWithExtras(v), v.kcal, SLOT_LABEL[slot] + ' · ' + macroSummaryFromTotals(v), v.portion);
   });
 
   updateLogTotalPill();
   renderTodaySoFar();
+  renderTodayRecords();
+  renderBeverageCounts();
 
   if(typeof restoreTodayLog === 'function') restoreTodayLog();
 }
 
-function buildLogSlotCard(slot, emoji, title, kcal, desc){
+function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
   EMOJI[slot] = emoji; TITLES[slot] = title; LOGKCAL[slot] = kcal;
   const card = document.getElementById('log-' + slot);
   card.className = 'card meal';
   card.style.cursor = 'default';
   // Servings-eaten stepper (FEATURE: recipe servings) — the plan entry's portion is
   // "servings of the recipe", user-adjustable before confirming.
-  const portion = (activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1;
+  const portion = (typeof portionOverride === 'number') ? portionOverride : ((activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1);
+  const isTodayLog = currentLogDateISO() === todayISO();
+  const swapAction = isTodayLog ? '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>' : '';
+  const addAction = isTodayLog ? '<button class="la-swap" onclick="openAddMealRecipeSheet(\''+slot+'\')">+ Side</button>' : '';
+  const servingStepper = isTodayLog ? '<span class="sv-stepper" style="margin-left:auto">'
+    + '<button onclick="stepMealServings(\''+slot+'\',-0.5)" aria-label="Fewer servings">-</button>'
+    + '<span class="sv-val">'+portion+'x</span>'
+    + '<button onclick="stepMealServings(\''+slot+'\',0.5)" aria-label="More servings">+</button>'
+    + '</span>' : '';
   card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
     + '<div class="row between"><span class="t">'+title+'</span><span class="kcal">'+kcal+'</span></div>'
     + '<div class="d">'+desc+'</div>'
     + '<div class="logactions">'
     + '<button class="la-confirm" onclick="logConfirm(\''+slot+'\')">Confirm</button>'
-    + '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>'
+    + swapAction
+    + addAction
     + '<button class="la-skip" onclick="logSkip(\''+slot+'\')">Skip</button>'
-    + '<span class="sv-stepper" style="margin-left:auto">'
-    + '<button onclick="stepMealServings(\''+slot+'\',-0.5)" aria-label="Fewer servings">–</button>'
-    + '<span class="sv-val">'+portion+'×</span>'
-    + '<button onclick="stepMealServings(\''+slot+'\',0.5)" aria-label="More servings">+</button>'
-    + '</span>'
+    + servingStepper
     + '</div></div>';
 }
 
 /* ---------------- shared-meals toggle + Today rendering ---------------- */
+function loggedPlanEntryForSlot(dateISO, personKey, slot){
+  const day = logHistory[dateISO];
+  if(!day) return null;
+  const arr = Array.isArray(day[personKey]) ? day[personKey] : [];
+  for(let i = arr.length - 1; i >= 0; i--){
+    const e = arr[i];
+    if(e && e.kind === 'plan' && e.slot === slot) return e;
+  }
+  return null;
+}
+
+function displayedSlotViewForDate(dateISO, personKey, slot, planned){
+  const logged = loggedPlanEntryForSlot(dateISO, personKey, slot);
+  if(logged && RECIPES[logged.ref]){
+    const nut = roundedNutritionTotals(logEntryNutrition(logged));
+    const loggedComponents = Array.isArray(logged.components) && logged.components.length ? logged.components : [{recipeId: logged.ref, portion: logged.portion}];
+    return {
+      recipeId: logged.ref,
+      recipe: RECIPES[logged.ref],
+      components: loggedComponents,
+      extras: loggedComponents.slice(1),
+      kcal: nut.kcal,
+      protein: nut.protein,
+      carbs: nut.carbs,
+      fat: nut.fat,
+      satFat: nut.satFat,
+      fiber: nut.fiber,
+      portion: (typeof logged.portion === 'number') ? logged.portion : 1,
+      shared: planned ? !!planned.shared : false,
+      logged: true
+    };
+  }
+  const recipe = planned && RECIPES[planned.recipeId];
+  const nut = planned ? roundedNutritionTotals(planEntryNutrition(planned)) : null;
+  const plannedComponents = planned ? planEntryComponents(planned) : [];
+  return {
+    recipeId: planned ? planned.recipeId : null,
+    recipe: recipe,
+    components: plannedComponents,
+    extras: plannedComponents.slice(1),
+    kcal: nut ? nut.kcal : 0,
+    protein: nut ? nut.protein : 0,
+    carbs: nut ? nut.carbs : 0,
+    fat: nut ? nut.fat : 0,
+    satFat: nut ? nut.satFat : 0,
+    fiber: nut ? nut.fiber : 0,
+    portion: planned ? planned.portion : 1,
+    shared: planned ? !!planned.shared : false,
+    logged: false
+  };
+}
+
+function todaySlotView(slot){
+  return displayedSlotViewForDate(todayISO(), currentProf, slot, activeMenu && activeMenu[slot]);
+}
+
+function logSlotView(slot){
+  const dateISO = currentLogDateISO();
+  const menu = logMenu || computeMenuForDate(dateISO, currentProf);
+  return displayedSlotViewForDate(dateISO, currentProf, slot, menu && menu[slot]);
+}
+
+function displayedTodayRecipeId(slot){
+  const view = todaySlotView(slot);
+  return view.recipeId;
+}
+
+function mealTitleWithExtras(view){
+  if(!view || !view.recipe) return '';
+  const extras = (view.extras || []).map(function(c){
+    return RECIPES[c.recipeId] ? RECIPES[c.recipeId].title : null;
+  }).filter(Boolean);
+  return view.recipe.title + (extras.length ? ' + ' + extras.join(' + ') : '');
+}
+
+function logEntryTitleWithComponents(entry){
+  if(!entry || entry.kind !== 'plan') return '';
+  const base = RECIPES[entry.ref] ? RECIPES[entry.ref].title : 'Meal';
+  const parts = Array.isArray(entry.components) ? entry.components.slice(1) : [];
+  const extras = parts.map(function(c){ return RECIPES[c.recipeId] ? RECIPES[c.recipeId].title : null; }).filter(Boolean);
+  return base + (extras.length ? ' + ' + extras.join(' + ') : '');
+}
+
 function toggleShared(slot, el){
   SHARED[slot] = !SHARED[slot];
   el.classList.toggle('sel', SHARED[slot]);
@@ -760,35 +1292,36 @@ function renderTodayMeals(){
     return html;
   }
 
-  const bfv = activeMenu.breakfast, bf = RECIPES[bfv.recipeId];
+  const bfv = todaySlotView('breakfast'), bf = bfv.recipe;
   document.getElementById('bfEmoji').textContent = bf.emoji;
-  document.getElementById('bfTitle').textContent = bf.title;
+  document.getElementById('bfTitle').textContent = mealTitleWithExtras(bfv);
   document.getElementById('bfKcal').textContent = bfv.kcal;
-  document.getElementById('bfDesc').textContent = 'Breakfast · ' + bfv.protein + 'g protein';
+  document.getElementById('bfDesc').textContent = 'Breakfast · ' + macroSummaryFromTotals(bfv);
   document.getElementById('bfTags').innerHTML = tagsHtml(bf, 'breakfast', 'pillBreakfast');
 
-  const luv = activeMenu.lunch, lu = RECIPES[luv.recipeId];
+  const luv = todaySlotView('lunch'), lu = luv.recipe;
   document.getElementById('lunchThumb').textContent = lu.emoji;
-  document.getElementById('lunchTitle').textContent = lu.title;
+  document.getElementById('lunchTitle').textContent = mealTitleWithExtras(luv);
   document.getElementById('lunchKcal').textContent = luv.kcal;
-  document.getElementById('lunchDesc').textContent = 'Lunch · ' + luv.protein + 'g protein';
+  document.getElementById('lunchDesc').textContent = 'Lunch · ' + macroSummaryFromTotals(luv);
   document.getElementById('lunchTags').innerHTML = tagsHtml(lu, 'lunch', 'pillLunch');
 
-  const div_ = activeMenu.dinner, di = RECIPES[div_.recipeId];
+  const div_ = todaySlotView('dinner'), di = div_.recipe;
   document.getElementById('dinnerThumb').textContent = di.emoji;
-  document.getElementById('dinnerTitle').textContent = di.title;
+  document.getElementById('dinnerTitle').textContent = mealTitleWithExtras(div_);
   document.getElementById('dinnerKcal').textContent = div_.kcal;
-  document.getElementById('dinnerDesc').textContent = 'Dinner · ' + div_.protein + 'g protein';
+  document.getElementById('dinnerDesc').textContent = 'Dinner · ' + macroSummaryFromTotals(div_);
   document.getElementById('dinnerTags').innerHTML = tagsHtml(di, 'dinner', 'pillDinner');
 
-  const snv = activeMenu.snack, sn = RECIPES[snv.recipeId];
+  const snv = todaySlotView('snack'), sn = snv.recipe;
   document.getElementById('snackThumbEl').textContent = sn.emoji;
-  document.getElementById('snackTitleEl').textContent = sn.title;
+  document.getElementById('snackTitleEl').textContent = mealTitleWithExtras(snv);
   document.getElementById('snackKcalEl').textContent = snv.kcal;
-  document.getElementById('snackDescEl').textContent = 'Snack · ' + snv.protein + 'g protein';
+  document.getElementById('snackDescEl').textContent = 'Snack · ' + macroSummaryFromTotals(snv);
   document.getElementById('snackTags').innerHTML = tagsHtml(sn, 'snack', 'pillSnack');
 
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
+  renderTodayRecords();
 }
 
 /* ---------------- editable basics ---------------- */
@@ -1144,9 +1677,13 @@ function applyProf(key){
   recomputeProf(key);
   refreshRingAndBars();
   document.getElementById('goalTag').textContent=p.goalTag;
-  document.getElementById('coachT').textContent=p.coachOverrideT || p.coachT;
-  document.getElementById('coachD').textContent=p.coachOverrideD || p.coachD;
+  const coachT = document.getElementById('coachT');
+  const coachD = document.getElementById('coachD');
+  if(coachT) coachT.textContent=p.coachOverrideT || p.coachT;
+  if(coachD) coachD.textContent=p.coachOverrideD || p.coachD;
   document.getElementById('profAv').textContent=p.av;
+  const topAv = document.getElementById('topProfAv');
+  if(topAv) topAv.textContent = p.av;
   renderBasics();
   document.getElementById('hashiOpt').style.display = p.hashi ? 'flex':'none';
   document.getElementById('ksP').style.width = p.kP + '%';
@@ -1393,15 +1930,33 @@ function confirmQuickAdd(){
   if(!quickAdd.selectedId || !FOODS[quickAdd.selectedId]) return;
   const food = FOODS[quickAdd.selectedId];
   const grams = quickAdd.grams;
-  logFoodEntry(todayISO(), currentProf, quickAdd.selectedId, grams);
+  logFoodEntry(currentLogDateISO(), currentProf, quickAdd.selectedId, grams);
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
   updateLogTotalPill();
   renderTodaySoFar();
+  renderTodayRecords();
+  renderBeverageCounts();
   persist();
   closeSheet();
-  toast('✓ Added ' + grams + 'g ' + food.name + ' to today');
+  toast('✓ Added ' + grams + 'g ' + food.name + ' to ' + logDateLabel().toLowerCase());
+}
+
+function logBeverage(foodId){
+  const food = FOODS[foodId];
+  if(!food) return;
+  const grams = (food.unit === 'piece' && food.avgG) ? food.avgG : 1;
+  logFoodEntry(currentLogDateISO(), currentProf, foodId, grams);
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  updateLogTotalPill();
+  renderTodaySoFar();
+  renderTodayRecords();
+  renderBeverageCounts();
+  persist();
+  toast('✓ Added ' + food.name);
 }
 
 /* ===================================================================
@@ -1549,7 +2104,7 @@ function confirmMergeImport(){
   catch(e){ toast("That file isn't a valid Mesa backup"); pendingImportRaw = null; closeSheet(); return; }
   const result = mergeImportedLibrary(parsed);
   pendingImportRaw = null;
-  applyProf(currentProf); // bumped customRev (if anything was added) regenerates the week, persists either way
+  applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
   closeSheet();
   const parts = [];
   if(result.addedRecipes) parts.push(result.addedRecipes + ' recipe' + (result.addedRecipes === 1 ? '' : 's'));

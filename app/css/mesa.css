@@ -74,10 +74,13 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 
 /* top bar with profile switch */
 .topbar{display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
+.top-actions{display:flex;align-items:center;gap:8px;}
 .seg{display:flex;background:#e8dcc8;border-radius:999px;padding:3px;border:1px solid rgba(176,146,105,.32);}
 .seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:7px 13px;border-radius:999px;cursor:pointer;transition:.2s;}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-soft);}
 .avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;font-size:15px;background:linear-gradient(135deg,var(--sage),var(--sage-deep));}
+.profile-icon-btn{width:38px;height:38px;border:1px solid rgba(176,146,105,.36);border-radius:50%;display:grid;place-items:center;background:var(--card);box-shadow:var(--shadow-soft);color:var(--sage-deep);font:inherit;font-weight:800;cursor:pointer;padding:0;}
+.profile-icon-btn span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--sage),var(--sage-deep));color:#fff;font-size:13px;}
 
 /* calorie ring */
 .ring-wrap{display:flex;align-items:center;gap:18px;}
@@ -157,7 +160,11 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .lib-del{width:44px;height:44px;min-width:44px;flex:0 0 44px;border:0;border-radius:12px;background:#f6e6dc;color:#b25e35;font-size:15px;font-weight:700;cursor:pointer;}
 .lib-del:active{transform:scale(.94);}
 .lib-edit{width:44px;height:44px;min-width:44px;flex:0 0 44px;border:0;border-radius:12px;background:var(--sage-tint);color:var(--sage-deep);font-size:17px;font-weight:700;cursor:pointer;}
+.lib-edit.is-pref{background:var(--terra-tint);color:#b25e35;}
 .lib-edit:active{transform:scale(.94);}
+.lib-recipe-actions{display:grid;grid-template-columns:repeat(2,34px);grid-auto-rows:34px;gap:6px;flex:0 0 74px;align-self:center;}
+.lib-recipe-actions .lib-edit,.lib-recipe-actions .lib-del{width:34px;height:34px;min-width:34px;flex:0 0 34px;border-radius:10px;font-size:14px;padding:0;}
+.lib-recipe-actions .lib-del{font-size:13px;}
 .field textarea.inp{display:block;}
 .stackbar{height:8px;border-radius:999px;background:#eef0ec;overflow:hidden;display:flex;}
 .stackbar i{display:block;height:100%;}
@@ -195,8 +202,9 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    whichever week — current or next — is displayed; render.js:openWeekSwap). 44x44
    tap target (ground rule: iPhone Safari targets >=44px); event.stopPropagation() on the
    button's onclick keeps the row's own openRecipe() tap separate. */
-.day-meal-row .dm-swap{flex:0 0 44px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;font-size:15px;line-height:1;cursor:pointer;border-radius:10px;color:var(--ink-soft);}
-.day-meal-row .dm-swap:active{background:#e9e4d7;}
+.day-meal-row .dm-swap,.day-meal-row .dm-pin,.day-meal-row .dm-rule{flex:0 0 34px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;font-size:14px;line-height:1;cursor:pointer;border-radius:10px;color:var(--ink-soft);}
+.day-meal-row .dm-pin.on{background:rgba(199,154,72,.18);color:#9b6b1f;}
+.day-meal-row .dm-swap:active,.day-meal-row .dm-pin:active,.day-meal-row .dm-rule:active{background:#e9e4d7;}
 
 /* recipe detail */
 .hero{height:170px;border-radius:18px;margin-top:8px;display:grid;place-items:center;font-size:74px;background:linear-gradient(135deg,#f6efd9,#edf1df);border:1px solid rgba(176,146,105,.38);}
@@ -232,7 +240,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .quick button{border:1px solid var(--line);background:#fff;border-radius:16px;padding:12px 4px;font:inherit;font-size:11px;font-weight:600;color:var(--ink-soft);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;min-height:44px;}
 .quick button .qi{font-size:22px;}
 .logitem{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);}
-#todaySoFar .logitem:last-child{border-bottom:0;}
+#todaySoFar .logitem:last-child,#todayRecordsList .logitem:last-child{border-bottom:0;}
 .logitem .li-i{width:42px;height:42px;border-radius:12px;background:var(--terra-tint);display:grid;place-items:center;font-size:20px;flex:0 0 42px;}
 .logitem .li-t{flex:1;font-size:14px;}
 .logitem .li-t small{display:block;color:var(--muted);font-size:12px;margin-top:1px;}

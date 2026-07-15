@@ -23,9 +23,9 @@
    every renderer that reads RECIPES[id]/RECIPES_DB[id] see them exactly
    like a built-in recipe — no special-casing anywhere else.
 
-   Both mutate `customRev` (state.js), a monotonic counter folded into
-   planner.js:computePlanSignature() so any library change deterministically
-   regenerates the week (task brief: "the planner must see them").
+   Both mutate `customRev` (state.js), a monotonic counter used by persistence/sync.
+   Library changes do NOT regenerate an existing week: new recipes are available for
+   manual swaps immediately and for future automatically generated weeks.
 
    Deleting a custom recipe never corrupts log history: LogEntry rows
    store frozen computed macros (state.js) and render.js already falls
@@ -302,6 +302,22 @@ function openAddMenu(){
   document.getElementById('sheet').classList.add('show');
 }
 
+function openLibraryHub(tabEl){
+  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('on'); });
+  if(tabEl) tabEl.classList.add('on');
+  document.getElementById('sheetBody').innerHTML =
+    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Library</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div style="margin-top:10px">'
+    + '<div class="altrow" onclick="openFoodLibrary()"><div class="ae">🧺</div><div class="at"><div class="an">Ingredients</div><div class="ad">Browse, edit or add foods</div></div></div>'
+    + '<div class="altrow" onclick="openMyRecipes()"><div class="ae">📖</div><div class="at"><div class="an">Recipes</div><div class="ad">Browse, edit or add recipes</div></div></div>'
+    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">＋</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food from macros</div></div></div>'
+    + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">✎</div><div class="at"><div class="an">New recipe</div><div class="ad">Build from ingredients and meal slots</div></div></div>'
+    + '</div>';
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
 function buildFoodLibrarySheet(){
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Ingredients</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(libFoodQuery) + '" oninput="onLibFoodSearchInput(this.value)" autocomplete="off">'
@@ -393,11 +409,16 @@ function renderLibFoodListMarkup(query){
       const f = FOODS[id];
       const isCustom = !!customFoods[id];
       const kcalPer100 = f.unit === 'piece' ? Math.round(f.kcal / f.avgG * 100) : Math.round(f.kcal);
+      const factor = f.unit === 'piece' ? (100 / f.avgG) : (100 / f.per);
+      const macroLine = Math.round((f.protein || 0) * factor) + 'g P · '
+        + Math.round((f.carbs || 0) * factor) + 'g C · '
+        + Math.round((f.fat || 0) * factor) + 'g F · '
+        + Math.round((f.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
       out += '<div class="altrow" style="cursor:default">'
         + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + '</div>'
-        + '<div class="ad">' + kcalPer100 + ' kcal / 100' + (f.unit === 'piece' ? 'g' : f.unit) + '</div></div>'
-        + (isCustom ? '<button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
+        + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + '</div></div>'
+        + (isCustom ? '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button><button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
         + '</div>';
     });
   });
@@ -422,7 +443,27 @@ function flagLabel(fl){ return FOOD_FLAG_LABELS[fl] || fl; }
 let newFoodForm = null;
 
 function openNewFoodForm(){
-  newFoodForm = {name: '', cat: 'Produce', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, flags: []};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, flags: []};
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  renderNewFoodFormSheet();
+}
+
+function openEditFoodForm(id){
+  const f = customFoods[id];
+  if(!f){ toast('Only your ingredients can be edited'); return; }
+  newFoodForm = {
+    editingId: id,
+    name: f.name || '',
+    cat: f.cat || 'Produce',
+    protein: +(f.protein || 0),
+    carbs: +(f.carbs || 0),
+    fat: +(f.fat || 0),
+    satFat: +(f.satFat || 0),
+    fiber: +(f.fiber || 0),
+    flags: Array.isArray(f.flags) ? f.flags.slice() : []
+  };
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
@@ -443,7 +484,8 @@ function newFoodCapNotes(f){
 function buildNewFoodFormSheet(){
   const f = newFoodForm;
   const kcal = computeNewFoodKcal(f);
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">New ingredient</h2><button class="backbtn" style="margin:0" onclick="openFoodLibrary()">‹ Back</button></div>';
+  const editing = !!f.editingId;
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit ingredient' : 'New ingredient') + '</h2><button class="backbtn" style="margin:0" onclick="openFoodLibrary()">‹ Back</button></div>';
 
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(f.name) + '" oninput="newFoodForm.name=this.value" placeholder="e.g. Tempeh" autocomplete="off"></div>';
@@ -478,7 +520,7 @@ function buildNewFoodFormSheet(){
     + FOOD_FORM_FLAGS.map(function(fl){ return '<button class="pill ghost chip-preset' + (f.flags.indexOf(fl) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodFlag(\'' + fl + '\')">' + flagLabel(fl) + '</button>'; }).join('')
     + '</div></div>';
 
-  html += '<button class="cta" onclick="saveNewFood()">Save ingredient</button>'
+  html += '<button class="cta" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
     + '<button class="cta ghostbtn" onclick="openFoodLibrary()">Cancel</button>';
   return html;
 }
@@ -511,14 +553,14 @@ function saveNewFood(){
   const name = (f.name || '').trim();
   if(!name){ toast('Give this ingredient a name'); return; }
   const lower = name.toLowerCase();
-  const dup = Object.keys(FOODS).some(function(id){ return FOODS[id].name.toLowerCase() === lower; });
+  const dup = Object.keys(FOODS).some(function(id){ return id !== f.editingId && FOODS[id].name.toLowerCase() === lower; });
   if(dup){ toast('“' + name + '” already exists — try a different name'); return; }
   if(f.protein < 0 || f.carbs < 0 || f.fat < 0 || f.satFat < 0 || f.fiber < 0){ toast('Values must be zero or more'); return; }
   if(f.satFat > f.fat + 1e-9){ toast('Sat. fat can’t exceed total fat'); return; }
   if(f.fiber > f.carbs + 1e-9){ toast('Fiber can’t exceed total carbs'); return; }
   if(f.protein + f.carbs + f.fat > 100 + 1e-9){ toast('Protein + carbs + fat can’t exceed 100g per 100g'); return; }
 
-  const id = uniqueSlug(slugify(name), FOODS, 'cf-');
+  const id = f.editingId || uniqueSlug(slugify(name), FOODS, 'cf-');
   const kcal = computeNewFoodKcal(f);
   customFoods[id] = {
     name: name, per: 100, unit: 'g',
@@ -527,8 +569,8 @@ function saveNewFood(){
   };
   customRev++;
   applyCustomFoods();
-  applyProf(currentProf); // regenerates the week if the signature (customRev) changed, persists
-  toast('✓ ' + name + ' added — ' + kcal + ' kcal / 100g');
+  applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
+  toast('✓ ' + name + (f.editingId ? ' updated' : ' added') + ' — ' + kcal + ' kcal / 100g');
   newFoodForm = null;
   openFoodLibrary();
   renderFoodLibraryCount();
@@ -559,13 +601,13 @@ function deleteCustomFood(id){
    =================================================================== */
 /* ---------------- T5: Recipes sheet — meal-slot/tag filter chips ----------------
    Same pattern as the Ingredients sheet's filters above: Meal (slot) is OR'd (a recipe
-   has exactly one slot), Tag is AND'd (recipe must carry every active tag). Combines with
+   can carry multiple slots), Tag is AND'd (recipe must carry every active tag). Combines with
    the (currently absent) implicit "all recipes" list — no separate search box exists here,
    so filters are the only narrowing. View-only: reset every time the sheet opens. */
-let libRecipeFilters = {slots: new Set(), tags: new Set()};
+let libRecipeFilters = {query: '', slots: new Set(), tags: new Set()};
 
 function openMyRecipes(){
-  libRecipeFilters = {slots: new Set(), tags: new Set()};
+  libRecipeFilters = {query: '', slots: new Set(), tags: new Set()};
   document.getElementById('sheetBody').innerHTML = buildMyRecipesSheet();
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -575,7 +617,23 @@ function openMyRecipes(){
 function filteredRecipeIds(){
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
-    if(libRecipeFilters.slots.size && !libRecipeFilters.slots.has(r.slot)) return false;
+    const q = (libRecipeFilters.query || '').trim().toLowerCase();
+    if(q.length){
+      const haystack = [
+        r.title,
+        id,
+        recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' '),
+        (r.tags || []).join(' '),
+        (r.styles || []).join(' ')
+      ].join(' ').toLowerCase();
+      if(haystack.indexOf(q) === -1) return false;
+    }
+    if(libRecipeFilters.slots.size){
+      const slots = recipeSlotList(r);
+      let hasSlot = false;
+      libRecipeFilters.slots.forEach(function(slot){ if(slots.indexOf(slot) !== -1) hasSlot = true; });
+      if(!hasSlot) return false;
+    }
     if(libRecipeFilters.tags.size){
       const tags = r.tags || [];
       let hasAll = true;
@@ -589,8 +647,9 @@ function filteredRecipeIds(){
 }
 
 function renderLibRecipeFilterBar(){
-  const anyActive = libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0;
-  let html = '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">'
+  const anyActive = (libRecipeFilters.query || '').trim().length > 0 || libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0;
+  let html = '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:10px" type="text" id="libRecipeSearchInput" placeholder="Search recipes…" value="' + htmlAttr(libRecipeFilters.query || '') + '" oninput="onLibRecipeSearchInput(this.value)" autocomplete="off">'
+    + '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">'
     + RECIPE_SLOTS.map(function(s){ return filterChipHtml(SLOT_LABEL[s], libRecipeFilters.slots.has(s), 'toggleLibRecipeSlotFilter(\'' + s + '\')'); }).join('')
     + '</div>';
   html += '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:7px">'
@@ -610,12 +669,18 @@ function toggleLibRecipeSlotFilter(slot){
   if(libRecipeFilters.slots.has(slot)) libRecipeFilters.slots.delete(slot); else libRecipeFilters.slots.add(slot);
   rerenderLibRecipeFilteredView();
 }
+function onLibRecipeSearchInput(value){
+  libRecipeFilters.query = value;
+  rerenderLibRecipeFilteredView();
+  const input = document.getElementById('libRecipeSearchInput');
+  if(input) input.focus();
+}
 function toggleLibRecipeTagFilter(tag){
   if(libRecipeFilters.tags.has(tag)) libRecipeFilters.tags.delete(tag); else libRecipeFilters.tags.add(tag);
   rerenderLibRecipeFilteredView();
 }
 function clearLibRecipeFilters(){
-  libRecipeFilters = {slots: new Set(), tags: new Set()};
+  libRecipeFilters = {query: '', slots: new Set(), tags: new Set()};
   rerenderLibRecipeFilteredView();
 }
 function rerenderLibRecipeFilteredView(){
@@ -637,13 +702,28 @@ function renderLibRecipeListMarkup(){
     const r = RECIPES_DB[id];
     const nut = recipeNutrition(id, 1).totals;
     const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
+    const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
+    const pref = recipePrefs[id] || null;
     return '<div class="altrow" style="cursor:default"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
-      + '<div class="ad">' + SLOT_LABEL[r.slot] + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
+      + '<div class="ad">' + slotLabel + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
+      + '<div class="lib-recipe-actions">'
+      + '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" aria-label="Favorite ' + htmlAttr(r.title) + '" onclick="toggleRecipePref(\'' + id + '\',\'favorite\')">♡</button>'
+      + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" aria-label="Thumbs down ' + htmlAttr(r.title) + '" onclick="toggleRecipePref(\'' + id + '\',\'down\')">👎</button>'
       + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(r.title) + '" onclick="openEditRecipeForm(\'' + id + '\')">✎</button>'
       + '<button class="lib-del" aria-label="Delete ' + htmlAttr(r.title) + '" onclick="deleteRecipe(\'' + id + '\')">✕</button>'
+      + '</div>'
       + '</div>';
   }).join('') + '</div>';
+}
+
+function toggleRecipePref(id, pref){
+  if(!RECIPES_DB[id]) return;
+  if(recipePrefs[id] === pref) delete recipePrefs[id];
+  else recipePrefs[id] = pref;
+  customRev++;
+  persist();
+  rerenderLibRecipeFilteredView();
 }
 
 function buildMyRecipesSheet(){
@@ -669,14 +749,14 @@ function deleteRecipe(id){
   }
   customRev++;
   applyCustomRecipes();
-  applyProf(currentProf); // signature (customRev) changed -> ensureWeekPlan() regenerates
+  applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
   toast('✓ Deleted ' + title);
   renderFoodLibraryCount();
   if(document.getElementById('sheet').classList.contains('show')) openMyRecipes();
 }
 
 /* ---------------- recipe builder ---------------- */
-const RECIPE_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
+const RECIPE_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack', 'side'];
 let recipeBuilder = null;
 
 function recipeToBuilder(id){
@@ -686,7 +766,7 @@ function recipeToBuilder(id){
     editingId: id,
     name: r.title || '',
     emoji: r.emoji || '🍽️',
-    slot: r.slot || 'dinner',
+    slots: recipeSlotList(r).length ? recipeSlotList(r) : [r.slot || 'dinner'],
     time: r.time || 20,
     servings: r.servings || 1,
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
@@ -696,7 +776,7 @@ function recipeToBuilder(id){
 }
 
 function openNewRecipeForm(){
-  recipeBuilder = {name: '', emoji: '🍽️', slot: 'dinner', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
+  recipeBuilder = {name: '', emoji: '🍽️', slots: ['dinner'], time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
@@ -747,9 +827,9 @@ function buildRecipeBuilderSheet(){
   html += '<div class="field"><label>Emoji</label>'
     + '<input class="inp" style="width:64px;box-sizing:border-box;border:1px solid var(--line);margin-top:6px;text-align:center;font-size:19px" type="text" maxlength="4" value="' + htmlAttr(rb.emoji) + '" oninput="recipeBuilder.emoji=this.value"></div>';
 
-  html += '<div class="field"><label>Meal slot</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
-    + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slot === s ? ' chipsel' : '') + '" onclick="setRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
-    + '</div></div>';
+  html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
+    + '</div><div class="sub" style="margin-top:4px">Pick every meal this recipe can work for. The first selected slot stays primary for old plans.</div></div>';
 
   html += '<div class="field"><label>Prep time</label><div class="inp"><span>Minutes</span>'
     + '<span class="sv-stepper" style="margin:0">'
@@ -795,7 +875,7 @@ function buildRecipeBuilderSheet(){
     + '</div>';
 
   if(rb.ingredients.length){
-    const warn = kcalBandWarning(rb.slot, perServing.kcal);
+    const warn = kcalBandWarning(rb.slots[0] || 'dinner', perServing.kcal);
     if(warn) html += '<div class="cap-note" style="color:#b25e35;margin-top:8px">' + warn + '</div>';
   }
 
@@ -804,7 +884,15 @@ function buildRecipeBuilderSheet(){
   return html;
 }
 
-function setRecipeSlot(s){ recipeBuilder.slot = s; renderRecipeBuilderSheet(); }
+function toggleRecipeSlot(s){
+  const slots = recipeBuilder.slots || [];
+  const idx = slots.indexOf(s);
+  if(idx === -1) slots.push(s);
+  else if(slots.length > 1) slots.splice(idx, 1);
+  else { toast('Pick at least one meal slot'); return; }
+  recipeBuilder.slots = RECIPE_SLOTS.filter(function(slot){ return slots.indexOf(slot) !== -1; });
+  renderRecipeBuilderSheet();
+}
 function stepRecipeTime(delta){ recipeBuilder.time = Math.max(2, Math.min(180, recipeBuilder.time + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeServings(delta){ recipeBuilder.servings = Math.max(1, Math.min(12, recipeBuilder.servings + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeIngredientGrams(i, delta){
@@ -908,9 +996,9 @@ function addIngredientToRecipe(foodId){
      id) gets " (imported)" appended to the incoming entry's name/title,
      so the library never ends up with two identically-named rows.
    - customRev (state.js) is bumped ONCE at the end if anything was
-     actually added (not on a no-op merge) — never per item — so the
-     planner regenerates the week exactly once; applyCustomFoods()/
-     applyCustomRecipes() (above) are likewise called once each.
+     actually added (not on a no-op merge) — never per item — so sync/persist
+     sees one library change; applyCustomFoods()/applyCustomRecipes() (above)
+     are likewise called once each.
    Returns {addedFoods, addedRecipes} (counts of ACTUAL additions —
    identical-content skips don't count) for the caller's toast.
    =================================================================== */
@@ -973,6 +1061,13 @@ function mergeImportedLibrary(parsed){
       if(typeof id === 'string' && parsed.deletedRecipes[id]) incomingDeleted[id] = true;
     });
   }
+  const incomingPrefs = {};
+  if(parsed && parsed.recipePrefs && typeof parsed.recipePrefs === 'object'){
+    Object.keys(parsed.recipePrefs).forEach(function(id){
+      const pref = parsed.recipePrefs[id];
+      if(typeof id === 'string' && (pref === 'favorite' || pref === 'down')) incomingPrefs[id] = pref;
+    });
+  }
 
   // Existing display names (built-in + current custom), normalized — extended as entries
   // are merged in, so two incoming entries sharing a name don't both land unrenamed.
@@ -980,7 +1075,7 @@ function mergeImportedLibrary(parsed){
   const existingRecipeNames = Object.keys(RECIPES_DB).map(function(id){ return String(RECIPES_DB[id].title || '').trim().toLowerCase(); });
 
   const foodIdRemap = {}; // incoming (old) food id -> final local id, only set when re-idded
-  let addedFoods = 0, addedRecipes = 0, changedRecipeControls = 0;
+  let addedFoods = 0, addedRecipes = 0, changedRecipeControls = 0, changedPrefs = 0;
 
   function commitFood(targetId, incoming){
     const food = JSON.parse(JSON.stringify(incoming));
@@ -1049,13 +1144,18 @@ function mergeImportedLibrary(parsed){
     if(customRecipes[id]) delete customRecipes[id];
     changedRecipeControls++;
   });
+  Object.keys(incomingPrefs).sort().forEach(function(id){
+    if(recipePrefs[id] === incomingPrefs[id]) return;
+    recipePrefs[id] = incomingPrefs[id];
+    changedPrefs++;
+  });
 
-  if(addedFoods || addedRecipes || changedRecipeControls){
+  if(addedFoods || addedRecipes || changedRecipeControls || changedPrefs){
     customRev++;
     applyCustomFoods();
     applyCustomRecipes();
   }
-  return {addedFoods: addedFoods, addedRecipes: addedRecipes, changedRecipes: changedRecipeControls};
+  return {addedFoods: addedFoods, addedRecipes: addedRecipes, changedRecipes: changedRecipeControls, changedPrefs: changedPrefs};
 }
 
 function saveRecipeBuilder(){
@@ -1079,7 +1179,7 @@ function saveRecipeBuilder(){
 
   const id = rb.editingId || uniqueSlug(slugify(name), RECIPES_DB, 'cr-');
   const recipe = {
-    title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: rb.slot,
+    title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: (rb.slots && rb.slots[0]) || 'dinner', slots: (rb.slots && rb.slots.length ? rb.slots.slice() : ['dinner']),
     styles: meta.styles, time: rb.time, servings: yieldN,
     ingredients: rb.ingredients.map(function(r){ return [r.foodId, r.grams]; }),
     toTaste: [],
@@ -1093,7 +1193,7 @@ function saveRecipeBuilder(){
   }
   customRev++;
   applyCustomRecipes();
-  applyProf(currentProf); // signature (customRev) changed -> ensureWeekPlan() regenerates, persists
+  applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
   toast('✓ ' + name + (rb.editingId ? ' updated' : ' added to recipes'));
   recipeBuilder = null;
   openMyRecipes();

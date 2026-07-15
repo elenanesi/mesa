@@ -23,7 +23,7 @@
      (engine.js recipeNutrition) can reuse or replace this.
    =================================================================== */
 
-const VALID_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
+const VALID_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack', 'side'];
 const VALID_STYLES = ['balanced', 'highprotein', 'lowcarb'];
 const VALID_TAGS = ['thyroid', 'skin', 'heart', 'muscle', 'lowGI', 'omega3', 'highFiber', 'quick', 'veggie'];
 const VALID_AVOID = ['lactose', 'gluten', 'shellfish', 'nuts', 'spicy', 'raw-onion'];
@@ -105,8 +105,9 @@ function validateData() {
   }
 
   const ids = Object.keys(RECIPES_DB);
-  if (ids.length < 32 || ids.length > 36) {
-    warnings.push('RECIPES_DB has ' + ids.length + ' recipes; target range is 32-36.');
+  const planningIds = ids.filter(function(id){ return !RECIPES_DB[id].occasional; });
+  if (planningIds.length < 32) {
+    warnings.push('RECIPES_DB has ' + planningIds.length + ' automatic-planning recipes; target is >=32. Occasional recipes are counted separately.');
   }
 
   ids.forEach(function (id) {
@@ -125,6 +126,15 @@ function validateData() {
 
     const slotValid = typeof r.slot === 'string' && VALID_SLOTS.indexOf(r.slot) !== -1;
     if (!slotValid) errors.push(prefix + 'invalid slot "' + r.slot + '"');
+    if ('slots' in r) {
+      if (!Array.isArray(r.slots) || !r.slots.length) {
+        errors.push(prefix + 'slots must be a non-empty array when present');
+      } else {
+        r.slots.forEach(function(slot){
+          if (VALID_SLOTS.indexOf(slot) === -1) errors.push(prefix + 'invalid slots entry "' + slot + '"');
+        });
+      }
+    }
 
     let stylesValid = false;
     if (Array.isArray(r.styles) && r.styles.length > 0) {
@@ -175,20 +185,23 @@ function validateData() {
     }
 
     // coverage tallies (only meaningful once slot/styles are valid)
-    if (slotValid) {
-      coverage.bySlot[r.slot]++;
+    if (slotValid && !r.occasional) {
+      const slotsForCoverage = recipeSlotList(r);
+      slotsForCoverage.forEach(function(slot){ coverage.bySlot[slot]++; });
       const hitsElenaAvoid = avoidValid && r.avoid.some(function (a) { return ELENA_AVOID.indexOf(a) !== -1; });
       if (stylesValid) {
         r.styles.forEach(function (st) {
           coverage.byStyle[st]++;
-          coverage.byStyleSlot[r.slot][st]++;
-          if (!hitsElenaAvoid) coverage.elenaBySlotStyle[r.slot][st]++;
+          slotsForCoverage.forEach(function(slot){
+            coverage.byStyleSlot[slot][st]++;
+            if (!hitsElenaAvoid) coverage.elenaBySlotStyle[slot][st]++;
+          });
         });
       }
     }
 
     // kcal-band check — only once foods.js is loaded.
-    if (foodsLoaded && slotValid && KCAL_BAND[r.slot]) {
+    if (foodsLoaded && slotValid && KCAL_BAND[r.slot] && !r.occasional) {
       const m = recipeMacros(id);
       if (!m || !m.resolved) {
         warnings.push(prefix + 'could not compute macros (unresolved ingredient) — skipped kcal-band check.');
@@ -203,6 +216,7 @@ function validateData() {
 
   // Slot minimums are hard requirements.
   VALID_SLOTS.forEach(function (slot) {
+    if(slot === 'side') return;
     if (coverage.bySlot[slot] < SLOT_MIN[slot]) {
       errors.push('Slot "' + slot + '" has ' + coverage.bySlot[slot] + ' recipes, needs >= ' + SLOT_MIN[slot] + '.');
     }

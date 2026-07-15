@@ -276,6 +276,8 @@ let activeMenu = null;
    ensureWeekPlan() first runs (app.js boot). */
 let weekPlans = {};
 let weekPlan = null;
+let mealPins = {};
+let mealRules = [];
 
 // Drops any weekPlans entry (and its per-week shopping-checked state, checkedShopByWeek)
 // older than the CURRENT week's Monday — called from loadState() (right after weekPlans is
@@ -283,7 +285,7 @@ let weekPlan = null;
 // and from persist() (mirrors pruneLogHistory()'s pattern), so the store never accumulates
 // past weeks. String comparison is safe: ISO Mondays sort lexicographically.
 function pruneOldWeekPlans(){
-  const cutoff = mondayOfWeek(todayISO());
+  const cutoff = mondayOfWeek(addDaysISO(todayISO(), -1));
   Object.keys(weekPlans).forEach(function(k){
     if(k < cutoff){
       delete weekPlans[k];
@@ -318,7 +320,7 @@ const LOGKCAL = {};
 
 /* ---------------- shared-meals model ---------------- */
 const SHARED = {breakfast:false, lunch:false, dinner:true, snack:false};
-const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack'};
+const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack', side:'Side'};
 
 /* ---------------- profile data ---------------- */
 // Body stats are the source of truth; age, BMR, maintenance and the recommended daily
@@ -446,12 +448,13 @@ function checkedSetForWeek(weekStartDate){
    recipeOverrides: built-in recipe id -> edited recipe object. deletedRecipes:
    recipe id -> true tombstone for recipes the user removed from their library.
    customRev: monotonic counter, bumped on every library mutation (add/delete a food or
-   recipe) — folded into the week-plan signature (planner.js:computePlanSignature()) so a
-   library change deterministically regenerates the week. */
+   recipe) — used for persistence/sync change detection. It is intentionally NOT folded
+   into the week-plan signature: adding a recipe must not reset today's customized plan. */
 let customFoods = {};
 let customRecipes = {};
 let recipeOverrides = {};
 let deletedRecipes = {};
+let recipePrefs = {};
 let customRev = 0;
 
 /* ---------------- couple sync (Phase 2, task S1) ----------------
@@ -490,7 +493,7 @@ function todayISO(){
    }
 
    LogEntry = {kind:'plan'|'food', ref: recipeId|foodId, portion?, grams?, kcal, protein,
-     carbs, fat, satFat, fiber, slot?, t:'HH:MM'|null}. Every macro number is computed
+     carbs, fat, satFat, fiber, slot?, t:'HH:MM'|null, u: epochMs}. Every macro number is computed
    ONCE, at log time, via recipeNutrition()/foodMacros() (engine.js) and stored verbatim —
    never re-derived from the live recipe/food DB on a later read, so editing a recipe or
    swapping a plan meal never rewrites a past day's history (ground rule 1 + task D1's
@@ -577,10 +580,12 @@ function ensureTargetSnapshot(dateISO, personKey){
 function upsertLogEntry(dateISO, personKey, entry){
   ensureTargetSnapshot(dateISO, personKey);
   const arr = getDayLog(dateISO)[personKey];
+  if(typeof entry.u !== 'number') entry.u = Date.now();
   if(entry.kind === 'plan' && entry.slot){
     const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === entry.slot; });
     if(idx !== -1){
       entry.t = arr[idx].t || entry.t; // keep the original log time on an edit (e.g. a post-confirm swap)
+      entry.u = Date.now(); // but sync conflicts must see this edit as newer than the original confirm
       arr[idx] = entry;
       return entry;
     }
@@ -594,12 +599,13 @@ function upsertLogEntry(dateISO, personKey, entry){
 // included, see FIX 1: breakfast is a normal meal with its own Confirm/Swap/Skip, no more
 // auto-log), by chooseSwap (editing an already-logged slot), and by restoreTodayLog's
 // replay guard.
-function logPlanEntry(dateISO, personKey, slot, recipeId, portion){
-  const nut = recipeNutrition(recipeId, portion).totals;
+function logPlanEntry(dateISO, personKey, slot, recipeId, portion, components){
+  const parts = Array.isArray(components) && components.length ? components : [{recipeId: recipeId, portion: portion}];
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(parts));
   return upsertLogEntry(dateISO, personKey, {
-    kind: 'plan', ref: recipeId, portion: portion,
-    kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
-    fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
+    kind: 'plan', ref: recipeId, portion: portion, components: parts,
+    kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
+    fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
     slot: slot, t: nowHHMM()
   });
 }
@@ -608,11 +614,11 @@ function logPlanEntry(dateISO, personKey, slot, recipeId, portion){
 // `id` (task S1): a random identity token so couple sync can merge/dedupe/tombstone this
 // specific entry across two devices — see entryIdentity() above.
 function logFoodEntry(dateISO, personKey, foodId, grams){
-  const nut = foodMacros(foodId, grams);
+  const nut = roundedNutritionTotals(foodMacros(foodId, grams));
   return upsertLogEntry(dateISO, personKey, {
     kind: 'food', ref: foodId, grams: grams, id: genId(),
-    kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
-    fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
+    kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
+    fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
     t: nowHHMM()
   });
 }
@@ -784,6 +790,9 @@ function buildSnapshot(){
     customRecipes: customRecipes,
     recipeOverrides: recipeOverrides,
     deletedRecipes: deletedRecipes,
+    recipePrefs: recipePrefs,
+    mealPins: mealPins,
+    mealRules: mealRules,
     customRev: customRev,
     // logHistory (task D1): plain JSON data (no functions) — stored verbatim, capped at
     // LOG_HISTORY_RETENTION_DAYS by pruneLogHistory() (called from persist() below) before
@@ -942,6 +951,37 @@ function loadState(){
   if(saved.deletedRecipes && typeof saved.deletedRecipes === 'object'){
     Object.keys(saved.deletedRecipes).forEach(function(id){
       if(typeof id === 'string' && saved.deletedRecipes[id]) deletedRecipes[id] = true;
+    });
+  }
+  recipePrefs = {};
+  if(saved.recipePrefs && typeof saved.recipePrefs === 'object'){
+    Object.keys(saved.recipePrefs).forEach(function(id){
+      const v = saved.recipePrefs[id];
+      if(typeof id === 'string' && (v === 'favorite' || v === 'down')) recipePrefs[id] = v;
+    });
+  }
+  mealPins = {};
+  if(saved.mealPins && typeof saved.mealPins === 'object'){
+    Object.keys(saved.mealPins).forEach(function(k){
+      if(typeof k === 'string' && saved.mealPins[k]) mealPins[k] = true;
+    });
+  }
+  mealRules = [];
+  if(Array.isArray(saved.mealRules)){
+    saved.mealRules.forEach(function(rule){
+      if(!rule || typeof rule !== 'object') return;
+      if(typeof rule.recipeId !== 'string' || typeof rule.slot !== 'string') return;
+      if(['daily', 'alternate', 'weekly'].indexOf(rule.cadence) === -1) return;
+      if(['shared', 'elena', 'partner'].indexOf(rule.person) === -1) return;
+      if(SLOT_ORDER.indexOf(rule.slot) === -1) return;
+      mealRules.push({
+        recipeId: rule.recipeId,
+        slot: rule.slot,
+        cadence: rule.cadence,
+        person: rule.person,
+        anchorDate: typeof rule.anchorDate === 'string' ? rule.anchorDate : todayISO(),
+        dayIndex: typeof rule.dayIndex === 'number' ? Math.max(0, Math.min(6, rule.dayIndex)) : 0
+      });
     });
   }
   customRev = (typeof saved.customRev === 'number' && isFinite(saved.customRev)) ? saved.customRev : 0;

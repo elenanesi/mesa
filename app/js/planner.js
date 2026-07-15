@@ -96,15 +96,231 @@ function recipeHitsAvoid(recipe, avoidList){
   if(!avoidList || !avoidList.length) return false;
   return recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; });
 }
+function recipePref(id){ return recipePrefs[id] || null; }
 // Every recipe for a slot x style that doesn't hit the given avoid-list, sorted
 // lexicographically by id (the base order every tie-break falls back to).
-function candidatesFor(slot, styleKey, avoidList){
+function candidatesFor(slot, styleKey, avoidList, opts){
+  opts = opts || {};
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
-    return r.slot === slot && r.styles.indexOf(styleKey) !== -1 && !recipeHitsAvoid(r, avoidList);
+    return !r.occasional
+      && (opts.includeThumbsDown || recipePref(id) !== 'down')
+      && recipeSlotList(r).indexOf(slot) !== -1
+      && r.styles.indexOf(styleKey) !== -1
+      && !recipeHitsAvoid(r, avoidList);
   }).sort();
 }
 function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the recipe as written" (1x)
+
+function planEntryComponents(entry){
+  if(!entry || !entry.recipeId) return [];
+  const components = [{recipeId: entry.recipeId, portion: (typeof entry.portion === 'number' ? entry.portion : 1)}];
+  (entry.extras || []).forEach(function(extra){
+    if(extra && extra.recipeId && RECIPES_DB[extra.recipeId]){
+      components.push({recipeId: extra.recipeId, portion: (typeof extra.portion === 'number' && extra.portion > 0) ? extra.portion : 1});
+    }
+  });
+  return components;
+}
+
+function planEntryNutrition(entry){
+  if(!entry || !entry.recipeId || !RECIPES_DB[entry.recipeId]) return fallbackNutritionTotals(entry);
+  return nutritionForRecipeComponents(planEntryComponents(entry));
+}
+
+function planEntryView(entry, shared){
+  const nut = roundedNutritionTotals(planEntryNutrition(entry));
+  const components = planEntryComponents(entry);
+  return {
+    recipeId: entry ? entry.recipeId : null,
+    portion: entry && typeof entry.portion === 'number' ? entry.portion : 1,
+    components: components,
+    extras: components.slice(1),
+    kcal: nut.kcal,
+    protein: nut.protein,
+    carbs: nut.carbs,
+    fat: nut.fat,
+    satFat: nut.satFat,
+    fiber: nut.fiber,
+    shared: !!shared
+  };
+}
+
+function makePlanEntry(recipeId, portion, stamp){
+  const nut = recipeNutrition(recipeId, portion).totals;
+  const entry = {recipeId: recipeId, portion: portion, kcal: nut.kcal, protein: nut.protein};
+  if(typeof stamp === 'number') entry.t = stamp;
+  return entry;
+}
+
+function refreshPlanEntryNutrition(entry){
+  if(!entry || !entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
+  const nut = recipeNutrition(entry.recipeId, entry.portion).totals;
+  const changed = Math.abs((entry.kcal || 0) - nut.kcal) > 1e-6 || Math.abs((entry.protein || 0) - nut.protein) > 1e-6;
+  if(changed){
+    entry.kcal = nut.kcal;
+    entry.protein = nut.protein;
+  }
+  return changed;
+}
+
+function editableWeekPlan(weekStartDate){
+  const monday = weekStartDate || mondayOfWeek(todayISO());
+  let plan = weekPlans[monday];
+  if(!plan && weekPlan && weekPlan.weekStartDate === monday) plan = weekPlan;
+  if(!plan) plan = ensureWeekPlan(monday);
+  weekPlans[monday] = plan;
+  if(monday === mondayOfWeek(todayISO())) weekPlan = plan;
+  return plan;
+}
+
+function markWeekPlanEdited(plan){
+  if(!plan) return;
+  recomputeProf('elena');
+  recomputeProf('partner');
+  plan.signature = computePlanSignature();
+  weekPlans[plan.weekStartDate] = plan;
+  if(plan.weekStartDate === mondayOfWeek(todayISO())) weekPlan = plan;
+}
+
+function loggedSlotLocked(dateISO, person, slot){
+  return typeof slotLogStatus === 'function' && !!slotLogStatus(dateISO, person, slot);
+}
+
+function preserveLoggedSlots(oldPlan, newPlan){
+  if(!oldPlan || !newPlan || !Array.isArray(oldPlan.days) || !Array.isArray(newPlan.days)) return;
+  for(let d = 0; d < newPlan.days.length; d++){
+    const dateISO = newPlan.days[d].date;
+    SLOT_ORDER.forEach(function(slot){
+      const oldMeal = oldPlan.days[d] && oldPlan.days[d].meals && oldPlan.days[d].meals[slot];
+      const newMeal = newPlan.days[d] && newPlan.days[d].meals && newPlan.days[d].meals[slot];
+      if(!oldMeal || !newMeal) return;
+      const lockE = loggedSlotLocked(dateISO, 'elena', slot);
+      const lockA = loggedSlotLocked(dateISO, 'partner', slot);
+      if(!lockE && !lockA) return;
+      if(oldMeal.shared || newMeal.shared || (lockE && lockA)){
+        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        return;
+      }
+      if(lockE && oldMeal.elena) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
+      if(lockA && oldMeal.partner) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
+    });
+  }
+  refreshPlanNutrition(newPlan);
+}
+
+function addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, recipeId){
+  const plan = editableWeekPlan(weekStartDate);
+  if(!plan || !plan.days[dayIndex] || !RECIPES_DB[recipeId]) return false;
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[person]) return false;
+  const entry = meal[person];
+  entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
+  entry.extras.push({recipeId: recipeId, portion: 1});
+  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
+  refreshPlanEntryNutrition(entry);
+  if(meal.shared && meal.partner && person === 'elena'){
+    meal.partner.extras = Array.isArray(meal.partner.extras) ? meal.partner.extras : [];
+    meal.partner.extras.push({recipeId: recipeId, portion: 1});
+    refreshPlanEntryNutrition(meal.partner);
+  }
+  if(meal.shared && meal.elena && person === 'partner'){
+    meal.elena.extras = Array.isArray(meal.elena.extras) ? meal.elena.extras : [];
+    meal.elena.extras.push({recipeId: recipeId, portion: 1});
+    refreshPlanEntryNutrition(meal.elena);
+  }
+  markWeekPlanEdited(plan);
+  return true;
+}
+
+function refreshPlanNutrition(plan){
+  if(!plan || !Array.isArray(plan.days)) return false;
+  let changed = false;
+  plan.days.forEach(function(day){
+    SLOT_ORDER.forEach(function(slot){
+      const meal = day.meals && day.meals[slot];
+      if(!meal) return;
+      if(refreshPlanEntryNutrition(meal.elena)) changed = true;
+      if(refreshPlanEntryNutrition(meal.partner)) changed = true;
+    });
+  });
+  return changed;
+}
+
+function mealPinPersonForMeal(meal, person){
+  return meal && meal.shared ? 'shared' : person;
+}
+
+function mealPinKey(weekStartDate, dayIndex, slot, person){
+  return [weekStartDate, dayIndex, slot, person].join('|');
+}
+
+function isMealPinned(weekStartDate, dayIndex, slot, person){
+  return !!mealPins[mealPinKey(weekStartDate, dayIndex, slot, person)];
+}
+
+function isUnitPinned(plan, unit){
+  const meal = plan.days[unit.dayIndex].meals[unit.slot];
+  const person = unit.shared ? 'shared' : unit.person;
+  return isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, person || mealPinPersonForMeal(meal, currentProf));
+}
+
+function setMealRecipe(plan, dayIndex, slot, person, recipeId){
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !RECIPES_DB[recipeId]) return false;
+  if(recipeSlotList(RECIPES_DB[recipeId]).indexOf(slot) === -1) return false;
+  if(person === 'shared'){
+    if(!meal.shared) return false;
+    meal.recipeId = recipeId;
+    meal.elena = makePlanEntry(recipeId, meal.elena.portion);
+    meal.partner = makePlanEntry(recipeId, meal.partner.portion);
+  } else {
+    if(meal.shared) return false;
+    meal[person] = makePlanEntry(recipeId, meal[person].portion);
+  }
+  return true;
+}
+
+function mealRuleApplies(rule, dateISO, dayIndex, slot, person){
+  if(!rule || rule.slot !== slot || rule.person !== person) return false;
+  if(!RECIPES_DB[rule.recipeId] || recipeSlotList(RECIPES_DB[rule.recipeId]).indexOf(slot) === -1) return false;
+  if(rule.cadence === 'daily') return true;
+  if(rule.cadence === 'weekly') return dayIndex === rule.dayIndex;
+  if(rule.cadence === 'alternate'){
+    const anchor = rule.anchorDate || dateISO;
+    return Math.abs(diffDaysISO(dateISO, anchor)) % 2 === 0;
+  }
+  return false;
+}
+
+function applyMealRulesToPlan(plan){
+  if(!plan || !Array.isArray(plan.days) || !mealRules.length) return false;
+  let changed = false;
+  plan.days.forEach(function(day, dayIndex){
+    SLOT_ORDER.forEach(function(slot){
+      const meal = day.meals[slot];
+      const units = meal.shared ? ['shared'] : ['elena', 'partner'];
+      units.forEach(function(person){
+        if(isMealPinned(plan.weekStartDate, dayIndex, slot, person)) return;
+        mealRules.forEach(function(rule){
+          if(!mealRuleApplies(rule, day.date, dayIndex, slot, person)) return;
+          if(setMealRecipe(plan, dayIndex, slot, person, rule.recipeId)) changed = true;
+        });
+      });
+    });
+  });
+  return changed;
+}
+
+function applyMealRulesToStoredPlans(){
+  let changed = false;
+  Object.keys(weekPlans).forEach(function(wk){
+    if(applyMealRulesToPlan(weekPlans[wk])) changed = true;
+    refreshPlanNutrition(weekPlans[wk]);
+  });
+  weekPlan = weekPlans[mondayOfWeek(todayISO())] || weekPlan;
+  return changed;
+}
 
 // Picks the portion (0.5 steps, 0.5-3x, or 0.5-maxPortion when capped) that lands closest
 // to desiredKcal; ties broken toward the person's natural anchor (Elena 1x, Andrea 1.5x)
@@ -182,7 +398,8 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
   const kcalErr = Math.abs(actualKcal - desiredKcal) / Math.max(Math.abs(desiredKcal), 1);
   const proteinShort = desiredProtein > 0 ? Math.max(0, desiredProtein - actualProtein) / desiredProtein : 0;
   const rotation = ((dayIndex * 7 + slotIndex + stableHash(recipeId) + (weekSeed || 0)) % 97) / 97;
-  return -(kcalErr * 1000) - (proteinShort * 100) + rotation * 0.5;
+  const prefBoost = recipePref(recipeId) === 'favorite' ? 35 : 0;
+  return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + rotation * 0.5;
 }
 
 /* ---------------- week generation ---------------- */
@@ -240,10 +457,11 @@ function generateWeek(seed){
       const w = SLOT_WEIGHT[slot];
       const shared = !!SHARED[slot];
       if(shared){
-        const pool = candidatesFor(slot, styleKey, unionAvoid(avoidList.elena, avoidList.partner));
+        const avoidBoth = unionAvoid(avoidList.elena, avoidList.partner);
+        const pool = candidatesFor(slot, styleKey, avoidBoth);
         // For shared slots both people ate the same dish last week — Elena's entry stands
         // for both (same convention as the variety filter's history handling).
-        const chosen = pickSharedMeal(pool, slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
         dayMeals[slot] = chosen;
         remainingKcal.elena -= chosen.elena.kcal; remainingKcal.partner -= chosen.partner.kcal;
         remainingProtein.elena -= chosen.elena.protein; remainingProtein.partner -= chosen.partner.protein;
@@ -251,8 +469,8 @@ function generateWeek(seed){
       } else {
         const poolE = candidatesFor(slot, styleKey, avoidList.elena);
         const poolA = candidatesFor(slot, styleKey, avoidList.partner);
-        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, []), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
-        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, []), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
+        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
         remainingKcal.elena -= chE.kcal; remainingKcal.partner -= chA.kcal;
         remainingProtein.elena -= chE.protein; remainingProtein.partner -= chA.protein;
@@ -293,8 +511,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     return {shared: true, recipeId: null, elena: {recipeId: null, portion: 1, kcal: 0, protein: 0}, partner: {recipeId: null, portion: 1, kcal: 0, protein: 0}};
   }
   return {shared: true, recipeId: best.id,
-    elena: {recipeId: best.id, portion: best.portionE, kcal: best.kcalE, protein: best.proteinE},
-    partner: {recipeId: best.id, portion: best.portionA, kcal: best.kcalA, protein: best.proteinA}};
+    elena: makePlanEntry(best.id, best.portionE),
+    partner: makePlanEntry(best.id, best.portionA)};
 }
 
 function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, remainingProteinP, remainingWeight, history, weekSeed, excludePrevWeekId){
@@ -318,7 +536,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     console.error('pickSoloMeal: empty candidate pool for person="' + person + '" slot="' + slot + '" style="' + householdStyle + '"');
     return {recipeId: null, portion: 1, kcal: 0, protein: 0};
   }
-  return {recipeId: best.id, portion: best.portion, kcal: best.kcal, protein: best.protein};
+  return makePlanEntry(best.id, best.portion);
 }
 
 /* ---------------- keeping weekPlan fresh ---------------- */
@@ -334,11 +552,37 @@ function computePlanSignature(){
     (e.avoid || []).slice().sort().join(','),
     (a.avoid || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
-    SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
-    // customRev (js/library.js): bumped on every custom-food/custom-recipe add or delete,
-    // so a library change always regenerates the week even though nothing else here moved.
-    customRev
+    SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0
   ].join('|');
+}
+
+function planSignatureMatches(planSignature, currentSignature){
+  if(planSignature === currentSignature) return true;
+  // v20 and earlier included customRev as a final pipe-delimited field. Treat that legacy
+  // signature as equivalent so adding a recipe no longer forces one last regeneration.
+  if(typeof planSignature === 'string'){
+    const parts = planSignature.split('|');
+    if(parts.length === currentSignature.split('|').length + 1 && parts.slice(0, -1).join('|') === currentSignature){
+      return true;
+    }
+  }
+  return false;
+}
+
+function planReferencesMissingRecipe(plan){
+  if(!plan || !Array.isArray(plan.days)) return true;
+  for(let d = 0; d < plan.days.length; d++){
+    const meals = plan.days[d] && plan.days[d].meals;
+    if(!meals) return true;
+    for(let s = 0; s < SLOT_ORDER.length; s++){
+      const slot = SLOT_ORDER[s];
+      const m = meals[slot];
+      if(!m || !m.elena || !m.partner) return true;
+      if(m.shared && m.recipeId && !RECIPES_DB[m.recipeId]) return true;
+      if(!RECIPES_DB[m.elena.recipeId] || !RECIPES_DB[m.partner.recipeId]) return true;
+    }
+  }
+  return false;
 }
 
 // Call before reading a week's plan anywhere. Generalized (two-week horizon feature) to
@@ -347,7 +591,8 @@ function computePlanSignature(){
 // args — Today/Log/computeActiveMenu/computeShoppingList/buildSwapAlternatives'
 // unqualified callers) keeps meaning exactly what it always meant. Regenerates
 // weekPlans[monday] when: the plan signature above has changed (style/avoid-list/
-// calorie-or-protein-target/shared-toggle/library change), or nothing has been generated
+// calorie-or-protein-target/shared-toggle), when the stored plan references a recipe that
+// no longer exists, or nothing has been generated
 // for that Monday yet. Cheap when nothing changed — recomputeProf() is pure math, and the
 // signature check is a string compare.
 //
@@ -377,11 +622,17 @@ function ensureWeekPlan(mondayISO){
 
   function freshen(monday){
     let plan = weekPlans[monday];
-    const stale = !plan || plan.signature !== sig || plan.weekStartDate !== monday;
+    const previousPlan = plan ? JSON.parse(JSON.stringify(plan)) : null;
+    const stale = !plan || !planSignatureMatches(plan.signature, sig) || plan.weekStartDate !== monday || planReferencesMissingRecipe(plan);
     if(stale){
       plan = generateWeek({weekStartDate: monday, signature: sig});
+      applyMealRulesToPlan(plan);
+      preserveLoggedSlots(previousPlan, plan);
       weekPlans[monday] = plan;
+    } else if(plan.signature !== sig){
+      plan.signature = sig;
     }
+    refreshPlanNutrition(plan);
     return {plan: plan, regenerated: stale};
   }
 
@@ -409,15 +660,18 @@ function todayDayIndex(){
 // weekPlan for currentProf. Shape kept close to the old one (breakfastKey etc.) but each
 // slot is now a full computed view {recipeId, portion, kcal, protein, shared}.
 function computeActiveMenu(){
-  ensureWeekPlan();
-  const dayIdx = todayDayIndex();
-  const day = weekPlan.days[dayIdx];
-  const person = currentProf;
+  return computeMenuForDate(todayISO(), currentProf);
+}
+
+function computeMenuForDate(dateISO, person){
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  const dayIdx = Math.max(0, Math.min(6, diffDaysISO(dateISO, plan.weekStartDate)));
+  const day = plan.days[dayIdx];
   function view(slot){
     const entry = day.meals[slot][person];
-    return {recipeId: entry.recipeId, portion: entry.portion, kcal: Math.round(entry.kcal), protein: Math.round(entry.protein), shared: day.meals[slot].shared};
+    return planEntryView(entry, day.meals[slot].shared);
   }
-  return {style: householdStyle, dayIndex: dayIdx, breakfast: view('breakfast'), lunch: view('lunch'), dinner: view('dinner'), snack: view('snack')};
+  return {style: householdStyle, dateISO: dateISO, weekStartDate: plan.weekStartDate, dayIndex: dayIdx, breakfast: view('breakfast'), lunch: view('lunch'), dinner: view('dinner'), snack: view('snack')};
 }
 
 // Task D1 ("Today = Log"): PROF.consumed*/consumedKcal derived purely from today's
@@ -431,7 +685,10 @@ function computeActiveMenu(){
 function recomputeConsumed(personKey){
   const entries = getDayLog(todayISO())[personKey];
   let kcal = 0, p = 0, c = 0, f = 0, sat = 0, fib = 0;
-  entries.forEach(function(e){ kcal += e.kcal; p += e.protein; c += e.carbs; f += e.fat; sat += e.satFat; fib += e.fiber; });
+  entries.forEach(function(e){
+    const nut = logEntryNutrition(e);
+    kcal += nut.kcal; p += nut.protein; c += nut.carbs; f += nut.fat; sat += nut.satFat; fib += nut.fiber;
+  });
   PROF[personKey].consumedKcal = Math.round(kcal);
   PROF[personKey].consumed = {p: Math.round(p), c: Math.round(c), f: Math.round(f), satFat: Math.round(sat), fiber: Math.round(fib)};
 }
@@ -474,7 +731,10 @@ function computeInsights(personKey){
     const entries = day[personKey] || [];
     const logged = entries.length > 0;
     let kcal = 0, protein = 0, fat = 0, satFat = 0, fiber = 0;
-    entries.forEach(function(e){ kcal += e.kcal; protein += e.protein; fat += e.fat; satFat += e.satFat; fiber += e.fiber; });
+    entries.forEach(function(e){
+      const nut = logEntryNutrition(e);
+      kcal += nut.kcal; protein += nut.protein; fat += nut.fat; satFat += nut.satFat; fiber += nut.fiber;
+    });
     const target = (typeof day.targets[personKey] === 'number') ? day.targets[personKey] : PROF[personKey].calGoalNum;
     const inBand = logged && target > 0 && Math.abs(kcal - target) <= target * 0.10;
     return {date: date, letter: dayLetterFor(date), logged: logged, kcal: Math.round(kcal), target: Math.round(target),
@@ -617,12 +877,8 @@ function computeShoppingList(weekStartDate){
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      if(m.shared){
-        addRecipe(m.recipeId, +(m.elena.portion + m.partner.portion).toFixed(2));
-      } else {
-        addRecipe(m.elena.recipeId, m.elena.portion);
-        addRecipe(m.partner.recipeId, m.partner.portion);
-      }
+      planEntryComponents(m.elena).forEach(function(c){ addRecipe(c.recipeId, c.portion); });
+      planEntryComponents(m.partner).forEach(function(c){ addRecipe(c.recipeId, c.portion); });
     });
   });
   return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate};
@@ -654,22 +910,34 @@ function applySwapToPlan(plan, unit, newRecipeId){
   const now = Date.now(); // mutation stamp — sync.js:mergePlansSection keeps the newer edit
   const newBase = dbBaseNutrition(newRecipeId);
   if(unit.shared){
-    const bpE = bestPortion(newBase.kcal, m.elena.kcal, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[unit.slot]);
-    const bpA = bestPortion(newBase.kcal, m.partner.kcal, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[unit.slot]);
+    const currentE = planEntryNutrition(m.elena);
+    const currentA = planEntryNutrition(m.partner);
+    const extrasE = Array.isArray(m.elena.extras) ? m.elena.extras.slice() : [];
+    const extrasA = Array.isArray(m.partner.extras) ? m.partner.extras.slice() : [];
+    const bpE = bestPortion(newBase.kcal, currentE.kcal, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[unit.slot]);
+    const bpA = bestPortion(newBase.kcal, currentA.kcal, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[unit.slot]);
     // Shared dish changes for BOTH people at once, so the whole cell moves together —
     // stamp the cell (sync.js merges shared cells whole, by this m.t).
     m.recipeId = newRecipeId;
     m.t = now;
-    m.elena = {recipeId: newRecipeId, portion: bpE.portion, kcal: bpE.kcal, protein: newBase.protein * bpE.portion};
-    m.partner = {recipeId: newRecipeId, portion: bpA.portion, kcal: bpA.kcal, protein: newBase.protein * bpA.portion};
+    m.elena = makePlanEntry(newRecipeId, bpE.portion);
+    m.partner = makePlanEntry(newRecipeId, bpA.portion);
+    m.elena.extras = extrasE;
+    m.partner.extras = extrasA;
+    refreshPlanEntryNutrition(m.elena);
+    refreshPlanEntryNutrition(m.partner);
   } else {
     const person = unit.person;
-    const bp = bestPortion(newBase.kcal, m[person].kcal, PERSON_ANCHOR[person], SLOT_MAX_PORTION[unit.slot]);
+    const current = planEntryNutrition(m[person]);
+    const extras = Array.isArray(m[person].extras) ? m[person].extras.slice() : [];
+    const bp = bestPortion(newBase.kcal, current.kcal, PERSON_ANCHOR[person], SLOT_MAX_PORTION[unit.slot]);
     // SOLO meal: only THIS person's half of the slot changes. Stamp the person's half, NOT
     // the cell — bumping the cell-level t would let the couple-sync merge overwrite the
     // OTHER person's half of the same slot with a stale copy (the swap-revert bug). Also
     // clear any stale cell stamp so the merge governs each half purely by per-person time.
-    m[person] = {recipeId: newRecipeId, portion: bp.portion, kcal: bp.kcal, protein: newBase.protein * bp.portion, t: now};
+    m[person] = makePlanEntry(newRecipeId, bp.portion, now);
+    m[person].extras = extras;
+    refreshPlanEntryNutrition(m[person]);
     delete m.t;
   }
   return m;
@@ -686,7 +954,8 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   const m = day.meals[slot];
   const shared = m.shared;
   const currentId = shared ? m.recipeId : m[person].recipeId;
-  const currentKcal = m[person].kcal, currentProtein = m[person].protein;
+  const currentNut = planEntryNutrition(m[person]);
+  const currentKcal = currentNut.kcal, currentProtein = currentNut.protein;
   const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
   const avoidL = shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[person].avoid || []);
   const plannedToday = {};
@@ -721,7 +990,7 @@ function swapSearchText(id){
   const r = RECIPES_DB[id];
   return [
     r.title,
-    r.slot,
+    recipeSlotList(r).join(' '),
     (r.tags || []).join(' '),
     (r.styles || []).join(' '),
     id.indexOf('cr-') === 0 ? 'yours custom recipe' : 'built in'
@@ -737,14 +1006,15 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const m = plan.days[dayIndex].meals[slot];
   const shared = m.shared;
   const currentId = shared ? m.recipeId : m[person].recipeId;
-  const currentKcal = m[person].kcal, currentProtein = m[person].protein;
+  const currentNut = planEntryNutrition(m[person]);
+  const currentKcal = currentNut.kcal, currentProtein = currentNut.protein;
   const avoidL = shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[person].avoid || []);
   const q = String(query || '').trim().toLowerCase();
   if(q.length < 2) return [];
   const anchor = PERSON_ANCHOR[person];
   const pool = Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
-    return r.slot === slot && id !== currentId && swapSearchText(id).indexOf(q) !== -1;
+    return recipeSlotList(r).indexOf(slot) !== -1 && id !== currentId && swapSearchText(id).indexOf(q) !== -1;
   });
   const scored = pool.map(function(id){
     const base = dbBaseNutrition(id);
@@ -773,7 +1043,8 @@ function applySwap(dayIndex, slot, person, newRecipeId, weekStartDate){
   applySwapToPlan(plan, unit, newRecipeId);
   const r = RECIPES[newRecipeId];
   const entry = plan.days[dayIndex].meals[slot][person];
-  return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: r.tags, kcal: Math.round(entry.kcal), protein: Math.round(entry.protein)};
+  const view = planEntryView(entry, plan.days[dayIndex].meals[slot].shared);
+  return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: r.tags, kcal: view.kcal, protein: view.protein};
 }
 
 // Resolves a click on "Swap" (from Today, Log, or the recipe-detail screen) to a
@@ -878,6 +1149,13 @@ function chooseSwap(i){
 
 function chooseSwapRecipe(recipeId, alt){
   if(!swapCtx || !RECIPES_DB[recipeId]) return;
+  const resolvedWeekStartDate = swapCtx.weekStartDate || mondayOfWeek(todayISO());
+  const swapDateISO = addDaysISO(resolvedWeekStartDate, swapCtx.dayIndex);
+  if(resolvedWeekStartDate === mondayOfWeek(todayISO()) && loggedSlotLocked(swapDateISO, swapCtx.person, swapCtx.slot)){
+    closeSheet();
+    toast('Already logged — edit it from Eaten today, or undo it first');
+    return;
+  }
   if(!alt){
     const matches = buildSwapSearchOptions(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, recipeId, swapCtx.weekStartDate);
     alt = matches.filter(function(a){ return a.id === recipeId; })[0];
@@ -886,9 +1164,10 @@ function chooseSwapRecipe(recipeId, alt){
     const plan = ensureWeekPlan(swapCtx.weekStartDate);
     const m = plan.days[swapCtx.dayIndex].meals[swapCtx.slot];
     const base = dbBaseNutrition(recipeId);
-    const bp = bestPortion(base.kcal, m[swapCtx.person].kcal, PERSON_ANCHOR[swapCtx.person], SLOT_MAX_PORTION[swapCtx.slot]);
+    const currentNut = planEntryNutrition(m[swapCtx.person]);
+    const bp = bestPortion(base.kcal, currentNut.kcal, PERSON_ANCHOR[swapCtx.person], SLOT_MAX_PORTION[swapCtx.slot]);
     const protein = base.protein * bp.portion;
-    alt = {id: recipeId, kcal: bp.kcal, protein: protein, kcalDelta: bp.kcal - m[swapCtx.person].kcal, proteinDelta: protein - m[swapCtx.person].protein};
+    alt = {id: recipeId, kcal: bp.kcal, protein: protein, kcalDelta: bp.kcal - currentNut.kcal, proteinDelta: protein - currentNut.protein};
   }
   // swapCtx.weekStartDate is set by openWeekSwap() (render.js — the Week screen's inline
   // swap, current OR next week); undefined for every pre-existing swap entry point
@@ -902,17 +1181,17 @@ function chooseSwapRecipe(recipeId, alt){
   // history, it never duplicates it — logPlanEntry/upsertLogEntry replace by slot). Only
   // relevant when the swap actually landed on the CURRENT week — a swap on next week's
   // plan has no log entry to correct (nothing is logged for a future date).
-  const isCurrentWeek = !weekStartDate || weekStartDate === mondayOfWeek(todayISO());
-  if(isCurrentWeek && swapCtx.dayIndex === todayDayIndex()){
+  const isCurrentWeek = resolvedWeekStartDate === mondayOfWeek(todayISO());
+  if(isCurrentWeek && logHistory[swapDateISO]){
     // A shared-slot swap changes BOTH people's dish (applySwapToPlan rewrites
     // m.elena and m.partner), so correct every person's confirmed entry — not just
     // the swapper's — or the other person's Log card keeps the old dish forever.
     const meal = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot];
     const people = meal.shared ? ['elena', 'partner'] : [swapCtx.person];
     people.forEach(function(person){
-      if(slotLogStatus(todayISO(), person, swapCtx.slot) !== 'confirmed') return;
+      if(slotLogStatus(swapDateISO, person, swapCtx.slot) !== 'confirmed') return;
       const planEntry = meal[person];
-      logPlanEntry(todayISO(), person, swapCtx.slot, planEntry.recipeId, planEntry.portion);
+      logPlanEntry(swapDateISO, person, swapCtx.slot, planEntry.recipeId, planEntry.portion, planEntryComponents(planEntry));
     });
   }
 
@@ -940,21 +1219,23 @@ function chooseSwapRecipe(recipeId, alt){
 // per-serving base; a slot already confirmed today gets its LogEntry corrected in
 // place (same contract as a swap). 0.5-serving steps, 0.5–4.
 function stepMealServings(slot, delta){
-  ensureWeekPlan();
+  if(slotLogStatus(todayISO(), currentProf, slot) === 'confirmed'){
+    toast('Already logged — edit it from Eaten today, or undo it first');
+    return;
+  }
+  editableWeekPlan(mondayOfWeek(todayISO()));
   const meal = weekPlan.days[todayDayIndex()].meals[slot];
   const entry = meal[currentProf];
   const next = Math.max(0.5, Math.min(4, +(entry.portion + delta).toFixed(1)));
   if(next === entry.portion) return;
-  const base = dbBaseNutrition(entry.recipeId);
   // Servings are per-person (each plates their own, shared dish or not). For a solo meal
   // stamp the person's half so the couple-sync merge doesn't clobber the other person's
   // half; a shared dish still moves as one cell (its recipe is joint), so stamp the cell.
   if(meal.shared){ meal.t = Date.now(); } else { entry.t = Date.now(); delete meal.t; }
   entry.portion = next;
-  entry.kcal = base.kcal * next;
-  entry.protein = base.protein * next;
+  refreshPlanEntryNutrition(entry);
   if(slotLogStatus(todayISO(), currentProf, slot) === 'confirmed'){
-    logPlanEntry(todayISO(), currentProf, slot, entry.recipeId, entry.portion);
+    logPlanEntry(todayISO(), currentProf, slot, entry.recipeId, entry.portion, planEntryComponents(entry));
   }
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
@@ -1115,10 +1396,13 @@ function enumerateSwapUnits(plan){
   for(let d = 0; d < 7; d++){
     SLOT_ORDER.forEach(function(slot){
       const m = plan.days[d].meals[slot];
-      if(m.shared){ units.push({dayIndex: d, slot: slot, shared: true}); }
+      const dateISO = plan.days[d].date;
+      if(m.shared){
+        if(!loggedSlotLocked(dateISO, 'elena', slot) && !loggedSlotLocked(dateISO, 'partner', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'shared')) units.push({dayIndex: d, slot: slot, shared: true});
+      }
       else {
-        units.push({dayIndex: d, slot: slot, shared: false, person: 'elena'});
-        units.push({dayIndex: d, slot: slot, shared: false, person: 'partner'});
+        if(!loggedSlotLocked(dateISO, 'elena', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'elena')) units.push({dayIndex: d, slot: slot, shared: false, person: 'elena'});
+        if(!loggedSlotLocked(dateISO, 'partner', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'partner')) units.push({dayIndex: d, slot: slot, shared: false, person: 'partner'});
       }
     });
   }

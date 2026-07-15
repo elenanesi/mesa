@@ -43,7 +43,7 @@ function recomputeProf(key){
   p.calGoalNum = (p.calCustom !== null) ? p.calCustom : p.recCal;
   p.calGoal = fmtKcal(p.calGoalNum);
   p.cals = fmtKcal(p.calGoalNum) + ' kcal';
-  p.calLeft = fmtKcal(Math.max(0, p.calGoalNum - p.consumedKcal));
+  p.calLeft = fmtKcal(p.calGoalNum - p.consumedKcal);
   p.off = Math.round(351.8 * Math.min(1, p.consumedKcal / p.calGoalNum)); // ring arc = fraction of kcal still left
   const kcal = p.calGoalNum;
   const targetP = Math.round(kcal * p.kP / 100 / 4);
@@ -124,6 +124,56 @@ function recipeNutrition(recipeId, servings){
   const perServing = {};
   Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / servings; });
   return {totals: totals, perServing: perServing};
+}
+
+const NUTRIENT_KEYS = ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'];
+
+function nutritionForRecipeComponents(components){
+  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  (components || []).forEach(function(c){
+    if(!c || !c.recipeId || typeof RECIPES_DB === 'undefined' || !RECIPES_DB[c.recipeId]) return;
+    const nut = recipeNutrition(c.recipeId, c.portion).totals;
+    NUTRIENT_KEYS.forEach(function(k){ totals[k] += nut[k] || 0; });
+  });
+  totals.goodFat = totals.fat - totals.satFat;
+  return totals;
+}
+
+function fallbackNutritionTotals(src){
+  const out = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
+  NUTRIENT_KEYS.forEach(function(k){
+    const v = src && typeof src[k] === 'number' && isFinite(src[k]) ? src[k] : 0;
+    out[k] = v;
+  });
+  out.goodFat = Math.max(0, out.fat - out.satFat);
+  return out;
+}
+
+function roundedNutritionTotals(src){
+  const out = {};
+  NUTRIENT_KEYS.forEach(function(k){ out[k] = Math.round((src && src[k]) || 0); });
+  out.goodFat = Math.max(0, Math.round((src && src.goodFat !== undefined) ? src.goodFat : (out.fat - out.satFat)));
+  return out;
+}
+
+// Log entries carry recipe/food identity plus quantity. Stored macro numbers are kept as
+// a compatibility fallback, but live displays and daily totals recompute from the current
+// food/recipe DB so plan, recipe detail, log and consumed bars cannot drift apart.
+function logEntryNutrition(entry){
+  if(!entry || typeof entry !== 'object') return fallbackNutritionTotals(null);
+  if(entry.kind === 'plan' && Array.isArray(entry.components) && entry.components.length){
+    return nutritionForRecipeComponents(entry.components);
+  }
+  if(NUTRIENT_KEYS.every(function(k){ return typeof entry[k] === 'number' && isFinite(entry[k]); })){
+    return fallbackNutritionTotals(entry);
+  }
+  if(entry.kind === 'plan' && entry.ref && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[entry.ref]){
+    return recipeNutrition(entry.ref, entry.portion).totals;
+  }
+  if(entry.kind === 'food' && entry.ref && typeof FOODS !== 'undefined' && FOODS[entry.ref]){
+    return foodMacros(entry.ref, entry.grams);
+  }
+  return fallbackNutritionTotals(entry);
 }
 
 const SPLIT_BOUNDS = {P:[10,40], C:[20,60], F:[20,45]};

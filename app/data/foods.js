@@ -265,6 +265,21 @@ const FOODS = {
     kcal: 283, protein: 18.1, carbs: 2.2, fat: 22.4, satFat: 13.2, fiber: 0,
     flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173441-style (cheese, mozzarella, whole milk)'
   },
+  'robiola': {
+    name: 'Robiola cheese', per: 100, unit: 'g',
+    kcal: 326, protein: 8.8, carbs: 2.0, fat: 31.4, satFat: 20.0, fiber: 0,
+    flags: ['fermented'], cat: 'Dairy', src: 'CREA-style Italian food table / manufacturer label average (robiola)'
+  },
+  'provola': {
+    name: 'Provola cheese', per: 100, unit: 'g',
+    kcal: 351, protein: 25.0, carbs: 2.0, fat: 27.0, satFat: 17.0, fiber: 0,
+    flags: ['fermented'], cat: 'Dairy', src: 'CREA-style Italian food table / manufacturer label average (provola)'
+  },
+  'scamorza': {
+    name: 'Scamorza cheese', per: 100, unit: 'g',
+    kcal: 333, protein: 25.0, carbs: 2.0, fat: 25.0, satFat: 16.0, fiber: 0,
+    flags: ['fermented'], cat: 'Dairy', src: 'CREA-style Italian food table / manufacturer label average (scamorza)'
+  },
   'ricotta': {
     name: 'Ricotta, whole milk', per: 100, unit: 'g',
     kcal: 166, protein: 8.8, carbs: 3.5, fat: 13.0, satFat: 8.3, fiber: 0,
@@ -279,6 +294,16 @@ const FOODS = {
     name: 'Oat milk, unsweetened', per: 100, unit: 'ml',
     kcal: 43, protein: 0.6, carbs: 6.7, fat: 1.5, satFat: 0.2, fiber: 0.8,
     flags: [], cat: 'Dairy', src: 'Generic oat milk, unsweetened, manufacturer label average'
+  },
+  'espresso-unsweetened': {
+    name: 'Coffee / espresso, no sugar', per: 1, unit: 'piece', avgG: 1,
+    kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 171891-style (coffee, brewed) rounded per espresso; no sugar'
+  },
+  'cappuccino-unsweetened': {
+    name: 'Cappuccino, no sugar', per: 1, unit: 'piece', avgG: 1,
+    kcal: 65, protein: 3.4, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0,
+    flags: [], cat: 'Dairy', src: 'Composite: espresso + ~100ml whole milk, no sugar'
   },
 
   /* ---------------- Bakery ---------------- */
@@ -365,6 +390,46 @@ const FOODS = {
     name: 'Dark chocolate, 85% cocoa', per: 100, unit: 'g',
     kcal: 591, protein: 7.8, carbs: 23.0, fat: 52.0, satFat: 31.0, fiber: 11.0,
     flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 170272-style (chocolate, dark, 85% cacao)'
+  },
+  'gelato-chocolate': {
+    name: 'Gelato, chocolate', per: 100, unit: 'g',
+    kcal: 206, protein: 4.0, carbs: 25.0, fat: 10.0, satFat: 6.5, fiber: 1.5,
+    flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (chocolate)'
+  },
+  'gelato-stracciatella': {
+    name: 'Gelato, stracciatella', per: 100, unit: 'g',
+    kcal: 209, protein: 3.5, carbs: 24.0, fat: 11.0, satFat: 7.0, fiber: 0.5,
+    flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (stracciatella)'
+  },
+  'gelato-yogurt': {
+    name: 'Gelato, yogurt', per: 100, unit: 'g',
+    kcal: 173, protein: 4.0, carbs: 28.0, fat: 5.0, satFat: 3.2, fiber: 0,
+    flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (yogurt)'
+  },
+  'gelato-crema': {
+    name: 'Gelato, crema', per: 100, unit: 'g',
+    kcal: 192, protein: 4.0, carbs: 26.0, fat: 8.0, satFat: 5.0, fiber: 0,
+    flags: [], cat: 'Frozen', src: 'Italian gelato manufacturer label average (crema)'
+  },
+  'fast-food-beef-burger': {
+    name: 'Fast-food beef burger', per: 100, unit: 'g',
+    kcal: 255, protein: 12.0, carbs: 27.0, fat: 11.0, satFat: 4.0, fiber: 1.5,
+    flags: [], cat: 'Bakery', src: 'USDA FDC-style branded fast-food cheeseburger average'
+  },
+  'fast-food-fries': {
+    name: 'Fast-food fries', per: 100, unit: 'g',
+    kcal: 313, protein: 3.4, carbs: 41.0, fat: 15.0, satFat: 2.3, fiber: 3.8,
+    flags: [], cat: 'Frozen', src: 'USDA FDC 170698-style fast-food french fries average'
+  },
+  'cola': {
+    name: 'Cola', per: 100, unit: 'ml',
+    kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0,
+    flags: [], cat: 'Pantry', src: 'USDA FDC 174819-style cola soft drink'
+  },
+  'brownie': {
+    name: 'Brownie', per: 100, unit: 'g',
+    kcal: 417, protein: 5.0, carbs: 52.0, fat: 21.0, satFat: 8.0, fiber: 2.2,
+    flags: [], cat: 'Bakery', src: 'USDA FDC 167982-style brownie, commercial'
   },
   'capers': {
     name: 'Capers, brined, drained', per: 100, unit: 'g',

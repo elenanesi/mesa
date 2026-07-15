@@ -27,9 +27,12 @@
           <div class="eyebrow" id="todayEyebrow">Today</div>
           <h1 style="margin-top:2px" id="todayGreeting">Good morning</h1>
         </div>
-        <div class="seg" id="profSeg">
-          <button class="on" data-prof="elena">Elena</button>
-          <button data-prof="partner">Andrea</button>
+        <div class="top-actions">
+          <div class="seg" id="profSeg">
+            <button class="on" data-prof="elena">Elena</button>
+            <button data-prof="partner">Andrea</button>
+          </div>
+          <button class="profile-icon-btn" aria-label="Open profile" onclick="go('profile')"><span id="topProfAv">E</span></button>
         </div>
       </div>
 
@@ -73,12 +76,6 @@
           <i class="b-p" id="ksP" style="width:26%"></i><i class="b-c" id="ksC" style="width:41%"></i><i class="b-f" id="ksF" style="width:33%"></i>
         </div>
         <div class="sub" id="kcalSplitLegend" style="margin-top:7px">Protein 26% · Carbs 41% · Fat 33% of calories</div>
-      </div>
-
-      <div class="banner">
-        <div class="ai">Mesa coach <span class="badge-mini">✨ Suggestion</span></div>
-        <div class="bt" id="coachT">Today leans thyroid-friendly 🦋</div>
-        <div class="bd" id="coachD">Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.</div>
       </div>
 
       <div class="row between" style="margin-top:22px">
@@ -132,6 +129,11 @@
           <div class="today-actions" id="taSnack"></div>
         </div>
         <button class="swap" onclick="openSwap('snack','todaySnack')">Swap</button>
+      </div>
+
+      <div class="card" id="todayRecordsCard" style="margin-top:18px">
+        <div class="row between"><b style="font-size:14px">Eaten today</b><span class="pill" id="todayRecordsPill">0 kcal</span></div>
+        <div id="todayRecordsList"></div>
       </div>
 
       <p class="sub" style="margin-top:16px;text-align:center">Plan generated from your profile · adjust anytime in Profile</p>
@@ -230,9 +232,14 @@
     <!-- ============ LOG / ADD ============ -->
     <section class="screen" id="log">
       <h1>Log food</h1>
-      <p class="sub">Confirm today's plan in one tap — swap or skip what doesn't fit.</p>
+      <p class="sub">Confirm a planned meal, or correct yesterday without touching today.</p>
 
-      <h2 style="margin-top:18px">Today's plan</h2>
+      <div class="seg" id="logDateSeg" style="width:max-content;margin-top:14px">
+        <button class="on" onclick="setLogDateMode('today',this)">Today</button>
+        <button onclick="setLogDateMode('yesterday',this)">Yesterday</button>
+      </div>
+
+      <h2 id="logPlanTitle" style="margin-top:18px">Today's plan</h2>
 
       <!-- FIX 1 (feedback): breakfast is a normal meal — no pre-set "done" class; all
            four cards are built identically by renderLogPlan() with Confirm/Swap/Skip. -->
@@ -242,8 +249,16 @@
       <div class="card meal" id="log-snack" style="cursor:default"></div>
 
       <div class="card" style="padding:14px;margin-top:20px">
-        <div class="row between"><b style="font-size:14px">Today so far</b><span class="pill" id="logTotalPill">400 kcal</span></div>
+        <div class="row between"><b style="font-size:14px" id="logSoFarTitle">Today so far</b><span class="pill" id="logTotalPill">400 kcal</span></div>
         <div id="todaySoFar"></div>
+      </div>
+
+      <div class="card" style="padding:14px;margin-top:14px">
+        <div class="row between"><b style="font-size:14px" id="coffeeCountTitle">Coffee today</b><span class="pill" id="coffeeCountPill">0 coffee · 0 cappuccino</span></div>
+        <div class="quick" style="margin-top:12px">
+          <button onclick="logBeverage('espresso-unsweetened')"><span class="qi">☕</span>Coffee</button>
+          <button onclick="logBeverage('cappuccino-unsweetened')"><span class="qi">🥛</span>Cappuccino</button>
+        </div>
       </div>
 
       <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
@@ -551,9 +566,9 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19V5M4 19h16M8 16v-5M12 16V8M16 16v-7"/></svg>
       <span class="tl">Insights</span>
     </button>
-    <button class="tab" data-tab="profile" onclick="go('profile',this)">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4 4-6 8-6s8 2 8 6"/></svg>
-      <span class="tl">Profile</span>
+    <button class="tab" data-tab="library" onclick="openLibraryHub(this)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 6c-1.5-1.2-4-2-7-2v14c3 0 5.5.8 7 2 1.5-1.2 4-2 7-2V4c-3 0-5.5.8-7 2z"/><path d="M12 6v14"/></svg>
+      <span class="tl">Library</span>
     </button>
   </nav>
 </div>
