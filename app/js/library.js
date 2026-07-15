@@ -909,6 +909,11 @@ function libFoodIdsByCategory(query){
   const byCat = {};
   Object.keys(FOODS).forEach(function(id){
     const food = FOODS[id];
+    // Defensive: a malformed/null entry (e.g. from a bad couple-sync merge — see
+    // js/sync.js:mergeEntryMap) must not crash the WHOLE list build. Skipping just this
+    // id keeps the rest of the sheet (search bar, other categories) rendering normally
+    // instead of leaving the Ingredients screen blank.
+    if(!food || !food.name) return;
     if(q && food.name.toLowerCase().indexOf(q) === -1) return;
     if(libFoodFilters.cats.size && !libFoodFilters.cats.has(food.cat)) return;
     if(libFoodFilters.seasons.size && !libFoodFilters.seasons.has(foodSeason(food))) return;
@@ -1165,6 +1170,9 @@ function openMyRecipes(){
 function filteredRecipeIds(){
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
+    // Defensive: same reasoning as libFoodIdsByCategory above — a malformed entry from a
+    // bad merge must not crash the whole Recipes sheet build.
+    if(!r || !r.title) return false;
     const q = (libRecipeFilters.query || '').trim().toLowerCase();
     if(q.length){
       const haystack = [

@@ -8,11 +8,20 @@
 
 /* ---------------- navigation ---------------- */
 function go(id, el){
+  // Resolve the target screen BEFORE touching any classList. Bug fix: this used to
+  // blindly remove .active from every screen and then do document.getElementById(id)
+  // .classList.add('active') in the same breath — if `id` didn't resolve to an element
+  // (or anything upstream threw), every screen had already lost .active with nothing
+  // re-added, leaving the whole app showing just the background + tab bar (reproduced:
+  // calling go() with a bad id blanks the entire app this way). Bailing out here before
+  // any mutation means a bad/late id is a no-op instead of a blank screen.
+  var target = document.getElementById(id);
+  if(!target){ console.warn('Mesa: go() called with unknown screen id', id); return; }
   if(id !== 'libraryScanner' && typeof stopBarcodeScanner === 'function') stopBarcodeScanner();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
-  document.getElementById(id).classList.add('active');
+  target.classList.add('active');
   document.querySelector('.app').scrollTop = 0;
-  var scr = document.getElementById(id); if(scr) scr.scrollTop = 0;
+  var scr = target; if(scr) scr.scrollTop = 0;
   // sync tabbar highlight
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
   var tabId = id.indexOf('library') === 0 ? 'library' : id;
