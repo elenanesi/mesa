@@ -1607,6 +1607,7 @@ function enumerateSwapUnits(plan){
     SLOT_ORDER.forEach(function(slot){
       const m = plan.days[d].meals[slot];
       const dateISO = plan.days[d].date;
+      if(diffDaysISO(dateISO, todayISO()) < 0) return;
       if(m.shared){
         if(!loggedSlotLocked(dateISO, 'elena', slot) && !loggedSlotLocked(dateISO, 'partner', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'shared')) units.push({dayIndex: d, slot: slot, shared: true});
       }

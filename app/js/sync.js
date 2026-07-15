@@ -109,6 +109,7 @@ function clone(v){ return JSON.parse(JSON.stringify(v)); }
 function librarySectionData(){
   return {
     customFoods: clone(customFoods),
+    foodOverrides: clone(foodOverrides),
     customRecipes: clone(customRecipes),
     recipeOverrides: clone(recipeOverrides),
     deletedRecipes: clone(deletedRecipes),
@@ -439,13 +440,14 @@ function buildLibraryCatalogPayload(){
   const foods = Object.keys(FOODS).map(function(id){
     const f = FOODS[id];
     const isCustom = !!customFoods[id];
+    const isOverride = !isCustom && !!foodOverrides[id];
     return {
       id: id,
-      source: isCustom ? 'custom' : 'builtin',
+      source: (isCustom || isOverride) ? 'custom' : 'builtin',
       name: f.name || id,
       category: f.cat || '',
       season: typeof foodSeason === 'function' ? foodSeason(f) : (f.season || 'evergreen'),
-      updatedAt: isCustom && typeof f.u === 'number' ? f.u : 0,
+      updatedAt: (isCustom || isOverride) && typeof f.u === 'number' ? f.u : 0,
       data: clone(f)
     };
   });
@@ -540,7 +542,7 @@ function tombstoneTime(v){
   return 0;
 }
 
-// Per-id newer-wins merge for one map (customFoods, customRecipes, or recipeOverrides).
+// Per-id newer-wins merge for one map (customFoods, foodOverrides, customRecipes, or recipeOverrides).
 // missing `u` -> 0, so an old un-stamped local entry loses to any stamped remote entry
 // (and vice versa) UNLESS the content is actually identical, in which case local is kept
 // untouched rather than needlessly overwritten by a byte-identical remote copy.
@@ -618,7 +620,7 @@ function mergeSimpleMap(localMap, remoteMap){
 }
 
 // Top-level library section merge — see the doc block above. `local`/`remote` are the wire
-// shapes librarySectionData() produces (customFoods/customRecipes/recipeOverrides/
+// shapes librarySectionData() produces (customFoods/foodOverrides/customRecipes/recipeOverrides/
 // deletedRecipes/deletedFoods/recipePrefs, plus a `customRev` counter that ISN'T part of
 // the merge — the caller compares content only, see applySyncResponse's library branch).
 function mergeLibrarySection(local, remote){
@@ -626,6 +628,7 @@ function mergeLibrarySection(local, remote){
   const mergedDeletedFoods = mergeTombstones(local.deletedFoods, remote.deletedFoods);
   return {
     customFoods: pruneTombstoned(mergeEntryMap(local.customFoods, remote.customFoods), mergedDeletedFoods),
+    foodOverrides: pruneTombstoned(mergeEntryMap(local.foodOverrides, remote.foodOverrides), mergedDeletedFoods),
     customRecipes: pruneTombstoned(mergeEntryMap(local.customRecipes, remote.customRecipes), mergedDeletedRecipes),
     recipeOverrides: pruneTombstoned(mergeEntryMap(local.recipeOverrides, remote.recipeOverrides), mergedDeletedRecipes),
     deletedRecipes: mergedDeletedRecipes,
@@ -671,6 +674,7 @@ function applySyncResponse(sent, remoteSections){
       // the root cause of the "Frittata di pasta" duplication ratchet).
       const merged = mergeLibrarySection(sentEntry.data, remote.data);
       customFoods = merged.customFoods;
+      foodOverrides = merged.foodOverrides;
       customRecipes = merged.customRecipes;
       recipeOverrides = merged.recipeOverrides;
       deletedRecipes = merged.deletedRecipes;
@@ -685,7 +689,7 @@ function applySyncResponse(sent, remoteSections){
       // checks below (applyMergedRevBookkeeping assumes mergedData's shape IS remote.data's
       // shape 1:1, which isn't true here because of that counter field, hence the inline
       // version instead of reusing it for this section).
-      const LIB_KEYS = ['customFoods', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'deletedFoods', 'recipePrefs'];
+      const LIB_KEYS = ['customFoods', 'foodOverrides', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'deletedFoods', 'recipePrefs'];
       function libContentOnly(data){
         const out = {};
         LIB_KEYS.forEach(function(k){ out[k] = data[k] || {}; });

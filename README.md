@@ -63,6 +63,8 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 **Done 2026-07-15** (sw CACHE mesa-v47): **Season-aware library and planning** — added `season` as a recipe/ingredient dimension (`evergreen`, `winter/autumn`, `spring/summer`) with Library filters, custom ingredient/recipe form controls, conservative seasonal tagging for obvious produce and recipes, D1 `season` columns/indexes, and automatic planning/re-balance eligibility limited to the current season plus evergreen items.
 
+**Done 2026-07-15** (sw CACHE mesa-v48): **Ingredient edit parity + future-only re-balance** — Ingredients can now be edited from the dedicated Library ingredients page, including built-in ingredients via synced household overrides; edited ingredients show an `edited` badge and can be reset. Week re-balance now ignores dates before today, so a Wednesday re-balance cannot propose changes to Monday or Tuesday.
+
 **Done 2026-07-15** (sw CACHE mesa-v48): **Watercolor A/B/C ingredient icons** — replaced the weak generated A/B/C ingredient batch with polished vintage watercolor PNG icons, preserved the original carrot icon, wired them by exact food id, and cached them for offline use.
 
 **In progress / next:**

@@ -40,6 +40,7 @@
    how many custom entries a reload later merges in. */
 const BUILTIN_FOOD_COUNT = Object.keys(FOODS).length;
 const BUILTIN_RECIPE_COUNT = Object.keys(RECIPES_DB).length;
+const BUILTIN_FOODS_DB = JSON.parse(JSON.stringify(FOODS));
 const BUILTIN_RECIPES_DB = JSON.parse(JSON.stringify(RECIPES_DB));
 const BUILTIN_RECIPE_SLOT_DB = JSON.parse(JSON.stringify(RECIPE_SLOT_DB));
 
@@ -53,6 +54,9 @@ const BUILTIN_RECIPE_SLOT_DB = JSON.parse(JSON.stringify(RECIPE_SLOT_DB));
 function applyCustomFoods(){
   Object.keys(FOODS).forEach(function(id){
     if(id.indexOf('cf-') === 0 && !customFoods[id]) delete FOODS[id];
+  });
+  Object.keys(BUILTIN_FOODS_DB).forEach(function(id){
+    FOODS[id] = JSON.parse(JSON.stringify(foodOverrides[id] || BUILTIN_FOODS_DB[id]));
   });
   Object.keys(customFoods).forEach(function(id){ FOODS[id] = customFoods[id]; });
 }
@@ -982,6 +986,7 @@ function renderLibFoodListMarkup(query){
     ids.forEach(function(id){
       const f = FOODS[id];
       const isCustom = !!customFoods[id];
+      const isEdited = !isCustom && !!foodOverrides[id];
       const kcalPer100 = f.unit === 'piece' ? Math.round(f.kcal / f.avgG * 100) : Math.round(f.kcal);
       const factor = f.unit === 'piece' ? (100 / f.avgG) : (100 / f.per);
       const macroLine = Math.round((f.protein || 0) * factor) + 'g P · '
@@ -990,9 +995,11 @@ function renderLibFoodListMarkup(query){
         + Math.round((f.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
       out += '<div class="altrow" style="cursor:default">'
         + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
-        + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + '</div>'
+        + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + '</div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
-        + (isCustom ? '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button><button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
+        + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button>'
+        + (isEdited ? '<button class="lib-del" aria-label="Reset ' + htmlAttr(f.name) + '" onclick="resetFoodOverride(\'' + id + '\')">↺</button>' : '')
+        + (isCustom ? '<button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
         + '</div>';
     });
   });
@@ -1022,18 +1029,19 @@ function openNewFoodForm(){
 }
 
 function openEditFoodForm(id){
-  const f = customFoods[id];
-  if(!f){ toast('Only your ingredients can be edited'); return; }
+  const f = FOODS[id];
+  if(!f){ toast('Ingredient not found'); return; }
+  const factor = f.unit === 'piece' && f.avgG ? (100 / f.avgG) : (100 / (f.per || 100));
   newFoodForm = {
     editingId: id,
     name: f.name || '',
     cat: f.cat || 'Produce',
     season: foodSeason(f),
-    protein: +(f.protein || 0),
-    carbs: +(f.carbs || 0),
-    fat: +(f.fat || 0),
-    satFat: +(f.satFat || 0),
-    fiber: +(f.fiber || 0),
+    protein: +((f.protein || 0) * factor).toFixed(1),
+    carbs: +((f.carbs || 0) * factor).toFixed(1),
+    fat: +((f.fat || 0) * factor).toFixed(1),
+    satFat: +((f.satFat || 0) * factor).toFixed(1),
+    fiber: +((f.fiber || 0) * factor).toFixed(1),
     flags: Array.isArray(f.flags) ? f.flags.slice() : []
   };
   renderNewFoodFormSheet();
@@ -1137,12 +1145,16 @@ function saveNewFood(){
   const id = f.editingId || uniqueSlug(slugify(name), FOODS, 'cf-');
   const kcal = computeNewFoodKcal(f);
   if(deletedFoods[id]) delete deletedFoods[id]; // recreate-after-delete: this save's `u` below beats the tombstone (js/sync.js:mergeLibrarySection)
-  customFoods[id] = {
+  const existing = FOODS[id] || {};
+  const saved = Object.assign({}, existing, {
     name: name, per: 100, unit: 'g',
     kcal: kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, satFat: f.satFat, fiber: f.fiber,
     flags: f.flags.slice(), cat: f.cat, season: normalizeSeason(f.season), src: 'User-added ingredient',
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
-  };
+  });
+  delete saved.avgG;
+  if(id.indexOf('cf-') === 0) customFoods[id] = saved;
+  else foodOverrides[id] = saved;
   customRev++;
   applyCustomFoods();
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
@@ -1150,6 +1162,18 @@ function saveNewFood(){
   newFoodForm = null;
   openFoodLibrary();
   renderFoodLibraryCount();
+}
+
+function resetFoodOverride(id){
+  if(!foodOverrides[id]) return;
+  const name = foodOverrides[id].name || (BUILTIN_FOODS_DB[id] && BUILTIN_FOODS_DB[id].name) || 'ingredient';
+  delete foodOverrides[id];
+  customRev++;
+  applyCustomFoods();
+  applyProf(currentProf);
+  toast('✓ Reset ' + name);
+  renderFoodLibraryCount();
+  if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) openFoodLibrary();
 }
 
 function deleteCustomFood(id){
@@ -1661,11 +1685,17 @@ function freeConflictId(baseId, isTaken){
 }
 
 function mergeImportedLibrary(parsed){
-  const incomingFoods = {}, incomingRecipes = {};
+  const incomingFoods = {}, incomingFoodOverrides = {}, incomingRecipes = {};
   if(parsed && parsed.customFoods && typeof parsed.customFoods === 'object'){
     Object.keys(parsed.customFoods).forEach(function(id){
       const v = parsed.customFoods[id];
       if(typeof id === 'string' && id.indexOf('cf-') === 0 && v && typeof v === 'object') incomingFoods[id] = v;
+    });
+  }
+  if(parsed && parsed.foodOverrides && typeof parsed.foodOverrides === 'object'){
+    Object.keys(parsed.foodOverrides).forEach(function(id){
+      const v = parsed.foodOverrides[id];
+      if(typeof id === 'string' && v && typeof v === 'object') incomingFoodOverrides[id] = v;
     });
   }
   if(parsed && parsed.customRecipes && typeof parsed.customRecipes === 'object'){
@@ -1722,6 +1752,13 @@ function mergeImportedLibrary(parsed){
     } else {
       commitFood(id, incoming);
     }
+  });
+
+  Object.keys(incomingFoodOverrides).sort().forEach(function(id){
+    if(contentEqualJSON(foodOverrides[id], incomingFoodOverrides[id])) return;
+    foodOverrides[id] = JSON.parse(JSON.stringify(incomingFoodOverrides[id]));
+    if(deletedFoods[id]) delete deletedFoods[id];
+    addedFoods++;
   });
 
   // Remaps an incoming recipe's ingredient food-ids through foodIdRemap (a no-op for any

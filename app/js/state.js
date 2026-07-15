@@ -454,7 +454,8 @@ function checkedSetForWeek(weekStartDate){
    avoid) — nutrition is NEVER stored (ground rule 1); tags/styles/avoid are AUTO-DERIVED
    from ingredients at save time (js/library.js:deriveRecipeMeta()). Merged into RECIPES_DB
    the same way via applyCustomRecipes(), which also rebuilds the RECIPES compat view.
-   recipeOverrides: built-in recipe id -> edited recipe object. deletedRecipes:
+   foodOverrides: built-in food id -> edited food object. recipeOverrides:
+   built-in recipe id -> edited recipe object. deletedRecipes:
    recipe id -> tombstone for recipes the user removed from their library (built-in
    overrides AND custom cr- recipes alike — js/library.js:deleteRecipe()). deletedFoods:
    same idea for custom cf- foods (js/library.js:deleteCustomFood()) — new in this
@@ -464,7 +465,7 @@ function checkedSetForWeek(weekStartDate){
    (js/sync.js:mergeLibrarySection) can tell a delete from one phone apart from a
    recreate-after-delete from the other by comparing timestamps, instead of a plain
    boolean that a union-by-id merge would otherwise just resurrect.
-   customFoods/customRecipes/recipeOverrides entries also carry a `u` (updatedAt, epoch
+   customFoods/foodOverrides/customRecipes/recipeOverrides entries also carry a `u` (updatedAt, epoch
    ms) field stamped at save time (js/library.js: saveNewFood/saveRecipeBuilder) — the
    couple-sync per-entry newer-wins comparison sync.js:mergeEntryMap() needs, since
    without it two phones editing the SAME id with different content had no way to agree
@@ -474,6 +475,7 @@ function checkedSetForWeek(weekStartDate){
    recipe) — used for persistence/sync change detection. It is intentionally NOT folded
    into the week-plan signature: adding a recipe must not reset today's customized plan. */
 let customFoods = {};
+let foodOverrides = {};
 let customRecipes = {};
 let recipeOverrides = {};
 let deletedRecipes = {};
@@ -811,6 +813,7 @@ function buildSnapshot(){
     // user content library (post-MVP): plain JSON data, stored verbatim — see the block
     // above for the shape. Exported/imported for free as part of the whole store (task F2).
     customFoods: customFoods,
+    foodOverrides: foodOverrides,
     customRecipes: customRecipes,
     recipeOverrides: recipeOverrides,
     deletedRecipes: deletedRecipes,
@@ -953,6 +956,14 @@ function loadState(){
     Object.keys(saved.customFoods).forEach(function(id){
       if(typeof id === 'string' && id.indexOf('cf-') === 0 && saved.customFoods[id] && typeof saved.customFoods[id] === 'object'){
         customFoods[id] = saved.customFoods[id];
+      }
+    });
+  }
+  foodOverrides = {};
+  if(saved.foodOverrides && typeof saved.foodOverrides === 'object'){
+    Object.keys(saved.foodOverrides).forEach(function(id){
+      if(typeof id === 'string' && saved.foodOverrides[id] && typeof saved.foodOverrides[id] === 'object'){
+        foodOverrides[id] = saved.foodOverrides[id];
       }
     });
   }
