@@ -84,6 +84,8 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 **Done 2026-07-15** (sw CACHE mesa-v51): **Produce watercolor icon completion** — added custom watercolor PNGs for the remaining built-in produce ingredients that still fell back to the generic icon (mixed berries, spinach, red onion, lemon juice, green beans, peaches, pears, mushrooms, pumpkin/squash, escarole/endive, romaine lettuce, garlic, potatoes, oranges, rocket/arugula, ginger, sweet potato), wired them via `FOODS` `iconKey`, and mirrored the metadata to D1 so Library/Ingredients reflects the same DB-driven mapping.
 
+**Done 2026-07-15** (sw CACHE mesa-v52): **Protein pancakes + bakery watercolor icons** — added `Pancakes proteici` as a computed high-protein breakfast recipe, with explicit whey protein powder and chocolate-hazelnut spread ingredients so nutrition remains ingredient-derived. Added watercolor icons for all Bakery foods (rye bread, whole-wheat bread, white bread, pizza bianca/focaccia, pasta filo, fast-food beef burger, brownie), wired by `iconKey`, and mirrored the food/recipe catalog to D1.
+
 **In progress / next:**
 - **Watercolor icons (T2/T4, "Elena generates, agent wires")**: for future non-produce gaps, continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png`, setting `iconKey` on the relevant `FOODS` records, bumping `app/sw.js`, and seeding/readback-checking D1; no hardcoded icon maps in `library.js`.
 - Awaiting Elena: confirm Access login + couple sync on the real phones at https://mesa-9y5.pages.dev/app/ → then make GitHub repo private + retire legacy URL in docs.

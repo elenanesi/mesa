@@ -403,27 +403,27 @@ const FOODS = {
   'rye-bread': {
     name: 'Rye bread', per: 100, unit: 'g',
     kcal: 257, protein: 8.5, carbs: 48.3, fat: 3.3, satFat: 0.5, fiber: 5.8,
-    flags: ['highFiber'], cat: 'Bakery', src: 'USDA FDC 172686 (bread, rye)'
+    flags: ['highFiber'], cat: 'Bakery', iconKey: 'rye-bread', src: 'USDA FDC 172686 (bread, rye)'
   },
   'wholewheat-bread': {
     name: 'Whole-wheat bread', per: 100, unit: 'g',
     kcal: 232, protein: 9.0, carbs: 41.3, fat: 3.4, satFat: 0.7, fiber: 7.0,
-    flags: ['highFiber'], cat: 'Bakery', src: 'USDA FDC 172687-style (bread, whole wheat)'
+    flags: ['highFiber'], cat: 'Bakery', iconKey: 'wholewheat-bread', src: 'USDA FDC 172687-style (bread, whole wheat)'
   },
   'white-bread': {
     name: 'White bread / toast bread', per: 100, unit: 'g',
     kcal: 274, protein: 8.9, carbs: 49.0, fat: 3.5, satFat: 0.8, fiber: 2.7,
-    flags: [], cat: 'Bakery', src: 'USDA FDC 169230-style (white bread); kcal per 4/4/9'
+    flags: [], cat: 'Bakery', iconKey: 'white-bread', src: 'USDA FDC 169230-style (white bread); kcal per 4/4/9'
   },
   'pizza-bianca': {
     name: 'Pizza bianca / focaccia romana', per: 100, unit: 'g',
     kcal: 319, protein: 8.0, carbs: 52.0, fat: 9.0, satFat: 1.4, fiber: 2.2,
-    flags: [], cat: 'Bakery', src: 'Italian bakery label average for pizza bianca/focaccia; kcal per 4/4/9'
+    flags: [], cat: 'Bakery', iconKey: 'pizza-bianca', src: 'Italian bakery label average for pizza bianca/focaccia; kcal per 4/4/9'
   },
   'pasta-filo': {
     name: 'Pasta filo', per: 100, unit: 'g',
     kcal: 315, protein: 9.0, carbs: 59.0, fat: 4.0, satFat: 0.8, fiber: 2.0,
-    flags: [], cat: 'Bakery', src: 'USDA FDC-style phyllo dough average; kcal per 4/4/9'
+    flags: [], cat: 'Bakery', iconKey: 'pasta-filo', src: 'USDA FDC-style phyllo dough average; kcal per 4/4/9'
   },
 
   /* ---------------- Pantry ---------------- */
@@ -528,6 +528,16 @@ const FOODS = {
     kcal: 591, protein: 7.8, carbs: 23.0, fat: 52.0, satFat: 31.0, fiber: 11.0,
     flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 170272-style (chocolate, dark, 85% cacao)'
   },
+  'chocolate-hazelnut-spread': {
+    name: 'Chocolate hazelnut spread', per: 100, unit: 'g',
+    kcal: 533, protein: 6.3, carbs: 57.5, fat: 30.9, satFat: 10.6, fiber: 3.4,
+    flags: [], cat: 'Pantry', src: 'Generic Nutella-style chocolate hazelnut spread label average; kcal per 4/4/9'
+  },
+  'whey-protein-powder': {
+    name: 'Protein powder, whey', per: 100, unit: 'g',
+    kcal: 402, protein: 80.0, carbs: 7.0, fat: 6.0, satFat: 3.0, fiber: 0,
+    flags: [], cat: 'Pantry', src: 'Generic whey protein powder label average; kcal per 4/4/9'
+  },
   'gelato-chocolate': {
     name: 'Gelato, chocolate', per: 100, unit: 'g',
     kcal: 206, protein: 4.0, carbs: 25.0, fat: 10.0, satFat: 6.5, fiber: 1.5,
@@ -551,7 +561,7 @@ const FOODS = {
   'fast-food-beef-burger': {
     name: 'Fast-food beef burger', per: 100, unit: 'g',
     kcal: 255, protein: 12.0, carbs: 27.0, fat: 11.0, satFat: 4.0, fiber: 1.5,
-    flags: [], cat: 'Bakery', src: 'USDA FDC-style branded fast-food cheeseburger average'
+    flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: 'USDA FDC-style branded fast-food cheeseburger average'
   },
   'fast-food-fries': {
     name: 'Fast-food fries', per: 100, unit: 'g',
