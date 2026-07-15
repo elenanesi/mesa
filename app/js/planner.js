@@ -1245,6 +1245,7 @@ function applySwap(dayIndex, slot, person, newRecipeId, weekStartDate){
   const meal = plan.days[dayIndex].meals[slot];
   const unit = {dayIndex: dayIndex, slot: slot, shared: !!(meal && meal.shared), person: person};
   applySwapToPlan(plan, unit, newRecipeId);
+  markWeekPlanEdited(plan);
   const r = RECIPES[newRecipeId] || RECIPES_DB[newRecipeId] || {title: 'Recipe', emoji: '🍽️', tags: []};
   const entry = plan.days[dayIndex].meals[slot][person];
   const view = planEntryView(entry, plan.days[dayIndex].meals[slot].shared);
@@ -1459,6 +1460,7 @@ function stepMealServings(slot, delta, dateISO){
   if(meal.shared){ meal.t = Date.now(); } else { entry.t = Date.now(); delete meal.t; }
   entry.portion = next;
   refreshPlanEntryNutrition(entry);
+  markWeekPlanEdited(plan);
   if(slotLogStatus(dateISO, currentProf, slot) === 'confirmed'){
     logPlanEntry(dateISO, currentProf, slot, entry.recipeId, entry.portion, planEntryComponents(entry));
   }
