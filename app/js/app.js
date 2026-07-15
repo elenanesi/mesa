@@ -161,6 +161,12 @@ applyCustomFoods();     // js/library.js — merge customFoods into FOODS before
 applyCustomRecipes();   // js/library.js — merge customRecipes into RECIPES_DB + RECIPE_SLOT_DB, rebuild the
                          // RECIPES compat view (calls buildLegacyRecipesCompat() internally, for every id —
                          // built-in and custom alike — so nothing below needs a separate compat-view call)
+// One-shot cleanup migration (js/library.js) for the pre-`u`-stamp couple-sync duplication
+// ratchet (see its doc block) — must run AFTER customRecipes is populated and BEFORE the
+// first render, so a just-cleaned-up library is what the user sees on open, not the ~200
+// duplicate rows for one frame. Idempotent and a no-op (toast-free) on an already-clean
+// library, so it's safe to leave running on every boot.
+if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
 renderTodayHeader();
 applyProf(currentProf);
 renderRecipe('salmon');

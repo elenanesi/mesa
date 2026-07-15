@@ -93,9 +93,10 @@ function renderRecipe(key){
   document.getElementById('rsProt').textContent = '💪 ' + r.protein + 'g protein';
   document.getElementById('recipeTags').innerHTML = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
   updateRecipeWhy();
-  document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+s+'</li>'; }).join('');
+  document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('');
   updateServings();
   renderRecipeEatenState(); // fresh eaten/skipped read every time the recipe screen paints (open, re-render on plan change, swap)
+  renderRecipeMealStrip();
 }
 
 // Task C3: "why this fits you" is per-PERSON (whyText(recipeId, profKey) — state.js), so
@@ -139,7 +140,7 @@ function updateServings(){
   }
   const r = RECIPES[currentRecipeKey];
   document.getElementById('ingList').innerHTML = r.ingredients.map(function(ing){
-    const name = ing[0], qty = ing[1], unit = ing[2];
+    const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
     if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
     const scaled = +(qty * total).toFixed(1);
     return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
@@ -198,6 +199,7 @@ function markEatenFromRecipe(){
     toast('Already logged for today');
   }
   renderRecipeEatenState(); // paint the CTA's new state immediately (button no longer just sits there saying "Mark as eaten")
+  renderRecipeMealStrip();
 }
 
 // Owner feedback: the recipe screen's CTA never reflected that a meal had actually been
@@ -228,6 +230,36 @@ function renderRecipeEatenState(){
   }
 }
 
+// USER FEEDBACK item 2: reconciles the recipe screen's own per-serving numbers with the
+// meal card's total once that meal has extras (e.g. shakshuka 617 kcal vs. the card's 1058
+// with sides) — resolved exactly like renderRecipeEatenState() (same slot/planned check),
+// scoped further to only paint when todaySlotView(slot) actually has extras. All numbers
+// come from recipeNutrition()/todaySlotView(), nothing hand-set.
+function renderRecipeMealStrip(){
+  const wrap = document.getElementById('recipeMealStrip');
+  if(!wrap) return;
+  const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
+  const planned = slot && displayedTodayRecipeId(slot) === currentRecipeKey;
+  const view = planned ? todaySlotView(slot) : null;
+  if(!view || !view.extras || !view.extras.length){
+    wrap.style.display = 'none';
+    wrap.innerHTML = '';
+    return;
+  }
+  const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion).totals);
+  let rows = '<div class="row between"><b style="font-size:14px">In this meal</b>'
+    + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\'' + slot + '\')">Manage</button></div>'
+    + '<div class="logitem"><div class="li-t">' + escapeHtml(RECIPES_DB[view.recipeId].title) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';
+  view.extras.forEach(function(c){
+    if(!RECIPES_DB[c.recipeId]) return;
+    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1).totals);
+    rows += '<div class="logitem"><div class="li-t">' + escapeHtml(RECIPES_DB[c.recipeId].title) + '<small>' + nut.kcal + ' kcal</small></div></div>';
+  });
+  rows += '<div class="logitem" style="border-bottom:0"><div class="li-t"><b>Meal total</b><small><b>' + view.kcal + ' kcal</b></small></div></div>';
+  wrap.innerHTML = rows;
+  wrap.style.display = 'block';
+}
+
 // Distinct from undoLogSlot() (which reverses whatever day the Log screen's Today/
 // Yesterday toggle currently points at, via currentLogDateISO()): the recipe screen's
 // eaten/skipped state only ever reflects TODAY's plan (renderRecipeEatenState() above), so
@@ -240,6 +272,7 @@ function undoRecipeEatenSlot(slot){
   removeLoggedSlot(todayISO(), currentProf, slot);
   refreshAfterLogChange();
   renderRecipeEatenState();
+  renderRecipeMealStrip();
   toast(status === 'confirmed'
     ? '↺ Un-logged ' + (TITLES[slot] || SLOT_LABEL[slot]) + ' — confirm it again anytime'
     : '↺ ' + SLOT_LABEL[slot] + ' un-skipped');
@@ -298,7 +331,7 @@ function renderWeek(){
       const r = view.recipe;
       if(!r) return '';
       dayKcal += view.kcal;
-      titles.push(mealTitleWithExtras(view));
+      titles.push(escapeHtml(mealTitleWithExtras(view)));
       const together = view.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
       const pinPerson = mealPinPersonForMeal(m, person);
       const pinned = isMealPinned(plan.weekStartDate, di, slot, pinPerson);
@@ -307,7 +340,7 @@ function renderWeek(){
       const swapBtn = '<button class="dm-swap" aria-label="Swap this meal" onclick="event.stopPropagation();openWeekSwap(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\')">🔁</button>';
       return '<div class="day-meal-row" onclick="openRecipe(\''+view.recipeId+'\',\'week\',{weekStartDate:\''+plan.weekStartDate+'\',dayIndex:'+di+',slot:\''+slot+'\',person:\''+person+'\'})">'
         + '<div class="dm-e">'+r.emoji+'</div>'
-        + '<div class="dm-t">'+mealTitleWithExtras(view)+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
+        + '<div class="dm-t">'+escapeHtml(mealTitleWithExtras(view))+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
         + '<div class="dm-k">'+Math.round(view.kcal)+'</div>'
         + pinBtn + routineBtn + swapBtn + '</div>';
     }).join('');
@@ -405,7 +438,7 @@ function openMealRoutineSheet(weekStartDate, dayIndex, slot, person, recipeId){
   const weeklyLabel = 'Every ' + DAY_NAMES[dayIndex];
   document.getElementById('sheetBody').innerHTML =
     '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Meal routine</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub">Use <b>' + (r ? r.title : 'this meal') + '</b> as a default for ' + SLOT_LABEL[slot].toLowerCase() + '. It is a preference, not a pin: you or re-balance can still change it unless the meal is pinned.</p>'
+    + '<p class="sub">Use <b>' + (r ? escapeHtml(r.title) : 'this meal') + '</b> as a default for ' + SLOT_LABEL[slot].toLowerCase() + '. It is a preference, not a pin: you or re-balance can still change it unless the meal is pinned.</p>'
     + '<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><b>Current</b><span class="pill ghost">' + routineLabel(existing) + '</span></div></div>'
     + '<button class="cta ghostbtn" onclick="setMealRoutine(\'daily\')">Every day</button>'
     + '<button class="cta ghostbtn" onclick="setMealRoutine(\'alternate\')">Every other day</button>'
@@ -568,18 +601,31 @@ function openAddMealRecipeSheet(slot){
   const components = (loggedComponents || planEntryComponents(entry)).filter(function(c){ return c && RECIPES_DB[c.recipeId]; });
   addMealRecipeCtx = {weekStartDate: weekPlan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
   const opts = mealRecipeOptions(components);
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add to ' + (SLOT_LABEL[slot] || slot) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+  // USER FEEDBACK item 3: retitle "Edit X" once the meal already has extras — "Add to X"
+  // undersells that this is also where you remove what you added earlier.
+  const sheetHasExtras = components.length > 1;
+  const sheetTitle = (sheetHasExtras ? 'Edit ' : 'Add to ') + (SLOT_LABEL[slot] || slot);
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + sheetTitle + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<p class="sub" style="margin-top:6px">See what’s in this meal, add a side or a full recipe, or remove something you added earlier. Mesa recalculates the meal’s calories and nutrients either way.</p>';
 
   html += '<div class="shop-cat">In this meal</div>';
   components.forEach(function(c, i){
     const r = RECIPES_DB[c.recipeId];
-    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1).totals);
+    const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
+    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, portion).totals);
     const isBase = i === 0;
+    // Extras get a 0.5-step portion stepper (base has its own steppers elsewhere on the
+    // serving screen, so it's left at its plain "Base ·" label here).
+    const stepper = isBase ? '' : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
+      + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',-0.5)" aria-label="Fewer servings of ' + htmlAttr(r.title) + '">-</button>'
+      + '<span class="sv-val">' + portion + 'x</span>'
+      + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',0.5)" aria-label="More servings of ' + htmlAttr(r.title) + '">+</button>'
+      + '</span>');
     html += '<div class="altrow" style="cursor:default">'
       + '<div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
       + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + stepper
       + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="event.stopPropagation();removeMealExtraRecipe(\'' + c.recipeId + '\')">✕ Remove</button>')
       + '</div>';
   });
@@ -601,7 +647,11 @@ function chooseMealExtraRecipe(recipeId){
   const ctx = addMealRecipeCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
+    // Symmetric with removeMealExtraRecipe below: update BOTH the log entry AND the plan
+    // entry, else a later swap-correction or undo+reconfirm rebuilds the log from the plan
+    // and silently drops this extra, and computeShoppingList (plan-based) never counts it.
     addExtraToLoggedMeal(dateISO, ctx.person, ctx.slot, recipeId);
+    addExtraRecipeToMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId);
   } else {
     if(!addExtraRecipeToMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId)) return;
   }
@@ -690,6 +740,69 @@ function removeExtraFromLoggedMeal(dateISO, person, slot, recipeId){
   return true;
 }
 
+// Mirror of removeExtraFromLoggedMeal — adjusts the portion of the LAST matching
+// component (never index 0, the base recipe) and recomputes totals the deterministic way.
+function setExtraPortionInLoggedMeal(dateISO, person, slot, recipeId, newPortion){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = Array.isArray(logged.components) && logged.components.length
+    ? logged.components.slice()
+    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  let idx = -1;
+  for(let i = components.length - 1; i >= 1; i--){
+    if(components[i] && components[i].recipeId === recipeId){ idx = i; break; }
+  }
+  if(idx === -1) return false;
+  components[idx] = {recipeId: recipeId, portion: newPortion};
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
+  logged.components = components;
+  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
+  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.u = Date.now();
+  return true;
+}
+
+// USER FEEDBACK item 1: per-extra portion stepper in the "In this meal" sheet rows.
+// Follows chooseMealExtraRecipe/removeMealExtraRecipe's exact pattern: update the logged
+// entry (when ctx.logged) AND the plan extra, run the standard refresh funnel, then
+// re-render the sheet in place so the stepper's new value shows without closing.
+function stepMealExtraPortion(recipeId, delta){
+  if(!addMealRecipeCtx) return;
+  const ctx = addMealRecipeCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  const loggedComp = ctx.logged ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
+  let current = 1;
+  if(loggedComp){
+    const comps = Array.isArray(loggedComp.components) ? loggedComp.components : [];
+    for(let i = comps.length - 1; i >= 1; i--){
+      if(comps[i] && comps[i].recipeId === recipeId){ current = (typeof comps[i].portion === 'number' && comps[i].portion > 0) ? comps[i].portion : 1; break; }
+    }
+  } else {
+    const plan = editableWeekPlan(ctx.weekStartDate);
+    const meal = plan && plan.days[ctx.dayIndex] && plan.days[ctx.dayIndex].meals[ctx.slot];
+    const entry = meal && meal[ctx.person];
+    const extras = entry && Array.isArray(entry.extras) ? entry.extras : [];
+    for(let i = extras.length - 1; i >= 0; i--){
+      if(extras[i] && extras[i].recipeId === recipeId){ current = (typeof extras[i].portion === 'number' && extras[i].portion > 0) ? extras[i].portion : 1; break; }
+    }
+  }
+  const newPortion = Math.min(4, Math.max(0.5, +(current + delta).toFixed(1)));
+  if(ctx.logged){
+    setExtraPortionInLoggedMeal(dateISO, ctx.person, ctx.slot, recipeId, newPortion);
+    setExtraRecipePortion(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId, newPortion);
+  } else {
+    if(!setExtraRecipePortion(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, recipeId, newPortion)) return;
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  openAddMealRecipeSheet(ctx.slot);
+}
+
 function closeSheet(){
   document.getElementById('sheetBackdrop').classList.remove('show');
   document.getElementById('sheet').classList.remove('show');
@@ -738,8 +851,21 @@ function toggleShop(id, name){
   }
 }
 
-// Escapes a name for safe embedding inside a single-quoted inline-JS attribute.
-function jsAttr(s){ return String(s).replace(/\\/g, '\\\\').replace(/'/g, "\\'"); }
+// Escapes a name for safe embedding inside a single-quoted inline-JS string that itself
+// sits inside a double-quoted HTML attribute (e.g. onclick="foo('NAME')") — so it has to
+// be safe for BOTH contexts at once: backslash/single-quote for the JS-string boundary,
+// and double-quote/angle-brackets/ampersand for the HTML-attribute boundary (a name like
+// `x" onmouseover="…` would otherwise break out of the attribute with no angle brackets
+// needed at all).
+function jsAttr(s){
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'");
+}
 
 function buildShopSheet(){
   const weekStartDate = shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO());
@@ -771,7 +897,7 @@ function buildShopSheet(){
       const t = list.totals[name];
       const id = 'sh-' + (idx++);
       const done = checked[name] ? ' done' : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
     });
   });
   const stapleNames = Object.keys(list.staples).sort();
@@ -780,7 +906,7 @@ function buildShopSheet(){
     stapleNames.forEach(function(name){
       const id = 'sh-' + (idx++);
       const done = checked[name] ? ' done' : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+name+'</div></div>';
+      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
     });
   }
   return html;
@@ -820,7 +946,7 @@ function buildRebalanceSheet(){
     const who = s.unit.shared ? '' : (s.unit.person === 'elena' ? ' (Elena)' : ' (Andrea)');
     const last = i === rebalanceProposal.swaps.length - 1;
     html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + to.emoji + '</div>'
-      + '<div class="li-t">' + DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + who + ' → ' + to.title
+      + '<div class="li-t">' + DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + who + ' → ' + escapeHtml(to.title)
       + '<small>+ ' + g.label + '</small></div></div>';
   });
   html += '</div>'
@@ -992,12 +1118,12 @@ function renderTodaySoFar(){
     if(e.kind === 'plan'){
       const r = RECIPES[e.ref];
       const emoji = r ? r.emoji : '🍽️';
-      const title = logEntryTitleWithComponents(e);
+      const title = escapeHtml(logEntryTitleWithComponents(e));
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + (e.t ? ' · ' + e.t : ' · earlier today');
       return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+removeBtn+'</div>';
     }
     const food = FOODS[e.ref];
-    const name = food ? food.name : 'Food';
+    const name = escapeHtml(food ? food.name : 'Food');
     let amount = e.grams + 'g';
     if(food && food.unit === 'piece'){
       const count = Math.max(1, Math.round(e.grams / food.avgG));
@@ -1027,12 +1153,12 @@ function renderTodayRecords(){
       const e = group.entry;
       const r = RECIPES[e.ref];
       const emoji = r ? r.emoji : '🍽️';
-      const title = logEntryTitleWithComponents(e);
+      const title = escapeHtml(logEntryTitleWithComponents(e));
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + ' · ' + macroSummaryFromTotals(logEntryNutrition(e)) + (e.t ? ' · ' + e.t : '');
       return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+deleteBtn+'</div>';
     }
     const food = FOODS[group.ref];
-    const title = foodGroupTitle(food, group.grams);
+    const title = escapeHtml(foodGroupTitle(food, group.grams));
     const nut = foodMacros(group.ref, group.grams);
     const label = (group.ref === 'espresso-unsweetened' || group.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + foodAmountLabel(food, group.grams) + ' · ' + macroSummaryFromTotals(nut);
     return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(group.kcal)+'</div>'+editBtn+deleteBtn+'</div>';
@@ -1068,7 +1194,7 @@ function buildEditTodayFoodSheet(){
   const isPiece = food.unit === 'piece' && food.avgG;
   const amountText = isPiece ? Math.max(1, Math.round(editTodayFoodCtx.grams / food.avgG)) + 'x' : editTodayFoodCtx.grams + 'g';
   const step = isPiece ? food.avgG : 10;
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Edit ' + food.name + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Edit ' + escapeHtml(food.name) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">Amount</div>'
     + '<div class="sv-stepper"><button onclick="stepEditTodayFood(-'+step+')" aria-label="Decrease amount">–</button>'
@@ -1147,18 +1273,24 @@ function renderTodayCardActions(){
     const wrap = document.getElementById(TODAY_CARD_ACTION_EL[slot]);
     if(!wrap) return;
     const status = slotLogStatus(todayISO(), currentProf, slot);
+    const label = SLOT_LABEL[slot] || slot;
+    // USER FEEDBACK item 3: the only path to removing an extra is this add button, which
+    // read as pure "add" — once the meal already has extras, relabel it "Edit" so removal
+    // is discoverable without adding a new button.
+    const hasExtras = todaySlotView(slot).extras.length > 0;
+    const addLabel = hasExtras ? '✎ Edit' : '＋ Add';
+    const addAria = (hasExtras ? 'Edit ' : 'Add to ') + label;
     if(status === 'confirmed'){
       wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Logged</span>'
-        + '<button class="tag-undo" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋ Add</button>'
+        + '<button class="tag-undo" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+addLabel+'</button>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
     } else if(status === 'skipped'){
       wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
     } else {
-      const label = SLOT_LABEL[slot] || slot;
       wrap.innerHTML = '<div class="ta-actions">'
         + '<button class="ta-btn ta-confirm" aria-label="Confirm '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')">✓</button>'
-        + '<button class="ta-btn" aria-label="Add to '+label+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">＋</button>'
+        + '<button class="ta-btn" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+(hasExtras ? '✎' : '＋')+'</button>'
         + '<button class="ta-btn ta-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')">✕</button>'
         + '</div>';
     }
@@ -1285,14 +1417,17 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
   const portion = (typeof portionOverride === 'number') ? portionOverride : ((activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1);
   const isTodayLog = currentLogDateISO() === todayISO();
   const swapAction = isTodayLog ? '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>' : '';
-  const addAction = isTodayLog ? '<button class="la-swap" onclick="openAddMealRecipeSheet(\''+slot+'\')">+ Add</button>' : '';
+  // USER FEEDBACK item 3: relabel to "Edit" once the meal has extras, same as the Today
+  // card's add button — the only path to removing an extra, so it shouldn't read as "add".
+  const hasExtras = logSlotView(slot).extras.length > 0;
+  const addAction = isTodayLog ? ('<button class="la-swap" aria-label="'+(hasExtras ? 'Edit ' : 'Add to ')+(SLOT_LABEL[slot] || slot)+'" onclick="openAddMealRecipeSheet(\''+slot+'\')">'+(hasExtras ? '✎ Edit' : '+ Add')+'</button>') : '';
   const servingStepper = isTodayLog ? '<span class="sv-stepper" style="margin-left:auto">'
     + '<button onclick="stepMealServings(\''+slot+'\',-0.5)" aria-label="Fewer servings">-</button>'
     + '<span class="sv-val">'+portion+'x</span>'
     + '<button onclick="stepMealServings(\''+slot+'\',0.5)" aria-label="More servings">+</button>'
     + '</span>' : '';
   card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
-    + '<div class="row between"><span class="t">'+title+'</span><span class="kcal">'+kcal+'</span></div>'
+    + '<div class="row between"><span class="t">'+escapeHtml(title)+'</span><span class="kcal">'+kcal+'</span></div>'
     + '<div class="d">'+desc+'</div>'
     + '<div class="logactions">'
     + '<button class="la-confirm" onclick="logConfirm(\''+slot+'\')">Confirm</button>'
@@ -1831,6 +1966,7 @@ function applyProf(key){
   if(typeof renderInsights === 'function') renderInsights(); // task D1: keep Insights in sync with whoever's now current
   updateRecipeWhy();     // task C3: re-personalize the why-box if the recipe screen is open
   renderRecipeEatenState(); // eaten/skipped is per-person (slotLogStatus keyed by currentProf) — re-derive on profile switch too
+  renderRecipeMealStrip();
   syncServeHighlight();
   syncProfileToggle(key);
   persist();
@@ -1986,7 +2122,7 @@ function searchFoods(query){
 
 function buildFoodSearchSheet(){
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add a food</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="foodSearchInput" placeholder="Search foods… (e.g. yogurt)" value="'+jsAttr(quickAdd.query)+'" oninput="onFoodSearchInput(this.value)" autocomplete="off"></div>'
+    + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="foodSearchInput" placeholder="Search foods… (e.g. yogurt)" value="'+htmlAttr(quickAdd.query)+'" oninput="onFoodSearchInput(this.value)" autocomplete="off"></div>'
     + '<div id="foodSearchResults">' + renderFoodSearchResults() + '</div>';
 }
 
@@ -1994,13 +2130,13 @@ function renderFoodSearchResults(){
   const q = quickAdd.query.trim();
   if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
   const ids = searchFoods(q);
-  if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + q + '”.</p>';
+  if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + escapeHtml(q) + '”.</p>';
   return ids.map(function(id){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     return '<div class="altrow" onclick="selectQuickAddFood(\''+id+'\')">'
       + '<div class="ae">' + foodIconHtml(id, '🥄') + '</div>'
-      + '<div class="at"><div class="an">'+f.name+'</div>'
+      + '<div class="at"><div class="an">'+escapeHtml(f.name)+'</div>'
       + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein <b>/ '+per+'</b></div></div>'
       + '</div>';
   }).join('');
@@ -2041,7 +2177,7 @@ function buildGramsStepperSheet(){
   if(!food) return buildFoodSearchSheet();
   const nut = foodMacros(quickAdd.selectedId, quickAdd.grams);
   const pieceHint = food.unit === 'piece' ? ' (≈' + (+(quickAdd.grams / food.avgG).toFixed(1)) + ' piece)' : '';
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">'+food.name+'</h2><button class="backbtn" style="margin:0" onclick="openFoodSearch()">‹ Back</button></div>'
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">'+escapeHtml(food.name)+'</h2><button class="backbtn" style="margin:0" onclick="openFoodSearch()">‹ Back</button></div>'
     + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">Amount</div>'
     + '<div class="sv-stepper"><button onclick="stepQuickAddGrams(-10)" aria-label="Decrease grams">–</button>'

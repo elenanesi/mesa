@@ -562,10 +562,12 @@ function saveNewFood(){
 
   const id = f.editingId || uniqueSlug(slugify(name), FOODS, 'cf-');
   const kcal = computeNewFoodKcal(f);
+  if(deletedFoods[id]) delete deletedFoods[id]; // recreate-after-delete: this save's `u` below beats the tombstone (js/sync.js:mergeLibrarySection)
   customFoods[id] = {
     name: name, per: 100, unit: 'g',
     kcal: kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, satFat: f.satFat, fiber: f.fiber,
-    flags: f.flags.slice(), cat: f.cat, src: 'User-added ingredient'
+    flags: f.flags.slice(), cat: f.cat, src: 'User-added ingredient',
+    u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
   customRev++;
   applyCustomFoods();
@@ -588,6 +590,7 @@ function deleteCustomFood(id){
   }
   const name = customFoods[id].name;
   delete customFoods[id];
+  deletedFoods[id] = Date.now(); // tombstone so couple-sync's per-id merge doesn't resurrect it (js/sync.js:mergeLibrarySection)
   customRev++;
   applyCustomFoods();
   applyProf(currentProf);
@@ -742,11 +745,14 @@ function deleteRecipe(id){
   const r = RECIPES_DB[id] || customRecipes[id] || recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
   if(!r) return;
   const title = r.title;
+  // Both branches tombstone: without it, couple-sync's per-id merge (js/sync.js:
+  // mergeLibrarySection) is a plain union and would resurrect the delete from whichever
+  // phone hasn't seen it yet — exactly the "clone under a freeConflictId every sync round"
+  // ratchet this fix targets. applyCustomRecipes() already treats deletedRecipes[id] as
+  // "hide this id" for BOTH built-in-override and custom (cr-) ids (see the function above).
   if(customRecipes[id]) delete customRecipes[id];
-  else {
-    deletedRecipes[id] = true;
-    if(recipeOverrides[id]) delete recipeOverrides[id];
-  }
+  else if(recipeOverrides[id]) delete recipeOverrides[id];
+  deletedRecipes[id] = Date.now();
   customRev++;
   applyCustomRecipes();
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
@@ -1028,6 +1034,22 @@ function deepEqualJSON(a, b){
 // handling above. `isTaken(candidateId)` decides — callers check both the live DB and
 // anything already claimed earlier in the SAME merge pass, so two incoming entries that
 // both conflict with the same local id don't collide with each other either.
+// Content-equality that ignores the `u` (updatedAt) stamp — two entries with identical
+// recipe/food content but different save timestamps must still compare EQUAL here, both
+// for mergeImportedLibrary's identical-content skip below and for js/sync.js's
+// mergeLibrarySection per-id merge, or a bare re-save (which only bumps `u`) would look
+// like a real edit and start the exact " (imported)"-suffix ratchet this stamp exists to
+// stop (see the 2026-07 "Frittata di pasta" duplication postmortem in js/sync.js).
+function withoutStamp(obj){
+  if(!obj || typeof obj !== 'object') return obj;
+  const clone = Object.assign({}, obj);
+  delete clone.u;
+  return clone;
+}
+function contentEqualJSON(a, b){
+  return deepEqualJSON(withoutStamp(a), withoutStamp(b));
+}
+
 function freeConflictId(baseId, isTaken){
   let n = 2, candidate = baseId + '-' + n;
   while(isTaken(candidate)){ n++; candidate = baseId + '-' + n; }
@@ -1089,7 +1111,7 @@ function mergeImportedLibrary(parsed){
   Object.keys(incomingFoods).sort().forEach(function(id){
     const incoming = incomingFoods[id];
     if(customFoods[id]){
-      if(deepEqualJSON(customFoods[id], incoming)) return; // identical — skip, not added
+      if(contentEqualJSON(customFoods[id], incoming)) return; // identical (ignoring `u`) — skip, not added
       const newId = freeConflictId(id, function(cand){ return !!customFoods[cand] || !!incomingFoods[cand]; });
       foodIdRemap[id] = newId;
       commitFood(newId, incoming);
@@ -1123,7 +1145,7 @@ function mergeImportedLibrary(parsed){
   Object.keys(incomingRecipes).sort().forEach(function(id){
     const remapped = remapIngredients(incomingRecipes[id]);
     if(customRecipes[id]){
-      if(deepEqualJSON(customRecipes[id], remapped)) return; // identical — skip, not added
+      if(contentEqualJSON(customRecipes[id], remapped)) return; // identical (ignoring `u`) — skip, not added
       const newId = freeConflictId(id, function(cand){ return !!customRecipes[cand] || !!incomingRecipes[cand]; });
       commitRecipe(newId, remapped);
     } else {
@@ -1132,7 +1154,7 @@ function mergeImportedLibrary(parsed){
   });
 
   Object.keys(incomingOverrides).sort().forEach(function(id){
-    if(deepEqualJSON(recipeOverrides[id], incomingOverrides[id])) return;
+    if(contentEqualJSON(recipeOverrides[id], incomingOverrides[id])) return;
     recipeOverrides[id] = JSON.parse(JSON.stringify(incomingOverrides[id]));
     if(deletedRecipes[id]) delete deletedRecipes[id];
     changedRecipeControls++;
@@ -1184,13 +1206,12 @@ function saveRecipeBuilder(){
     ingredients: rb.ingredients.map(function(r){ return [r.foodId, r.grams]; }),
     toTaste: [],
     steps: stepsArr.length ? stepsArr : ['Combine and enjoy.'],
-    tags: meta.tags, avoid: meta.avoid
+    tags: meta.tags, avoid: meta.avoid,
+    u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
+  if(deletedRecipes[id]) delete deletedRecipes[id]; // recreate-after-delete: this save's `u` beats the tombstone either way
   if(id.indexOf('cr-') === 0) customRecipes[id] = recipe;
-  else {
-    recipeOverrides[id] = recipe;
-    if(deletedRecipes[id]) delete deletedRecipes[id];
-  }
+  else recipeOverrides[id] = recipe;
   customRev++;
   applyCustomRecipes();
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
@@ -1198,4 +1219,174 @@ function saveRecipeBuilder(){
   recipeBuilder = null;
   openMyRecipes();
   renderFoodLibraryCount();
+}
+
+/* ===================================================================
+   ONE-SHOT CLEANUP MIGRATION (2026-07 fix): before couple-sync's library
+   merge got per-entry `u` stamps, applySyncResponse's 'library' branch
+   reused mergeImportedLibrary (the manual-file-import merge) for every
+   sync round. That merge intentionally clones same-id/different-content
+   conflicts under a freeConflictId + " (imported)" name suffix — correct
+   for a one-time file import, but a two-phone couple-sync loop re-applies
+   it every round: phone A merges phone B's copy (clone #1, name +
+   "(imported)"), pushes, phone B merges THAT back (clone #2, another
+   "(imported)"), forever — a per-sync-round duplication ratchet. A
+   custom recipe re-created a few times while "sync looked flaky" is
+   enough of a seed for this to balloon into ~200 near-identical copies
+   within days.
+   Runs ONCE at boot (app.js, right after loadState()/applyCustomRecipes()
+   populate customRecipes, before the first render) — idempotent, so it's
+   a no-op on a clean library and safe to leave running on every future
+   boot rather than needing a "ran once" flag.
+   =================================================================== */
+
+// Strips ANY NUMBER of trailing " (imported)" suffixes (repeated merge rounds can stack
+// several), case-insensitively, so "Frittata di pasta (imported)(imported)(imported)"
+// and "Frittata di pasta" group together.
+function stripImportedSuffixes(title){
+  let t = String(title || '').trim();
+  const re = /\s*\(imported\)\s*$/i;
+  while(re.test(t)) t = t.replace(re, '').trim();
+  return t;
+}
+function normalizeRecipeGroupKey(title){
+  return stripImportedSuffixes(title).toLowerCase();
+}
+// Heuristic for "this id looks like it was born from freeConflictId()" (baseId + '-N')
+// — used only to prefer the least-mangled id as the kept/canonical one when several
+// duplicates' content ties on everything else the picker cares about.
+function isConflictSuffixedId(id){ return /-\d+$/.test(id); }
+
+// Content-equality for the DUPLICATE-COLLAPSE decision specifically: ignores title (the
+// whole point — "Foo" and "Foo (imported)" must compare equal here) on top of the `u`
+// stamp contentEqualJSON() above already ignores.
+function contentEqualIgnoringTitleAndStamp(a, b){
+  function strip(o){
+    const c = Object.assign({}, o);
+    delete c.title; delete c.u;
+    return c;
+  }
+  return deepEqualJSON(strip(a), strip(b));
+}
+
+function cleanupDuplicateLibraryEntries(){
+  // Group custom recipe ids by normalized title.
+  const groups = {};
+  Object.keys(customRecipes).forEach(function(id){
+    const r = customRecipes[id];
+    if(!r) return;
+    const key = normalizeRecipeGroupKey(r.title);
+    (groups[key] = groups[key] || []).push(id);
+  });
+
+  let removedCount = 0, variantGroupCount = 0;
+  const idRemap = {}; // deleted id -> kept canonical id
+
+  Object.keys(groups).forEach(function(key){
+    const ids = groups[key];
+    if(ids.length < 2) return; // nothing to collapse in a group of one
+
+    // Partition the group into content-equivalence clusters (ignoring title/u) — entries
+    // with genuinely DIFFERENT content are real variants and must NOT be collapsed.
+    const clusters = [];
+    ids.forEach(function(id){
+      const entry = customRecipes[id];
+      let target = null;
+      for(let i = 0; i < clusters.length; i++){
+        if(contentEqualIgnoringTitleAndStamp(customRecipes[clusters[i].ids[0]], entry)){ target = clusters[i]; break; }
+      }
+      if(target) target.ids.push(id); else clusters.push({ids: [id]});
+    });
+
+    if(clusters.length > 1) variantGroupCount++; // real variants left alone — noted for the summary, not touched
+
+    clusters.forEach(function(cluster){
+      if(cluster.ids.length < 2) return; // singleton cluster — nothing to collapse
+
+      // Canonical pick: prefer a title with no "(imported)" suffix, then an id with no
+      // '-N' conflict suffix, else the lexicographically smallest id — deterministic so
+      // re-running this (e.g. after a future sync re-merges some other duplicate set)
+      // never picks a different "winner" for content already collapsed once.
+      const canonical = cluster.ids.slice().sort(function(a, b){
+        const ra = customRecipes[a], rb = customRecipes[b];
+        const aClean = stripImportedSuffixes(ra.title) === String(ra.title || '').trim();
+        const bClean = stripImportedSuffixes(rb.title) === String(rb.title || '').trim();
+        if(aClean !== bClean) return aClean ? -1 : 1;
+        const aConf = isConflictSuffixedId(a), bConf = isConflictSuffixedId(b);
+        if(aConf !== bConf) return aConf ? 1 : -1;
+        return a < b ? -1 : (a > b ? 1 : 0);
+      })[0];
+
+      cluster.ids.forEach(function(id){
+        if(id === canonical) return;
+        idRemap[id] = canonical;
+        delete customRecipes[id];
+        // Tombstoned (not just deleted) so couple-sync propagates the cleanup to the
+        // partner's phone instead of the next sync round resurrecting these via union.
+        deletedRecipes[id] = Date.now();
+        removedCount++;
+      });
+    });
+  });
+
+  if(!removedCount) return; // idempotent: clean library (including a re-run right after
+                             // this migration already ran once) changes nothing further
+
+  function remapId(id){ return idRemap[id] || id; }
+
+  // Remap weekPlans (both people, all weeks incl. the `weekPlan` compat alias — which is
+  // just a bare reference into weekPlans, so mutating in place covers it for free).
+  Object.keys(weekPlans).forEach(function(wk){
+    const plan = weekPlans[wk];
+    if(!plan || !Array.isArray(plan.days)) return;
+    plan.days.forEach(function(day){
+      if(!day || !day.meals) return;
+      Object.keys(day.meals).forEach(function(slot){
+        const meal = day.meals[slot];
+        if(!meal) return;
+        if(meal.recipeId && idRemap[meal.recipeId]) meal.recipeId = remapId(meal.recipeId);
+        ['elena', 'partner'].forEach(function(p){
+          const side = meal[p];
+          if(!side) return;
+          if(side.recipeId && idRemap[side.recipeId]) side.recipeId = remapId(side.recipeId);
+          if(Array.isArray(side.extras)){
+            side.extras.forEach(function(ex){ if(ex && ex.recipeId && idRemap[ex.recipeId]) ex.recipeId = remapId(ex.recipeId); });
+          }
+        });
+      });
+    });
+  });
+
+  // Remap logHistory (both people, ref + components[].recipeId) — LogEntry macros are
+  // frozen at log time (state.js doc), so this only fixes which recipe a past entry
+  // LINKS to (for recipe-detail taps etc.), never rewrites any stored nutrition number.
+  Object.keys(logHistory).forEach(function(dateISO){
+    const day = logHistory[dateISO];
+    if(!day) return;
+    ['elena', 'partner'].forEach(function(p){
+      (day[p] || []).forEach(function(entry){
+        if(!entry) return;
+        if(entry.ref && idRemap[entry.ref]) entry.ref = remapId(entry.ref);
+        if(Array.isArray(entry.components)){
+          entry.components.forEach(function(c){ if(c && c.recipeId && idRemap[c.recipeId]) c.recipeId = remapId(c.recipeId); });
+        }
+      });
+    });
+  });
+
+  // recipePrefs keyed by a deleted id: remap onto the kept id (unless it already has its
+  // own pref, in which case the deleted id's pref is just dropped rather than clobbering it).
+  Object.keys(idRemap).forEach(function(deletedId){
+    const keptId = idRemap[deletedId];
+    if(recipePrefs[deletedId] !== undefined){
+      if(recipePrefs[keptId] === undefined) recipePrefs[keptId] = recipePrefs[deletedId];
+      delete recipePrefs[deletedId];
+    }
+  });
+
+  customRev++;
+  applyCustomRecipes();
+  persist();
+  toast('🧹 Cleaned ' + removedCount + ' duplicate recipe' + (removedCount === 1 ? '' : 's')
+    + (variantGroupCount ? ' (kept ' + variantGroupCount + ' genuine variant' + (variantGroupCount === 1 ? '' : 's') + ')' : ''));
 }

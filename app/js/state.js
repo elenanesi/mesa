@@ -164,11 +164,15 @@ function whyText(recipeId, profKey){
     clauses.push(rule.clause(recipe, flags, profKey, proteinG));
   });
 
+  // recipe.title is user-controlled for custom/edited recipes and this body is painted via
+  // innerHTML (render.js:updateRecipeWhy) alongside the static <i> WHY_GUIDANCE markup, so
+  // the title has to be escaped here at the source rather than at the render call site.
+  const safeTitle = escapeHtml(capitalizeFirst(recipe.title));
   let body;
   if(!clauses.length){
-    body = capitalizeFirst(recipe.title) + ' is a simple, Mediterranean-style ' + recipe.slot + ' that fits your plan.';
+    body = safeTitle + ' is a simple, Mediterranean-style ' + recipe.slot + ' that fits your plan.';
   } else {
-    body = capitalizeFirst(recipe.title) + ' — ' + clauses[0] + '.';
+    body = safeTitle + ' — ' + clauses[0] + '.';
     if(clauses.length > 1) body += ' ' + capitalizeFirst(clauses.slice(1).join('; ')) + '.';
   }
   return body + ' ' + WHY_GUIDANCE;
@@ -418,6 +422,11 @@ const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 // = 1 — every read site defaults, engine.js:recipeNutrition divides by it) and a `t`
 // mutation stamp on weekPlan meal cells (sync.js:mergePlansSection). Both additive
 // with safe defaults — no gated migration, old local/synced data loads unchanged.
+// v6 also gains (no version bump needed, additive/safe-default like the rest of this
+// list): a `u` (updatedAt) stamp on customFoods/customRecipes/recipeOverrides entries,
+// and `deletedFoods` (new, cf-id -> tombstone, parallel to deletedRecipes) — both added
+// to fix the couple-sync duplication ratchet (js/sync.js:mergeLibrarySection) where the
+// old library merge had no way to decide which of two conflicting edits was newer.
 const CURRENT_STORE_VERSION = 6;
 
 let onboarded = false;
@@ -446,7 +455,21 @@ function checkedSetForWeek(weekStartDate){
    from ingredients at save time (js/library.js:deriveRecipeMeta()). Merged into RECIPES_DB
    the same way via applyCustomRecipes(), which also rebuilds the RECIPES compat view.
    recipeOverrides: built-in recipe id -> edited recipe object. deletedRecipes:
-   recipe id -> true tombstone for recipes the user removed from their library.
+   recipe id -> tombstone for recipes the user removed from their library (built-in
+   overrides AND custom cr- recipes alike — js/library.js:deleteRecipe()). deletedFoods:
+   same idea for custom cf- foods (js/library.js:deleteCustomFood()) — new in this
+   version, so always numeric (no legacy `true` values can exist for it). Tombstone
+   values are either the legacy `true` (pre-couple-sync deletes — treated as epoch 1,
+   js/sync.js:tombstoneTime()) or a Date.now() epoch ms, so couple sync's per-id merge
+   (js/sync.js:mergeLibrarySection) can tell a delete from one phone apart from a
+   recreate-after-delete from the other by comparing timestamps, instead of a plain
+   boolean that a union-by-id merge would otherwise just resurrect.
+   customFoods/customRecipes/recipeOverrides entries also carry a `u` (updatedAt, epoch
+   ms) field stamped at save time (js/library.js: saveNewFood/saveRecipeBuilder) — the
+   couple-sync per-entry newer-wins comparison sync.js:mergeEntryMap() needs, since
+   without it two phones editing the SAME id with different content had no way to agree
+   on a winner (the bug this whole tombstone/stamp scheme exists to fix — see PHASE2-plan
+   notes / the 2026-07 "Frittata di pasta (imported)(imported)…" duplication-ratchet fix).
    customRev: monotonic counter, bumped on every library mutation (add/delete a food or
    recipe) — used for persistence/sync change detection. It is intentionally NOT folded
    into the week-plan signature: adding a recipe must not reset today's customized plan. */
@@ -454,6 +477,7 @@ let customFoods = {};
 let customRecipes = {};
 let recipeOverrides = {};
 let deletedRecipes = {};
+let deletedFoods = {};
 let recipePrefs = {};
 let customRev = 0;
 
@@ -790,6 +814,7 @@ function buildSnapshot(){
     customRecipes: customRecipes,
     recipeOverrides: recipeOverrides,
     deletedRecipes: deletedRecipes,
+    deletedFoods: deletedFoods,
     recipePrefs: recipePrefs,
     mealPins: mealPins,
     mealRules: mealRules,
@@ -947,10 +972,26 @@ function loadState(){
       }
     });
   }
+  // Tombstone values can be the legacy plain `true` or a Date.now() epoch ms (couple-sync
+  // stamps new deletes with a timestamp so mergeLibrarySection can compare a delete against
+  // a recreate-after-delete's own `u` — see the doc block above) — both are kept verbatim
+  // rather than coerced to `true`, which used to silently discard the timestamp here.
   deletedRecipes = {};
   if(saved.deletedRecipes && typeof saved.deletedRecipes === 'object'){
     Object.keys(saved.deletedRecipes).forEach(function(id){
-      if(typeof id === 'string' && saved.deletedRecipes[id]) deletedRecipes[id] = true;
+      if(typeof id !== 'string') return;
+      const v = saved.deletedRecipes[id];
+      if(v === true) deletedRecipes[id] = true;
+      else if(typeof v === 'number' && isFinite(v)) deletedRecipes[id] = v;
+    });
+  }
+  deletedFoods = {};
+  if(saved.deletedFoods && typeof saved.deletedFoods === 'object'){
+    Object.keys(saved.deletedFoods).forEach(function(id){
+      if(typeof id !== 'string') return;
+      const v = saved.deletedFoods[id];
+      if(v === true) deletedFoods[id] = true;
+      else if(typeof v === 'number' && isFinite(v)) deletedFoods[id] = v;
     });
   }
   recipePrefs = {};

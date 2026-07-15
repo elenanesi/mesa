@@ -4,9 +4,18 @@
    Talks to worker/sync.js (a dumb per-section higher-rev-wins store) and
    does all the real merging client-side, per PHASE2-plan.md's "Section
    model & merge rules":
-     - library            : merge by id (REUSES js/library.js's
-                             mergeImportedLibrary — identical-content
-                             skip, conflict re-id, ingredient remap).
+     - library            : mergeLibrarySection() below — per-id newer-wins merge using
+                             each entry's `u` stamp (js/library.js: saveNewFood/
+                             saveRecipeBuilder), with tombstones (deletedRecipes/
+                             deletedFoods) so a delete on one phone can't be resurrected
+                             by a union-by-id merge. NOT js/library.js's
+                             mergeImportedLibrary — that function's clone-on-conflict +
+                             " (imported)" rename is right for a one-time manual file
+                             import, but reusing it for every sync round created a
+                             duplication ratchet (same conflict re-cloned bigger each
+                             round) — see mergeLibrarySection's doc block below for the
+                             full incident writeup. mergeImportedLibrary stays, unchanged,
+                             for the manual-import flow only (render.js's confirmMergeImport).
      - plans               : per-meal-cell merge of weekPlans (each mutated
                              cell carries a `t` stamp; newer cell wins), so
                              two phones swapping DIFFERENT meals both keep
@@ -47,7 +56,6 @@
 
 /* ---------------- config ---------------- */
 const SYNC_URL = 'https://mesa-sync.elenanesi55.workers.dev';
-const ACCESS_IDENTITY_URL = '/cdn-cgi/access/get-identity';
 
 const SYNC_SECTIONS = ['library', 'plans', 'shopping', 'profile:elena', 'profile:partner', 'log:elena', 'log:partner'];
 const SYNC_DEBOUNCE_MS = 2000;
@@ -104,6 +112,7 @@ function librarySectionData(){
     customRecipes: clone(customRecipes),
     recipeOverrides: clone(recipeOverrides),
     deletedRecipes: clone(deletedRecipes),
+    deletedFoods: clone(deletedFoods),
     recipePrefs: clone(recipePrefs),
     customRev: customRev
   };
@@ -434,6 +443,134 @@ function seedSyncBookkeeping(rev){
   });
 }
 
+/* ===================================================================
+   LIBRARY SECTION MERGE (2026-07 fix — replaces reusing js/library.js's
+   mergeImportedLibrary for sync, see the file-header doc above).
+
+   INCIDENT: a custom recipe re-created a few times while sync "looked
+   flaky" ballooned into ~200 copies within days. Root cause: the old
+   applySyncResponse library branch called mergeImportedLibrary — which
+   intentionally CLONES a same-id/different-content conflict under a new
+   freeConflictId + " (imported)" name suffix, correct for a one-time
+   manual file import. Reused every sync round, that clone differs from
+   what the server had -> local rev bumps -> pushed -> the partner's
+   phone merges THAT and clones AGAIN. Every sync round compounds it.
+   Custom recipes/foods carried no per-entry timestamp, so "which side is
+   actually newer" was undecidable — mergeImportedLibrary's only option
+   was "keep both, renamed".
+
+   FIX: js/library.js now stamps every save with `u` (epoch ms). This
+   merge picks the higher `u` per id instead of cloning, so both phones
+   converge to the SAME winning entry (not two divergent copies) — see
+   mergeEntryMap() below for the tie-break that makes that convergence
+   deterministic. Deletes are tombstoned (deletedRecipes/deletedFoods,
+   state.js) so a plain union-by-id can't resurrect one phone's delete
+   from the other's still-present copy.
+   =================================================================== */
+
+// Legacy tombstones were a bare `true` (pre-timestamp); new ones are Date.now(). Treated
+// as epoch 1 so any real (epoch-ms) entry `u`/tombstone from after 1970 outranks it, while
+// still comparing >0 (truthy "is a delete") against an entry that has no `u` at all (0).
+function tombstoneTime(v){
+  if(v === true) return 1;
+  if(typeof v === 'number' && isFinite(v)) return v;
+  return 0;
+}
+
+// Per-id newer-wins merge for one map (customFoods, customRecipes, or recipeOverrides).
+// missing `u` -> 0, so an old un-stamped local entry loses to any stamped remote entry
+// (and vice versa) UNLESS the content is actually identical, in which case local is kept
+// untouched rather than needlessly overwritten by a byte-identical remote copy.
+function mergeEntryMap(localMap, remoteMap){
+  const out = {};
+  const ids = {};
+  Object.keys(localMap || {}).forEach(function(id){ ids[id] = true; });
+  Object.keys(remoteMap || {}).forEach(function(id){ ids[id] = true; });
+  Object.keys(ids).forEach(function(id){
+    const L = (localMap || {})[id], R = (remoteMap || {})[id];
+    if(L && !R){ out[id] = L; return; }
+    if(R && !L){ out[id] = R; return; }
+    if(contentEqualJSON(L, R)){ out[id] = L; return; } // identical (ignoring `u`) — no-op
+    const lu = (L && typeof L.u === 'number') ? L.u : 0;
+    const ru = (R && typeof R.u === 'number') ? R.u : 0;
+    if(lu !== ru){ out[id] = (lu > ru) ? L : R; return; }
+    // Exact tie (including both missing `u`, e.g. pre-this-fix data) — tie-break by
+    // comparing JSON.stringify(entry), lexicographically SMALLER wins. Deterministic and
+    // symmetric (both phones compare the same two entries the same way), so A merging B's
+    // copy and B merging A's copy land on the identical winner — the convergence property
+    // that stops the rev-bump ratchet (see mergeLibrarySection's doc block).
+    const ls = JSON.stringify(L), rs = JSON.stringify(R);
+    out[id] = (ls <= rs) ? L : R;
+  });
+  return out;
+}
+
+// Unions two tombstone maps (deletedRecipes or deletedFoods), keeping the LATER timestamp
+// per id when both sides deleted it (harmless — a delete is a delete) — legacy `true`
+// entries collapse to epoch 1 via tombstoneTime().
+function mergeTombstones(localTomb, remoteTomb){
+  const out = {};
+  const ids = {};
+  Object.keys(localTomb || {}).forEach(function(id){ ids[id] = true; });
+  Object.keys(remoteTomb || {}).forEach(function(id){ ids[id] = true; });
+  Object.keys(ids).forEach(function(id){
+    const t = Math.max(tombstoneTime((localTomb || {})[id]), tombstoneTime((remoteTomb || {})[id]));
+    if(t) out[id] = t;
+  });
+  return out;
+}
+
+// Drops any entry whose id is tombstoned UNLESS the entry's own `u` is newer than the
+// tombstone — that's the "recreate after delete" case (saveNewFood/saveRecipeBuilder
+// clear the LOCAL tombstone on save, but the OTHER phone's older tombstone can still be
+// sitting in remoteTomb until this merge sees the newer `u` and lets the recreate win).
+function pruneTombstoned(map, tombstones){
+  const out = {};
+  Object.keys(map || {}).forEach(function(id){
+    const entry = map[id];
+    const eu = (entry && typeof entry.u === 'number') ? entry.u : 0;
+    const t = tombstones[id] || 0;
+    if(t && t >= eu) return;
+    out[id] = entry;
+  });
+  return out;
+}
+
+// recipePrefs has no per-entry `u` (just a 'favorite'|'down' string) — union by id, and on
+// a genuine conflict (both sides set a DIFFERENT pref for the same id) tie-break by
+// comparing the two value strings directly (lexicographically smaller wins). Symmetric and
+// deterministic like mergeEntryMap's tie-break, so both phones converge on the same value.
+function mergeSimpleMap(localMap, remoteMap){
+  const out = {};
+  const ids = {};
+  Object.keys(localMap || {}).forEach(function(id){ ids[id] = true; });
+  Object.keys(remoteMap || {}).forEach(function(id){ ids[id] = true; });
+  Object.keys(ids).forEach(function(id){
+    const L = (localMap || {})[id], R = (remoteMap || {})[id];
+    if(L === undefined){ out[id] = R; return; }
+    if(R === undefined){ out[id] = L; return; }
+    out[id] = (L === R) ? L : (L < R ? L : R);
+  });
+  return out;
+}
+
+// Top-level library section merge — see the doc block above. `local`/`remote` are the wire
+// shapes librarySectionData() produces (customFoods/customRecipes/recipeOverrides/
+// deletedRecipes/deletedFoods/recipePrefs, plus a `customRev` counter that ISN'T part of
+// the merge — the caller compares content only, see applySyncResponse's library branch).
+function mergeLibrarySection(local, remote){
+  const mergedDeletedRecipes = mergeTombstones(local.deletedRecipes, remote.deletedRecipes);
+  const mergedDeletedFoods = mergeTombstones(local.deletedFoods, remote.deletedFoods);
+  return {
+    customFoods: pruneTombstoned(mergeEntryMap(local.customFoods, remote.customFoods), mergedDeletedFoods),
+    customRecipes: pruneTombstoned(mergeEntryMap(local.customRecipes, remote.customRecipes), mergedDeletedRecipes),
+    recipeOverrides: pruneTombstoned(mergeEntryMap(local.recipeOverrides, remote.recipeOverrides), mergedDeletedRecipes),
+    deletedRecipes: mergedDeletedRecipes,
+    deletedFoods: mergedDeletedFoods,
+    recipePrefs: mergeSimpleMap(local.recipePrefs, remote.recipePrefs)
+  };
+}
+
 // After a merge (library/shopping/log:*) produces content that's a strict superset of
 // what the server had, bump our rev past remote's so the NEXT sync tick's push outranks
 // it and the merged result actually propagates — otherwise it'd sit forever as "ours,
@@ -466,22 +603,33 @@ function applySyncResponse(sent, remoteSections){
     }
 
     if(sec === 'library'){
-      const beforeRev = customRev;
-      // REUSE js/library.js's mergeImportedLibrary — merges remote library data
-      // into the LIVE customFoods/customRecipes/recipeOverrides/deletedRecipes (identical-content
-      // skip, conflict re-id + ingredient remap, name-collision " (imported)" suffix),
-      // exactly the "library... REUSE library.js's existing mergeImportedLibrary
-      // machinery" rule in PHASE2-plan.md. It mutates customFoods/customRecipes/customRev
-      // directly and already calls applyCustomFoods()/applyCustomRecipes() when it adds
-      // anything, so there's no separate "apply" step needed here.
-      mergeImportedLibrary({
-        customFoods: remote.data.customFoods || {},
-        customRecipes: remote.data.customRecipes || {},
-        recipeOverrides: remote.data.recipeOverrides || {},
-        deletedRecipes: remote.data.deletedRecipes || {},
-        recipePrefs: remote.data.recipePrefs || {}
-      });
-      syncState.sectionRevs[sec] = (customRev !== beforeRev) ? remote.rev + 1 : remote.rev;
+      // mergeLibrarySection() — per-id newer-wins merge (see its doc block above), NOT
+      // mergeImportedLibrary (that's the manual-file-import merge; reusing it here was
+      // the root cause of the "Frittata di pasta" duplication ratchet).
+      const merged = mergeLibrarySection(sentEntry.data, remote.data);
+      customFoods = merged.customFoods;
+      customRecipes = merged.customRecipes;
+      recipeOverrides = merged.recipeOverrides;
+      deletedRecipes = merged.deletedRecipes;
+      deletedFoods = merged.deletedFoods;
+      recipePrefs = merged.recipePrefs;
+      applyCustomFoods();
+      applyCustomRecipes();
+
+      // Content-only comparison: remote.data/sentEntry.data both carry an extra `customRev`
+      // counter (librarySectionData()) that isn't part of the merge and needn't match
+      // bit-for-bit across devices — strip it before the "did anything actually change"
+      // checks below (applyMergedRevBookkeeping assumes mergedData's shape IS remote.data's
+      // shape 1:1, which isn't true here because of that counter field, hence the inline
+      // version instead of reusing it for this section).
+      const LIB_KEYS = ['customFoods', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'deletedFoods', 'recipePrefs'];
+      function libContentOnly(data){
+        const out = {};
+        LIB_KEYS.forEach(function(k){ out[k] = data[k] || {}; });
+        return out;
+      }
+      if(!deepEqualJSON(merged, libContentOnly(sentEntry.data))) customRev++; // local content actually changed by the merge
+      syncState.sectionRevs[sec] = deepEqualJSON(merged, libContentOnly(remote.data)) ? remote.rev : remote.rev + 1;
       syncState.sectionUpdatedAt[sec] = Date.now();
     } else if(sec === 'shopping'){
       const merged = mergeShoppingSection(sentEntry.data, remote.data);
@@ -747,42 +895,41 @@ function joinHousehold(){
   toast('✓ Joined — syncing now');
 }
 
-function accessIdentityEmail(){
-  if(location.protocol === 'file:') return Promise.resolve(null);
-  return fetch(ACCESS_IDENTITY_URL, {
-    method: 'GET',
-    credentials: 'same-origin',
-    cache: 'no-store'
-  }).then(function(res){
-    if(!res.ok) return null;
-    return res.json();
-  }).then(function(body){
-    return body && typeof body.email === 'string' ? body.email : null;
-  }).catch(function(){ return null; });
+// Reads the Cloudflare Access session JWT straight out of the CF_Authorization cookie
+// Access sets on this origin after a successful login — it's readable JS-side (not
+// HttpOnly). The Worker (worker/sync.js) is NOT itself behind Access — bare workers.dev
+// hostnames can't be — so it has no other way to see proof of the Access login; it has to
+// be handed the JWT explicitly and verifies it itself (worker/sync.js:verifyAccessJWT)
+// rather than trusting a bare email like this used to. Returns '' when the cookie is
+// absent (localhost dev, the legacy GitHub Pages origin, or simply no Access session yet)
+// so callers fail bootstrap gracefully, same as a missing accessIdentityEmail() used to.
+function accessJwtFromCookie(){
+  if(location.protocol === 'file:' || typeof document === 'undefined' || !document.cookie) return '';
+  const m = document.cookie.match(/(?:^|;\s*)CF_Authorization=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : '';
 }
 
 function bootstrapAccessHousehold(){
-  return accessIdentityEmail().then(function(email){
-    if(!email) return false;
-    return fetch(SYNC_URL + '/bootstrap', {
-      method: 'POST',
-      headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({email: email, existingCode: syncState.code || null})
-    }).then(function(res){
-      if(!res.ok) throw new Error('bootstrap http ' + res.status);
-      return res.json();
-    }).then(function(body){
-      const code = body && typeof body.code === 'string' ? normalizeHouseholdCode(body.code) : '';
-      if(!code) return false;
-      if(syncState.code){
-        if(syncState.code !== code) syncState.code = code;
-        persist();
-        return false;
-      }
-      return pullHouseholdFirst(code).then(function(restored){
-        if(restored) toast('✓ Restored your Mesa data from Cloudflare login');
-        return restored;
-      });
+  const jwt = accessJwtFromCookie();
+  if(!jwt) return Promise.resolve(false);
+  return fetch(SYNC_URL + '/bootstrap', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json', 'Cf-Access-Jwt-Assertion': jwt},
+    body: JSON.stringify({existingCode: syncState.code || null})
+  }).then(function(res){
+    if(!res.ok) throw new Error('bootstrap http ' + res.status);
+    return res.json();
+  }).then(function(body){
+    const code = body && typeof body.code === 'string' ? normalizeHouseholdCode(body.code) : '';
+    if(!code) return false;
+    if(syncState.code){
+      if(syncState.code !== code) syncState.code = code;
+      persist();
+      return false;
+    }
+    return pullHouseholdFirst(code).then(function(restored){
+      if(restored) toast('✓ Restored your Mesa data from Cloudflare login');
+      return restored;
     });
   }).catch(function(err){
     console.warn('Mesa sync: Cloudflare Access bootstrap skipped', err);

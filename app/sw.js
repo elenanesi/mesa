@@ -76,14 +76,15 @@ self.addEventListener('fetch', function(event){
   }
 
   if(req.mode === 'navigate'){
+    // Network-first, but NEVER cache.put the fetched HTML into the versioned cache: doing
+    // so paired a freshly-deployed index.html with whatever JS/CSS happened to still be
+    // pinned under the OLD CACHE version whenever a deploy forgot to bump CACHE, so
+    // offline/flaky loads could serve mismatched HTML+JS. Falling back only to the
+    // install-time cached index.html (put there once, atomically, by the install handler's
+    // cache.addAll(SHELL_FILES) above) keeps the offline shell internally consistent by
+    // construction — it can only ever pair with the JS/CSS cached in that same install.
     event.respondWith(
-      fetch(req).then(function(res){
-        if(res && res.ok && res.type === 'basic'){
-          const copy = res.clone();
-          caches.open(CACHE).then(function(cache){ cache.put('index.html', copy); });
-        }
-        return res;
-      }).catch(function(){
+      fetch(req).catch(function(){
         return caches.match('index.html');
       })
     );

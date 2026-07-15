@@ -276,6 +276,46 @@ function removeExtraRecipeFromMeal(weekStartDate, dayIndex, slot, person, recipe
   return true;
 }
 
+// Adjusts the portion of the LAST extra matching recipeId (same "last matching, never
+// index 0" convention as removeLastExtra/removeExtraFromLoggedMeal) — same couple-sync
+// stamp + shared-mirror semantics as addExtraRecipeToMeal/removeExtraRecipeFromMeal, so
+// stepping an extra's portion on a shared meal mirrors the change onto the partner's own
+// entry and stamps meal.t; solo stamps entry.t and clears meal.t.
+function setExtraRecipePortion(weekStartDate, dayIndex, slot, person, recipeId, newPortion){
+  const plan = editableWeekPlan(weekStartDate);
+  if(!plan || !plan.days[dayIndex]) return false;
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[person]) return false;
+  const entry = meal[person];
+  if(!Array.isArray(entry.extras)) return false;
+  let idx = -1;
+  for(let i = entry.extras.length - 1; i >= 0; i--){
+    if(entry.extras[i] && entry.extras[i].recipeId === recipeId){ idx = i; break; }
+  }
+  if(idx === -1) return false;
+  entry.extras[idx].portion = newPortion;
+  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
+  refreshPlanEntryNutrition(entry);
+  if(meal.shared && meal.partner && person === 'elena'){
+    let pIdx = -1;
+    for(let i = meal.partner.extras.length - 1; i >= 0; i--){
+      if(meal.partner.extras[i] && meal.partner.extras[i].recipeId === recipeId){ pIdx = i; break; }
+    }
+    if(pIdx !== -1) meal.partner.extras[pIdx].portion = newPortion;
+    refreshPlanEntryNutrition(meal.partner);
+  }
+  if(meal.shared && meal.elena && person === 'partner'){
+    let eIdx = -1;
+    for(let i = meal.elena.extras.length - 1; i >= 0; i--){
+      if(meal.elena.extras[i] && meal.elena.extras[i].recipeId === recipeId){ eIdx = i; break; }
+    }
+    if(eIdx !== -1) meal.elena.extras[eIdx].portion = newPortion;
+    refreshPlanEntryNutrition(meal.elena);
+  }
+  markWeekPlanEdited(plan);
+  return true;
+}
+
 function refreshPlanNutrition(plan){
   if(!plan || !Array.isArray(plan.days)) return false;
   let changed = false;
@@ -308,18 +348,26 @@ function isUnitPinned(plan, unit){
   return isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, person || mealPinPersonForMeal(meal, currentProf));
 }
 
+// Applies a real user-authored meal-routine rule to a stored plan cell. Stamped exactly
+// like applySwapToPlan (Date.now() for the real edit) so sync.js:mergePlansSection treats
+// a routine-set meal as a real edit instead of losing to any stamped remote change (the
+// bug fixed alongside commit 50f6f30's swap-revert fix) — shared cell stamps meal.t as a
+// whole, solo stamps the person's entry and clears any stale meal.t.
 function setMealRecipe(plan, dayIndex, slot, person, recipeId){
   const meal = plan.days[dayIndex].meals[slot];
   if(!meal || !RECIPES_DB[recipeId]) return false;
   if(recipeSlotList(RECIPES_DB[recipeId]).indexOf(slot) === -1) return false;
+  const now = Date.now();
   if(person === 'shared'){
     if(!meal.shared) return false;
     meal.recipeId = recipeId;
     meal.elena = makePlanEntry(recipeId, meal.elena.portion);
     meal.partner = makePlanEntry(recipeId, meal.partner.portion);
+    meal.t = now;
   } else {
     if(meal.shared) return false;
-    meal[person] = makePlanEntry(recipeId, meal[person].portion);
+    meal[person] = makePlanEntry(recipeId, meal[person].portion, now);
+    delete meal.t;
   }
   return true;
 }
@@ -1113,7 +1161,7 @@ function swapAltRowHtml(a, i){
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   return '<div class="altrow" onclick="chooseSwap(' + i + ')">'
     + '<div class="ae">' + r.emoji + '</div>'
-    + '<div class="at"><div class="an">' + r.title + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
     + '<div class="tags">' + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
     + '</div></div>';
@@ -1127,7 +1175,7 @@ function swapRecipeRowHtml(a){
   const avoid = a.avoidHit ? '<span class="pill ghost">Contains avoided</span>' : '';
   return '<div class="altrow" onclick="chooseSwapRecipe(\'' + jsAttr(a.id) + '\')">'
     + '<div class="ae">' + r.emoji + '</div>'
-    + '<div class="at"><div class="an">' + r.title + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
     + '<div class="tags">' + yours + avoid + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
     + '</div></div>';
@@ -1312,12 +1360,18 @@ function computeWeeklyCoverage(plan){
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      const idE = m.shared ? m.recipeId : m.elena.recipeId;
-      const idA = m.shared ? m.recipeId : m.partner.recipeId;
-      if(recipeHasFlag(idE, 'omega3') || recipeHasFlag(idA, 'omega3')) omega3Count++;
-      if(recipeHasFlag(idE, 'selenium') || recipeHasFlag(idA, 'selenium')) seleniumCount++;
-      const nutE = recipeNutrition(idE, m.elena.portion).totals;
-      const nutA = recipeNutrition(idA, m.partner.portion).totals;
+      // Flag coverage must see extras, not just the base dish (task: Insights ignoring
+      // meal extras) — a meal counts if ANY component (base or extra) of either person's
+      // entry that slot has the flag, mirroring how Today/Log treat extras as real food.
+      const componentsE = planEntryComponents(m.elena);
+      const componentsA = planEntryComponents(m.partner);
+      const hasFlag = function(components, flag){
+        return components.some(function(c){ return recipeHasFlag(c.recipeId, flag); });
+      };
+      if(hasFlag(componentsE, 'omega3') || hasFlag(componentsA, 'omega3')) omega3Count++;
+      if(hasFlag(componentsE, 'selenium') || hasFlag(componentsA, 'selenium')) seleniumCount++;
+      const nutE = planEntryNutrition(m.elena);
+      const nutA = planEntryNutrition(m.partner);
       fiberSumE += nutE.fiber; fiberSumA += nutA.fiber;
       fatSum += nutE.fat + nutA.fat;
       satFatSum += nutE.satFat + nutA.satFat;
@@ -1371,9 +1425,11 @@ function summarizeWeekPlan(plan, personKey){
       const r = RECIPES_DB[entry.recipeId];
       if(!r) return;
       (r.tags || []).forEach(function(t){ tagCounts[t] = (tagCounts[t] || 0) + 1; });
-      const nut = recipeNutrition(entry.recipeId, entry.portion).totals;
+      // Components-aware (base + extras), same reasoning as computeWeeklyCoverage above —
+      // this headline must agree with what Today/Log actually counted for the person.
+      const nut = planEntryNutrition(entry);
       fiberSum += nut.fiber; proteinSum += nut.protein; fatSum += nut.fat; satFatSum += nut.satFat;
-      if(recipeHasFlag(entry.recipeId, 'omega3')) omega3Count++;
+      if(planEntryComponents(entry).some(function(c){ return recipeHasFlag(c.recipeId, 'omega3'); })) omega3Count++;
     });
   });
 

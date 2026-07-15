@@ -229,6 +229,12 @@
            wrap and swaps the plain button for a "✓ Eaten today"/"Skipped for today" tag-row
            once today's plan for this slot is confirmed/skipped — see render.js for the states. -->
       <div id="recipeEatenWrap"><button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe()">✓ Mark as eaten</button></div>
+
+      <!-- USER FEEDBACK item 2: renderRecipeMealStrip() (render.js) owns everything inside
+           this card — shown only when this recipe is today's planned slot AND that slot has
+           extras, so the recipe's per-serving numbers don't sit contradicting the meal-card
+           total. Hidden (display:none) the rest of the time. -->
+      <div class="card" id="recipeMealStrip" style="display:none;margin-top:14px;padding:14px"></div>
       <button class="cta ghostbtn" onclick="openSwap(currentRecipeKey, null)">🔁 Swap for something similar</button>
     </section>
 

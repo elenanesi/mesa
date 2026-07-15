@@ -18,11 +18,22 @@
    model as "share this code with your partner".
 
    Endpoints:
-     POST /bootstrap -> body {email, existingCode?}. For the two Access
-                       allow-listed emails, returns/stores the household
-                       code associated with this Cloudflare Access login.
-                       This lets an iOS reinstall recover the same sync
-                       household even after localStorage was wiped.
+     POST /bootstrap -> header 'Cf-Access-Jwt-Assertion': <JWT>, body
+                       {existingCode?}. The JWT is the Cloudflare Access
+                       session token (client reads it out of the
+                       CF_Authorization cookie on the Pages origin — see
+                       app/js/sync.js:accessJwtFromCookie); this Worker
+                       verifies it against the Access team's published
+                       JWKs (verifyAccessJWT below) rather than trusting
+                       a client-supplied email, since this Worker itself
+                       sits on a bare workers.dev hostname and can't be
+                       put behind Access. For the two allow-listed
+                       emails found in the VERIFIED token, returns/
+                       stores the household code associated with this
+                       Cloudflare Access login. This lets an iOS
+                       reinstall recover the same sync household even
+                       after localStorage was wiped. Rate-limited to
+                       ~10 attempts/hour per IP (bootstrapRateLimited).
      GET  /sync/:code  -> 200 {sections: {...}} | 404 {error} if the
                           code has never been POSTed to.
      POST /sync/:code  -> body {sections: {name: {rev, updatedAt, data}}}
@@ -53,6 +64,10 @@ const ALLOWED_ORIGINS = [
 
 const ACCESS_EMAILS = ['elenanesi55@gmail.com', 'angelucci88@gmail.com'];
 const ACCESS_BOOTSTRAP_KEY = 'access-bootstrap:v2:mesa-household';
+const ACCESS_TEAM_DOMAIN = 'https://lively-unit-4aa5.cloudflareaccess.com';
+const ACCESS_CERTS_URL = ACCESS_TEAM_DOMAIN + '/cdn-cgi/access/certs';
+const BOOTSTRAP_RATE_LIMIT = 10; // max /bootstrap attempts per IP per window (cheap abuse guard, not precise)
+const BOOTSTRAP_RATE_WINDOW_SECONDS = 3600;
 const ICON_180_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAYAAAA9zQYyAAADR0lEQVR42u3dQWobQRBA0blnNrlBdiG3yJFtdABBHKRx9a9X8LfC1DyGtka2rmv4/Pr7+0NzugywwAMswCEW3CALbJC1AraLpAxsF0YJ1C6GMrBdAGVQW7wyqC1cGdQWrQxqC1YGtcUqg9pClUFtkUqhtkRlQFugMqgtTinUlqYMaAtTCrVlKQPaopRCbUnKgLag9/UYe7gZteW8HvGzsR+gM5ihvgG0xQCdQm0przvn/us4nwM9/pz71XE+B3r0seC7MW9F7e78BhgT7s7u0u7OL4HxP3PC+RzoEOav4JiEef2xA2aYgQZ63C+CQC8D/a5z7rS7M9Awwwy0o8ZE0OufFjpu3PPe87SfO4sa5nueDMIMNNBAAz0VnaeCQI8H7TE30O7QQAM99fx88t0faHdod2iggQYa6CToaW8JAu0cnXptoIEe+1gd6GWg3aWB9mm7Ba8NtM9Dj/54KtSLQL8bx6mvDbSjh6MH0DtAT3nHA2io3aWB9vTQ43Cg0//brvDaQAMNNNBnoN762kCHcHttoCWgJaAloAW0BLQEtAS0BLSAloCWgJaAloAW0KP68eenbgxokMEGGmigF4EGCmp3aLlDA61nnfJ3i0e9y/EYuO6HfNIf4V4nYTbfO0ADDTTQQAMNtAEaaAM00EADDTXMQAMN9IaPjxqYgTZAA22AhhpmoIEGGmgDdOuvvg3MQBugoYYZaKCBBhpqmIGmD+je/7YzMANtgIYaZqChhhlooIEGGurlmLP/wd/sxJz+SgqzD3P+O1bMLswrvjTI7MG85luwzA7Mq77WzXysuM6rvqcQZqChhhlosEEGGmqYgQYbZKCTsF0/oBOwXS+gE7BdH6ATsF0PoI/Hbe9AHw3cXoE+Ar49AL3qLm2XQCfP03YLdO6XQzsGGmgBDTTQAhpoqGEG2tt2AlpAS0BLA0E/xiKUwQy0gJaAloCWgBbQFiKgpZGgoVYKM9ACWgJaugk01EphBlpAS5NBQ60UZqCVAw21UpiBVg401EphBlo50FArhRlq5TADrRxoqJXCDLVymKFWDjPUymGGWjnMUCuHGWrlMEOtHGawlYMMtZKYwVYOMthKQgZbSchw69o2LjrAwAvYJ/MJTjzqeR+ro3sAAAAASUVORK5CYII=';
 
 // ~1MB cap (plan: "Payload cap ~1 MB") — measured on the raw request body text, before
@@ -62,7 +77,7 @@ const MAX_PAYLOAD_BYTES = 1024 * 1024;
 function corsHeaders(origin){
   const headers = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type',
+    'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
   };
@@ -117,6 +132,136 @@ function iconResponse(){
       'Cache-Control': 'public, max-age=31536000, immutable'
     }
   });
+}
+
+/* ---------------- Cloudflare Access JWT verification (bootstrap only) ----------------
+   The Worker can't sit behind Access itself (bare workers.dev hostname), so /bootstrap
+   can't rely on Access to have already gated the request the way the Pages origin is
+   gated. Instead the client hands over its Access session JWT (read client-side from the
+   CF_Authorization cookie — app/js/sync.js:accessJwtFromCookie) and this Worker verifies
+   the signature itself against the team's published JWKs before trusting anything in it —
+   in particular, the 'email' claim, which is the ONLY source of truth for
+   isAllowedAccessEmail from here on; a client-supplied JSON email field is never trusted
+   again (that was the vulnerability this fixes). */
+
+// Per-isolate cache of the Access team's JWK set — fetched at most once per isolate
+// lifetime. A transient fetch failure clears the cache rather than caching the failure, so
+// the next request gets a fresh attempt instead of being stuck failing for the isolate's
+// whole lifetime.
+let cachedCertsPromise = null;
+function fetchAccessCerts(){
+  if(!cachedCertsPromise){
+    cachedCertsPromise = fetch(ACCESS_CERTS_URL).then(function(res){
+      if(!res.ok) throw new Error('access certs http ' + res.status);
+      return res.json();
+    }).catch(function(err){
+      cachedCertsPromise = null;
+      throw err;
+    });
+  }
+  return cachedCertsPromise;
+}
+
+function base64UrlToBytes(b64url){
+  const b64 = String(b64url).replace(/-/g, '+').replace(/_/g, '/') + '==='.slice((b64url.length + 3) % 4);
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for(let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return bytes;
+}
+
+function base64UrlDecodeJSON(b64url){
+  return JSON.parse(new TextDecoder().decode(base64UrlToBytes(b64url)));
+}
+
+// Verifies a Cloudflare Access JWT (RS256) end-to-end: structure, issuer, expiry, audience
+// (when env.ACCESS_AUD is configured), and signature against the team's live JWKs. Returns
+// the verified payload object on success, or null on ANY failure — callers must treat null
+// as "reject the request" and never fall back to trusting an unverified claim out of it.
+async function verifyAccessJWT(token, env){
+  if(!token || typeof token !== 'string') return null;
+  const parts = token.split('.');
+  if(parts.length !== 3) return null;
+
+  let header, payload;
+  try{
+    header = base64UrlDecodeJSON(parts[0]);
+    payload = base64UrlDecodeJSON(parts[1]);
+  }catch(e){
+    return null; // malformed base64/JSON — not a real JWT
+  }
+  if(!isPlainObject(header) || header.alg !== 'RS256' || typeof header.kid !== 'string') return null;
+  if(!isPlainObject(payload) || payload.iss !== ACCESS_TEAM_DOMAIN) return null;
+
+  const nowSec = Math.floor(Date.now() / 1000);
+  if(typeof payload.exp !== 'number' || nowSec >= payload.exp) return null;
+  if(typeof payload.iat === 'number' && nowSec < payload.iat - 60) return null; // 60s clock-skew allowance
+
+  // aud check: enforced whenever ACCESS_AUD is configured (log-and-reject on mismatch).
+  // When unset, this branch is structurally present but doesn't run — see module doc /
+  // task notes: ACCESS_AUD MUST be set at deploy time for this check to actually protect
+  // anything; until then every other check (signature/issuer/expiry/allow-listed email)
+  // still applies.
+  if(env && env.ACCESS_AUD){
+    const aud = Array.isArray(payload.aud) ? payload.aud : [payload.aud];
+    if(aud.indexOf(env.ACCESS_AUD) === -1){
+      console.log('Mesa sync: bootstrap rejected — aud mismatch');
+      return null;
+    }
+  }
+
+  let certs;
+  try{
+    certs = await fetchAccessCerts();
+  }catch(e){
+    console.log('Mesa sync: bootstrap rejected — could not fetch Access certs', e);
+    return null;
+  }
+  const keys = (certs && Array.isArray(certs.keys)) ? certs.keys : [];
+  let jwk = null;
+  for(let i = 0; i < keys.length; i++){ if(keys[i] && keys[i].kid === header.kid){ jwk = keys[i]; break; } }
+  if(!jwk) return null; // signed by a key this team doesn't currently publish
+
+  let cryptoKey;
+  try{
+    cryptoKey = await crypto.subtle.importKey('jwk', jwk, {name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256'}, false, ['verify']);
+  }catch(e){
+    return null;
+  }
+
+  const signedData = new TextEncoder().encode(parts[0] + '.' + parts[1]);
+  let valid = false;
+  try{
+    valid = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', cryptoKey, base64UrlToBytes(parts[2]), signedData);
+  }catch(e){
+    return null;
+  }
+  return valid ? payload : null;
+}
+
+// Cheap KV-backed TTL counter: max BOOTSTRAP_RATE_LIMIT attempts per CF-Connecting-IP per
+// BOOTSTRAP_RATE_WINDOW_SECONDS. Not a precise sliding/fixed window (each hit renews the
+// key's TTL, so a steady trickle of requests can keep the window open indefinitely) — fine
+// for a low-traffic bootstrap endpoint whose real job is blocking a curl-in-a-loop, not
+// exact quota enforcement. Fails OPEN (returns false = not limited) on any KV error so a
+// transient KV blip never blocks legitimate bootstrap.
+async function bootstrapRateLimited(env, ip){
+  if(!env || !env.MESA_KV) return false;
+  const key = 'bootstrap-rate:' + ip;
+  let count = 0;
+  try{
+    const raw = await env.MESA_KV.get(key);
+    count = raw ? (parseInt(raw, 10) || 0) : 0;
+  }catch(e){
+    return false;
+  }
+  if(count >= BOOTSTRAP_RATE_LIMIT) return true;
+  try{
+    await env.MESA_KV.put(key, String(count + 1), {expirationTtl: BOOTSTRAP_RATE_WINDOW_SECONDS});
+  }catch(e){
+    // best-effort — a failed write just means this one tick isn't counted, not fatal
+  }
+  return false;
 }
 
 async function readStored(env, code){
@@ -176,13 +321,35 @@ async function handlePost(request, env, code, origin){
 }
 
 async function handleBootstrap(request, env, origin){
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if(await bootstrapRateLimited(env, ip)){
+    return json({error: 'rate_limited'}, 429, origin);
+  }
+
   let parsed;
   try{
     parsed = JSON.parse(await request.text());
   }catch(e){
     return json({error: 'invalid_json'}, 400, origin);
   }
-  if(!isPlainObject(parsed) || !isAllowedAccessEmail(parsed.email)){
+  if(!isPlainObject(parsed)) return json({error: 'invalid_body'}, 400, origin);
+
+  // Local-dev-only escape hatch (see module doc / worker/wrangler.toml): wrangler dev
+  // --local has no real Access session to hand us a genuine JWT. Honored ONLY when
+  // explicitly set — absent (always true for the real deploy unless someone
+  // misconfigures it) this branch never runs and email comes from the verified JWT below.
+  // Deliberately insecure when active: trusts a client-supplied body.email exactly like
+  // the pre-fix behavior.
+  let email = null;
+  if(env && env.DEV_ALLOW_INSECURE_BOOTSTRAP){
+    email = typeof parsed.email === 'string' ? parsed.email : null;
+  } else {
+    const jwt = request.headers.get('Cf-Access-Jwt-Assertion');
+    const payload = await verifyAccessJWT(jwt, env);
+    email = payload && typeof payload.email === 'string' ? payload.email : null;
+  }
+
+  if(!isAllowedAccessEmail(email)){
     return json({error: 'not_allowed'}, 403, origin);
   }
 
