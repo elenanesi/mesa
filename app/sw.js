@@ -5,7 +5,7 @@
    needs to change to invalidate old installs.
    =================================================================== */
 
-const CACHE = 'mesa-v48';
+const CACHE = 'mesa-v49';
 
 // The full app shell — everything needed to boot and run with zero network.
 const SHELL_FILES = [
@@ -24,6 +24,7 @@ const SHELL_FILES = [
   'data/foods.js',
   'data/recipes.js',
   'data/validate.js',
+  'assets/ingredients/default-food.png',
   'assets/ingredients/almonds.png',
   'assets/ingredients/apples.png',
   'assets/ingredients/asparagus.png',

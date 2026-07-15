@@ -475,7 +475,7 @@ function buildLibraryCatalogPayload(){
 
 function catalogPayloadSignature(payload){
   return JSON.stringify({
-    foods: payload.foods.map(function(f){ return [f.id, f.source, f.updatedAt, f.season, f.data && f.data.name]; }),
+    foods: payload.foods.map(function(f){ return [f.id, f.source, f.updatedAt, f.season, f.data && f.data.name, f.data && f.data.iconKey, f.data && f.data.iconAsset]; }),
     recipes: payload.recipes.map(function(r){ return [r.id, r.source, r.updatedAt, r.season, r.data && r.data.title]; }),
     recipePrefs: payload.recipePrefs,
     deletedFoods: payload.deletedFoods,

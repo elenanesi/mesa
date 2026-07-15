@@ -11,6 +11,17 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 3. `mesa-prototype.html` is the frozen design reference — never edit it.
 4. **Local verification quirk**: the sandbox blocks servers reading this folder — rsync `app/` to the session scratchpad and serve with the `serve_app.py` there (port 8322; `python3 -m http.server` fails; `.claude/launch.json` has a `mesa-app` preview entry). `node` is installed (syntax-check with `node --check`). Never chain reload+assert in one preview eval. **Stale-cache trap (cost us a debugging session)**: serve_app.py must send `Cache-Control: no-store` (it does now) AND Chrome's per-origin memory cache can still serve an old script across normal reloads — if the page behaves like an older build, switch origin (localhost ⇄ 127.0.0.1) or open a fresh tab before suspecting the code.
 
+## Agent handoff lessons from 2026-07-15
+
+- **Deploy is not GitHub.** Several batches were deployed to Cloudflare Pages/Workers before being committed. Always check `git status --short --branch` and `git log --oneline --decorate -5 --all`; if `main...origin/main` shows no commit ahead but files are modified, GitHub does not contain the deployed state yet.
+- **Do not silently deploy a partial dirty tree.** This repo may contain expected uncommitted work from other agents. If asked to deploy/push, clarify whether the user wants the whole current local state or only your staged subset. A Pages deploy from a staged copy of `index.html` + `app/` publishes whatever is in the local tree, regardless of Git.
+- **D1 changes require three steps.** For schema changes: add a migration under `worker/migrations/`, apply it remotely with Wrangler, then deploy `worker/sync.js`. Afterward, verify with a direct D1 schema/readback command. Client-only Pages deploy is not enough.
+- **Installed PWA cache matters.** Bump `app/sw.js` `CACHE` for every app shell/data change. If a phone looks stale after deploy, suspect the service worker/cache before changing logic again.
+- **Ingredient edits now use `foodOverrides`.** Built-in ingredient edits should not mutate `data/foods.js` at runtime or be forced into `customFoods`. Use synced household overrides (`foodOverrides`) and keep `applyCustomFoods()`, `librarySectionData()`, merge logic, backup/import, and D1 mirror in sync.
+- **Re-balance must not touch the past.** When changing planner candidate enumeration, compare each plan day to `todayISO()` and exclude dates before today. Logged/skipped locks are not enough because unlogged Monday/Tuesday meals can still be historical.
+- **Barcode/Open Food Facts in Italy:** prefer the localized Italian OFF endpoint before global endpoints; some products visible on the website return richer nutriments from `it.openfoodfacts.org`.
+- **Icons: do not repeat the weak generated-icon batch.** Codex produced a poor first pass for ingredient watercolor icons; another agent later fixed/replaced them. Future icon work should preserve the repaired assets, inspect contact sheets visually, and use the `watercolor-ingredient-icons` skill only with actual visual QA before wiring/deploying.
+
 ## Deploy (both, in this order)
 
 1. **Bump `app/sw.js` CACHE** (check the current value in the file) — installed clients only refresh on a version bump.
@@ -65,9 +76,9 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 **Done 2026-07-15** (sw CACHE mesa-v48): **Ingredient edit parity + future-only re-balance** — Ingredients can now be edited from the dedicated Library ingredients page, including built-in ingredients via synced household overrides; edited ingredients show an `edited` badge and can be reset. Week re-balance now ignores dates before today, so a Wednesday re-balance cannot propose changes to Monday or Tuesday.
 
-**Done 2026-07-15** (sw CACHE mesa-v48): **Watercolor A/B/C ingredient icons** — replaced the weak generated A/B/C ingredient batch with polished vintage watercolor PNG icons, preserved the original carrot icon, wired them by exact food id, and cached them for offline use.
+**Done 2026-07-15** (sw CACHE mesa-v49): **DB-driven watercolor ingredient icons** — moved ingredient icon mapping into `FOODS`/D1 `data_json` via `iconKey`/`iconAsset`, replaced the hardcoded `library.js` mapping, added a generic watercolor default food icon cached in PWA `localStorage`, and kept exact/reused icon keys for the current watercolor set.
 
 **In progress / next:**
-- **Watercolor icons (T2/T4, "Elena generates, agent wires")**: replace the emoji fallback for the ~30 most-used ingredients (`app/assets/ingredients/<foodId>.png`) and the app bookmark icon with a watercolor cornucopia (`app/icons/`, all manifest sizes + 180 apple-touch). Elena generates the art with the `watercolor-ingredient-icons` skill; wiring is `library.js` icon map + `manifest.webmanifest`. Next deploy would be v33.
+- **Watercolor icons (T2/T4, "Elena generates, agent wires")**: continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png` and setting `iconKey` on the relevant `FOODS` records; no hardcoded icon maps in `library.js`.
 - Awaiting Elena: confirm Access login + couple sync on the real phones at https://mesa-9y5.pages.dev/app/ → then make GitHub repo private + retire legacy URL in docs.
 - Next Phase 2 item: LLM endpoint (needs an Anthropic API key from Elena, proxied by a Worker — key never ships in the app).

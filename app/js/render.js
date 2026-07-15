@@ -698,7 +698,7 @@ function openAddMealRecipeSheet(slot){
     const r = isRecipe ? RECIPES_DB[c.recipeId] : null;
     const food = c.foodId ? FOODS[c.foodId] : null;
     const title = isRecipe ? r.title : food.name;
-    const emoji = isRecipe ? r.emoji : foodIconHtml(c.foodId, '🥄');
+    const emoji = isRecipe ? r.emoji : foodIconHtml(c.foodId);
     const nut = componentNutrition(c);
     const isBase = i === 0;
     // Extras get a 0.5-step portion stepper (base has its own steppers elsewhere on the
@@ -749,7 +749,7 @@ function renderMealFoodResults(q){
     const grams = defaultMealFoodGrams(id);
     const nut = roundedNutritionTotals(foodMacros(id, grams));
     return '<div class="altrow" onclick="chooseMealExtraFood(\'' + id + '\')">'
-      + '<div class="ae">' + foodIconHtml(id, '🥄') + '</div>'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
       + '<div class="ad">' + foodAmountLabel(f, grams) + ' · ' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
       + '</div>';
@@ -2400,7 +2400,7 @@ function renderFoodSearchResults(){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     return '<div class="altrow" onclick="selectQuickAddFood(\''+id+'\')">'
-      + '<div class="ae">' + foodIconHtml(id, '🥄') + '</div>'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">'+escapeHtml(f.name)+'</div>'
       + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein <b>/ '+per+'</b></div></div>'
       + '</div>';

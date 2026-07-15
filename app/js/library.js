@@ -282,122 +282,72 @@ let libFoodFiltersOpen = false;
 // a NEW custom ingredient.
 const FOOD_FILTER_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree', 'highFiber', 'fermented'];
 
-const INGREDIENT_ICON_ASSETS = {
-  almonds: 'assets/ingredients/almonds.png',
-  apples: 'assets/ingredients/apples.png',
-  asparagus: 'assets/ingredients/asparagus.png',
-  aubergine: 'assets/ingredients/aubergine.png',
-  avocado: 'assets/ingredients/avocado.png',
-  bacon: 'assets/ingredients/bacon.png',
-  'balsamic-vinegar': 'assets/ingredients/balsamic-vinegar.png',
-  bananas: 'assets/ingredients/bananas.png',
-  barley: 'assets/ingredients/barley.png',
-  basil: 'assets/ingredients/basil.png',
-  'beef-mince-lean': 'assets/ingredients/beef-mince-lean.png',
-  'bell-pepper': 'assets/ingredients/bell-pepper.png',
-  'brazil-nuts': 'assets/ingredients/brazil-nuts.png',
-  bresaola: 'assets/ingredients/bresaola.png',
-  broccoli: 'assets/ingredients/broccoli.png',
-  'broccoli-courgette': 'assets/ingredients/broccoli-courgette.png',
-  brownie: 'assets/ingredients/brownie.png',
-  cabbage: 'assets/ingredients/cabbage.png',
-  'cannellini-beans': 'assets/ingredients/cannellini-beans.png',
-  capers: 'assets/ingredients/capers.png',
-  'cappuccino-unsweetened': 'assets/ingredients/cappuccino-unsweetened.png',
-  carrot: 'assets/ingredients/carrot.png',
-  carrots: 'assets/ingredients/carrots.png',
-  cauliflower: 'assets/ingredients/cauliflower.png',
-  'cavolo-nero': 'assets/ingredients/cavolo-nero.png',
-  'cherry-tomatoes': 'assets/ingredients/cherry-tomatoes.png',
-  'cherry-tomatoes-cucumber': 'assets/ingredients/cherry-tomatoes-cucumber.png',
-  'chia-seeds': 'assets/ingredients/chia-seeds.png',
-  'chicken-breast': 'assets/ingredients/chicken-breast.png',
-  'chicken-thigh': 'assets/ingredients/chicken-thigh.png',
-  chickpeas: 'assets/ingredients/chickpeas.png',
-  'coconut-milk': 'assets/ingredients/coconut-milk.png',
-  cod: 'assets/ingredients/cod.png',
-  cola: 'assets/ingredients/cola.png',
-  courgette: 'assets/ingredients/courgette.png',
-  couscous: 'assets/ingredients/couscous.png',
-  cucumber: 'assets/ingredients/cucumber.png',
-  eggs: 'assets/ingredients/eggs.png',
-  'espresso-unsweetened': 'assets/ingredients/espresso-unsweetened.png',
-  milk: 'assets/ingredients/milk.png',
-  pasta: 'assets/ingredients/pasta.png',
-  rice: 'assets/ingredients/rice.png',
-  sugar: 'assets/ingredients/sugar.png'
-};
+const DEFAULT_FOOD_ICON_ASSET = 'assets/ingredients/default-food.png';
+const DEFAULT_FOOD_ICON_STORAGE_KEY = 'mesa.defaultFoodIcon.v1';
+let defaultFoodIconCacheStarted = false;
 
-const FOOD_ICON_KEYS = {
-  almonds: 'almonds',
-  apples: 'apples',
-  asparagus: 'asparagus',
-  aubergine: 'aubergine',
-  avocado: 'avocado',
-  bacon: 'bacon',
-  'balsamic-vinegar': 'balsamic-vinegar',
-  bananas: 'bananas',
-  barley: 'barley',
-  basil: 'basil',
-  'beef-mince-lean': 'beef-mince-lean',
-  'bell-pepper': 'bell-pepper',
-  'brazil-nuts': 'brazil-nuts',
-  bresaola: 'bresaola',
-  broccoli: 'broccoli',
-  'broccoli-courgette': 'broccoli-courgette',
-  brownie: 'brownie',
-  cabbage: 'cabbage',
-  'cannellini-beans': 'cannellini-beans',
-  capers: 'capers',
-  'cappuccino-unsweetened': 'cappuccino-unsweetened',
-  carrot: 'carrot',
-  carrots: 'carrots',
-  cauliflower: 'cauliflower',
-  'cavolo-nero': 'cavolo-nero',
-  'cherry-tomatoes': 'cherry-tomatoes',
-  'cherry-tomatoes-cucumber': 'cherry-tomatoes-cucumber',
-  'chia-seeds': 'chia-seeds',
-  'chicken-breast': 'chicken-breast',
-  'chicken-thigh': 'chicken-thigh',
-  chickpeas: 'chickpeas',
-  'coconut-milk': 'coconut-milk',
-  cod: 'cod',
-  cola: 'cola',
-  courgette: 'courgette',
-  couscous: 'couscous',
-  cucumber: 'cucumber',
-  eggs: 'eggs',
-  'espresso-unsweetened': 'espresso-unsweetened',
-  milk: 'milk',
-  'oat-milk': 'milk',
-  pasta: 'pasta',
-  'wholegrain-pasta': 'pasta',
-  rice: 'rice',
-  sugar: 'sugar'
-};
-
-function ingredientIconKeyForFood(foodId){
-  const food = FOODS[foodId];
-  if(FOOD_ICON_KEYS[foodId]) return FOOD_ICON_KEYS[foodId];
-  const name = food ? String(food.name || '').toLowerCase() : '';
-  if(/\bcarrots?\b/.test(name)) return 'carrot';
-  if(/\beggs?\b/.test(name)) return 'eggs';
-  if(/^(whole |skimmed |skim |semi-skimmed |low-fat |almond |soy |oat |coconut |rice )?milk\b/.test(name)) return 'milk';
-  if(/\b(pasta|spaghetti|tagliatelle|penne|fusilli)\b/.test(name)) return 'pasta';
-  if(/\brice\b/.test(name)) return 'rice';
-  if(/\bsugar\b/.test(name)) return 'sugar';
-  return null;
+function safeIngredientIconKey(v){
+  v = String(v || '').trim();
+  return /^[a-z0-9][a-z0-9-]*$/.test(v) ? v : '';
 }
 
-function ingredientIconHtml(iconKey, fallbackEmoji){
-  const src = INGREDIENT_ICON_ASSETS[iconKey];
-  if(!src) return fallbackEmoji || '🥕';
-  return '<img class="ingredient-icon" src="' + src + '" alt="" aria-hidden="true" loading="lazy">';
+function safeIngredientIconAsset(v){
+  v = String(v || '').trim();
+  return /^assets\/ingredients\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
-function foodIconHtml(foodId, fallbackEmoji){
-  return ingredientIconHtml(ingredientIconKeyForFood(foodId), fallbackEmoji);
+function ensureDefaultFoodIconCached(){
+  if(defaultFoodIconCacheStarted) return;
+  defaultFoodIconCacheStarted = true;
+  try{
+    const existing = localStorage.getItem(DEFAULT_FOOD_ICON_STORAGE_KEY);
+    if(existing && existing.indexOf('data:image/') === 0) return;
+  }catch(e){ return; }
+  if(typeof fetch !== 'function' || typeof FileReader === 'undefined') return;
+  fetch(DEFAULT_FOOD_ICON_ASSET)
+    .then(function(res){ return res.ok ? res.blob() : null; })
+    .then(function(blob){
+      if(!blob) return;
+      const reader = new FileReader();
+      reader.onload = function(){
+        try{
+          if(typeof reader.result === 'string' && reader.result.indexOf('data:image/') === 0){
+            localStorage.setItem(DEFAULT_FOOD_ICON_STORAGE_KEY, reader.result);
+          }
+        }catch(e){}
+      };
+      reader.readAsDataURL(blob);
+    })
+    .catch(function(){});
 }
+
+function defaultFoodIconSrc(){
+  try{
+    const cached = localStorage.getItem(DEFAULT_FOOD_ICON_STORAGE_KEY);
+    if(cached && cached.indexOf('data:image/') === 0) return cached;
+  }catch(e){}
+  ensureDefaultFoodIconCached();
+  return DEFAULT_FOOD_ICON_ASSET;
+}
+
+function ingredientIconAssetForFood(food){
+  if(!food) return '';
+  const explicitAsset = safeIngredientIconAsset(food.iconAsset);
+  if(explicitAsset) return explicitAsset;
+  const iconKey = safeIngredientIconKey(food.iconKey);
+  return iconKey ? 'assets/ingredients/' + iconKey + '.png' : '';
+}
+
+function ingredientIconHtml(src){
+  src = safeIngredientIconAsset(src) || defaultFoodIconSrc();
+  return '<img class="ingredient-icon" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" onerror="this.onerror=null;this.src=defaultFoodIconSrc()">';
+}
+
+function foodIconHtml(foodId){
+  return ingredientIconHtml(ingredientIconAssetForFood(FOODS[foodId]));
+}
+
+ensureDefaultFoodIconCached();
 
 function renderLibraryHub(){
   const el = document.getElementById('libraryHubBody');
@@ -445,7 +395,7 @@ function openAddMenu(){
     '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<div style="margin-top:10px">'
     + '<div class="altrow" onclick="openBarcodeScanner()"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Import packaged foods from Open Food Facts</div></div></div>'
-    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">🥕</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food with computed calories from macros</div></div></div>'
+    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">' + ingredientIconHtml('') + '</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food with computed calories from macros</div></div></div>'
     + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">📖</div><div class="at"><div class="an">New recipe</div><div class="ad">Build a recipe from ingredients</div></div></div>'
     + '<div class="altrow" onclick="openFoodSearch()"><div class="ae">＋</div><div class="at"><div class="an">Log food</div><div class="ad">Quick-add something to today</div></div></div>'
     + '</div>';
@@ -994,7 +944,7 @@ function renderLibFoodListMarkup(query){
         + Math.round((f.fat || 0) * factor) + 'g F · '
         + Math.round((f.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
       out += '<div class="altrow" style="cursor:default">'
-        + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
+        + '<div class="ae">' + foodIconHtml(id) + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + '</div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
         + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button>'
@@ -1574,7 +1524,7 @@ function renderRecipeIngredientResults(q){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     return '<div class="altrow" onclick="addIngredientToRecipe(\'' + id + '\')">'
-      + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
       + '<div class="ad">' + Math.round(f.kcal) + ' kcal · ' + f.protein + 'g protein <b>/ ' + per + '</b></div></div>'
       + '</div>';
