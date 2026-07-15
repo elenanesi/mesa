@@ -18,7 +18,9 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 - **D1 changes require three steps.** For schema changes: add a migration under `worker/migrations/`, apply it remotely with Wrangler, then deploy `worker/sync.js`. Afterward, verify with a direct D1 schema/readback command. Client-only Pages deploy is not enough.
 - **Installed PWA cache matters.** Bump `app/sw.js` `CACHE` for every app shell/data change. If a phone looks stale after deploy, suspect the service worker/cache before changing logic again.
 - **Ingredient edits now use `foodOverrides`.** Built-in ingredient edits should not mutate `data/foods.js` at runtime or be forced into `customFoods`. Use synced household overrides (`foodOverrides`) and keep `applyCustomFoods()`, `librarySectionData()`, merge logic, backup/import, and D1 mirror in sync.
+- **Ingredient icons are food data, not renderer logic.** Icon mapping lives on food records (`iconKey`/`iconAsset`) and is mirrored to D1 in `foods.data_json`; do not reintroduce hardcoded ID/name maps in `library.js`. For built-in/global icon metadata changes, deploy Pages AND seed/read back D1 global rows (e.g. verify `oat-milk -> milk`) because a client deploy alone does not rewrite existing D1 catalog rows.
 - **Re-balance must not touch the past.** When changing planner candidate enumeration, compare each plan day to `todayISO()` and exclude dates before today. Logged/skipped locks are not enough because unlogged Monday/Tuesday meals can still be historical.
+- **Do not auto-focus top-level mobile page searches.** iOS/Safari opens the keyboard immediately. Keep auto-focus for explicit picker/search flows where typing is the next action, but not for landing pages such as Library → Ingredients.
 - **Barcode/Open Food Facts in Italy:** prefer the localized Italian OFF endpoint before global endpoints; some products visible on the website return richer nutriments from `it.openfoodfacts.org`.
 - **Icons: do not repeat the weak generated-icon batch.** Codex produced a poor first pass for ingredient watercolor icons; another agent later fixed/replaced them. Future icon work should preserve the repaired assets, inspect contact sheets visually, and use the `watercolor-ingredient-icons` skill only with actual visual QA before wiring/deploying.
 
@@ -77,6 +79,8 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 **Done 2026-07-15** (sw CACHE mesa-v48): **Ingredient edit parity + future-only re-balance** — Ingredients can now be edited from the dedicated Library ingredients page, including built-in ingredients via synced household overrides; edited ingredients show an `edited` badge and can be reset. Week re-balance now ignores dates before today, so a Wednesday re-balance cannot propose changes to Monday or Tuesday.
 
 **Done 2026-07-15** (sw CACHE mesa-v49): **DB-driven watercolor ingredient icons** — moved ingredient icon mapping into `FOODS`/D1 `data_json` via `iconKey`/`iconAsset`, replaced the hardcoded `library.js` mapping, added a generic watercolor default food icon cached in PWA `localStorage`, and kept exact/reused icon keys for the current watercolor set.
+
+**Done 2026-07-15** (sw CACHE mesa-v50): **Ingredients search keyboard fix** — opening Library → Ingredients no longer auto-focuses the search input, so mobile Safari does not open the keyboard until the user taps Search.
 
 **In progress / next:**
 - **Watercolor icons (T2/T4, "Elena generates, agent wires")**: continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png` and setting `iconKey` on the relevant `FOODS` records; no hardcoded icon maps in `library.js`.
