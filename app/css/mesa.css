@@ -118,6 +118,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    44px tap target (ground rule 4), visually quiet so the status text stays the focus. */
 .tag-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:4px;}
 .tag-row .confirmed-tag,.tag-row .skipped-tag{margin-top:0;}
+.tag-controls{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end;}
 .tag-undo{min-height:44px;min-width:64px;padding:0 12px;border:1px solid var(--line);background:#fff;border-radius:12px;font:inherit;font-size:12px;font-weight:700;color:var(--sage-deep);cursor:pointer;}
 .tag-undo:active{transform:scale(.96);}
 

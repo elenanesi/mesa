@@ -450,13 +450,17 @@ function updateWeekActionsForMode(){
 // 'tall' (not 'remove'): the sheet now has a "Best matches" + "All <slot> options" section
 // (FEATURE: swap anything) which can be long — same tall/scrollable treatment as the
 // shopping list and library sheets.
-function openWeekSwap(weekStartDate, dayIndex, slot, person){
-  const ctx = {dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate};
-  swapCtx = {dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate, targetElId: null};
+function openSwapSheetForContext(ctx, targetElId){
+  swapCtx = {dayIndex: ctx.dayIndex, slot: ctx.slot, person: ctx.person, weekStartDate: ctx.weekStartDate, targetElId: targetElId || null};
   document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+  if(typeof attachSwapSearchHandler === 'function') attachSwapSearchHandler();
+}
+
+function openWeekSwap(weekStartDate, dayIndex, slot, person){
+  openSwapSheetForContext({dayIndex: dayIndex, slot: slot, person: person, weekStartDate: weekStartDate}, null);
 }
 
 function toggleMealPin(weekStartDate, dayIndex, slot, person){
@@ -605,11 +609,17 @@ function openSwap(mealKey, targetElId){
   const ctx = fromWeekRow
     ? {dayIndex: recipeDayCtx.dayIndex, slot: recipeDayCtx.slot, person: recipeDayCtx.person, weekStartDate: recipeDayCtx.weekStartDate}
     : resolveSwapContext(mealKey);
-  swapCtx = {dayIndex: ctx.dayIndex, slot: ctx.slot, person: ctx.person, weekStartDate: ctx.weekStartDate, targetElId: targetElId};
-  document.getElementById('sheetBody').innerHTML = buildSwapSheet(ctx);
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
+  openSwapSheetForContext(ctx, targetElId);
+}
+
+function logDateSwapContext(slot){
+  const dateISO = currentLogDateISO();
+  const weekStartDate = mondayOfWeek(dateISO);
+  return {dayIndex: diffDaysISO(dateISO, weekStartDate), slot: slot, person: currentProf, weekStartDate: weekStartDate};
+}
+
+function openLogSwap(slot, targetElId){
+  openSwapSheetForContext(logDateSwapContext(slot), targetElId);
 }
 
 let addMealRecipeCtx = null;
@@ -667,11 +677,13 @@ function mealRecipeOptionRowHtml(id){
     + '</div>';
 }
 
-function openAddMealRecipeSheet(slot){
-  editableWeekPlan(mondayOfWeek(todayISO()));
-  const dayIndex = todayDayIndex();
-  const meal = weekPlan.days[dayIndex].meals[slot];
-  const logged = loggedPlanEntryForSlot(todayISO(), currentProf, slot);
+function openAddMealRecipeSheet(slot, dateISO){
+  dateISO = dateISO || todayISO();
+  const weekStartDate = mondayOfWeek(dateISO);
+  const dayIndex = diffDaysISO(dateISO, weekStartDate);
+  const plan = editableWeekPlan(weekStartDate);
+  const meal = plan.days[dayIndex] && plan.days[dayIndex].meals[slot];
+  const logged = loggedPlanEntryForSlot(dateISO, currentProf, slot);
   const entry = meal && meal[currentProf];
   if(!entry && !logged){ toast('Meal not found'); return; }
   const loggedComponents = logged
@@ -683,7 +695,7 @@ function openAddMealRecipeSheet(slot){
   const allComponents = (loggedComponents || planEntryComponents(entry)).filter(function(c){
     return c && ((c.recipeId && RECIPES_DB[c.recipeId]) || (c.foodId && FOODS[c.foodId]));
   });
-  addMealRecipeCtx = {weekStartDate: weekPlan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
+  addMealRecipeCtx = {weekStartDate: plan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
   const opts = mealRecipeOptions(allComponents);
   // USER FEEDBACK item 3: retitle "Edit X" once the meal already has extras — "Add to X"
   // undersells that this is also where you remove what you added earlier.
@@ -805,7 +817,7 @@ function chooseMealExtraFood(foodId){
   renderLogPlan();
   renderWeek();
   persist();
-  openAddMealRecipeSheet(ctx.slot);
+  openAddMealRecipeSheet(ctx.slot, dateISO);
   toast('＋ Added ' + FOODS[foodId].name);
 }
 
@@ -840,7 +852,7 @@ function removeMealExtraRecipe(recipeId){
   renderLogPlan();
   renderWeek();
   persist();
-  openAddMealRecipeSheet(ctx.slot);
+  openAddMealRecipeSheet(ctx.slot, dateISO);
   toast('✕ Removed ' + title);
 }
 
@@ -862,7 +874,7 @@ function removeMealExtraFood(foodId){
   renderLogPlan();
   renderWeek();
   persist();
-  openAddMealRecipeSheet(ctx.slot);
+  openAddMealRecipeSheet(ctx.slot, dateISO);
   toast('✕ Removed ' + title);
 }
 
@@ -1020,7 +1032,7 @@ function stepMealExtraPortion(recipeId, delta){
   renderLogPlan();
   renderWeek();
   persist();
-  openAddMealRecipeSheet(ctx.slot);
+  openAddMealRecipeSheet(ctx.slot, dateISO);
 }
 
 function stepMealExtraFoodGrams(foodId, delta){
@@ -1057,7 +1069,7 @@ function stepMealExtraFoodGrams(foodId, delta){
   renderLogPlan();
   renderWeek();
   persist();
-  openAddMealRecipeSheet(ctx.slot);
+  openAddMealRecipeSheet(ctx.slot, dateISO);
 }
 
 function closeSheet(){
@@ -1540,8 +1552,9 @@ function renderTodayCardActions(){
     const addAria = (hasExtras ? 'Edit ' : 'Add to ') + label;
     if(status === 'confirmed'){
       wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Logged</span>'
+        + '<span class="tag-controls"><button class="tag-undo" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)">↔ Swap</button>'
         + '<button class="tag-undo" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+addLabel+'</button>'
-        + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
+        + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></span></div>';
     } else if(status === 'skipped'){
       wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
@@ -1599,8 +1612,13 @@ function appendTagRow(card, slot, tagClass, tagText){
   const info = card.querySelector('.info');
   const row = document.createElement('div');
   row.className = 'tag-row';
+  const dateISO = currentLogDateISO();
+  const correctionBtns = tagClass === 'confirmed-tag'
+    ? '<button class="tag-undo" onclick="openLogSwap(\''+slot+'\',\'log-'+slot+'\')">↔ Swap</button>'
+      + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\''+slot+'\',\''+jsAttr(dateISO)+'\')">✎ Edit</button>'
+    : '';
   row.innerHTML = '<span class="'+tagClass+'">'+tagText+'</span>'
-    + '<button class="tag-undo" onclick="undoLogSlot(\''+slot+'\')">↺ Undo</button>';
+    + '<span class="tag-controls">' + correctionBtns + '<button class="tag-undo" onclick="undoLogSlot(\''+slot+'\')">↺ Undo</button></span>';
   info.appendChild(row);
 }
 
@@ -1674,16 +1692,17 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
   // Servings-eaten stepper (FEATURE: recipe servings) — the plan entry's portion is
   // "servings of the recipe", user-adjustable before confirming.
   const portion = (typeof portionOverride === 'number') ? portionOverride : ((activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1);
-  const isTodayLog = currentLogDateISO() === todayISO();
-  const swapAction = isTodayLog ? '<button class="la-swap" onclick="openSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>' : '';
+  const dateISO = currentLogDateISO();
+  const canEditSelectedDate = dateISO <= todayISO();
+  const swapAction = canEditSelectedDate ? '<button class="la-swap" onclick="openLogSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>' : '';
   // USER FEEDBACK item 3: relabel to "Edit" once the meal has extras, same as the Today
   // card's add button — the only path to removing an extra, so it shouldn't read as "add".
   const hasExtras = logSlotView(slot).extras.length > 0;
-  const addAction = isTodayLog ? ('<button class="la-swap" aria-label="'+(hasExtras ? 'Edit ' : 'Add to ')+(SLOT_LABEL[slot] || slot)+'" onclick="openAddMealRecipeSheet(\''+slot+'\')">'+(hasExtras ? '✎ Edit' : '+ Add')+'</button>') : '';
-  const servingStepper = isTodayLog ? '<span class="sv-stepper" style="margin-left:auto">'
-    + '<button onclick="stepMealServings(\''+slot+'\',-0.5)" aria-label="Fewer servings">-</button>'
+  const addAction = canEditSelectedDate ? ('<button class="la-swap" aria-label="'+(hasExtras ? 'Edit ' : 'Add to ')+(SLOT_LABEL[slot] || slot)+'" onclick="openAddMealRecipeSheet(\''+slot+'\',\''+jsAttr(dateISO)+'\')">'+(hasExtras ? '✎ Edit' : '+ Add')+'</button>') : '';
+  const servingStepper = canEditSelectedDate ? '<span class="sv-stepper" style="margin-left:auto">'
+    + '<button onclick="stepMealServings(\''+slot+'\',-0.5,\''+jsAttr(dateISO)+'\')" aria-label="Fewer servings">-</button>'
     + '<span class="sv-val">'+portion+'x</span>'
-    + '<button onclick="stepMealServings(\''+slot+'\',0.5)" aria-label="More servings">+</button>'
+    + '<button onclick="stepMealServings(\''+slot+'\',0.5,\''+jsAttr(dateISO)+'\')" aria-label="More servings">+</button>'
     + '</span>' : '';
   card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
     + '<div class="row between"><span class="t">'+escapeHtml(title)+'</span><span class="kcal">'+kcal+'</span></div>'

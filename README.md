@@ -92,6 +92,8 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 
 **Done 2026-07-15** (sw CACHE mesa-v55): **Log sync tombstone fix** — log tombstones are now timestamped and separated from library tombstones. Re-confirming a meal slot (for example breakfast) clears stale `plan:<slot>` / `skip:<slot>` tombstones, while skip/delete writes a newer tombstone, so confirmed meals, skipped meals, and quick-add foods converge correctly across reinstall/device sync instead of a stale slot tombstone suppressing a newly logged breakfast.
 
+**Done 2026-07-15** (sw CACHE mesa-v56): **Manual swap/correction hardening** — swap search now survives malformed/stale recipe records instead of breaking the bottom sheet, and every swap opener attaches the same non-inline search handler. Manual swaps use the actual meal cell's shared/solo state (not the slot default), update already-confirmed log entries in place, and can target the selected Log date (including yesterday); automatic generation/re-balance still preserves past or logged meals, but explicit user corrections remain allowed.
+
 **In progress / next:**
 - **Watercolor icons (T2/T4, "Elena generates, agent wires")**: for future non-produce gaps, continue replacing fallback ingredients by adding PNGs under `app/assets/ingredients/<iconKey>.png`, setting `iconKey` on the relevant `FOODS` records, bumping `app/sw.js`, and seeding/readback-checking D1; no hardcoded icon maps in `library.js`.
 - Awaiting Elena: confirm Access login + couple sync on the real phones at https://mesa-9y5.pages.dev/app/ → then make GitHub repo private + retire legacy URL in docs.

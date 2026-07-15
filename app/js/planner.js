@@ -1187,8 +1187,9 @@ function swapHtmlAttr(s){
 
 function swapSearchText(id){
   const r = RECIPES_DB[id];
+  if(!r) return '';
   return [
-    r.title,
+    r.title || '',
     recipeSlotList(r).join(' '),
     (r.tags || []).join(' '),
     (r.styles || []).join(' '),
@@ -1241,12 +1242,13 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
 // (the compat getter) is the exact same object, so both names see the swap.
 function applySwap(dayIndex, slot, person, newRecipeId, weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
-  const unit = {dayIndex: dayIndex, slot: slot, shared: !!SHARED[slot], person: person};
+  const meal = plan.days[dayIndex].meals[slot];
+  const unit = {dayIndex: dayIndex, slot: slot, shared: !!(meal && meal.shared), person: person};
   applySwapToPlan(plan, unit, newRecipeId);
-  const r = RECIPES[newRecipeId];
+  const r = RECIPES[newRecipeId] || RECIPES_DB[newRecipeId] || {title: 'Recipe', emoji: '🍽️', tags: []};
   const entry = plan.days[dayIndex].meals[slot][person];
   const view = planEntryView(entry, plan.days[dayIndex].meals[slot].shared);
-  return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: r.tags, kcal: view.kcal, protein: view.protein};
+  return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: r.tags || [], kcal: view.kcal, protein: view.protein};
 }
 
 // Resolves a click on "Swap" (from Today, Log, or the recipe-detail screen) to a
@@ -1262,24 +1264,40 @@ function resolveSwapContext(mealKey){
 
 let swapCtx = null;
 
+function swapRecipeDisplay(id){
+  const r = RECIPES[id] || RECIPES_DB[id] || {};
+  return {
+    title: r.title || 'Recipe',
+    emoji: r.emoji || '🍽️',
+    tags: Array.isArray(r.tags) ? r.tags : []
+  };
+}
+
+function swapTagsHtml(tags){
+  return (Array.isArray(tags) ? tags : []).map(function(t){
+    const label = Array.isArray(t) ? t[1] : t;
+    return '<span class="pill ghost">' + escapeHtml(label || '') + '</span>';
+  }).join('');
+}
+
 // Renders one alternative row — shared by both sheet sections so "Best matches" and "All
 // options" look identical (same emoji/title/kcal-delta/protein-delta/tags layout); `i` is
 // the row's index into the COMBINED alts array swapCtx.alts holds, so chooseSwap(i) works
 // identically no matter which section the tap came from.
 function swapAltRowHtml(a, i){
-  const r = RECIPES[a.id];
+  const r = swapRecipeDisplay(a.id);
   const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   return '<div class="altrow" onclick="chooseSwap(' + i + ')">'
     + '<div class="ae">' + r.emoji + '</div>'
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
-    + '<div class="tags">' + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
+    + '<div class="tags">' + swapTagsHtml(r.tags) + '</div>'
     + '</div></div>';
 }
 
 function swapRecipeRowHtml(a){
-  const r = RECIPES[a.id];
+  const r = swapRecipeDisplay(a.id);
   const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   const yours = a.custom ? '<span class="pill terra">Yours</span>' : '';
@@ -1288,25 +1306,30 @@ function swapRecipeRowHtml(a){
     + '<div class="ae">' + r.emoji + '</div>'
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
-    + '<div class="tags">' + yours + avoid + r.tags.map(function(t){ return '<span class="pill ghost">' + t[1] + '</span>'; }).join('') + '</div>'
+    + '<div class="tags">' + yours + avoid + swapTagsHtml(r.tags) + '</div>'
     + '</div></div>';
 }
 
 function buildSwapSearchResults(){
-  if(!swapCtx) return '';
-  const q = swapCtx.searchQuery || '';
-  const slotLabel = (SLOT_LABEL[swapCtx.slot] || swapCtx.slot).toLowerCase();
-  if(String(q).trim().length < 2){
-    return '<p class="sub">Search by recipe name or tag. Custom recipes are included with built-ins.</p>';
+  try{
+    if(!swapCtx) return '';
+    const q = swapCtx.searchQuery || '';
+    const slotLabel = (SLOT_LABEL[swapCtx.slot] || swapCtx.slot).toLowerCase();
+    if(String(q).trim().length < 2){
+      return '<p class="sub">Search by recipe name or tag. Custom recipes are included with built-ins.</p>';
+    }
+    const matches = buildSwapSearchOptions(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, q, swapCtx.weekStartDate);
+    if(!matches.length){
+      return '<p class="sub">No ' + slotLabel + ' recipe matches that search.</p>';
+    }
+    const shown = matches.slice(0, 8);
+    let html = '<p class="sub" style="margin-top:8px">' + matches.length + ' match' + (matches.length === 1 ? '' : 'es') + (matches.length > shown.length ? ' · showing first ' + shown.length : '') + '</p>';
+    html += shown.map(swapRecipeRowHtml).join('');
+    return html;
+  } catch(err){
+    console.warn('Swap search failed', err);
+    return '<p class="sub">Search hit a saved recipe it could not read. Try another term, or check the recipe in Library.</p>';
   }
-  const matches = buildSwapSearchOptions(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, q, swapCtx.weekStartDate);
-  if(!matches.length){
-    return '<p class="sub">No ' + slotLabel + ' recipe matches that search.</p>';
-  }
-  const shown = matches.slice(0, 8);
-  let html = '<p class="sub" style="margin-top:8px">' + matches.length + ' match' + (matches.length === 1 ? '' : 'es') + (matches.length > shown.length ? ' · showing first ' + shown.length : '') + '</p>';
-  html += shown.map(swapRecipeRowHtml).join('');
-  return html;
 }
 
 function onSwapRecipeSearch(value){
@@ -1314,6 +1337,12 @@ function onSwapRecipeSearch(value){
   swapCtx.searchQuery = value;
   const el = document.getElementById('swapSearchResults');
   if(el) el.innerHTML = buildSwapSearchResults();
+}
+
+function attachSwapSearchHandler(){
+  const input = document.getElementById('swapRecipeSearchInput');
+  if(!input) return;
+  input.oninput = function(){ onSwapRecipeSearch(this.value); };
 }
 
 // FEATURE ("Swap anything"): the sheet has a short "Best matches" section and a search
@@ -1337,7 +1366,7 @@ function buildSwapSheet(ctx){
   }
 
   html += '<div class="shop-cat">Search ' + slotLabel + ' recipes</div>'
-    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapRecipeSearchInput" placeholder="Search recipes, tags, yours..." value="' + swapHtmlAttr(swapCtx ? swapCtx.searchQuery || '' : '') + '" oninput="onSwapRecipeSearch(this.value)" autocomplete="off">'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapRecipeSearchInput" placeholder="Search recipes, tags, yours..." value="' + swapHtmlAttr(swapCtx ? swapCtx.searchQuery || '' : '') + '" autocomplete="off">'
     + '<div id="swapSearchResults">' + buildSwapSearchResults() + '</div>';
   return html;
 }
@@ -1353,11 +1382,6 @@ function chooseSwapRecipe(recipeId, alt){
   if(!swapCtx || !RECIPES_DB[recipeId]) return;
   const resolvedWeekStartDate = swapCtx.weekStartDate || mondayOfWeek(todayISO());
   const swapDateISO = addDaysISO(resolvedWeekStartDate, swapCtx.dayIndex);
-  if(resolvedWeekStartDate === mondayOfWeek(todayISO()) && loggedSlotLocked(swapDateISO, swapCtx.person, swapCtx.slot)){
-    closeSheet();
-    toast('Already logged — edit it from Eaten today, or undo it first');
-    return;
-  }
   if(!alt){
     const matches = buildSwapSearchOptions(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, recipeId, swapCtx.weekStartDate);
     alt = matches.filter(function(a){ return a.id === recipeId; })[0];
@@ -1377,18 +1401,17 @@ function chooseSwapRecipe(recipeId, alt){
   // applySwap()'s own default keeps that behavior byte-for-byte unchanged.
   const weekStartDate = swapCtx.weekStartDate;
   const view = applySwap(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, alt.id, weekStartDate);
+  const swappedPlan = ensureWeekPlan(weekStartDate);
 
-  // If this slot is already confirmed today (any slot — breakfast included since FIX 1
-  // made it a normal meal), correct its LogEntry in place (task D1: a swap edits today's
-  // history, it never duplicates it — logPlanEntry/upsertLogEntry replace by slot). Only
-  // relevant when the swap actually landed on the CURRENT week — a swap on next week's
-  // plan has no log entry to correct (nothing is logged for a future date).
+  // If this slot is already confirmed for the affected date, correct its LogEntry in
+  // place. Manual user swaps are allowed for past days (for example yesterday); automatic
+  // generation/re-balance still avoids past/logged slots via enumerateSwapUnits().
   const isCurrentWeek = resolvedWeekStartDate === mondayOfWeek(todayISO());
-  if(isCurrentWeek && logHistory[swapDateISO]){
+  if(logHistory[swapDateISO]){
     // A shared-slot swap changes BOTH people's dish (applySwapToPlan rewrites
     // m.elena and m.partner), so correct every person's confirmed entry — not just
     // the swapper's — or the other person's Log card keeps the old dish forever.
-    const meal = weekPlan.days[swapCtx.dayIndex].meals[swapCtx.slot];
+    const meal = swappedPlan.days[swapCtx.dayIndex].meals[swapCtx.slot];
     const people = meal.shared ? ['elena', 'partner'] : [swapCtx.person];
     people.forEach(function(person){
       if(slotLogStatus(swapDateISO, person, swapCtx.slot) !== 'confirmed') return;
@@ -1420,13 +1443,13 @@ function chooseSwapRecipe(recipeId, alt){
 // plates their own amount, shared dish or not). kcal/protein recompute from the
 // per-serving base; a slot already confirmed today gets its LogEntry corrected in
 // place (same contract as a swap). 0.5-serving steps, 0.5–4.
-function stepMealServings(slot, delta){
-  if(slotLogStatus(todayISO(), currentProf, slot) === 'confirmed'){
-    toast('Already logged — edit it from Eaten today, or undo it first');
-    return;
-  }
-  editableWeekPlan(mondayOfWeek(todayISO()));
-  const meal = weekPlan.days[todayDayIndex()].meals[slot];
+function stepMealServings(slot, delta, dateISO){
+  dateISO = dateISO || todayISO();
+  const weekStartDate = mondayOfWeek(dateISO);
+  const dayIndex = diffDaysISO(dateISO, weekStartDate);
+  const plan = editableWeekPlan(weekStartDate);
+  const meal = plan.days[dayIndex] && plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[currentProf]) return;
   const entry = meal[currentProf];
   const next = Math.max(0.5, Math.min(4, +(entry.portion + delta).toFixed(1)));
   if(next === entry.portion) return;
@@ -1436,8 +1459,8 @@ function stepMealServings(slot, delta){
   if(meal.shared){ meal.t = Date.now(); } else { entry.t = Date.now(); delete meal.t; }
   entry.portion = next;
   refreshPlanEntryNutrition(entry);
-  if(slotLogStatus(todayISO(), currentProf, slot) === 'confirmed'){
-    logPlanEntry(todayISO(), currentProf, slot, entry.recipeId, entry.portion, planEntryComponents(entry));
+  if(slotLogStatus(dateISO, currentProf, slot) === 'confirmed'){
+    logPlanEntry(dateISO, currentProf, slot, entry.recipeId, entry.portion, planEntryComponents(entry));
   }
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
