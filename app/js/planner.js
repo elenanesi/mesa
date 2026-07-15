@@ -105,6 +105,7 @@ function candidatesFor(slot, styleKey, avoidList, opts){
     const r = RECIPES_DB[id];
     return !r.occasional
       && (opts.includeThumbsDown || recipePref(id) !== 'down')
+      && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && recipeSlotList(r).indexOf(slot) !== -1
       && r.styles.indexOf(styleKey) !== -1
       && !recipeHitsAvoid(r, avoidList);
@@ -118,6 +119,8 @@ function planEntryComponents(entry){
   (entry.extras || []).forEach(function(extra){
     if(extra && extra.recipeId && RECIPES_DB[extra.recipeId]){
       components.push({recipeId: extra.recipeId, portion: (typeof extra.portion === 'number' && extra.portion > 0) ? extra.portion : 1});
+    } else if(extra && extra.foodId && FOODS[extra.foodId]){
+      components.push({foodId: extra.foodId, grams: (typeof extra.grams === 'number' && extra.grams > 0) ? extra.grams : 100});
     }
   });
   return components;
@@ -233,6 +236,31 @@ function addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, recipeId){
   return true;
 }
 
+function addExtraFoodToMeal(weekStartDate, dayIndex, slot, person, foodId, grams){
+  const plan = editableWeekPlan(weekStartDate);
+  if(!plan || !plan.days[dayIndex] || !FOODS[foodId]) return false;
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[person]) return false;
+  const entry = meal[person];
+  const amount = (typeof grams === 'number' && grams > 0) ? grams : 100;
+  entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
+  entry.extras.push({foodId: foodId, grams: amount});
+  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
+  refreshPlanEntryNutrition(entry);
+  if(meal.shared && meal.partner && person === 'elena'){
+    meal.partner.extras = Array.isArray(meal.partner.extras) ? meal.partner.extras : [];
+    meal.partner.extras.push({foodId: foodId, grams: amount});
+    refreshPlanEntryNutrition(meal.partner);
+  }
+  if(meal.shared && meal.elena && person === 'partner'){
+    meal.elena.extras = Array.isArray(meal.elena.extras) ? meal.elena.extras : [];
+    meal.elena.extras.push({foodId: foodId, grams: amount});
+    refreshPlanEntryNutrition(meal.elena);
+  }
+  markWeekPlanEdited(plan);
+  return true;
+}
+
 // Removes the LAST occurrence of recipeId from entry.extras (mirrors addExtraRecipeToMeal's
 // push — duplicates are allowed, so a removal takes back the most-recently-added match).
 // Returns true if something was actually removed.
@@ -240,6 +268,17 @@ function removeLastExtra(entry, recipeId){
   if(!entry || !Array.isArray(entry.extras)) return false;
   for(let i = entry.extras.length - 1; i >= 0; i--){
     if(entry.extras[i] && entry.extras[i].recipeId === recipeId){
+      entry.extras.splice(i, 1);
+      return true;
+    }
+  }
+  return false;
+}
+
+function removeLastFoodExtra(entry, foodId){
+  if(!entry || !Array.isArray(entry.extras)) return false;
+  for(let i = entry.extras.length - 1; i >= 0; i--){
+    if(entry.extras[i] && entry.extras[i].foodId === foodId){
       entry.extras.splice(i, 1);
       return true;
     }
@@ -270,6 +309,27 @@ function removeExtraRecipeFromMeal(weekStartDate, dayIndex, slot, person, recipe
   }
   if(meal.shared && meal.elena && person === 'partner'){
     removeLastExtra(meal.elena, recipeId);
+    refreshPlanEntryNutrition(meal.elena);
+  }
+  markWeekPlanEdited(plan);
+  return true;
+}
+
+function removeExtraFoodFromMeal(weekStartDate, dayIndex, slot, person, foodId){
+  const plan = editableWeekPlan(weekStartDate);
+  if(!plan || !plan.days[dayIndex]) return false;
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[person]) return false;
+  const entry = meal[person];
+  if(!removeLastFoodExtra(entry, foodId)) return false;
+  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
+  refreshPlanEntryNutrition(entry);
+  if(meal.shared && meal.partner && person === 'elena'){
+    removeLastFoodExtra(meal.partner, foodId);
+    refreshPlanEntryNutrition(meal.partner);
+  }
+  if(meal.shared && meal.elena && person === 'partner'){
+    removeLastFoodExtra(meal.elena, foodId);
     refreshPlanEntryNutrition(meal.elena);
   }
   markWeekPlanEdited(plan);
@@ -310,6 +370,42 @@ function setExtraRecipePortion(weekStartDate, dayIndex, slot, person, recipeId, 
       if(meal.elena.extras[i] && meal.elena.extras[i].recipeId === recipeId){ eIdx = i; break; }
     }
     if(eIdx !== -1) meal.elena.extras[eIdx].portion = newPortion;
+    refreshPlanEntryNutrition(meal.elena);
+  }
+  markWeekPlanEdited(plan);
+  return true;
+}
+
+function setExtraFoodGrams(weekStartDate, dayIndex, slot, person, foodId, grams){
+  const plan = editableWeekPlan(weekStartDate);
+  if(!plan || !plan.days[dayIndex]) return false;
+  const meal = plan.days[dayIndex].meals[slot];
+  if(!meal || !meal[person]) return false;
+  const entry = meal[person];
+  if(!Array.isArray(entry.extras)) return false;
+  let idx = -1;
+  for(let i = entry.extras.length - 1; i >= 0; i--){
+    if(entry.extras[i] && entry.extras[i].foodId === foodId){ idx = i; break; }
+  }
+  if(idx === -1) return false;
+  const amount = Math.max(1, Math.min(2000, Math.round(grams)));
+  entry.extras[idx].grams = amount;
+  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
+  refreshPlanEntryNutrition(entry);
+  if(meal.shared && meal.partner && person === 'elena'){
+    let pIdx = -1;
+    for(let i = meal.partner.extras.length - 1; i >= 0; i--){
+      if(meal.partner.extras[i] && meal.partner.extras[i].foodId === foodId){ pIdx = i; break; }
+    }
+    if(pIdx !== -1) meal.partner.extras[pIdx].grams = amount;
+    refreshPlanEntryNutrition(meal.partner);
+  }
+  if(meal.shared && meal.elena && person === 'partner'){
+    let eIdx = -1;
+    for(let i = meal.elena.extras.length - 1; i >= 0; i--){
+      if(meal.elena.extras[i] && meal.elena.extras[i].foodId === foodId){ eIdx = i; break; }
+    }
+    if(eIdx !== -1) meal.elena.extras[eIdx].grams = amount;
     refreshPlanEntryNutrition(meal.elena);
   }
   markWeekPlanEdited(plan);
@@ -965,11 +1061,23 @@ function computeShoppingList(weekStartDate){
     });
     (r.toTaste || []).forEach(function(t){ staples[capitalizeFirst(t)] = true; });
   }
+  function addFood(foodId, grams){
+    const food = FOODS[foodId];
+    if(!food || !(grams > 0)) return;
+    const name = food.name;
+    if(food.unit === 'piece'){
+      if(!totals[name]) totals[name] = {qty: 0, unit: ''};
+      totals[name].qty += grams / food.avgG;
+    } else {
+      if(!totals[name]) totals[name] = {qty: 0, unit: food.unit};
+      totals[name].qty += grams;
+    }
+  }
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      planEntryComponents(m.elena).forEach(function(c){ addRecipe(c.recipeId, c.portion); });
-      planEntryComponents(m.partner).forEach(function(c){ addRecipe(c.recipeId, c.portion); });
+      planEntryComponents(m.elena).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion); else addFood(c.foodId, c.grams); });
+      planEntryComponents(m.partner).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion); else addFood(c.foodId, c.grams); });
     });
   });
   return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate};
@@ -1115,6 +1223,9 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
       kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
   });
   scored.sort(function(a, b){
+    const aFav = recipePref(a.id) === 'favorite';
+    const bFav = recipePref(b.id) === 'favorite';
+    if(aFav !== bFav) return aFav ? -1 : 1;
     if(a.custom !== b.custom) return a.custom ? -1 : 1;
     if(a.avoidHit !== b.avoidHit) return a.avoidHit ? 1 : -1;
     if(a.title !== b.title) return a.title < b.title ? -1 : 1;

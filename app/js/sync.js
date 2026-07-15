@@ -397,6 +397,7 @@ function detectDirtySections(){
 // connection yet, and a fresh boot needs to catch up on whatever the other phone did while
 // this one was closed.
 let lastSyncedRev = {};
+let lastMirroredCatalogSignature = null;
 
 // state.js:persist() hooks — see that function's doc for why before/after matters.
 function onMesaBeforePersist(){ detectDirtySections(); }
@@ -432,6 +433,68 @@ function buildSyncPayload(){
     };
   });
   return payload;
+}
+
+function buildLibraryCatalogPayload(){
+  const foods = Object.keys(FOODS).map(function(id){
+    const f = FOODS[id];
+    const isCustom = !!customFoods[id];
+    return {
+      id: id,
+      source: isCustom ? 'custom' : 'builtin',
+      name: f.name || id,
+      category: f.cat || '',
+      season: typeof foodSeason === 'function' ? foodSeason(f) : (f.season || 'evergreen'),
+      updatedAt: isCustom && typeof f.u === 'number' ? f.u : 0,
+      data: clone(f)
+    };
+  });
+  const recipes = Object.keys(RECIPES_DB).map(function(id){
+    const r = RECIPES_DB[id];
+    const source = customRecipes[id] ? 'custom' : (recipeOverrides[id] ? 'override' : 'builtin');
+    return {
+      id: id,
+      source: source,
+      title: r.title || id,
+      primarySlot: r.slot || '',
+      season: typeof recipeSeason === 'function' ? recipeSeason(r) : (r.season || 'evergreen'),
+      updatedAt: (source !== 'builtin' && typeof r.u === 'number') ? r.u : 0,
+      data: clone(r)
+    };
+  });
+  return {
+    foods: foods,
+    recipes: recipes,
+    recipePrefs: clone(recipePrefs),
+    deletedFoods: clone(deletedFoods),
+    deletedRecipes: clone(deletedRecipes)
+  };
+}
+
+function catalogPayloadSignature(payload){
+  return JSON.stringify({
+    foods: payload.foods.map(function(f){ return [f.id, f.source, f.updatedAt, f.season, f.data && f.data.name]; }),
+    recipes: payload.recipes.map(function(r){ return [r.id, r.source, r.updatedAt, r.season, r.data && r.data.title]; }),
+    recipePrefs: payload.recipePrefs,
+    deletedFoods: payload.deletedFoods,
+    deletedRecipes: payload.deletedRecipes
+  });
+}
+
+function mirrorLibraryCatalogToD1(){
+  if(!syncState.code) return;
+  const payload = buildLibraryCatalogPayload();
+  const sig = catalogPayloadSignature(payload);
+  if(sig === lastMirroredCatalogSignature) return;
+  lastMirroredCatalogSignature = sig;
+  fetch(SYNC_URL + '/library/' + encodeURIComponent(syncState.code), {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload)
+  }).catch(function(err){
+    lastMirroredCatalogSignature = null;
+    console.warn('Mesa sync: D1 library mirror failed, will retry later', err);
+  });
 }
 
 function seedSyncBookkeeping(rev){
@@ -713,6 +776,7 @@ function performSync(manual){
     syncState.lastSyncedAt = Date.now();
     persist(); // writes the updated syncState + any merged section data
     postSyncRerender(changed);
+    mirrorLibraryCatalogToD1();
     if(manual) toast('✓ Synced with your household');
   }).catch(function(err){
     console.warn('Mesa sync: request failed, will retry automatically', err);

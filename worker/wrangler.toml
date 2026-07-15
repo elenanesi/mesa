@@ -10,3 +10,8 @@ compatibility_date = "2026-07-13"
 kv_namespaces = [
   { binding = "MESA_KV", id = "2f868b0b17374dffaef6798410c0ab38" }
 ]
+
+[[d1_databases]]
+binding = "MESA_DB"
+database_name = "mesa-library"
+database_id = "660c50ce-13b5-433f-a00b-68349ac5e851"

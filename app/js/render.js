@@ -48,13 +48,13 @@ function recipeServingContextFor(key){
     const dateISO = day.date || addDaysISO(plan.weekStartDate, dayIndex);
     const logged = loggedPlanEntryForSlot(dateISO, person, slot);
     if(logged && logged.ref === key){
-      return {slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged'};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged'};
     }
     if(meal.shared && meal.recipeId === key){
-      return {slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan'};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan'};
     }
     if(meal[person] && meal[person].recipeId === key){
-      return {slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan'};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan'};
     }
     return null;
   }
@@ -114,7 +114,64 @@ function adjServe(who, delta){
   else if(who === 'andrea'){ svM = Math.min(3, Math.max(0.5, +(svM + delta).toFixed(1))); }
   else { svS = Math.min(4, Math.max(0.5, +(svS + delta).toFixed(1))); }
   updateServings();
+  applyRecipeServingOverride();
   persist();
+}
+
+function applyRecipeServingOverride(){
+  if(!recipeServingCtx || !recipeServingCtx.slot) return;
+  const dateISO = recipeServingCtx.dateISO || todayISO();
+  const slot = recipeServingCtx.slot;
+
+  if(recipeServingCtx.source === 'logged'){
+    const logged = loggedPlanEntryForSlot(dateISO, recipeServingCtx.person || currentProf, slot);
+    if(!logged || logged.ref !== currentRecipeKey) return;
+    const portion = recipeServingCtx.shared
+      ? (currentProf === 'partner' ? svM : svE)
+      : svS;
+    const components = Array.isArray(logged.components) && logged.components.length
+      ? logged.components.slice()
+      : [{recipeId: logged.ref, portion: logged.portion || 1}];
+    components[0] = {recipeId: currentRecipeKey, portion: portion};
+    logPlanEntry(dateISO, recipeServingCtx.person || currentProf, slot, currentRecipeKey, portion, components);
+    refreshAfterRecipeServingOverride(dateISO);
+    return;
+  }
+
+  const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
+  const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+  const plan = editableWeekPlan(weekStartDate);
+  const meal = plan && plan.days && plan.days[dayIndex] && plan.days[dayIndex].meals && plan.days[dayIndex].meals[slot];
+  if(!meal) return;
+
+  if(recipeServingCtx.shared && meal.shared && meal.recipeId === currentRecipeKey){
+    meal.elena.portion = svE;
+    meal.partner.portion = svM;
+    refreshPlanEntryNutrition(meal.elena);
+    refreshPlanEntryNutrition(meal.partner);
+    meal.t = Date.now();
+  } else {
+    const person = recipeServingCtx.person || currentProf;
+    const entry = meal[person];
+    if(!entry || entry.recipeId !== currentRecipeKey) return;
+    entry.portion = svS;
+    refreshPlanEntryNutrition(entry);
+    entry.t = Date.now();
+    if(!meal.shared) delete meal.t;
+  }
+  refreshAfterRecipeServingOverride(dateISO);
+}
+
+function refreshAfterRecipeServingOverride(dateISO){
+  if(dateISO === todayISO()){
+    activeMenu = computeActiveMenu();
+    recomputeConsumed(currentProf);
+    recomputeProf(currentProf);
+    refreshRingAndBars();
+    renderTodayMeals();
+  }
+  renderLogPlan();
+  renderWeek();
 }
 
 function updateServings(){
@@ -556,6 +613,7 @@ function openSwap(mealKey, targetElId){
 }
 
 let addMealRecipeCtx = null;
+let addMealFoodQuery = '';
 
 // (b)/(a) fix: the sheet is now three sections instead of one undifferentiated, slot-
 // filtered pile — "In this meal" (with a remove control per extra), "Sides", and "Full
@@ -564,16 +622,39 @@ let addMealRecipeCtx = null;
 // `components` is the meal's CURRENT components (base + extras) so both pick lists exclude
 // what's already in — same resolution openAddMealRecipeSheet already had.
 function mealTitleSort(a, b){
+  const aFav = recipePrefs[a] === 'favorite';
+  const bFav = recipePrefs[b] === 'favorite';
+  if(aFav !== bFav) return aFav ? -1 : 1;
   return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
 }
 function mealRecipeOptions(components){
   const used = {};
-  (components || []).forEach(function(c){ used[c.recipeId] = true; });
+  (components || []).forEach(function(c){ if(c.recipeId) used[c.recipeId] = true; });
   const ids = Object.keys(RECIPES_DB).filter(function(id){ return !used[id]; });
   return {
     sides: ids.filter(function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') !== -1; }).sort(mealTitleSort),
     full: ids.filter(function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') === -1; }).sort(mealTitleSort)
   };
+}
+
+function componentTitle(c){
+  if(c && c.recipeId && RECIPES[c.recipeId]) return RECIPES[c.recipeId].title;
+  if(c && c.foodId && FOODS[c.foodId]) return FOODS[c.foodId].name;
+  return null;
+}
+
+function componentNutrition(c){
+  if(c && c.recipeId) return roundedNutritionTotals(recipeNutrition(c.recipeId, c.portion).totals);
+  if(c && c.foodId) return roundedNutritionTotals(foodMacros(c.foodId, c.grams));
+  return roundedNutritionTotals(null);
+}
+
+function defaultMealFoodGrams(foodId){
+  const food = FOODS[foodId];
+  if(!food) return 100;
+  if(food.unit === 'piece') return food.avgG || 50;
+  if(food.unit === 'ml') return 200;
+  return 100;
 }
 
 function mealRecipeOptionRowHtml(id){
@@ -599,36 +680,52 @@ function openAddMealRecipeSheet(slot){
   // Guardrail: filter gracefully if RECIPES_DB is ever missing an id a stored component
   // still points to (e.g. a since-removed recipe) rather than rendering a broken row.
   const components = (loggedComponents || planEntryComponents(entry)).filter(function(c){ return c && RECIPES_DB[c.recipeId]; });
+  const allComponents = (loggedComponents || planEntryComponents(entry)).filter(function(c){
+    return c && ((c.recipeId && RECIPES_DB[c.recipeId]) || (c.foodId && FOODS[c.foodId]));
+  });
   addMealRecipeCtx = {weekStartDate: weekPlan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
-  const opts = mealRecipeOptions(components);
+  const opts = mealRecipeOptions(allComponents);
   // USER FEEDBACK item 3: retitle "Edit X" once the meal already has extras — "Add to X"
   // undersells that this is also where you remove what you added earlier.
-  const sheetHasExtras = components.length > 1;
+  const sheetHasExtras = allComponents.length > 1;
   const sheetTitle = (sheetHasExtras ? 'Edit ' : 'Add to ') + (SLOT_LABEL[slot] || slot);
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + sheetTitle + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub" style="margin-top:6px">See what’s in this meal, add a side or a full recipe, or remove something you added earlier. Mesa recalculates the meal’s calories and nutrients either way.</p>';
+    + '<p class="sub" style="margin-top:6px">See what’s in this meal, add plain ingredients, a side or a full recipe, or remove something you added earlier. Mesa recalculates the meal’s calories and nutrients either way.</p>';
 
   html += '<div class="shop-cat">In this meal</div>';
-  components.forEach(function(c, i){
-    const r = RECIPES_DB[c.recipeId];
-    const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
-    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, portion).totals);
+  allComponents.forEach(function(c, i){
+    const isRecipe = !!c.recipeId;
+    const r = isRecipe ? RECIPES_DB[c.recipeId] : null;
+    const food = c.foodId ? FOODS[c.foodId] : null;
+    const title = isRecipe ? r.title : food.name;
+    const emoji = isRecipe ? r.emoji : foodIconHtml(c.foodId, '🥄');
+    const nut = componentNutrition(c);
     const isBase = i === 0;
     // Extras get a 0.5-step portion stepper (base has its own steppers elsewhere on the
     // serving screen, so it's left at its plain "Base ·" label here).
-    const stepper = isBase ? '' : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
-      + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',-0.5)" aria-label="Fewer servings of ' + htmlAttr(r.title) + '">-</button>'
-      + '<span class="sv-val">' + portion + 'x</span>'
-      + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',0.5)" aria-label="More servings of ' + htmlAttr(r.title) + '">+</button>'
-      + '</span>');
+    const stepper = isBase ? '' : (isRecipe
+      ? ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
+        + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',-0.5)" aria-label="Fewer servings of ' + htmlAttr(title) + '">-</button>'
+        + '<span class="sv-val">' + ((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x</span>'
+        + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',0.5)" aria-label="More servings of ' + htmlAttr(title) + '">+</button>'
+        + '</span>')
+      : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
+        + '<button onclick="event.stopPropagation();stepMealExtraFoodGrams(\'' + c.foodId + '\',-10)" aria-label="Less ' + htmlAttr(title) + '">-</button>'
+        + '<span class="sv-val">' + foodAmountLabel(food, c.grams) + '</span>'
+        + '<button onclick="event.stopPropagation();stepMealExtraFoodGrams(\'' + c.foodId + '\',10)" aria-label="More ' + htmlAttr(title) + '">+</button>'
+        + '</span>'));
     html += '<div class="altrow" style="cursor:default">'
-      + '<div class="ae">' + r.emoji + '</div>'
-      + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
+      + '<div class="ae">' + emoji + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
       + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
       + stepper
-      + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="event.stopPropagation();removeMealExtraRecipe(\'' + c.recipeId + '\')">✕ Remove</button>')
+      + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="event.stopPropagation();' + (isRecipe ? "removeMealExtraRecipe('" + c.recipeId + "')" : "removeMealExtraFood('" + c.foodId + "')") + '">✕ Remove</button>')
       + '</div>';
   });
+
+  html += '<div class="shop-cat">Ingredients</div>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="mealFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(addMealFoodQuery) + '" oninput="onMealFoodSearch(this.value)" autocomplete="off">'
+    + '<div id="mealFoodResults" style="margin-top:4px">' + renderMealFoodResults(addMealFoodQuery) + '</div>';
 
   html += '<div class="shop-cat">Sides</div>';
   html += opts.sides.length ? opts.sides.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No side recipes available.</p>';
@@ -640,6 +737,29 @@ function openAddMealRecipeSheet(slot){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+}
+
+function renderMealFoodResults(q){
+  q = (q || '').trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:6px">Type at least 2 letters to add plain foods.</p>';
+  const ids = searchFoods(q).slice(0, 12);
+  if(!ids.length) return '<p class="sub" style="margin-top:6px">No ingredients match “' + escapeHtml(q) + '”.</p>';
+  return ids.map(function(id){
+    const f = FOODS[id];
+    const grams = defaultMealFoodGrams(id);
+    const nut = roundedNutritionTotals(foodMacros(id, grams));
+    return '<div class="altrow" onclick="chooseMealExtraFood(\'' + id + '\')">'
+      + '<div class="ae">' + foodIconHtml(id, '🥄') + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
+      + '<div class="ad">' + foodAmountLabel(f, grams) + ' · ' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function onMealFoodSearch(value){
+  addMealFoodQuery = value;
+  const el = document.getElementById('mealFoodResults');
+  if(el) el.innerHTML = renderMealFoodResults(value);
 }
 
 function chooseMealExtraRecipe(recipeId){
@@ -664,6 +784,29 @@ function chooseMealExtraRecipe(recipeId){
   persist();
   closeSheet();
   toast('＋ Added ' + RECIPES_DB[recipeId].title);
+}
+
+function chooseMealExtraFood(foodId){
+  if(!addMealRecipeCtx || !FOODS[foodId]) return;
+  const ctx = addMealRecipeCtx;
+  const grams = defaultMealFoodGrams(foodId);
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  if(ctx.logged){
+    addFoodExtraToLoggedMeal(dateISO, ctx.person, ctx.slot, foodId, grams);
+    addExtraFoodToMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId, grams);
+  } else {
+    if(!addExtraFoodToMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId, grams)) return;
+  }
+  addMealFoodQuery = '';
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  openAddMealRecipeSheet(ctx.slot);
+  toast('＋ Added ' + FOODS[foodId].name);
 }
 
 // (b) fix: owner complaint — once an extra (e.g. Greek salad + cucumber salad alongside
@@ -701,6 +844,28 @@ function removeMealExtraRecipe(recipeId){
   toast('✕ Removed ' + title);
 }
 
+function removeMealExtraFood(foodId){
+  if(!addMealRecipeCtx) return;
+  const ctx = addMealRecipeCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  const title = FOODS[foodId] ? FOODS[foodId].name : 'item';
+  if(ctx.logged){
+    if(!removeFoodExtraFromLoggedMeal(dateISO, ctx.person, ctx.slot, foodId)) return;
+    removeExtraFoodFromMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId);
+  } else {
+    if(!removeExtraFoodFromMeal(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId)) return;
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  openAddMealRecipeSheet(ctx.slot);
+  toast('✕ Removed ' + title);
+}
+
 function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
@@ -708,6 +873,21 @@ function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
     ? logged.components.slice()
     : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
   components.push({recipeId: recipeId, portion: 1});
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
+  logged.components = components;
+  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
+  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.u = Date.now();
+  return true;
+}
+
+function addFoodExtraToLoggedMeal(dateISO, person, slot, foodId, grams){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = Array.isArray(logged.components) && logged.components.length
+    ? logged.components.slice()
+    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  components.push({foodId: foodId, grams: grams});
   const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
@@ -740,6 +920,26 @@ function removeExtraFromLoggedMeal(dateISO, person, slot, recipeId){
   return true;
 }
 
+function removeFoodExtraFromLoggedMeal(dateISO, person, slot, foodId){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = Array.isArray(logged.components) && logged.components.length
+    ? logged.components.slice()
+    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  let idx = -1;
+  for(let i = components.length - 1; i >= 1; i--){
+    if(components[i] && components[i].foodId === foodId){ idx = i; break; }
+  }
+  if(idx === -1) return false;
+  components.splice(idx, 1);
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
+  logged.components = components;
+  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
+  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.u = Date.now();
+  return true;
+}
+
 // Mirror of removeExtraFromLoggedMeal — adjusts the portion of the LAST matching
 // component (never index 0, the base recipe) and recomputes totals the deterministic way.
 function setExtraPortionInLoggedMeal(dateISO, person, slot, recipeId, newPortion){
@@ -754,6 +954,26 @@ function setExtraPortionInLoggedMeal(dateISO, person, slot, recipeId, newPortion
   }
   if(idx === -1) return false;
   components[idx] = {recipeId: recipeId, portion: newPortion};
+  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
+  logged.components = components;
+  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
+  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
+  logged.u = Date.now();
+  return true;
+}
+
+function setFoodExtraGramsInLoggedMeal(dateISO, person, slot, foodId, grams){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = Array.isArray(logged.components) && logged.components.length
+    ? logged.components.slice()
+    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  let idx = -1;
+  for(let i = components.length - 1; i >= 1; i--){
+    if(components[i] && components[i].foodId === foodId){ idx = i; break; }
+  }
+  if(idx === -1) return false;
+  components[idx] = {foodId: foodId, grams: Math.max(1, Math.min(2000, Math.round(grams)))};
   const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
@@ -803,7 +1023,45 @@ function stepMealExtraPortion(recipeId, delta){
   openAddMealRecipeSheet(ctx.slot);
 }
 
+function stepMealExtraFoodGrams(foodId, delta){
+  if(!addMealRecipeCtx || !FOODS[foodId]) return;
+  const ctx = addMealRecipeCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  let current = defaultMealFoodGrams(foodId);
+  if(ctx.logged){
+    const loggedComp = ctx.logged ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
+    const comps = loggedComp && Array.isArray(loggedComp.components) ? loggedComp.components : [];
+    for(let i = comps.length - 1; i >= 1; i--){
+      if(comps[i] && comps[i].foodId === foodId){ current = (typeof comps[i].grams === 'number' && comps[i].grams > 0) ? comps[i].grams : current; break; }
+    }
+  } else {
+    const plan = editableWeekPlan(ctx.weekStartDate);
+    const meal = plan && plan.days[ctx.dayIndex] && plan.days[ctx.dayIndex].meals[ctx.slot];
+    const entry = meal && meal[ctx.person];
+    const extras = entry && Array.isArray(entry.extras) ? entry.extras : [];
+    for(let i = extras.length - 1; i >= 0; i--){
+      if(extras[i] && extras[i].foodId === foodId){ current = (typeof extras[i].grams === 'number' && extras[i].grams > 0) ? extras[i].grams : current; break; }
+    }
+  }
+  const newGrams = Math.max(1, Math.min(2000, Math.round(current + delta)));
+  if(ctx.logged){
+    setFoodExtraGramsInLoggedMeal(dateISO, ctx.person, ctx.slot, foodId, newGrams);
+    setExtraFoodGrams(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId, newGrams);
+  } else {
+    if(!setExtraFoodGrams(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId, newGrams)) return;
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  openAddMealRecipeSheet(ctx.slot);
+}
+
 function closeSheet(){
+  if(typeof stopBarcodeScanner === 'function') stopBarcodeScanner();
   document.getElementById('sheetBackdrop').classList.remove('show');
   document.getElementById('sheet').classList.remove('show');
 }
@@ -1048,7 +1306,7 @@ function foodAmountLabel(food, grams){
     const count = Math.max(1, Math.round(grams / food.avgG));
     return count + 'x';
   }
-  return Math.round(grams) + 'g';
+  return Math.round(grams) + (food.unit || 'g');
 }
 
 function foodGroupTitle(food, grams){
@@ -1290,6 +1548,7 @@ function renderTodayCardActions(){
     } else {
       wrap.innerHTML = '<div class="ta-actions">'
         + '<button class="ta-btn ta-confirm" aria-label="Confirm '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')">✓</button>'
+        + '<button class="ta-btn ta-swap" aria-label="Swap '+label+'" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)">↔</button>'
         + '<button class="ta-btn" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+(hasExtras ? '✎' : '＋')+'</button>'
         + '<button class="ta-btn ta-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')">✕</button>'
         + '</div>';
@@ -1509,7 +1768,7 @@ function displayedTodayRecipeId(slot){
 function mealTitleWithExtras(view){
   if(!view || !view.recipe) return '';
   const extras = (view.extras || []).map(function(c){
-    return RECIPES[c.recipeId] ? RECIPES[c.recipeId].title : null;
+    return componentTitle(c);
   }).filter(Boolean);
   return view.recipe.title + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
@@ -1518,7 +1777,7 @@ function logEntryTitleWithComponents(entry){
   if(!entry || entry.kind !== 'plan') return '';
   const base = RECIPES[entry.ref] ? RECIPES[entry.ref].title : 'Meal';
   const parts = Array.isArray(entry.components) ? entry.components.slice(1) : [];
-  const extras = parts.map(function(c){ return RECIPES[c.recipeId] ? RECIPES[c.recipeId].title : null; }).filter(Boolean);
+  const extras = parts.map(componentTitle).filter(Boolean);
   return base + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
@@ -1952,10 +2211,16 @@ function applyProf(key){
   if(topAv) topAv.textContent = p.av;
   renderBasics();
   document.getElementById('hashiOpt').style.display = p.hashi ? 'flex':'none';
-  document.getElementById('ksP').style.width = p.kP + '%';
-  document.getElementById('ksC').style.width = p.kC + '%';
-  document.getElementById('ksF').style.width = p.kF + '%';
-  document.getElementById('kcalSplitLegend').textContent = 'Protein ' + p.kP + '% · Carbs ' + p.kC + '% · Fat ' + p.kF + '% of calories';
+  const pKcal = Math.round(p.calGoalNum * p.kP / 100);
+  const cKcal = Math.round(p.calGoalNum * p.kC / 100);
+  const fKcal = p.calGoalNum - pKcal - cKcal;
+  document.getElementById('kcalProteinText').textContent = fmtKcal(pKcal) + ' kcal';
+  document.getElementById('kcalCarbsText').textContent = fmtKcal(cKcal) + ' kcal';
+  document.getElementById('kcalFatText').textContent = fmtKcal(fKcal) + ' kcal';
+  document.getElementById('kcalProteinMeta').textContent = p.targetP + 'g · ' + p.kP + '%';
+  document.getElementById('kcalCarbsMeta').textContent = p.targetC + 'g · ' + p.kC + '%';
+  document.getElementById('kcalFatMeta').textContent = p.targetF + 'g · ' + p.kF + '%';
+  document.getElementById('kcalSplitLegend').textContent = 'Target split for ' + p.calGoal + ' today';
   renderSplitEditor();
   renderAvoidEditor();  // task C3: "Foods to avoid" pills for whichever profile is now active
   if(typeof renderFoodLibraryCount === 'function') renderFoodLibraryCount(); // js/library.js: "N built-in · M yours"

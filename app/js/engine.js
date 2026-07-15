@@ -131,8 +131,13 @@ const NUTRIENT_KEYS = ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'];
 function nutritionForRecipeComponents(components){
   const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0};
   (components || []).forEach(function(c){
-    if(!c || !c.recipeId || typeof RECIPES_DB === 'undefined' || !RECIPES_DB[c.recipeId]) return;
-    const nut = recipeNutrition(c.recipeId, c.portion).totals;
+    let nut = null;
+    if(c && c.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId]){
+      nut = recipeNutrition(c.recipeId, c.portion).totals;
+    } else if(c && c.foodId && typeof FOODS !== 'undefined' && FOODS[c.foodId]){
+      nut = foodMacros(c.foodId, c.grams);
+    }
+    if(!nut) return;
     NUTRIENT_KEYS.forEach(function(k){ totals[k] += nut[k] || 0; });
   });
   totals.goodFat = totals.fat - totals.satFat;

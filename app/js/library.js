@@ -195,6 +195,49 @@ function kcalBandWarning(slot, kcal){
 function tagLabelForPreview(t){ return (TAG_PILL_MAP[t] && TAG_PILL_MAP[t][1]) || t; }
 
 /* ---------------- small helpers ---------------- */
+const SEASON_VALUES = ['evergreen', 'winter/autumn', 'spring/summer'];
+const SEASON_LABELS = {'evergreen': 'Evergreen', 'winter/autumn': 'Winter/autumn', 'spring/summer': 'Spring/summer'};
+
+function normalizeSeason(v){
+  return SEASON_VALUES.indexOf(v) !== -1 ? v : 'evergreen';
+}
+function seasonLabel(v){ return SEASON_LABELS[normalizeSeason(v)]; }
+function foodSeason(foodOrId){
+  const f = typeof foodOrId === 'string' ? FOODS[foodOrId] : foodOrId;
+  return normalizeSeason(f && f.season);
+}
+function recipeSeason(recipeOrId){
+  const r = typeof recipeOrId === 'string' ? RECIPES_DB[recipeOrId] : recipeOrId;
+  if(!r) return 'evergreen';
+  if(SEASON_VALUES.indexOf(r.season) !== -1) return r.season;
+  const seasonal = {};
+  (r.ingredients || []).forEach(function(ing){
+    const s = foodSeason(ing && ing[0]);
+    if(s !== 'evergreen') seasonal[s] = true;
+  });
+  const keys = Object.keys(seasonal);
+  return keys.length === 1 ? keys[0] : 'evergreen';
+}
+function currentSeasonKey(){
+  const d = (typeof todayISO === 'function') ? parseISODate(todayISO()) : new Date();
+  const m = d.getMonth() + 1;
+  return (m >= 4 && m <= 9) ? 'spring/summer' : 'winter/autumn';
+}
+function recipeAllowedForCurrentSeason(recipeId){
+  const s = recipeSeason(recipeId);
+  return s === 'evergreen' || s === currentSeasonKey();
+}
+function derivedRecipeSeasonFromIngredients(ingredients){
+  const seasonal = {};
+  (ingredients || []).forEach(function(row){
+    const foodId = row.foodId || row[0];
+    const s = foodSeason(foodId);
+    if(s !== 'evergreen') seasonal[s] = true;
+  });
+  const keys = Object.keys(seasonal);
+  return keys.length === 1 ? keys[0] : 'evergreen';
+}
+
 function slugify(name){
   const s = String(name).toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/(^-+|-+$)/g, '');
   return s || 'item';
@@ -228,15 +271,53 @@ let libFoodQuery = '';
    together; flags are AND'd (a food must carry every active flag) — documented choice,
    matching the task brief's "AND across flags is fine". View-only: reset every time the
    sheet (re)opens (openFoodLibrary below), never persisted. */
-let libFoodFilters = {cats: new Set(), flags: new Set()};
+let libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
+let libFoodFiltersOpen = false;
 // Full flag facet per the task brief (data/foods.js's actual flag vocabulary) — a
 // superset of FOOD_FORM_FLAGS below, which is only the subset offered when hand-authoring
 // a NEW custom ingredient.
 const FOOD_FILTER_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree', 'highFiber', 'fermented'];
 
 const INGREDIENT_ICON_ASSETS = {
+  almonds: 'assets/ingredients/almonds.png',
+  apples: 'assets/ingredients/apples.png',
+  asparagus: 'assets/ingredients/asparagus.png',
+  aubergine: 'assets/ingredients/aubergine.png',
+  avocado: 'assets/ingredients/avocado.png',
+  bacon: 'assets/ingredients/bacon.png',
+  'balsamic-vinegar': 'assets/ingredients/balsamic-vinegar.png',
+  bananas: 'assets/ingredients/bananas.png',
+  barley: 'assets/ingredients/barley.png',
+  basil: 'assets/ingredients/basil.png',
+  'beef-mince-lean': 'assets/ingredients/beef-mince-lean.png',
+  'bell-pepper': 'assets/ingredients/bell-pepper.png',
+  'brazil-nuts': 'assets/ingredients/brazil-nuts.png',
+  bresaola: 'assets/ingredients/bresaola.png',
+  broccoli: 'assets/ingredients/broccoli.png',
+  'broccoli-courgette': 'assets/ingredients/broccoli-courgette.png',
+  brownie: 'assets/ingredients/brownie.png',
+  cabbage: 'assets/ingredients/cabbage.png',
+  'cannellini-beans': 'assets/ingredients/cannellini-beans.png',
+  capers: 'assets/ingredients/capers.png',
+  'cappuccino-unsweetened': 'assets/ingredients/cappuccino-unsweetened.png',
   carrot: 'assets/ingredients/carrot.png',
+  carrots: 'assets/ingredients/carrots.png',
+  cauliflower: 'assets/ingredients/cauliflower.png',
+  'cavolo-nero': 'assets/ingredients/cavolo-nero.png',
+  'cherry-tomatoes': 'assets/ingredients/cherry-tomatoes.png',
+  'cherry-tomatoes-cucumber': 'assets/ingredients/cherry-tomatoes-cucumber.png',
+  'chia-seeds': 'assets/ingredients/chia-seeds.png',
+  'chicken-breast': 'assets/ingredients/chicken-breast.png',
+  'chicken-thigh': 'assets/ingredients/chicken-thigh.png',
+  chickpeas: 'assets/ingredients/chickpeas.png',
+  'coconut-milk': 'assets/ingredients/coconut-milk.png',
+  cod: 'assets/ingredients/cod.png',
+  cola: 'assets/ingredients/cola.png',
+  courgette: 'assets/ingredients/courgette.png',
+  couscous: 'assets/ingredients/couscous.png',
+  cucumber: 'assets/ingredients/cucumber.png',
   eggs: 'assets/ingredients/eggs.png',
+  'espresso-unsweetened': 'assets/ingredients/espresso-unsweetened.png',
   milk: 'assets/ingredients/milk.png',
   pasta: 'assets/ingredients/pasta.png',
   rice: 'assets/ingredients/rice.png',
@@ -244,11 +325,47 @@ const INGREDIENT_ICON_ASSETS = {
 };
 
 const FOOD_ICON_KEYS = {
+  almonds: 'almonds',
+  apples: 'apples',
+  asparagus: 'asparagus',
+  aubergine: 'aubergine',
+  avocado: 'avocado',
+  bacon: 'bacon',
+  'balsamic-vinegar': 'balsamic-vinegar',
+  bananas: 'bananas',
+  barley: 'barley',
+  basil: 'basil',
+  'beef-mince-lean': 'beef-mince-lean',
+  'bell-pepper': 'bell-pepper',
+  'brazil-nuts': 'brazil-nuts',
+  bresaola: 'bresaola',
+  broccoli: 'broccoli',
+  'broccoli-courgette': 'broccoli-courgette',
+  brownie: 'brownie',
+  cabbage: 'cabbage',
+  'cannellini-beans': 'cannellini-beans',
+  capers: 'capers',
+  'cappuccino-unsweetened': 'cappuccino-unsweetened',
   carrot: 'carrot',
+  carrots: 'carrots',
+  cauliflower: 'cauliflower',
+  'cavolo-nero': 'cavolo-nero',
+  'cherry-tomatoes': 'cherry-tomatoes',
+  'cherry-tomatoes-cucumber': 'cherry-tomatoes-cucumber',
+  'chia-seeds': 'chia-seeds',
+  'chicken-breast': 'chicken-breast',
+  'chicken-thigh': 'chicken-thigh',
+  chickpeas: 'chickpeas',
+  'coconut-milk': 'coconut-milk',
+  cod: 'cod',
+  cola: 'cola',
+  courgette: 'courgette',
+  couscous: 'couscous',
+  cucumber: 'cucumber',
   eggs: 'eggs',
+  'espresso-unsweetened': 'espresso-unsweetened',
   milk: 'milk',
   'oat-milk': 'milk',
-  'coconut-milk': 'milk',
   pasta: 'pasta',
   'wholegrain-pasta': 'pasta',
   rice: 'rice',
@@ -278,13 +395,43 @@ function foodIconHtml(foodId, fallbackEmoji){
   return ingredientIconHtml(ingredientIconKeyForFood(foodId), fallbackEmoji);
 }
 
+function renderLibraryHub(){
+  const el = document.getElementById('libraryHubBody');
+  if(!el) return;
+  el.innerHTML =
+    '<div style="margin-top:10px">'
+    + '<div class="altrow" onclick="openFoodLibrary()"><div class="ae">🧺</div><div class="at"><div class="an">Ingredients</div><div class="ad">Browse, edit or add foods</div></div></div>'
+    + '<div class="altrow" onclick="openMyRecipes()"><div class="ae">📖</div><div class="at"><div class="an">Recipes</div><div class="ad">Browse, edit or add recipes</div></div></div>'
+    + '<div class="altrow" onclick="openBarcodeScanner(true)"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Add packaged products sold in Italy</div></div></div>'
+    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">＋</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food from macros</div></div></div>'
+    + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">✎</div><div class="at"><div class="an">New recipe</div><div class="ad">Build from ingredients and meal slots</div></div></div>'
+    + '</div>';
+}
+
+function setLibraryScreenHtml(screenId, bodyId, html){
+  const body = document.getElementById(bodyId);
+  if(body){
+    body.innerHTML = html;
+    const sheet = document.getElementById('sheet');
+    const backdrop = document.getElementById('sheetBackdrop');
+    if(sheet){ sheet.classList.remove('show'); sheet.classList.remove('tall'); }
+    if(backdrop) backdrop.classList.remove('show');
+    const screen = document.getElementById(screenId);
+    if(!screen || !screen.classList.contains('active')) go(screenId);
+    return true;
+  }
+  return false;
+}
+
+function setIngredientsScreenHtml(html){ return setLibraryScreenHtml('libraryIngredients', 'libraryIngredientsBody', html); }
+function setRecipesScreenHtml(html){ return setLibraryScreenHtml('libraryRecipes', 'libraryRecipesBody', html); }
+function setScannerScreenHtml(html){ return setLibraryScreenHtml('libraryScanner', 'libraryScannerBody', html); }
+
 function openFoodLibrary(){
   libFoodQuery = '';
-  libFoodFilters = {cats: new Set(), flags: new Set()};
-  document.getElementById('sheetBody').innerHTML = buildFoodLibrarySheet();
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
+  libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
+  libFoodFiltersOpen = false;
+  setIngredientsScreenHtml(buildFoodLibrarySheet());
   const input = document.getElementById('libFoodSearchInput');
   if(input) input.focus();
 }
@@ -293,6 +440,7 @@ function openAddMenu(){
   document.getElementById('sheetBody').innerHTML =
     '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<div style="margin-top:10px">'
+    + '<div class="altrow" onclick="openBarcodeScanner()"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Import packaged foods from Open Food Facts</div></div></div>'
     + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">🥕</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food with computed calories from macros</div></div></div>'
     + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">📖</div><div class="at"><div class="an">New recipe</div><div class="ad">Build a recipe from ingredients</div></div></div>'
     + '<div class="altrow" onclick="openFoodSearch()"><div class="ae">＋</div><div class="at"><div class="an">Log food</div><div class="ad">Quick-add something to today</div></div></div>'
@@ -303,27 +451,407 @@ function openAddMenu(){
 }
 
 function openLibraryHub(tabEl){
-  document.querySelectorAll('.tab').forEach(function(t){ t.classList.remove('on'); });
-  if(tabEl) tabEl.classList.add('on');
-  document.getElementById('sheetBody').innerHTML =
-    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Library</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<div style="margin-top:10px">'
-    + '<div class="altrow" onclick="openFoodLibrary()"><div class="ae">🧺</div><div class="at"><div class="an">Ingredients</div><div class="ad">Browse, edit or add foods</div></div></div>'
-    + '<div class="altrow" onclick="openMyRecipes()"><div class="ae">📖</div><div class="at"><div class="an">Recipes</div><div class="ad">Browse, edit or add recipes</div></div></div>'
-    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">＋</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food from macros</div></div></div>'
-    + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">✎</div><div class="at"><div class="an">New recipe</div><div class="ad">Build from ingredients and meal slots</div></div></div>'
-    + '</div>';
-  document.getElementById('sheet').classList.remove('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
+  renderLibraryHub();
+  go('library', tabEl);
 }
 
 function buildFoodLibrarySheet(){
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Ingredients</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+  return '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Ingredients</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(libFoodQuery) + '" oninput="onLibFoodSearchInput(this.value)" autocomplete="off">'
     + '<div id="libFoodFilterBar">' + renderLibFoodFilterBar() + '</div>'
+    + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openBarcodeScanner(true)">📷 Scan barcode</button>'
     + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openNewFoodForm()">＋ New ingredient</button>'
     + '<div id="libFoodList" style="margin-top:4px">' + renderLibFoodListMarkup(libFoodQuery) + '</div>';
+}
+
+/* ===================================================================
+   BARCODE IMPORT — packaged-product ingredients from Open Food Facts
+
+   Flow:
+   1. Camera preview via getUserMedia(), decoded with the native
+      BarcodeDetector API where the browser exposes it.
+   2. Manual barcode fallback stays visible because Safari/iOS support for
+      native barcode detection is uneven even though camera access works.
+   3. Product data comes from Open Food Facts API v3.6 and is saved into
+      customFoods as a normal Mesa ingredient. Mesa still computes kcal
+      from macros (4/4/9); the label kcal is preserved as metadata.
+   =================================================================== */
+let barcodeScannerState = {
+  stream: null,
+  detector: null,
+  zxingReader: null,
+  zxingControls: null,
+  raf: null,
+  busy: false,
+  lastCode: null
+};
+let barcodeProductDraft = null;
+
+function openBarcodeScanner(asPage){
+  stopBarcodeScanner();
+  barcodeProductDraft = null;
+  const html = buildBarcodeScannerSheet('Starting camera…', !!asPage);
+  if(asPage){
+    setScannerScreenHtml(html);
+  } else {
+    document.getElementById('sheet').classList.add('tall');
+    document.getElementById('sheetBackdrop').classList.add('show');
+    document.getElementById('sheet').classList.add('show');
+    document.getElementById('sheetBody').innerHTML = html;
+  }
+  startBarcodeScanner();
+}
+
+function buildBarcodeScannerSheet(status, asPage){
+  const nativeSupported = 'BarcodeDetector' in window;
+  const zxingSupported = !!(window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader);
+  return '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Scan barcode</h1><button class="backbtn" style="margin:0" onclick="' + (asPage ? 'openLibraryHub()' : 'closeSheet()') + '">' + (asPage ? '‹ Library' : '✕ Close') + '</button></div>'
+    + '<p class="sub" style="margin-top:8px">Fill the frame with the EAN/UPC barcode. Mesa imports the product as one ingredient from Open Food Facts.</p>'
+    + '<div class="scanner-box" style="margin-top:12px">'
+    + '<video id="barcodeVideo" class="scanner-video" autoplay muted playsinline></video>'
+    + '<div class="scanner-frame" aria-hidden="true"></div>'
+    + '</div>'
+    + '<div class="cap-note" id="barcodeStatus" style="font-size:12px;margin-top:8px">' + escapeHtml(status || 'Point the camera at the barcode.') + '</div>'
+    + (!nativeSupported && zxingSupported ? '<div class="cap-note" style="font-size:12px">Using Mesa’s fallback scanner for this browser.</div>' : '')
+    + (!nativeSupported && !zxingSupported ? '<div class="cap-note" style="font-size:12px;color:#b25e35">This browser can use the camera, but automatic barcode decoding is not available. Type the number below.</div>' : '')
+    + '<div class="field"><label>Barcode</label>'
+    + '<input class="inp" id="barcodeManualInput" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" inputmode="numeric" pattern="[0-9]*" placeholder="e.g. 8000500037560" autocomplete="off" onkeydown="if(event.key===\'Enter\'){lookupBarcodeFromManualInput();}"></div>'
+    + '<button class="cta" onclick="lookupBarcodeFromManualInput()">Look up product</button>'
+    + '<button class="cta ghostbtn" onclick="openNewFoodForm()">Add manually instead</button>';
+}
+
+function setBarcodeStatus(msg){
+  const el = document.getElementById('barcodeStatus');
+  if(el) el.textContent = msg;
+}
+
+function stopBarcodeScanner(){
+  if(barcodeScannerState.raf) cancelAnimationFrame(barcodeScannerState.raf);
+  barcodeScannerState.raf = null;
+  if(barcodeScannerState.zxingControls && typeof barcodeScannerState.zxingControls.stop === 'function'){
+    barcodeScannerState.zxingControls.stop();
+  }
+  barcodeScannerState.zxingControls = null;
+  barcodeScannerState.zxingReader = null;
+  if(barcodeScannerState.stream){
+    barcodeScannerState.stream.getTracks().forEach(function(track){ track.stop(); });
+  }
+  barcodeScannerState.stream = null;
+  barcodeScannerState.detector = null;
+  barcodeScannerState.busy = false;
+}
+
+function startBarcodeScanner(){
+  if(!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+    setBarcodeStatus('Camera is not available here. Enter the barcode manually.');
+    return;
+  }
+  if(!('BarcodeDetector' in window) && window.ZXingBrowser && window.ZXingBrowser.BrowserMultiFormatReader){
+    startZXingBarcodeScanner();
+    return;
+  }
+  navigator.mediaDevices.getUserMedia({
+    video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 720}},
+    audio: false
+  }).then(function(stream){
+    barcodeScannerState.stream = stream;
+    const video = document.getElementById('barcodeVideo');
+    if(!video) return;
+    video.srcObject = stream;
+    if('BarcodeDetector' in window){
+      const formats = ['ean_13', 'ean_8', 'upc_a', 'upc_e'];
+      barcodeScannerState.detector = new BarcodeDetector({formats: formats});
+      video.onloadedmetadata = function(){
+        video.play();
+        setBarcodeStatus('Point the camera at the barcode.');
+        scanBarcodeFrame();
+      };
+    } else {
+      video.onloadedmetadata = function(){ video.play(); };
+      setBarcodeStatus('Camera ready. Type the barcode below if it does not auto-detect.');
+    }
+  }).catch(function(){
+    setBarcodeStatus('Camera permission was not available. Enter the barcode manually.');
+  });
+}
+
+function startZXingBarcodeScanner(){
+  const video = document.getElementById('barcodeVideo');
+  if(!video) return;
+  const reader = new ZXingBrowser.BrowserMultiFormatReader();
+  barcodeScannerState.zxingReader = reader;
+  reader.decodeFromConstraints({
+    video: {facingMode: {ideal: 'environment'}, width: {ideal: 1280}, height: {ideal: 720}},
+    audio: false
+  }, video, function(result){
+    if(!result || barcodeScannerState.busy) return;
+    const code = normalizeBarcode(typeof result.getText === 'function' ? result.getText() : result.text);
+    if(!code || code === barcodeScannerState.lastCode) return;
+    barcodeScannerState.lastCode = code;
+    const input = document.getElementById('barcodeManualInput');
+    if(input) input.value = code;
+    lookupBarcode(code);
+  }).then(function(controls){
+    barcodeScannerState.zxingControls = controls;
+    setBarcodeStatus('Camera ready. Hold the barcode straight and fill the frame.');
+  }).catch(function(){
+    setBarcodeStatus('Camera permission was not available. Enter the barcode manually.');
+  });
+}
+
+function scanBarcodeFrame(){
+  const video = document.getElementById('barcodeVideo');
+  if(!video || !barcodeScannerState.detector || barcodeScannerState.busy){
+    barcodeScannerState.raf = requestAnimationFrame(scanBarcodeFrame);
+    return;
+  }
+  if(video.readyState < 2){
+    barcodeScannerState.raf = requestAnimationFrame(scanBarcodeFrame);
+    return;
+  }
+  barcodeScannerState.detector.detect(video).then(function(codes){
+    if(codes && codes.length){
+      const code = normalizeBarcode(codes[0].rawValue);
+      if(code && code !== barcodeScannerState.lastCode){
+        barcodeScannerState.lastCode = code;
+        const input = document.getElementById('barcodeManualInput');
+        if(input) input.value = code;
+        lookupBarcode(code);
+        return;
+      }
+    }
+    barcodeScannerState.raf = requestAnimationFrame(scanBarcodeFrame);
+  }).catch(function(){
+    setBarcodeStatus('Could not read this frame. You can type the barcode below.');
+    barcodeScannerState.raf = requestAnimationFrame(scanBarcodeFrame);
+  });
+}
+
+function normalizeBarcode(raw){
+  return String(raw || '').replace(/\D/g, '').trim();
+}
+
+function lookupBarcodeFromManualInput(){
+  const input = document.getElementById('barcodeManualInput');
+  lookupBarcode(input ? input.value : '');
+}
+
+function lookupBarcode(raw){
+  const barcode = normalizeBarcode(raw);
+  if(barcode.length < 8){ toast('Enter the barcode number'); return; }
+  const existingId = customFoodIdForBarcode(barcode);
+  if(existingId){
+    stopBarcodeScanner();
+    toast('Already in your ingredients');
+    openEditFoodForm(existingId);
+    return;
+  }
+  barcodeScannerState.busy = true;
+  setBarcodeStatus('Looking up ' + barcode + '…');
+  const fields = [
+    'code', 'product_name', 'product_name_it', 'generic_name', 'generic_name_it',
+    'brands', 'quantity', 'categories', 'categories_tags', 'labels_tags',
+    'countries', 'countries_tags', 'stores', 'ingredients_text', 'ingredients_text_it',
+    'allergens_tags', 'traces_tags', 'additives_tags', 'nutriscore_grade', 'nova_group',
+    'image_front_url', 'image_url', 'url', 'nutriments'
+  ].join(',');
+  fetchOpenFoodFactsProduct(barcode, fields).then(function(product){
+    barcodeProductDraft = product;
+    stopBarcodeScanner();
+    renderBarcodeProductPreview();
+  }).catch(function(err){
+    barcodeScannerState.busy = false;
+    setBarcodeStatus(err && err.message === 'missing nutrition'
+      ? 'Product found, but it is missing macro data. Add it manually from the label.'
+      : 'Product not found in Open Food Facts. Yuka may still know it from its own database. You can add it manually.');
+    toast(err && err.message === 'missing nutrition' ? 'Missing nutrition data' : 'Product not found');
+  });
+}
+
+function fetchOpenFoodFactsProduct(barcode, fields){
+  // Some products have richer localized data than the global endpoint. Example:
+  // 3387390331660 (Nesquik Conchigliette) has nutrition on it.openfoodfacts.org
+  // while the same filtered world API response can return an empty nutriments object.
+  const endpoints = [
+    'https://it.openfoodfacts.org/api/v3/product/',
+    'https://world.openfoodfacts.org/api/v3/product/',
+    'https://world.openfoodfacts.org/api/v3.6/product/'
+  ];
+  let foundWithoutNutrition = false;
+
+  function tryEndpoint(i){
+    if(i >= endpoints.length){
+      throw new Error(foundWithoutNutrition ? 'missing nutrition' : 'not found');
+    }
+    const url = endpoints[i] + encodeURIComponent(barcode) + '.json?fields=' + encodeURIComponent(fields);
+    return fetch(url, {headers: {'Accept': 'application/json'}})
+      .then(function(res){
+        if(!res.ok) throw new Error('lookup failed');
+        return res.json();
+      })
+      .then(function(json){
+        if(!json || (json.status && json.status !== 'success') || !json.product){
+          return tryEndpoint(i + 1);
+        }
+        const food = openFoodFactsProductToFood(json.product, barcode);
+        if(food) return food;
+        foundWithoutNutrition = true;
+        return tryEndpoint(i + 1);
+      })
+      .catch(function(err){
+        if(i >= endpoints.length - 1) throw err;
+        return tryEndpoint(i + 1);
+      });
+  }
+
+  return tryEndpoint(0);
+}
+
+function customFoodIdForBarcode(barcode){
+  const code = normalizeBarcode(barcode);
+  return Object.keys(customFoods).find(function(id){
+    return customFoods[id] && normalizeBarcode(customFoods[id].barcode || customFoods[id].offBarcode) === code;
+  }) || null;
+}
+
+function offNum(nutriments, key){
+  if(!nutriments) return null;
+  const candidates = [key + '_100g', key + '_serving', key];
+  for(let i = 0; i < candidates.length; i++){
+    const v = nutriments[candidates[i]];
+    if(v === undefined || v === null || v === '') continue;
+    const n = Number(String(v).replace(',', '.'));
+    if(isFinite(n)) return Math.max(0, n);
+  }
+  return null;
+}
+
+function firstText(){
+  for(let i = 0; i < arguments.length; i++){
+    const v = arguments[i];
+    if(typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return '';
+}
+
+function inferOffCategory(product){
+  const hay = ((product.categories || '') + ' ' + (product.categories_tags || []).join(' ')).toLowerCase();
+  if(/yogurt|yoghurt|cheese|milk|dairy|formaggi|latte|yogurt/.test(hay)) return 'Dairy';
+  if(/fish|salmon|tuna|sardine|meat|chicken|turkey|beef|pork|egg|pesce|tonno|salmone|carne|pollo|uova/.test(hay)) return 'Protein';
+  if(/vegetable|fruit|verdure|frutta|legume|legumi/.test(hay)) return 'Produce';
+  if(/pasta|rice|cereal|flour|farina|riso|cereali/.test(hay)) return 'Pantry';
+  if(/bread|bakery|pane|biscuit|cracker/.test(hay)) return 'Bakery';
+  if(/frozen|surgelat/.test(hay)) return 'Frozen';
+  return 'Pantry';
+}
+
+function inferOffFlags(product, food){
+  const flags = [];
+  const hay = [
+    product.categories || '',
+    (product.categories_tags || []).join(' '),
+    (product.labels_tags || []).join(' '),
+    (product.allergens_tags || []).join(' ')
+  ].join(' ').toLowerCase();
+  if((food.fiber || 0) >= 6) flags.push('highFiber');
+  if(/gluten-free|senza-glutine|sans-gluten/.test(hay)) flags.push('glutenFree');
+  if(/salmon|salmone|sardine|tuna|tonno|mackerel|sgombro|anchovy|acciug/.test(hay)) flags.push('omega3');
+  if(/fermented|kefir|kimchi|sauerkraut|crauti|miso|tempeh/.test(hay)) flags.push('fermented');
+  return flags;
+}
+
+function openFoodFactsProductToFood(product, barcode){
+  const nutriments = product.nutriments || {};
+  const protein = offNum(nutriments, 'proteins');
+  const carbs = offNum(nutriments, 'carbohydrates');
+  const fat = offNum(nutriments, 'fat');
+  if(protein === null || carbs === null || fat === null) return null;
+  const satFat = offNum(nutriments, 'saturated-fat') || 0;
+  const fiber = offNum(nutriments, 'fiber') || 0;
+  const labelKcal = offNum(nutriments, 'energy-kcal');
+  const name = firstText(product.product_name_it, product.product_name, product.generic_name_it, product.generic_name, 'Product ' + barcode);
+  const food = {
+    name: name,
+    per: 100, unit: 'g',
+    kcal: Math.round(4 * protein + 4 * carbs + 9 * fat),
+    protein: +protein.toFixed(1),
+    carbs: +carbs.toFixed(1),
+    fat: +fat.toFixed(1),
+    satFat: +Math.min(satFat, fat).toFixed(1),
+    fiber: +Math.min(fiber, carbs).toFixed(1),
+    flags: [],
+    cat: inferOffCategory(product),
+    season: 'evergreen',
+    src: 'Open Food Facts barcode ' + barcode + '; kcal computed by Mesa from label macros',
+    barcode: barcode,
+    offBarcode: barcode,
+    offUrl: product.url || ('https://world.openfoodfacts.org/product/' + barcode),
+    brand: firstText(product.brands),
+    quantity: firstText(product.quantity),
+    ingredientsText: firstText(product.ingredients_text_it, product.ingredients_text),
+    labelKcal: labelKcal === null ? null : Math.round(labelKcal),
+    nutriscore: firstText(product.nutriscore_grade).toUpperCase(),
+    novaGroup: product.nova_group || null,
+    countries: firstText(product.countries),
+    stores: firstText(product.stores),
+    imageUrl: product.image_front_url || product.image_url || '',
+    allergens: Array.isArray(product.allergens_tags) ? product.allergens_tags.slice() : [],
+    traces: Array.isArray(product.traces_tags) ? product.traces_tags.slice() : [],
+    additives: Array.isArray(product.additives_tags) ? product.additives_tags.slice() : []
+  };
+  food.flags = inferOffFlags(product, food);
+  return food;
+}
+
+function renderBarcodeProductPreview(){
+  const f = barcodeProductDraft;
+  const asPage = document.getElementById('libraryScanner') && document.getElementById('libraryScanner').classList.contains('active');
+  if(!f){ openBarcodeScanner(asPage); return; }
+  const labelDiff = (typeof f.labelKcal === 'number' && Math.abs(f.labelKcal - f.kcal) > 2)
+    ? '<div class="cap-note">Label says ' + f.labelKcal + ' kcal / 100g; Mesa stores ' + f.kcal + ' kcal from 4/4/9 macros for internal consistency.</div>'
+    : '';
+  const html =
+    '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Product found</h1><button class="backbtn" style="margin:0" onclick="' + (asPage ? 'openLibraryHub()' : 'closeSheet()') + '">' + (asPage ? '‹ Library' : '✕ Close') + '</button></div>'
+    + '<div class="card scanned-product-card">'
+    + (f.imageUrl ? '<img class="scanned-product-img" src="' + htmlAttr(f.imageUrl) + '" alt="" loading="lazy">' : '<div class="ae">📦</div>')
+    + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
+    + '<div class="ad">' + [f.brand, f.quantity, f.barcode].filter(Boolean).map(escapeHtml).join(' · ') + '</div></div>'
+    + '</div>'
+    + '<div class="nutri" style="margin-top:12px">'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>' + f.kcal + ' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>' + f.protein + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Carbs</span><b>' + f.carbs + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Fat</span><b>' + f.fat + ' g</b></div></div>'
+    + '</div>'
+    + '<div class="sub" style="margin-top:8px">Per 100g · ' + escapeHtml(f.cat) + ' · ' + seasonLabel(foodSeason(f)) + (f.flags.length ? ' · ' + f.flags.map(flagLabel).join(', ') : '') + '</div>'
+    + labelDiff
+    + (f.ingredientsText ? '<div class="field"><label>Ingredients from label</label><div class="why" style="margin-top:6px">' + escapeHtml(f.ingredientsText) + '</div></div>' : '<p class="sub" style="margin-top:10px">No ingredient text was available for this product.</p>')
+    + '<button class="cta" onclick="saveBarcodeProductAsFood()">Save ingredient</button>'
+    + '<button class="cta ghostbtn" onclick="openBarcodeScanner(' + (asPage ? 'true' : 'false') + ')">Scan another</button>';
+  if(asPage) setScannerScreenHtml(html);
+  else document.getElementById('sheetBody').innerHTML = html;
+}
+
+function saveBarcodeProductAsFood(){
+  const f = barcodeProductDraft;
+  if(!f){ toast('No product to save'); return; }
+  const existing = customFoodIdForBarcode(f.barcode);
+  if(existing){ openEditFoodForm(existing); return; }
+  let name = f.name;
+  const lower = name.toLowerCase();
+  const dupName = Object.keys(FOODS).some(function(id){ return FOODS[id].name.toLowerCase() === lower; });
+  if(dupName && f.brand) name = name + ' · ' + f.brand;
+  const id = uniqueSlug(slugify(name + '-' + f.barcode), FOODS, 'cf-');
+  const saved = Object.assign({}, f, {name: name, season: foodSeason(f), u: Date.now()});
+  if(deletedFoods[id]) delete deletedFoods[id];
+  customFoods[id] = saved;
+  customRev++;
+  applyCustomFoods();
+  applyProf(currentProf);
+  renderFoodLibraryCount();
+  barcodeProductDraft = null;
+  toast('✓ ' + name + ' added');
+  openFoodLibrary();
 }
 
 // One reusable chip button — pill visual language, but with the 44px min tap-target this
@@ -333,26 +861,65 @@ function filterChipHtml(label, active, onclickJs){
   return '<button class="pill ghost chip-preset' + (active ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="' + onclickJs + '">' + escapeHtml(label) + '</button>';
 }
 
+function filterActiveCount(filters){
+  let n = 0;
+  if(filters.cats) n += filters.cats.size;
+  if(filters.flags) n += filters.flags.size;
+  if(filters.slots) n += filters.slots.size;
+  if(filters.tags) n += filters.tags.size;
+  if(filters.seasons) n += filters.seasons.size;
+  return n;
+}
+
+function filterSummaryChips(labels, clearFn){
+  if(!labels.length) return '';
+  return '<div class="filter-summary" aria-label="Active filters">'
+    + labels.map(function(label){ return '<span class="pill mini gold">' + escapeHtml(label) + '</span>'; }).join('')
+    + '<button class="filter-clear" onclick="' + clearFn + '">Clear</button>'
+    + '</div>';
+}
+
 function countFilteredFoods(query){
   const byCat = libFoodIdsByCategory(query);
   return Object.keys(byCat).reduce(function(sum, c){ return sum + byCat[c].length; }, 0);
 }
 
 function renderLibFoodFilterBar(){
-  const anyActive = libFoodFilters.cats.size > 0 || libFoodFilters.flags.size > 0;
-  let html = '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">'
-    + FOOD_CATEGORIES.map(function(c){ return filterChipHtml(c, libFoodFilters.cats.has(c), 'toggleLibFoodCatFilter(\'' + c + '\')'); }).join('')
-    + '</div>';
-  html += '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:7px">'
-    + FOOD_FILTER_FLAGS.map(function(fl){ return filterChipHtml(flagLabel(fl), libFoodFilters.flags.has(fl), 'toggleLibFoodFlagFilter(\'' + fl + '\')'); }).join('')
-    + '</div>';
-  if(anyActive){
-    html += '<div class="row between" style="margin-top:9px">'
-      + '<span class="sub" id="libFoodFilterCount" style="margin:0">' + countFilteredFoods(libFoodQuery) + ' ingredient' + (countFilteredFoods(libFoodQuery) === 1 ? '' : 's') + '</span>'
-      + '<button class="pill ghost chip-preset" style="min-height:44px;padding:0 14px" onclick="clearLibFoodFilters()">✕ Clear</button>'
+  const anyActive = libFoodFilters.cats.size > 0 || libFoodFilters.flags.size > 0 || libFoodFilters.seasons.size > 0;
+  const activeCount = filterActiveCount(libFoodFilters);
+  const labels = [];
+  libFoodFilters.cats.forEach(function(c){ labels.push(c); });
+  libFoodFilters.flags.forEach(function(fl){ labels.push(flagLabel(fl)); });
+  libFoodFilters.seasons.forEach(function(s){ labels.push(seasonLabel(s)); });
+  const count = countFilteredFoods(libFoodQuery);
+  let html = '<div class="filter-compact">'
+    + '<button class="filter-toggle" onclick="toggleLibFoodFiltersPanel()">' + (libFoodFiltersOpen ? 'Hide filters' : 'Filters') + (activeCount ? ' · ' + activeCount : '') + '</button>'
+    + '<span class="sub" style="margin:0">' + count + ' ingredient' + (count === 1 ? '' : 's') + '</span>'
+    + '</div>'
+    + filterSummaryChips(labels, 'clearLibFoodFilters()');
+  if(libFoodFiltersOpen){
+    html += '<div class="filter-panel">'
+      + '<div class="filter-label">Category</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + FOOD_CATEGORIES.map(function(c){ return filterChipHtml(c, libFoodFilters.cats.has(c), 'toggleLibFoodCatFilter(\'' + c + '\')'); }).join('')
+      + '</div>'
+      + '<div class="filter-label">Season</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + SEASON_VALUES.map(function(s){ return filterChipHtml(seasonLabel(s), libFoodFilters.seasons.has(s), 'toggleLibFoodSeasonFilter(\'' + s + '\')'); }).join('')
+      + '</div>'
+      + '<div class="filter-label">Tags</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + FOOD_FILTER_FLAGS.map(function(fl){ return filterChipHtml(flagLabel(fl), libFoodFilters.flags.has(fl), 'toggleLibFoodFlagFilter(\'' + fl + '\')'); }).join('')
+      + '</div>'
+      + (anyActive ? '<button class="filter-clear full" onclick="clearLibFoodFilters()">Clear filters</button>' : '')
       + '</div>';
   }
   return html;
+}
+
+function toggleLibFoodFiltersPanel(){
+  libFoodFiltersOpen = !libFoodFiltersOpen;
+  rerenderLibFoodFilteredView();
 }
 
 function toggleLibFoodCatFilter(cat){
@@ -363,8 +930,14 @@ function toggleLibFoodFlagFilter(fl){
   if(libFoodFilters.flags.has(fl)) libFoodFilters.flags.delete(fl); else libFoodFilters.flags.add(fl);
   rerenderLibFoodFilteredView();
 }
+function toggleLibFoodSeasonFilter(season){
+  season = normalizeSeason(season);
+  if(libFoodFilters.seasons.has(season)) libFoodFilters.seasons.delete(season); else libFoodFilters.seasons.add(season);
+  rerenderLibFoodFilteredView();
+}
 function clearLibFoodFilters(){
-  libFoodFilters = {cats: new Set(), flags: new Set()};
+  libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
+  libFoodFiltersOpen = false;
   rerenderLibFoodFilteredView();
 }
 // Live re-render on toggle (same "re-render in place" pattern as onLibFoodSearchInput):
@@ -386,6 +959,7 @@ function libFoodIdsByCategory(query){
     const food = FOODS[id];
     if(q && food.name.toLowerCase().indexOf(q) === -1) return;
     if(libFoodFilters.cats.size && !libFoodFilters.cats.has(food.cat)) return;
+    if(libFoodFilters.seasons.size && !libFoodFilters.seasons.has(foodSeason(food))) return;
     if(libFoodFilters.flags.size){
       const flags = food.flags || [];
       let hasAll = true;
@@ -417,7 +991,7 @@ function renderLibFoodListMarkup(query){
       out += '<div class="altrow" style="cursor:default">'
         + '<div class="ae">' + foodIconHtml(id, '🥕') + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + '</div>'
-        + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + '</div></div>'
+        + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
         + (isCustom ? '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button><button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
         + '</div>';
     });
@@ -443,10 +1017,7 @@ function flagLabel(fl){ return FOOD_FLAG_LABELS[fl] || fl; }
 let newFoodForm = null;
 
 function openNewFoodForm(){
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, flags: []};
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, flags: []};
   renderNewFoodFormSheet();
 }
 
@@ -457,6 +1028,7 @@ function openEditFoodForm(id){
     editingId: id,
     name: f.name || '',
     cat: f.cat || 'Produce',
+    season: foodSeason(f),
     protein: +(f.protein || 0),
     carbs: +(f.carbs || 0),
     fat: +(f.fat || 0),
@@ -464,12 +1036,9 @@ function openEditFoodForm(id){
     fiber: +(f.fiber || 0),
     flags: Array.isArray(f.flags) ? f.flags.slice() : []
   };
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
   renderNewFoodFormSheet();
 }
-function renderNewFoodFormSheet(){ document.getElementById('sheetBody').innerHTML = buildNewFoodFormSheet(); }
+function renderNewFoodFormSheet(){ setIngredientsScreenHtml(buildNewFoodFormSheet()); }
 
 function computeNewFoodKcal(f){ return Math.round(4 * f.protein + 4 * f.carbs + 9 * f.fat); }
 
@@ -492,6 +1061,10 @@ function buildNewFoodFormSheet(){
 
   html += '<div class="field"><label>Category</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + FOOD_CATEGORIES.map(function(c){ return '<button class="pill ghost chip-preset' + (f.cat === c ? ' chipsel' : '') + '" onclick="setNewFoodCat(\'' + c + '\')">' + c + '</button>'; }).join('')
+    + '</div></div>';
+
+  html += '<div class="field"><label>Season</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(f.season) === s ? ' chipsel' : '') + '" onclick="setNewFoodSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
     + '</div></div>';
 
   // FIX 2 (feedback, owner: "prova a creare un ingrediente con 100 calorie usando il +…
@@ -526,6 +1099,7 @@ function buildNewFoodFormSheet(){
 }
 
 function setNewFoodCat(c){ newFoodForm.cat = c; renderNewFoodFormSheet(); }
+function setNewFoodSeason(season){ newFoodForm.season = normalizeSeason(season); renderNewFoodFormSheet(); }
 function toggleNewFoodFlag(fl){
   const i = newFoodForm.flags.indexOf(fl);
   if(i === -1) newFoodForm.flags.push(fl); else newFoodForm.flags.splice(i, 1);
@@ -566,7 +1140,7 @@ function saveNewFood(){
   customFoods[id] = {
     name: name, per: 100, unit: 'g',
     kcal: kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, satFat: f.satFat, fiber: f.fiber,
-    flags: f.flags.slice(), cat: f.cat, src: 'User-added ingredient',
+    flags: f.flags.slice(), cat: f.cat, season: normalizeSeason(f.season), src: 'User-added ingredient',
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
   customRev++;
@@ -596,7 +1170,7 @@ function deleteCustomFood(id){
   applyProf(currentProf);
   toast('✓ Deleted ' + name);
   renderFoodLibraryCount();
-  if(document.getElementById('sheet').classList.contains('show')) openFoodLibrary();
+  if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) openFoodLibrary();
 }
 
 /* ===================================================================
@@ -607,14 +1181,13 @@ function deleteCustomFood(id){
    can carry multiple slots), Tag is AND'd (recipe must carry every active tag). Combines with
    the (currently absent) implicit "all recipes" list — no separate search box exists here,
    so filters are the only narrowing. View-only: reset every time the sheet opens. */
-let libRecipeFilters = {query: '', slots: new Set(), tags: new Set()};
+let libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
+let libRecipeFiltersOpen = false;
 
 function openMyRecipes(){
-  libRecipeFilters = {query: '', slots: new Set(), tags: new Set()};
-  document.getElementById('sheetBody').innerHTML = buildMyRecipesSheet();
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
+  libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
+  libRecipeFiltersOpen = false;
+  setRecipesScreenHtml(buildMyRecipesSheet());
 }
 
 function filteredRecipeIds(){
@@ -626,6 +1199,7 @@ function filteredRecipeIds(){
         r.title,
         id,
         recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' '),
+        seasonLabel(recipeSeason(r)),
         (r.tags || []).join(' '),
         (r.styles || []).join(' ')
       ].join(' ').toLowerCase();
@@ -643,29 +1217,53 @@ function filteredRecipeIds(){
       libRecipeFilters.tags.forEach(function(t){ if(tags.indexOf(t) === -1) hasAll = false; });
       if(!hasAll) return false;
     }
+    if(libRecipeFilters.seasons.size && !libRecipeFilters.seasons.has(recipeSeason(r))) return false;
     return true;
   }).sort(function(a, b){
+    const aFav = recipePrefs[a] === 'favorite';
+    const bFav = recipePrefs[b] === 'favorite';
+    if(aFav !== bFav) return aFav ? -1 : 1;
     return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
   });
 }
 
 function renderLibRecipeFilterBar(){
-  const anyActive = (libRecipeFilters.query || '').trim().length > 0 || libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0;
+  const anyActive = (libRecipeFilters.query || '').trim().length > 0 || libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0 || libRecipeFilters.seasons.size > 0;
+  const activeCount = filterActiveCount(libRecipeFilters);
+  const labels = [];
+  libRecipeFilters.slots.forEach(function(s){ labels.push(SLOT_LABEL[s] || s); });
+  libRecipeFilters.tags.forEach(function(t){ labels.push(tagLabelForPreview(t)); });
+  libRecipeFilters.seasons.forEach(function(s){ labels.push(seasonLabel(s)); });
+  const n = filteredRecipeIds().length;
   let html = '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:10px" type="text" id="libRecipeSearchInput" placeholder="Search recipes…" value="' + htmlAttr(libRecipeFilters.query || '') + '" oninput="onLibRecipeSearchInput(this.value)" autocomplete="off">'
-    + '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:10px">'
-    + RECIPE_SLOTS.map(function(s){ return filterChipHtml(SLOT_LABEL[s], libRecipeFilters.slots.has(s), 'toggleLibRecipeSlotFilter(\'' + s + '\')'); }).join('')
-    + '</div>';
-  html += '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:7px">'
-    + VALID_TAGS.map(function(t){ return filterChipHtml(tagLabelForPreview(t), libRecipeFilters.tags.has(t), 'toggleLibRecipeTagFilter(\'' + t + '\')'); }).join('')
-    + '</div>';
-  if(anyActive){
-    const n = filteredRecipeIds().length;
-    html += '<div class="row between" style="margin-top:9px">'
-      + '<span class="sub" id="libRecipeFilterCount" style="margin:0">' + n + ' recipe' + (n === 1 ? '' : 's') + '</span>'
-      + '<button class="pill ghost chip-preset" style="min-height:44px;padding:0 14px" onclick="clearLibRecipeFilters()">✕ Clear</button>'
+    + '<div class="filter-compact">'
+    + '<button class="filter-toggle" onclick="toggleLibRecipeFiltersPanel()">' + (libRecipeFiltersOpen ? 'Hide filters' : 'Filters') + (activeCount ? ' · ' + activeCount : '') + '</button>'
+    + '<span class="sub" style="margin:0">' + n + ' recipe' + (n === 1 ? '' : 's') + '</span>'
+    + '</div>'
+    + filterSummaryChips(labels, 'clearLibRecipeFilters()');
+  if(libRecipeFiltersOpen){
+    html += '<div class="filter-panel">'
+      + '<div class="filter-label">Meal</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + RECIPE_SLOTS.map(function(s){ return filterChipHtml(SLOT_LABEL[s], libRecipeFilters.slots.has(s), 'toggleLibRecipeSlotFilter(\'' + s + '\')'); }).join('')
+      + '</div>'
+      + '<div class="filter-label">Season</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + SEASON_VALUES.map(function(s){ return filterChipHtml(seasonLabel(s), libRecipeFilters.seasons.has(s), 'toggleLibRecipeSeasonFilter(\'' + s + '\')'); }).join('')
+      + '</div>'
+      + '<div class="filter-label">Tags</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + VALID_TAGS.map(function(t){ return filterChipHtml(tagLabelForPreview(t), libRecipeFilters.tags.has(t), 'toggleLibRecipeTagFilter(\'' + t + '\')'); }).join('')
+      + '</div>'
+      + (anyActive ? '<button class="filter-clear full" onclick="clearLibRecipeFilters()">Clear filters</button>' : '')
       + '</div>';
   }
   return html;
+}
+
+function toggleLibRecipeFiltersPanel(){
+  libRecipeFiltersOpen = !libRecipeFiltersOpen;
+  rerenderLibRecipeFilteredView();
 }
 
 function toggleLibRecipeSlotFilter(slot){
@@ -682,8 +1280,14 @@ function toggleLibRecipeTagFilter(tag){
   if(libRecipeFilters.tags.has(tag)) libRecipeFilters.tags.delete(tag); else libRecipeFilters.tags.add(tag);
   rerenderLibRecipeFilteredView();
 }
+function toggleLibRecipeSeasonFilter(season){
+  season = normalizeSeason(season);
+  if(libRecipeFilters.seasons.has(season)) libRecipeFilters.seasons.delete(season); else libRecipeFilters.seasons.add(season);
+  rerenderLibRecipeFilteredView();
+}
 function clearLibRecipeFilters(){
-  libRecipeFilters = {query: '', slots: new Set(), tags: new Set()};
+  libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
+  libRecipeFiltersOpen = false;
   rerenderLibRecipeFilteredView();
 }
 function rerenderLibRecipeFilteredView(){
@@ -696,7 +1300,7 @@ function rerenderLibRecipeFilteredView(){
 function renderLibRecipeListMarkup(){
   const ids = filteredRecipeIds();
   if(!ids.length){
-    const anyActive = libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0;
+    const anyActive = libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0 || libRecipeFilters.seasons.size > 0;
     return '<p class="sub" style="margin-top:14px">' + (anyActive
       ? 'No recipes match your filters.'
       : 'No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.') + '</p>';
@@ -709,7 +1313,7 @@ function renderLibRecipeListMarkup(){
     const pref = recipePrefs[id] || null;
     return '<div class="altrow" style="cursor:default"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
-      + '<div class="ad">' + slotLabel + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
+      + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
       + '<div class="lib-recipe-actions">'
       + '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" aria-label="Favorite ' + htmlAttr(r.title) + '" onclick="toggleRecipePref(\'' + id + '\',\'favorite\')">♡</button>'
       + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" aria-label="Thumbs down ' + htmlAttr(r.title) + '" onclick="toggleRecipePref(\'' + id + '\',\'down\')">👎</button>'
@@ -730,7 +1334,7 @@ function toggleRecipePref(id, pref){
 }
 
 function buildMyRecipesSheet(){
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Recipes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+  let html = '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Recipes</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
     + '<button class="cta ghostbtn" style="margin-top:10px" onclick="openNewRecipeForm()">＋ New recipe</button>'
     + '<div id="libRecipeFilterBar">' + renderLibRecipeFilterBar() + '</div>';
   if(!Object.keys(RECIPES_DB).length){
@@ -758,7 +1362,7 @@ function deleteRecipe(id){
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
   toast('✓ Deleted ' + title);
   renderFoodLibraryCount();
-  if(document.getElementById('sheet').classList.contains('show')) openMyRecipes();
+  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
 }
 
 /* ---------------- recipe builder ---------------- */
@@ -773,6 +1377,7 @@ function recipeToBuilder(id){
     name: r.title || '',
     emoji: r.emoji || '🍽️',
     slots: recipeSlotList(r).length ? recipeSlotList(r) : [r.slot || 'dinner'],
+    season: recipeSeason(r),
     time: r.time || 20,
     servings: r.servings || 1,
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
@@ -782,10 +1387,7 @@ function recipeToBuilder(id){
 }
 
 function openNewRecipeForm(){
-  recipeBuilder = {name: '', emoji: '🍽️', slots: ['dinner'], time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
+  recipeBuilder = {name: '', emoji: '🍽️', slots: ['dinner'], season: 'evergreen', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
   renderRecipeBuilderSheet();
 }
 
@@ -793,13 +1395,10 @@ function openEditRecipeForm(id){
   const draft = recipeToBuilder(id);
   if(!draft){ toast('Recipe not found'); return; }
   recipeBuilder = draft;
-  document.getElementById('sheet').classList.add('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
   renderRecipeBuilderSheet();
 }
 
-function renderRecipeBuilderSheet(){ document.getElementById('sheetBody').innerHTML = buildRecipeBuilderSheet(); }
+function renderRecipeBuilderSheet(){ setRecipesScreenHtml(buildRecipeBuilderSheet()); }
 
 function computeBuilderTotals(){
   const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
@@ -836,6 +1435,10 @@ function buildRecipeBuilderSheet(){
   html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
     + '</div><div class="sub" style="margin-top:4px">Pick every meal this recipe can work for. The first selected slot stays primary for old plans.</div></div>';
+
+  html += '<div class="field"><label>Season</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(rb.season) === s ? ' chipsel' : '') + '" onclick="setRecipeBuilderSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
+    + '</div><div class="sub" style="margin-top:4px">Evergreen is always eligible; the seasonal tags limit automatic planning/re-balance to the current season.</div></div>';
 
   html += '<div class="field"><label>Prep time</label><div class="inp"><span>Minutes</span>'
     + '<span class="sv-stepper" style="margin:0">'
@@ -899,6 +1502,7 @@ function toggleRecipeSlot(s){
   recipeBuilder.slots = RECIPE_SLOTS.filter(function(slot){ return slots.indexOf(slot) !== -1; });
   renderRecipeBuilderSheet();
 }
+function setRecipeBuilderSeason(season){ recipeBuilder.season = normalizeSeason(season); renderRecipeBuilderSheet(); }
 function stepRecipeTime(delta){ recipeBuilder.time = Math.max(2, Math.min(180, recipeBuilder.time + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeServings(delta){ recipeBuilder.servings = Math.max(1, Math.min(12, recipeBuilder.servings + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeIngredientGrams(i, delta){
@@ -928,7 +1532,7 @@ function removeRecipeIngredient(i){
 /* ---------------- add-ingredient picker (reuses render.js:searchFoods) ---------------- */
 function openAddIngredientToRecipe(){
   recipeBuilder.pickerQuery = '';
-  document.getElementById('sheetBody').innerHTML = buildRecipeIngredientPickerSheet();
+  setRecipesScreenHtml(buildRecipeIngredientPickerSheet());
   const input = document.getElementById('recIngSearchInput');
   if(input) input.focus();
 }
@@ -1203,6 +1807,7 @@ function saveRecipeBuilder(){
   const recipe = {
     title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: (rb.slots && rb.slots[0]) || 'dinner', slots: (rb.slots && rb.slots.length ? rb.slots.slice() : ['dinner']),
     styles: meta.styles, time: rb.time, servings: yieldN,
+    season: normalizeSeason(rb.season || derivedRecipeSeasonFromIngredients(rb.ingredients)),
     ingredients: rb.ingredients.map(function(r){ return [r.foodId, r.grams]; }),
     toTaste: [],
     steps: stepsArr.length ? stepsArr : ['Combine and enjoy.'],

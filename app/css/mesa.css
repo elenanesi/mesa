@@ -132,6 +132,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .ta-btn{width:44px;height:44px;border-radius:50%;border:0;font-size:17px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
 .ta-btn:active{transform:scale(.92);}
 .ta-confirm{background:var(--sage);color:#fff;}
+.ta-swap{background:#eef0ec;color:var(--ink-soft);}
 .ta-skip{background:#f6e6dc;color:#b25e35;}
 .today-actions .tag-row{margin-top:0;}
 
@@ -168,7 +169,22 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .field textarea.inp{display:block;}
 .stackbar{height:8px;border-radius:999px;background:#eef0ec;overflow:hidden;display:flex;}
 .stackbar i{display:block;height:100%;}
+.macro-cal-list{display:grid;gap:8px;}
+.macro-cal-row{display:grid;grid-template-columns:1fr auto auto;align-items:center;gap:10px;min-height:34px;padding:8px 0;border-bottom:1px solid rgba(223,209,187,.72);}
+.macro-cal-row:last-child{border-bottom:0;}
+.macro-cal-row span{display:flex;align-items:center;gap:8px;font-size:13px;font-weight:700;color:var(--ink-soft);min-width:0;}
+.macro-cal-row b{font-size:13px;color:var(--ink);white-space:nowrap;}
+.macro-cal-row em{font-style:normal;font-size:12px;color:var(--muted);white-space:nowrap;text-align:right;}
+.macro-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 9px;}
 .cap-note{font-size:10px;color:var(--muted);margin-top:4px;min-height:13px;}
+.filter-compact{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;}
+.filter-toggle{border:1px solid rgba(126,149,99,.38);background:var(--sage-tint);color:var(--sage-deep);border-radius:999px;min-height:40px;padding:0 14px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;}
+.filter-toggle:active{transform:scale(.96);}
+.filter-summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.filter-clear{border:0;background:transparent;color:var(--terra);font:inherit;font-size:12px;font-weight:800;min-height:32px;padding:0 4px;cursor:pointer;}
+.filter-clear.full{display:block;margin-top:10px;padding:0 2px;}
+.filter-panel{border-top:1px solid rgba(223,209,187,.78);margin-top:8px;padding-top:10px;}
+.filter-label{font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:8px 0 6px;}
 
 /* macro split editor */
 .pill.chip-preset{border:0;-webkit-appearance:none;appearance:none;font:inherit;cursor:pointer;}
@@ -249,6 +265,13 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
    ghost look (echoes .lib-del but without the warning tint until pressed). */
 .li-x{width:44px;height:44px;min-width:44px;flex:0 0 44px;border:0;border-radius:12px;background:#eef0ec;color:var(--ink-soft);font-size:14px;font-weight:700;cursor:pointer;}
 .li-x:active{transform:scale(.94);background:#f6e6dc;color:#b25e35;}
+
+/* barcode scanner */
+.scanner-box{position:relative;aspect-ratio:16/11;border-radius:16px;overflow:hidden;background:#2f281f;border:1px solid rgba(176,146,105,.38);}
+.scanner-video{width:100%;height:100%;object-fit:cover;display:block;}
+.scanner-frame{position:absolute;left:4%;right:4%;top:34%;height:32%;border:2px solid rgba(255,250,240,.94);border-radius:12px;box-shadow:0 0 0 999px rgba(0,0,0,.18);}
+.scanned-product-card{display:flex;gap:12px;align-items:center;padding:12px;margin-top:12px;}
+.scanned-product-img{width:64px;height:64px;object-fit:cover;border-radius:14px;border:1px solid var(--line);background:#fff;flex:0 0 64px;}
 
 /* insights */
 .stat{display:grid;grid-template-columns:repeat(2,1fr);gap:11px;}

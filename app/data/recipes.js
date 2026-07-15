@@ -342,6 +342,433 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
 
+  /* ================= ELENA RECIPE WISHLIST — BREAKFAST ================= */
+
+  'french-toast-fruit-maple': {
+    title: 'French toast with fruit & maple syrup', emoji: '🍞', slot: 'breakfast',
+    styles: ['balanced'], time: 15,
+    ingredients: [['white-bread', 70], ['eggs', 50], ['milk', 80], ['mixed-berries', 80], ['maple-syrup', 15], ['olive-oil', 4]],
+    toTaste: ['cinnamon', 'vanilla'],
+    steps: ['Whisk egg, milk, cinnamon and vanilla.', 'Dip the bread and cook in a lightly oiled pan until golden.', 'Top with fruit and maple syrup.'],
+    tags: ['quick'],
+    avoid: ['gluten', 'lactose']
+  },
+  'yogurt-cereali-frutta': {
+    title: 'Yogurt, cereali e frutta', emoji: '🥣', slot: 'breakfast',
+    styles: ['balanced'], time: 5,
+    ingredients: [['greek-yogurt', 170], ['granola', 35], ['bananas', 60], ['mixed-berries', 60], ['honey', 8]],
+    toTaste: [],
+    steps: ['Spoon yogurt into a bowl.', 'Add cereal, banana and berries.', 'Finish with honey if wanted.'],
+    tags: ['quick', 'muscle'],
+    avoid: ['gluten', 'lactose']
+  },
+  pancakes: {
+    title: 'Pancakes', emoji: '🥞', slot: 'breakfast',
+    styles: ['balanced'], time: 18,
+    ingredients: [['oats', 45], ['eggs', 50], ['milk', 100], ['bananas', 60], ['maple-syrup', 15], ['olive-oil', 4]],
+    toTaste: ['cinnamon'],
+    steps: ['Blend oats, egg, milk and banana into a batter.', 'Cook small pancakes in a lightly oiled pan.', 'Serve with maple syrup.'],
+    tags: [],
+    avoid: ['gluten', 'lactose']
+  },
+  cereali: {
+    title: 'Cereali', emoji: '🥣', slot: 'breakfast',
+    styles: ['balanced'], time: 3,
+    ingredients: [['granola', 45], ['milk', 180], ['bananas', 70]],
+    toTaste: [],
+    steps: ['Pour cereal into a bowl.', 'Add milk.', 'Slice banana on top.'],
+    tags: ['quick'],
+    avoid: ['gluten', 'lactose']
+  },
+  'uova-bacon': {
+    title: 'Uova e bacon', emoji: '🍳', slot: 'breakfast',
+    styles: ['highprotein', 'lowcarb'], time: 12,
+    ingredients: [['eggs', 100], ['bacon', 35], ['cherry-tomatoes', 80]],
+    toTaste: ['black pepper'],
+    steps: ['Cook bacon until crisp.', 'Fry or scramble the eggs.', 'Serve with tomatoes on the side.'],
+    tags: ['muscle', 'quick'],
+    avoid: []
+  },
+  'uova-avocado-toast': {
+    title: 'Uova avocado toast', emoji: '🥑', slot: 'breakfast',
+    styles: ['balanced', 'highprotein'], time: 12,
+    ingredients: [['wholewheat-bread', 70], ['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60]],
+    toTaste: ['lemon', 'black pepper'],
+    steps: ['Toast the bread.', 'Mash avocado with lemon and pepper.', 'Top with eggs and tomatoes.'],
+    tags: ['heart', 'highFiber', 'muscle'],
+    avoid: ['gluten']
+  },
+  'ricotta-pere-noci-toast': {
+    title: 'Ricotta, pere e noci toast', emoji: '🍐', slot: 'breakfast',
+    styles: ['balanced'], time: 8,
+    ingredients: [['wholewheat-bread', 70], ['ricotta', 80], ['pears', 90], ['walnuts', 15], ['honey', 6]],
+    toTaste: ['black pepper'],
+    steps: ['Toast the bread.', 'Spread ricotta on top.', 'Add sliced pear, walnuts and a little honey.'],
+    tags: ['highFiber'],
+    avoid: ['gluten', 'lactose', 'nuts']
+  },
+
+  /* ================= ELENA RECIPE WISHLIST — LUNCH ================= */
+
+  'insalata-pesche-feta': {
+    title: 'Insalata pesche e feta', emoji: '🥗', slot: 'lunch',
+    season: 'spring/summer',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'lowcarb'], time: 10,
+    ingredients: [['peaches', 150], ['feta-cheese', 70], ['rocket-arugula', 50], ['walnuts', 15], ['olive-oil', 10]],
+    toTaste: ['lemon', 'black pepper'],
+    steps: ['Slice peaches and pile over rocket.', 'Crumble feta on top.', 'Add walnuts and dress with olive oil and lemon.'],
+    tags: ['veggie', 'quick'],
+    avoid: ['lactose', 'nuts']
+  },
+  'insalata-greca-pizza-bianca': {
+    title: 'Insalata greca e pizza bianca', emoji: '🥗', slot: 'lunch',
+    season: 'spring/summer',
+    styles: ['balanced'], time: 10,
+    ingredients: [['cucumber', 100], ['cherry-tomatoes', 120], ['feta-cheese', 60], ['olives', 30], ['pizza-bianca', 80], ['olive-oil', 8]],
+    toTaste: ['oregano'],
+    steps: ['Chop cucumber and tomatoes.', 'Add feta and olives.', 'Serve with pizza bianca on the side.'],
+    tags: ['veggie', 'quick'],
+    avoid: ['gluten', 'lactose']
+  },
+  'bowl-insalata': {
+    title: 'Bowl insalata', emoji: '🥗', slot: 'lunch',
+    season: 'spring/summer',
+    styles: ['balanced', 'highprotein'], time: 12,
+    ingredients: [['chicken-breast', 120], ['lettuce', 80], ['chickpeas', 90], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 8]],
+    toTaste: ['lemon'],
+    steps: ['Fill a bowl with lettuce, cucumber and tomatoes.', 'Add chickpeas and sliced chicken.', 'Dress with olive oil and lemon.'],
+    tags: ['muscle', 'highFiber'],
+    avoid: []
+  },
+  'toast-eatsmiter': {
+    title: 'Toast eatsmiter', emoji: '🥪', slot: 'lunch',
+    styles: ['balanced'], time: 8,
+    ingredients: [['wholewheat-bread', 90], ['turkey-breast', 70], ['mozzarella', 45], ['cherry-tomatoes', 50]],
+    toTaste: ['mustard'],
+    steps: ['Fill bread with turkey, mozzarella and tomato.', 'Toast until warm and crisp.', 'Add mustard to taste.'],
+    tags: ['quick', 'muscle'],
+    avoid: ['gluten', 'lactose']
+  },
+  'pasta-pomodorini-funghi-broccoli': {
+    title: 'Pasta pomodorini, funghi e broccoli', emoji: '🍝', slot: 'lunch',
+    season: 'spring/summer',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 22,
+    ingredients: [['pasta', 75], ['cherry-tomatoes', 120], ['mushrooms', 90], ['broccoli', 120], ['parmesan', 12], ['olive-oil', 10]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Boil pasta and broccoli together in salted water.', 'Saute mushrooms and cherry tomatoes with oil and garlic.', 'Toss pasta with the vegetables and parmesan.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten', 'lactose']
+  },
+  'club-sandwich': {
+    title: 'Club sandwich', emoji: '🥪', slot: 'lunch',
+    styles: ['balanced', 'highprotein'], time: 15,
+    ingredients: [['white-bread', 90], ['chicken-breast', 100], ['bacon', 25], ['lettuce', 30], ['cherry-tomatoes', 50]],
+    toTaste: ['mustard'],
+    steps: ['Toast the bread.', 'Layer chicken, bacon, lettuce and tomato.', 'Slice and serve.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['gluten']
+  },
+  'uova-pomodoro': {
+    title: 'Uova e pomodoro', emoji: '🍳', slot: 'lunch',
+    season: 'spring/summer',
+    slots: ['lunch', 'breakfast'],
+    styles: ['balanced', 'lowcarb'], time: 15,
+    ingredients: [['eggs', 150], ['tomatoes', 180], ['olive-oil', 8], ['wholewheat-bread', 50]],
+    toTaste: ['basil', 'black pepper'],
+    steps: ['Simmer tomatoes with olive oil until saucy.', 'Crack in eggs and cover until set.', 'Serve with toast.'],
+    tags: ['veggie'],
+    avoid: ['gluten']
+  },
+  'panino-gorgonzola-prosciutto': {
+    title: 'Panino gorgonzola e prosciutto', emoji: '🥪', slot: 'lunch',
+    styles: ['balanced'], time: 7,
+    ingredients: [['white-bread', 90], ['gorgonzola', 45], ['prosciutto-cotto', 60], ['rocket-arugula', 20]],
+    toTaste: [],
+    steps: ['Slice the bread.', 'Fill with gorgonzola, prosciutto and rocket.', 'Toast if wanted.'],
+    tags: ['quick'],
+    avoid: ['gluten', 'lactose']
+  },
+  'insalata-noci-mele-senape': {
+    title: 'Insalata noci, mele e senape', emoji: '🥗', slot: 'lunch',
+    slots: ['lunch', 'side'],
+    styles: ['balanced'], time: 10,
+    ingredients: [['lettuce', 90], ['apples', 140], ['walnuts', 30], ['mustard', 8], ['olive-oil', 14], ['wholewheat-bread', 35]],
+    toTaste: ['lemon'],
+    steps: ['Slice apple and toss with lettuce.', 'Add walnuts.', 'Dress with mustard, olive oil and lemon.'],
+    tags: ['veggie', 'highFiber', 'quick'],
+    avoid: ['nuts']
+  },
+  'couscous-legumi-limone': {
+    title: 'Cous cous legumi, pomodorini, cetriolo, cipolla, rucola e limone', emoji: '🥗', slot: 'lunch',
+    season: 'spring/summer',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 18,
+    ingredients: [['couscous', 70], ['chickpeas', 100], ['cherry-tomatoes', 90], ['cucumber', 80], ['red-onion', 20], ['rocket-arugula', 25], ['olive-oil', 8]],
+    toTaste: ['lemon', 'parsley'],
+    steps: ['Cook couscous and fluff it.', 'Toss with chickpeas, tomatoes, cucumber, onion and rocket.', 'Dress with olive oil and lemon.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten', 'raw-onion']
+  },
+  'pomodori-al-riso': {
+    title: 'Pomodori al riso', emoji: '🍅', slot: 'lunch',
+    season: 'spring/summer',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 55,
+    ingredients: [['tomatoes', 300], ['rice', 65], ['potatoes', 180], ['olive-oil', 15]],
+    toTaste: ['basil', 'garlic', 'oregano'],
+    steps: ['Hollow tomatoes and mix the pulp with rice, herbs and oil.', 'Fill the tomatoes and place potatoes around them.', 'Bake until rice and potatoes are tender.'],
+    tags: ['veggie'],
+    avoid: []
+  },
+
+  /* ================= ELENA RECIPE WISHLIST — DINNER ================= */
+
+  'pollo-bollito-brodo': {
+    title: 'Pollo bollito in brodo', emoji: '🍗', slot: 'dinner',
+    styles: ['highprotein', 'lowcarb'], time: 45,
+    ingredients: [['chicken-breast', 190], ['carrots', 120], ['escarole', 100], ['olive-oil', 8]],
+    toTaste: ['celery', 'onion', 'parsley'],
+    steps: ['Simmer chicken with vegetables until tender.', 'Shred the chicken.', 'Serve in broth with greens and a little olive oil.'],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'pollo-al-forno': {
+    title: 'Pollo al forno', emoji: '🍗', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 40,
+    ingredients: [['chicken-thigh', 180], ['potatoes', 220], ['carrots', 120], ['olive-oil', 12]],
+    toTaste: ['rosemary', 'garlic', 'lemon'],
+    steps: ['Season chicken, potatoes and carrots.', 'Roast at 200C until golden and cooked through.', 'Finish with lemon.'],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'chicken-satay': {
+    title: 'Chicken satay', emoji: '🍢', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['chicken-breast', 170], ['almonds', 20], ['soy-sauce', 10], ['rice', 60], ['cucumber', 80]],
+    toTaste: ['lime', 'ginger', 'chilli if wanted'],
+    steps: ['Marinate chicken with soy sauce and ginger.', 'Cook chicken skewers until done.', 'Serve with rice, cucumber and crushed almonds as a satay-style topping.'],
+    tags: ['muscle'],
+    avoid: ['nuts']
+  },
+  'soy-ginger-chicken': {
+    title: 'Soy ginger chicken', emoji: '🍗', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['chicken-breast', 170], ['soy-sauce', 15], ['ginger', 8], ['broccoli', 160], ['rice', 60], ['olive-oil', 6]],
+    toTaste: ['garlic'],
+    steps: ['Marinate chicken with soy sauce, ginger and garlic.', 'Stir-fry chicken until cooked.', 'Serve with broccoli and rice.'],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'butter-chicken': {
+    title: 'Butter chicken', emoji: '🍛', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['chicken-breast', 160], ['tomatoes', 180], ['greek-yogurt', 80], ['rice', 60], ['olive-oil', 10]],
+    toTaste: ['curry spices', 'garlic', 'ginger'],
+    steps: ['Brown chicken with spices.', 'Simmer tomatoes into a sauce.', 'Stir in yogurt off the heat and serve with rice.'],
+    tags: ['muscle'],
+    avoid: ['lactose']
+  },
+  'chicken-tacos-gyros': {
+    title: 'Chicken tacos / gyros', emoji: '🌮', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['chicken-breast', 160], ['white-bread', 80], ['greek-yogurt', 60], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 6]],
+    toTaste: ['lemon', 'oregano', 'paprika'],
+    steps: ['Season and cook chicken strips.', 'Warm bread as a wrap.', 'Fill with chicken, yogurt sauce, cucumber and tomatoes.'],
+    tags: ['muscle'],
+    avoid: ['gluten', 'lactose']
+  },
+  'tacchino-arrosto-agrumi': {
+    title: 'Tacchino arrosto agli agrumi', emoji: '🦃', slot: 'dinner',
+    season: 'winter/autumn',
+    styles: ['balanced', 'highprotein'], time: 35,
+    ingredients: [['turkey-breast', 190], ['oranges', 80], ['sweet-potato', 180], ['green-beans', 140], ['olive-oil', 10]],
+    toTaste: ['rosemary', 'black pepper'],
+    steps: ['Roast turkey with orange zest and herbs.', 'Roast sweet potato alongside.', 'Serve with green beans.'],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'filetto-maiale': {
+    title: 'Filetto di maiale', emoji: '🍖', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['pork-loin', 170], ['mushrooms', 120], ['potatoes', 200], ['olive-oil', 10]],
+    toTaste: ['sage', 'garlic'],
+    steps: ['Sear pork until golden.', 'Cook mushrooms in the pan juices.', 'Serve with roasted potatoes.'],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'filetto-manzo': {
+    title: 'Filetto di manzo', emoji: '🥩', slot: 'dinner',
+    styles: ['highprotein', 'lowcarb'], time: 25,
+    ingredients: [['beef-mince-lean', 170], ['rocket-arugula', 50], ['cherry-tomatoes', 100], ['parmesan', 20], ['olive-oil', 10]],
+    toTaste: ['lemon', 'black pepper'],
+    steps: ['Cook the beef as a steak-style patty or sliced fillet substitute.', 'Toss rocket and tomatoes with olive oil and lemon.', 'Serve with parmesan shavings.'],
+    tags: ['muscle'],
+    avoid: ['lactose']
+  },
+  'salmone-o-sogliola': {
+    title: 'Salmone o sogliola con verdure', emoji: '🐟', slot: 'dinner',
+    season: 'spring/summer',
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
+    ingredients: [['salmon-fillet', 150], ['asparagus', 120], ['green-beans', 120], ['olive-oil', 10]],
+    toTaste: ['lemon', 'parsley'],
+    steps: ['Bake or pan-cook the fish.', 'Steam asparagus and green beans.', 'Finish everything with olive oil and lemon.'],
+    tags: ['omega3', 'muscle', 'lowGI'],
+    avoid: []
+  },
+  'pasta-zucca-fagioli-funghi': {
+    title: 'Pasta zucca, fagioli e funghi', emoji: '🍝', slot: 'dinner',
+    season: 'winter/autumn',
+    slots: ['dinner', 'lunch'],
+    styles: ['balanced'], time: 28,
+    ingredients: [['pasta', 70], ['pumpkin', 160], ['cannellini-beans', 100], ['mushrooms', 100], ['olive-oil', 10]],
+    toTaste: ['rosemary', 'garlic'],
+    steps: ['Cook pasta.', 'Saute pumpkin, mushrooms and garlic until soft.', 'Add beans and toss with pasta.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten']
+  },
+  'polpette-melanzane': {
+    title: 'Polpette di melanzane', emoji: '🧆', slot: 'dinner',
+    season: 'spring/summer',
+    slots: ['dinner', 'lunch'],
+    styles: ['balanced'], time: 35,
+    ingredients: [['aubergine', 220], ['eggs', 50], ['parmesan', 25], ['wholewheat-bread', 45], ['tomatoes', 150], ['olive-oil', 10]],
+    toTaste: ['basil', 'garlic'],
+    steps: ['Cook aubergine until soft and chop finely.', 'Mix with egg, parmesan and bread crumbs.', 'Bake or pan-cook the polpette and serve with tomato sauce.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+  ramen: {
+    title: 'Ramen', emoji: '🍜', slot: 'dinner',
+    styles: ['balanced'], time: 25,
+    ingredients: [['ramen-noodles', 70], ['eggs', 50], ['chicken-breast', 90], ['mushrooms', 80], ['spinach', 60], ['soy-sauce', 15]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Simmer broth with soy sauce, ginger and garlic.', 'Cook noodles and mushrooms.', 'Top with chicken, egg and spinach.'],
+    tags: ['muscle'],
+    avoid: ['gluten']
+  },
+  'zuppa-broccolo-nero-lenticchie': {
+    title: 'Zuppa broccolo nero e lenticchie', emoji: '🍲', slot: 'dinner',
+    season: 'winter/autumn',
+    slots: ['dinner', 'lunch'],
+    styles: ['balanced'], time: 30,
+    ingredients: [['cooked-lentils', 190], ['cavolo-nero', 140], ['tomatoes', 100], ['carrots', 80], ['olive-oil', 12], ['wholewheat-bread', 35]],
+    toTaste: ['garlic', 'chilli if wanted'],
+    steps: ['Simmer lentils with tomatoes and carrots.', 'Add greens until tender.', 'Finish with olive oil.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'polpette-tacchino-yogurt-menta': {
+    title: 'Polpette di tacchino, yogurt e menta', emoji: '🦃', slot: 'dinner',
+    styles: ['balanced', 'highprotein'], time: 28,
+    ingredients: [['turkey-breast', 180], ['eggs', 50], ['wholewheat-bread', 35], ['greek-yogurt', 80], ['cucumber', 80], ['olive-oil', 8]],
+    toTaste: ['mint', 'lemon'],
+    steps: ['Mix minced turkey-style filling with egg and bread crumbs.', 'Shape and cook the meatballs.', 'Serve with cucumber yogurt mint sauce.'],
+    tags: ['muscle'],
+    avoid: ['gluten', 'lactose']
+  },
+  'burrito-vegetariano': {
+    title: 'Burrito vegetariano', emoji: '🌯', slot: 'dinner',
+    styles: ['balanced'], time: 22,
+    ingredients: [['white-bread', 80], ['cannellini-beans', 130], ['rice', 55], ['avocado', 60], ['cherry-tomatoes', 80], ['feta-cheese', 25]],
+    toTaste: ['lime', 'cumin'],
+    steps: ['Warm the wrap bread.', 'Fill with rice, beans, avocado and tomatoes.', 'Add feta and roll up.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten', 'lactose']
+  },
+  'tofu-noodles': {
+    title: 'Tofu e noodles', emoji: '🍜', slot: 'dinner',
+    styles: ['balanced'], time: 22,
+    ingredients: [['tofu', 160], ['egg-noodles', 70], ['broccoli', 120], ['carrots', 80], ['soy-sauce', 15], ['olive-oil', 8]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Cook noodles.', 'Stir-fry tofu and vegetables.', 'Toss with soy sauce and noodles.'],
+    tags: ['veggie', 'muscle'],
+    avoid: ['gluten']
+  },
+  'feta-filo-miele-noodles-verdure': {
+    title: 'Feta pasta filo e miele, noodles e verdura grigliata', emoji: '🧀', slot: 'dinner',
+    season: 'spring/summer',
+    styles: ['balanced'], time: 30,
+    ingredients: [['feta-cheese', 80], ['pasta-filo', 45], ['honey', 10], ['egg-noodles', 45], ['courgette', 100], ['bell-pepper', 100], ['olive-oil', 10]],
+    toTaste: ['sesame or thyme'],
+    steps: ['Wrap feta in filo and bake until crisp.', 'Drizzle with honey.', 'Serve with noodles and grilled vegetables.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+
+  /* ================= ELENA RECIPE WISHLIST — SIDES ================= */
+
+  'carrots-over-hummus': {
+    title: 'Carrots over hummus', emoji: '🥕', slot: 'side',
+    slots: ['side', 'snack', 'lunch'],
+    styles: ['balanced'], time: 22,
+    ingredients: [['carrots', 180], ['hummus', 70], ['maple-syrup', 5], ['olive-oil', 8]],
+    toTaste: ['paprika', 'lemon'],
+    steps: ['Roast or pan-cook carrots with olive oil and maple.', 'Spread hummus on a plate.', 'Pile carrots over the hummus.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+  scarola: {
+    title: 'Scarola', emoji: '🥬', slot: 'side',
+    styles: ['lowcarb', 'balanced'], time: 15,
+    ingredients: [['escarole', 220], ['olives', 25], ['capers', 10], ['olive-oil', 10]],
+    toTaste: ['garlic'],
+    steps: ['Wilt scarola in a pan.', 'Add olives, capers and garlic.', 'Finish with olive oil.'],
+    tags: ['veggie', 'highFiber', 'quick'],
+    avoid: []
+  },
+  'cavolfiore-arrosto-paprika': {
+    title: 'Cavolfiore arrosto con paprika e spezie', emoji: '🥦', slot: 'side',
+    season: 'winter/autumn',
+    styles: ['lowcarb', 'balanced'], time: 30,
+    ingredients: [['cauliflower', 240], ['olive-oil', 12], ['greek-yogurt', 50]],
+    toTaste: ['paprika', 'cumin', 'lemon'],
+    steps: ['Roast cauliflower-style broccoli florets with oil and spices.', 'Stir yogurt with lemon.', 'Serve with yogurt sauce.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: ['lactose']
+  },
+  'asparagi-fagiolini-broccoli': {
+    title: 'Asparagi, fagiolini o broccoli', emoji: '🥦', slot: 'side',
+    season: 'spring/summer',
+    styles: ['lowcarb', 'balanced'], time: 15,
+    ingredients: [['asparagus', 100], ['green-beans', 100], ['broccoli', 100], ['olive-oil', 10]],
+    toTaste: ['lemon', 'black pepper'],
+    steps: ['Steam or roast the green vegetables.', 'Dress with olive oil and lemon.', 'Serve warm.'],
+    tags: ['veggie', 'highFiber', 'quick'],
+    avoid: []
+  },
+  'cole-slaw': {
+    title: 'Cole slaw', emoji: '🥬', slot: 'side',
+    season: 'winter/autumn',
+    styles: ['balanced', 'lowcarb'], time: 12,
+    ingredients: [['cabbage', 160], ['carrots', 80], ['greek-yogurt', 60], ['mustard', 8]],
+    toTaste: ['lemon', 'black pepper'],
+    steps: ['Shred cabbage and carrots.', 'Mix yogurt, mustard and lemon.', 'Toss and chill briefly.'],
+    tags: ['veggie', 'quick'],
+    avoid: ['lactose']
+  },
+  'verdure-wok': {
+    title: 'Verdure wok', emoji: '🥢', slot: 'side',
+    slots: ['side', 'lunch'],
+    styles: ['balanced', 'lowcarb'], time: 15,
+    ingredients: [['broccoli', 120], ['bell-pepper', 100], ['carrots', 80], ['soy-sauce', 12], ['olive-oil', 8]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Slice vegetables thinly.', 'Stir-fry hot and fast with oil.', 'Finish with soy sauce and ginger.'],
+    tags: ['veggie', 'quick'],
+    avoid: []
+  },
+  'insalata-carote-cetrioli-marinate': {
+    title: 'Insalata carote e cetrioli marinate', emoji: '🥒', slot: 'side',
+    season: 'spring/summer',
+    styles: ['lowcarb', 'balanced'], time: 10,
+    ingredients: [['carrots', 100], ['cucumber', 140], ['balsamic-vinegar', 10], ['olive-oil', 8]],
+    toTaste: ['lemon', 'mint'],
+    steps: ['Ribbon carrots and cucumber.', 'Dress with vinegar, olive oil and lemon.', 'Let sit a few minutes before serving.'],
+    tags: ['veggie', 'quick'],
+    avoid: []
+  },
+
   /* ================= SNACK (6) ================= */
 
   'brazil-nuts-apple': {

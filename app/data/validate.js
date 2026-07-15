@@ -27,6 +27,7 @@ const VALID_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack', 'side'];
 const VALID_STYLES = ['balanced', 'highprotein', 'lowcarb'];
 const VALID_TAGS = ['thyroid', 'skin', 'heart', 'muscle', 'lowGI', 'omega3', 'highFiber', 'quick', 'veggie'];
 const VALID_AVOID = ['lactose', 'gluten', 'shellfish', 'nuts', 'spicy', 'raw-onion'];
+const VALID_SEASONS = ['evergreen', 'winter/autumn', 'spring/summer'];
 
 // breakfast 300-650, lunch 400-750, dinner 400-800, snack 100-350 (PWA-MVP-plan.md B2 acceptance).
 const KCAL_BAND = {
@@ -123,6 +124,7 @@ function validateData() {
     if (typeof r.time !== 'number' || r.time <= 0) errors.push(prefix + 'time must be a positive number');
     // servings (batch yield) is optional — absent means 1.
     if ('servings' in r && (typeof r.servings !== 'number' || r.servings <= 0)) errors.push(prefix + 'servings must be a positive number');
+    if ('season' in r && VALID_SEASONS.indexOf(r.season) === -1) errors.push(prefix + 'invalid season "' + r.season + '"');
 
     const slotValid = typeof r.slot === 'string' && VALID_SLOTS.indexOf(r.slot) !== -1;
     if (!slotValid) errors.push(prefix + 'invalid slot "' + r.slot + '"');
@@ -168,6 +170,15 @@ function validateData() {
           return;
         }
         if (foodsLoaded && !FOODS[ing[0]]) errors.push(prefix + 'ingredient id "' + ing[0] + '" not found in FOODS');
+      });
+    }
+
+    if (foodsLoaded) {
+      Object.keys(FOODS).forEach(function(foodId){
+        const f = FOODS[foodId];
+        if (f && 'season' in f && VALID_SEASONS.indexOf(f.season) === -1) {
+          errors.push('Food "' + foodId + '": invalid season "' + f.season + '"');
+        }
       });
     }
 

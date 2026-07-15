@@ -8,13 +8,15 @@
 
 /* ---------------- navigation ---------------- */
 function go(id, el){
+  if(id !== 'libraryScanner' && typeof stopBarcodeScanner === 'function') stopBarcodeScanner();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   document.getElementById(id).classList.add('active');
   document.querySelector('.app').scrollTop = 0;
   var scr = document.getElementById(id); if(scr) scr.scrollTop = 0;
   // sync tabbar highlight
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  var tab = el && el.dataset.tab ? el : document.querySelector('.tab[data-tab="'+id+'"]');
+  var tabId = id.indexOf('library') === 0 ? 'library' : id;
+  var tab = el && el.dataset.tab ? el : document.querySelector('.tab[data-tab="'+tabId+'"]');
   if(tab) tab.classList.add('on');
   // Task D1: Insights is cheap to recompute (≤7 days of small arrays) and only ever
   // needs to be fresh at the moment it's shown, so it repaints on every visit rather than

@@ -320,6 +320,141 @@ async function handlePost(request, env, code, origin){
   return json({sections: merged}, 200, origin);
 }
 
+function d1Available(env){ return !!(env && env.MESA_DB); }
+
+function safeJSONStringify(v){
+  try{ return JSON.stringify(v == null ? null : v); }
+  catch(e){ return 'null'; }
+}
+
+function cleanCatalogId(v){ return String(v || '').trim(); }
+function normalizeSeason(v){
+  return v === 'winter/autumn' || v === 'spring/summer' ? v : 'evergreen';
+}
+function validCatalogScope(scope){ return scope === 'global' || /^[A-Z0-9]{8,}$/.test(scope); }
+function catalogScopeForRow(row, fallbackCode){
+  const source = row && row.source;
+  if(source === 'builtin') return 'global';
+  return fallbackCode;
+}
+
+async function upsertFoodRow(env, code, row){
+  if(!row || !isPlainObject(row)) return;
+  const id = cleanCatalogId(row.id);
+  const source = row.source === 'custom' ? 'custom' : (row.source === 'builtin' ? 'builtin' : null);
+  const data = isPlainObject(row.data) ? row.data : null;
+  if(!id || !source || !data) return;
+  const scope = catalogScopeForRow(row, code);
+  if(!validCatalogScope(scope)) return;
+  const name = String(row.name || data.name || id).slice(0, 240);
+  const category = row.category || data.cat || null;
+  const season = normalizeSeason(row.season || data.season);
+  const updatedAt = typeof row.updatedAt === 'number' && isFinite(row.updatedAt) ? row.updatedAt : Date.now();
+  await env.MESA_DB.prepare(
+    'INSERT INTO foods (scope,id,source,name,category,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
+    'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,name=excluded.name,category=excluded.category,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
+  ).bind(scope, id, source, name, category, season, updatedAt, safeJSONStringify(data)).run();
+}
+
+async function upsertRecipeRow(env, code, row){
+  if(!row || !isPlainObject(row)) return;
+  const id = cleanCatalogId(row.id);
+  const source = row.source === 'custom' || row.source === 'override' ? row.source : (row.source === 'builtin' ? 'builtin' : null);
+  const data = isPlainObject(row.data) ? row.data : null;
+  if(!id || !source || !data) return;
+  const scope = catalogScopeForRow(row, code);
+  if(!validCatalogScope(scope)) return;
+  const title = String(row.title || data.title || id).slice(0, 240);
+  const primarySlot = row.primarySlot || data.slot || null;
+  const season = normalizeSeason(row.season || data.season);
+  const updatedAt = typeof row.updatedAt === 'number' && isFinite(row.updatedAt) ? row.updatedAt : Date.now();
+  await env.MESA_DB.prepare(
+    'INSERT INTO recipes (scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
+    'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,title=excluded.title,primary_slot=excluded.primary_slot,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
+  ).bind(scope, id, source, title, primarySlot, season, updatedAt, safeJSONStringify(data)).run();
+}
+
+async function upsertRecipePref(env, code, recipeId, pref){
+  if(pref !== 'favorite' && pref !== 'down') return;
+  recipeId = cleanCatalogId(recipeId);
+  if(!recipeId) return;
+  await env.MESA_DB.prepare(
+    'INSERT INTO recipe_prefs (household_code,recipe_id,pref,updated_at) VALUES (?,?,?,?) ' +
+    'ON CONFLICT(household_code,recipe_id) DO UPDATE SET pref=excluded.pref,updated_at=excluded.updated_at'
+  ).bind(code, recipeId, pref, Date.now()).run();
+}
+
+async function upsertTombstone(env, code, itemType, itemId, deletedAt){
+  itemId = cleanCatalogId(itemId);
+  if(!itemId || (itemType !== 'food' && itemType !== 'recipe')) return;
+  const t = typeof deletedAt === 'number' && isFinite(deletedAt) ? deletedAt : Date.now();
+  await env.MESA_DB.prepare(
+    'INSERT INTO library_tombstones (household_code,item_type,item_id,deleted_at) VALUES (?,?,?,?) ' +
+    'ON CONFLICT(household_code,item_type,item_id) DO UPDATE SET deleted_at=max(library_tombstones.deleted_at, excluded.deleted_at)'
+  ).bind(code, itemType, itemId, t).run();
+  const table = itemType === 'food' ? 'foods' : 'recipes';
+  await env.MESA_DB.prepare('UPDATE ' + table + ' SET deleted_at=? WHERE scope=? AND id=?')
+    .bind(t, code, itemId).run();
+}
+
+async function handleLibraryPost(request, env, code, origin){
+  if(!d1Available(env)) return json({error: 'd1_not_configured'}, 503, origin);
+  let bodyText;
+  try{ bodyText = await request.text(); }catch(e){ return json({error: 'bad_request'}, 400, origin); }
+  if(new TextEncoder().encode(bodyText).length > MAX_PAYLOAD_BYTES){
+    return json({error: 'payload_too_large'}, 413, origin);
+  }
+  let parsed;
+  try{ parsed = JSON.parse(bodyText); }catch(e){ return json({error: 'invalid_json'}, 400, origin); }
+  if(!isPlainObject(parsed)) return json({error: 'invalid_body'}, 400, origin);
+
+  const foods = Array.isArray(parsed.foods) ? parsed.foods : [];
+  const recipes = Array.isArray(parsed.recipes) ? parsed.recipes : [];
+  for(let i = 0; i < foods.length; i++) await upsertFoodRow(env, code, foods[i]);
+  for(let i = 0; i < recipes.length; i++) await upsertRecipeRow(env, code, recipes[i]);
+
+  const prefs = isPlainObject(parsed.recipePrefs) ? parsed.recipePrefs : {};
+  for(const recipeId of Object.keys(prefs)) await upsertRecipePref(env, code, recipeId, prefs[recipeId]);
+
+  const deletedFoods = isPlainObject(parsed.deletedFoods) ? parsed.deletedFoods : {};
+  for(const id of Object.keys(deletedFoods)) await upsertTombstone(env, code, 'food', id, deletedFoods[id]);
+  const deletedRecipes = isPlainObject(parsed.deletedRecipes) ? parsed.deletedRecipes : {};
+  for(const id of Object.keys(deletedRecipes)) await upsertTombstone(env, code, 'recipe', id, deletedRecipes[id]);
+
+  return json({ok: true, foods: foods.length, recipes: recipes.length}, 200, origin);
+}
+
+function parseD1JSONRow(row){
+  try{ row.data = JSON.parse(row.data_json); }
+  catch(e){ row.data = null; }
+  delete row.data_json;
+  return row;
+}
+
+async function handleLibraryGet(env, code, origin, includeDeleted){
+  if(!d1Available(env)) return json({error: 'd1_not_configured'}, 503, origin);
+  const foodRows = await env.MESA_DB.prepare(
+    'SELECT scope,id,source,name,category,season,updated_at,deleted_at,data_json FROM foods ' +
+    'WHERE scope IN (?,?)' + (includeDeleted ? '' : ' AND deleted_at IS NULL') + ' ORDER BY name COLLATE NOCASE'
+  ).bind('global', code).all();
+  const recipeRows = await env.MESA_DB.prepare(
+    'SELECT scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json FROM recipes ' +
+    'WHERE scope IN (?,?)' + (includeDeleted ? '' : ' AND deleted_at IS NULL') + ' ORDER BY title COLLATE NOCASE'
+  ).bind('global', code).all();
+  const prefs = await env.MESA_DB.prepare(
+    'SELECT recipe_id,pref,updated_at FROM recipe_prefs WHERE household_code=? ORDER BY recipe_id'
+  ).bind(code).all();
+  const tombstones = await env.MESA_DB.prepare(
+    'SELECT item_type,item_id,deleted_at FROM library_tombstones WHERE household_code=? ORDER BY item_type,item_id'
+  ).bind(code).all();
+  return json({
+    foods: ((foodRows && foodRows.results) || []).map(parseD1JSONRow),
+    recipes: ((recipeRows && recipeRows.results) || []).map(parseD1JSONRow),
+    recipePrefs: (prefs && prefs.results) || [],
+    tombstones: (tombstones && tombstones.results) || []
+  }, 200, origin);
+}
+
 async function handleBootstrap(request, env, origin){
   const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
   if(await bootstrapRateLimited(env, ip)){
@@ -383,6 +518,11 @@ function matchSyncRoute(pathname){
   return m ? decodeURIComponent(m[1]) : null;
 }
 
+function matchLibraryRoute(pathname){
+  const m = /^\/library\/([^/]+)\/?$/.exec(pathname);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
 export default {
   async fetch(request, env){
     const url = new URL(request.url);
@@ -398,6 +538,14 @@ export default {
 
     if(url.pathname === '/bootstrap' && request.method === 'POST'){
       return handleBootstrap(request, env, origin);
+    }
+
+    const libraryCode = matchLibraryRoute(url.pathname);
+    if(libraryCode && libraryCode.trim()){
+      const code = normalizeHouseholdCode(libraryCode);
+      if(request.method === 'GET') return handleLibraryGet(env, code, origin, url.searchParams.get('includeDeleted') === '1');
+      if(request.method === 'POST') return handleLibraryPost(request, env, code, origin);
+      return json({error: 'method_not_allowed'}, 405, origin);
     }
 
     const code = matchSyncRoute(url.pathname);
