@@ -243,12 +243,27 @@ function syncServeHighlight(){
 }
 
 // Log cards are keyed by SLOT (log-breakfast...), not recipe id — resolve the slot
-// first, and only confirm when this recipe really is today's plan for that slot
-// (otherwise the old code toasted "Logged" without ever writing a LogEntry).
+// first. PRODUCT REQUIREMENT: the plan must never block recording what was actually
+// eaten. If this recipe isn't today's planned dish for the slot, swap the slot to it
+// (chooseSwapRecipe — the same path the swap sheet uses, so an already-confirmed
+// LogEntry gets corrected in place rather than duplicated) and then confirm it,
+// instead of the old dead-end toast that only told you to go do it from the Log tab.
 function markEatenFromRecipe(){
   const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
-  const planned = slot && displayedTodayRecipeId(slot) === currentRecipeKey;
-  if(!planned){ toast('Not on today’s plan — confirm meals from the Log tab'); return; }
+  if(!slot){ toast('Could not log this recipe'); return; }
+  const planned = displayedTodayRecipeId(slot) === currentRecipeKey;
+  if(!planned){
+    // Clear a stale "skipped" flag first — logConfirm() below no-ops on a skipped card,
+    // and skipping earlier shouldn't block logging the real meal now.
+    if(slotLogStatus(todayISO(), currentProf, slot) === 'skipped') removeLoggedSlot(todayISO(), currentProf, slot);
+    swapCtx = {dayIndex: todayDayIndex(), slot: slot, person: currentProf, weekStartDate: null, targetElId: null};
+    chooseSwapRecipe(currentRecipeKey); // swaps today's slot to this dish; toasts + re-renders Today/Log/Week
+    const card = document.getElementById('log-' + slot);
+    if(card && !card.classList.contains('done')) logConfirm(slot); // wasn't already confirmed (nothing to correct) — log it fresh
+    renderRecipeEatenState();
+    renderRecipeMealStrip();
+    return;
+  }
   const card = document.getElementById('log-' + slot);
   if(card && !card.classList.contains('done') && !card.classList.contains('skipped')){
     logConfirm(slot);
@@ -267,7 +282,8 @@ function markEatenFromRecipe(){
 // Today/Log screens. Resolves the slot exactly like markEatenFromRecipe() does; the
 // eaten/skipped tag-row ONLY ever appears for TODAY's plan for the CURRENT person — a
 // recipe opened from a Week row for a different day (recipeDayCtx) or one that isn't
-// today's planned slot for this person keeps the plain button + the existing toast path.
+// today's planned slot for this person keeps the plain button (tapping it now swaps it
+// into today's slot and logs it — see markEatenFromRecipe() — rather than dead-ending).
 function renderRecipeEatenState(){
   const wrap = document.getElementById('recipeEatenWrap');
   if(!wrap) return;
