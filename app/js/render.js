@@ -73,9 +73,41 @@ function recipeServingContextFor(key){
   return null;
 }
 
+// Per-serving ingredient display rows: [displayName, qty, unit] — moved verbatim from the
+// old state.js:buildLegacyRecipesCompat() compat view (removed; RECIPES_DB + this helper
+// are now the only source for the recipe screen's ingredient list). Quantities are scaled
+// to ONE serving (recipe batch / servings, same scale recipeNutrition(id, 1) uses);
+// piece-unit foods (FOODS[id].unit === 'piece', e.g. eggs) convert grams to a piece count
+// via avgG instead of showing grams; toTaste entries (pantry staples not counted in
+// nutrition) append as [label, null, 'to taste'] rows. updateServings() multiplies qty by
+// the current total servings at render time.
+function recipeDisplayIngredients(recipeId){
+  const src = RECIPES_DB[recipeId];
+  if(!src) return [];
+  const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
+  const ingredients = src.ingredients.map(function(ing){
+    const foodId = ing[0], grams = +(ing[1] / batchYield).toFixed(1);
+    const food = FOODS[foodId];
+    if(!food){ console.error('recipeDisplayIngredients: "' + recipeId + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
+    if(food.unit === 'piece') return [food.name, +(grams / food.avgG).toFixed(2), ''];
+    return [food.name, grams, food.unit];
+  });
+  (src.toTaste || []).forEach(function(t){ ingredients.push([capitalizeFirst(t), null, 'to taste']); });
+  return ingredients;
+}
+
+// RECIPES_DB[id].tags (raw tag strings) mapped through TAG_PILL_MAP (state.js) to the
+// legacy [pillClass, label] pill pairs the recipe screen/Today cards already know how to
+// paint — moved verbatim from the old buildLegacyRecipesCompat() compat view.
+function recipeDisplayPills(recipeId){
+  const src = RECIPES_DB[recipeId];
+  if(!src) return [];
+  return src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; });
+}
+
 function renderRecipe(key){
-  const r = RECIPES[key] || RECIPES.salmon;
-  currentRecipeKey = RECIPES[key] ? key : 'salmon';
+  const r = RECIPES_DB[key] || RECIPES_DB.salmon;
+  currentRecipeKey = RECIPES_DB[key] ? key : 'salmon';
   svE = 1; svM = 1.5; svS = 1;
   recipeServingCtx = recipeServingContextFor(currentRecipeKey);
   if(recipeServingCtx){
@@ -86,26 +118,27 @@ function renderRecipe(key){
       svS = recipeServingCtx.solo || 1;
     }
   }
+  const base = recipeNutrition(currentRecipeKey, 1).totals; // one serving, same scale the old compat view used
   document.getElementById('recipeHero').textContent = r.emoji;
   document.getElementById('recipeTitle').textContent = r.title;
-  document.getElementById('rsTime').textContent = '⏱️ ' + r.time;
-  document.getElementById('rsKcal').textContent = '🔥 ' + r.kcal + ' kcal';
-  document.getElementById('rsProt').textContent = '💪 ' + r.protein + 'g protein';
-  document.getElementById('recipeTags').innerHTML = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+  document.getElementById('rsTime').textContent = '⏱️ ' + r.time + ' min';
+  document.getElementById('rsKcal').textContent = '🔥 ' + Math.round(base.kcal) + ' kcal';
+  document.getElementById('rsProt').textContent = '💪 ' + Math.round(base.protein) + 'g protein';
+  document.getElementById('recipeTags').innerHTML = recipeDisplayPills(currentRecipeKey).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
   updateRecipeWhy();
-  document.getElementById('recipeMethod').innerHTML = r.method.map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('');
+  document.getElementById('recipeMethod').innerHTML = r.steps.map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('');
   updateServings();
   renderRecipeEatenState(); // fresh eaten/skipped read every time the recipe screen paints (open, re-render on plan change, swap)
   renderRecipeMealStrip();
 }
 
 // Task C3: "why this fits you" is per-PERSON (whyText(recipeId, profKey) — state.js), so
-// it can't be baked into RECIPES[id] at boot like the rest of the compat view. Called from
-// renderRecipe() (opening a recipe) and from applyProf() (switching profile while the
-// recipe screen is already open) so the copy always matches whoever's currently selected.
+// it can't be baked into a shared recipe object at boot. Called from renderRecipe()
+// (opening a recipe) and from applyProf() (switching profile while the recipe screen is
+// already open) so the copy always matches whoever's currently selected.
 function updateRecipeWhy(){
   const el = document.getElementById('recipeWhy');
-  if(!el || !RECIPES[currentRecipeKey]) return;
+  if(!el || !RECIPES_DB[currentRecipeKey]) return;
   el.innerHTML = '<b>Why this fits you</b><br>' + whyText(currentRecipeKey, currentProf);
 }
 
@@ -195,8 +228,8 @@ function updateServings(){
     document.getElementById('rsServesMeta').textContent = '🍽️ ' + total + ' ' + label;
     document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' ' + label;
   }
-  const r = RECIPES[currentRecipeKey];
-  document.getElementById('ingList').innerHTML = r.ingredients.map(function(ing){
+  const ingredients = recipeDisplayIngredients(currentRecipeKey);
+  document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
     const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
     if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
     const scaled = +(qty * total).toFixed(1);
@@ -410,21 +443,53 @@ function renderWeek(){
       const together = view.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
       const pinPerson = mealPinPersonForMeal(m, person);
       const pinned = isMealPinned(plan.weekStartDate, di, slot, pinPerson);
-      const pinBtn = '<button class="dm-pin'+(pinned ? ' on' : '')+'" aria-label="'+(pinned ? 'Unpin this meal' : 'Pin this meal')+'" onclick="event.stopPropagation();toggleMealPin(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+pinPerson+'\')">'+(pinned ? '📌' : '📍')+'</button>';
-      const routineBtn = '<button class="dm-rule" aria-label="Set meal routine" onclick="event.stopPropagation();openMealRoutineSheet(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\',\''+view.recipeId+'\')">↻</button>';
-      const swapBtn = '<button class="dm-swap" aria-label="Swap this meal" onclick="event.stopPropagation();openWeekSwap(\''+plan.weekStartDate+'\','+di+',\''+slot+'\',\''+person+'\')">🔁</button>';
-      return '<div class="day-meal-row" onclick="openRecipe(\''+view.recipeId+'\',\'week\',{weekStartDate:\''+plan.weekStartDate+'\',dayIndex:'+di+',slot:\''+slot+'\',person:\''+person+'\'})">'
+      // Recipe ids can be user-authored ('cr-<slug>'), so every per-row argument rides in
+      // data-* attributes (htmlAttr-escaped once, never re-parsed as JS) and clicks are
+      // resolved by the delegated #weekList handler below instead of inline onclick JS.
+      // The buttons' old event.stopPropagation() is replaced by handler ordering: the
+      // delegated handler checks buttons before the row, and the row before the day.
+      const pinBtn = '<button class="dm-pin'+(pinned ? ' on' : '')+'" data-act="pin" data-pin-person="'+htmlAttr(pinPerson)+'" aria-label="'+(pinned ? 'Unpin this meal' : 'Pin this meal')+'">'+(pinned ? '📌' : '📍')+'</button>';
+      const routineBtn = '<button class="dm-rule" data-act="routine" aria-label="Set meal routine">↻</button>';
+      const swapBtn = '<button class="dm-swap" data-act="swap" aria-label="Swap this meal">🔁</button>';
+      return '<div class="day-meal-row" data-di="'+di+'" data-slot="'+htmlAttr(slot)+'" data-recipe-id="'+htmlAttr(view.recipeId)+'">'
         + '<div class="dm-e">'+r.emoji+'</div>'
         + '<div class="dm-t">'+escapeHtml(mealTitleWithExtras(view))+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
         + '<div class="dm-k">'+Math.round(view.kcal)+'</div>'
         + pinBtn + routineBtn + swapBtn + '</div>';
     }).join('');
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
-    return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" onclick="toggleDay('+di+')">'
+    return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" data-di="'+di+'">'
       + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(dayKcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+rows+'</div></div>';
   }).join('');
+  // Delegated click handler for the whole week list (see the data-* note above): most
+  // specific target first — action button, then meal row (open recipe), then day header
+  // (expand/collapse) — which reproduces the old inline stopPropagation() behavior.
+  // Reassigned (not addEventListener) on every renderWeek so the closure always captures
+  // the currently displayed week's weekStartDate and person.
+  el.onclick = function(e){
+    const btn = e.target.closest('button[data-act]');
+    if(btn && el.contains(btn)){
+      const mrow = btn.closest('.day-meal-row');
+      if(!mrow) return;
+      const di2 = +mrow.getAttribute('data-di');
+      const slot2 = mrow.getAttribute('data-slot');
+      const act = btn.getAttribute('data-act');
+      if(act === 'pin') toggleMealPin(plan.weekStartDate, di2, slot2, btn.getAttribute('data-pin-person'));
+      else if(act === 'routine') openMealRoutineSheet(plan.weekStartDate, di2, slot2, person, mrow.getAttribute('data-recipe-id'));
+      else if(act === 'swap') openWeekSwap(plan.weekStartDate, di2, slot2, person);
+      return;
+    }
+    const mealRow = e.target.closest('.day-meal-row');
+    if(mealRow && el.contains(mealRow)){
+      openRecipe(mealRow.getAttribute('data-recipe-id'), 'week', {weekStartDate: plan.weekStartDate, dayIndex: +mealRow.getAttribute('data-di'), slot: mealRow.getAttribute('data-slot'), person: person});
+      // No return: the old inline markup let a meal-row click bubble to the day's
+      // toggleDay too (only the action buttons stopped propagation) — keep that.
+    }
+    const day = e.target.closest('.day[data-di]');
+    if(day && el.contains(day)) toggleDay(+day.getAttribute('data-di'));
+  };
   renderWeekSummaryLine(plan, person);
 
   // Nutrient coverage chips always reflect the CURRENT week regardless of which week is
@@ -509,7 +574,7 @@ function openMealRoutineSheet(weekStartDate, dayIndex, slot, person, recipeId){
   const meal = plan.days[dayIndex].meals[slot];
   const rulePerson = meal.shared ? 'shared' : person;
   routineCtx = {weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: rulePerson, recipeId: recipeId};
-  const r = RECIPES[recipeId];
+  const r = RECIPES_DB[recipeId];
   const existing = findMealRule(slot, rulePerson);
   const weeklyLabel = 'Every ' + DAY_NAMES[dayIndex];
   document.getElementById('sheetBody').innerHTML =
@@ -673,7 +738,7 @@ function mealRecipeOptions(components){
 }
 
 function componentTitle(c){
-  if(c && c.recipeId && RECIPES[c.recipeId]) return RECIPES[c.recipeId].title;
+  if(c && c.recipeId && RECIPES_DB[c.recipeId]) return RECIPES_DB[c.recipeId].title;
   if(c && c.foodId && FOODS[c.foodId]) return FOODS[c.foodId].name;
   return null;
 }
@@ -692,10 +757,14 @@ function defaultMealFoodGrams(foodId){
   return 100;
 }
 
+// Recipe ids can be user-authored ('cr-<slug>' from a typed recipe name), so the id rides
+// in a data-* attribute (htmlAttr-escaped once, never re-parsed as JS) and the click is
+// handled by attachAddMealSheetHandler's delegation — same pattern as the shopping list
+// (attachShopListClickHandler) and swap search (planner.js:attachSwapSearchHandler).
 function mealRecipeOptionRowHtml(id){
   const r = RECIPES_DB[id];
   const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
-  return '<div class="altrow" onclick="chooseMealExtraRecipe(\'' + id + '\')">'
+  return '<div class="altrow" data-add-recipe-id="' + htmlAttr(id) + '">'
     + '<div class="ae">' + r.emoji + '</div>'
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
@@ -740,23 +809,21 @@ function openAddMealRecipeSheet(slot, dateISO){
     const isBase = i === 0;
     // Extras get a 0.5-step portion stepper (base has its own steppers elsewhere on the
     // serving screen, so it's left at its plain "Base ·" label here).
-    const stepper = isBase ? '' : (isRecipe
-      ? ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
-        + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',-0.5)" aria-label="Fewer servings of ' + htmlAttr(title) + '">-</button>'
-        + '<span class="sv-val">' + ((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x</span>'
-        + '<button onclick="event.stopPropagation();stepMealExtraPortion(\'' + c.recipeId + '\',0.5)" aria-label="More servings of ' + htmlAttr(title) + '">+</button>'
-        + '</span>')
-      : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
-        + '<button onclick="event.stopPropagation();stepMealExtraFoodGrams(\'' + c.foodId + '\',-10)" aria-label="Less ' + htmlAttr(title) + '">-</button>'
-        + '<span class="sv-val">' + foodAmountLabel(food, c.grams) + '</span>'
-        + '<button onclick="event.stopPropagation();stepMealExtraFoodGrams(\'' + c.foodId + '\',10)" aria-label="More ' + htmlAttr(title) + '">+</button>'
-        + '</span>'));
-    html += '<div class="altrow" style="cursor:default">'
+    // Component ids can be user-authored ('cr-'/'cf-' slugs), so rows carry them in
+    // data-* attributes and the buttons carry a data-act verb; the single delegated
+    // handler (attachAddMealSheetHandler below) maps act+id back to the step/remove
+    // functions. No inline onclick, so nothing user-influenced is ever parsed as JS.
+    const stepper = isBase ? '' : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
+      + '<button data-act="minus" aria-label="' + (isRecipe ? 'Fewer servings of ' : 'Less ') + htmlAttr(title) + '">-</button>'
+      + '<span class="sv-val">' + (isRecipe ? (((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x') : foodAmountLabel(food, c.grams)) + '</span>'
+      + '<button data-act="plus" aria-label="' + (isRecipe ? 'More servings of ' : 'More ') + htmlAttr(title) + '">+</button>'
+      + '</span>');
+    html += '<div class="altrow" style="cursor:default" ' + (isRecipe ? 'data-recipe-id="' + htmlAttr(c.recipeId) + '"' : 'data-food-id="' + htmlAttr(c.foodId) + '"') + '>'
       + '<div class="ae">' + emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
       + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
       + stepper
-      + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="event.stopPropagation();' + (isRecipe ? "removeMealExtraRecipe('" + c.recipeId + "')" : "removeMealExtraFood('" + c.foodId + "')") + '">✕ Remove</button>')
+      + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" data-act="remove">✕ Remove</button>')
       + '</div>';
   });
 
@@ -771,9 +838,45 @@ function openAddMealRecipeSheet(slot, dateISO){
   html += opts.full.length ? opts.full.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No other recipes available.</p>';
 
   document.getElementById('sheetBody').innerHTML = html;
+  attachAddMealSheetHandler();
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+}
+
+// Delegated click handler for the whole add-meal sheet: composition-row steppers/remove
+// (button[data-act] inside a row carrying data-recipe-id / data-food-id), "Sides"/"Full
+// recipes" option rows (data-add-recipe-id) and ingredient search results
+// (data-add-food-id). One sheetBody.onclick assignment per sheet-open — the same
+// non-accumulating pattern as attachShopListClickHandler above; #mealFoodResults keeps
+// only its CHILDREN replaced on each keystroke (onMealFoodSearch), so delegation from
+// sheetBody survives searches, and every re-render of the sheet re-runs this attach.
+function attachAddMealSheetHandler(){
+  const el = document.getElementById('sheetBody');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('button[data-act]');
+    if(btn && el.contains(btn)){
+      const row = btn.closest('.altrow');
+      if(!row) return;
+      const act = btn.getAttribute('data-act');
+      const recipeId = row.getAttribute('data-recipe-id');
+      const foodId = row.getAttribute('data-food-id');
+      if(act === 'remove'){
+        if(recipeId) removeMealExtraRecipe(recipeId);
+        else if(foodId) removeMealExtraFood(foodId);
+      } else if(act === 'minus' || act === 'plus'){
+        const dir = act === 'plus' ? 1 : -1;
+        if(recipeId) stepMealExtraPortion(recipeId, dir * 0.5);
+        else if(foodId) stepMealExtraFoodGrams(foodId, dir * 10);
+      }
+      return;
+    }
+    const addRecipeRow = e.target.closest('.altrow[data-add-recipe-id]');
+    if(addRecipeRow && el.contains(addRecipeRow)){ chooseMealExtraRecipe(addRecipeRow.getAttribute('data-add-recipe-id')); return; }
+    const addFoodRow = e.target.closest('.altrow[data-add-food-id]');
+    if(addFoodRow && el.contains(addFoodRow)) chooseMealExtraFood(addFoodRow.getAttribute('data-add-food-id'));
+  };
 }
 
 function renderMealFoodResults(q){
@@ -785,7 +888,8 @@ function renderMealFoodResults(q){
     const f = FOODS[id];
     const grams = defaultMealFoodGrams(id);
     const nut = roundedNutritionTotals(foodMacros(id, grams));
-    return '<div class="altrow" onclick="chooseMealExtraFood(\'' + id + '\')">'
+    // data-add-food-id instead of onclick: food ids can be user-authored 'cf-' slugs.
+    return '<div class="altrow" data-add-food-id="' + htmlAttr(id) + '">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
       + '<div class="ad">' + foodAmountLabel(f, grams) + ' · ' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
@@ -903,13 +1007,35 @@ function removeMealExtraFood(foodId){
   toast('✕ Removed ' + title);
 }
 
-function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
-  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
-  if(!logged) return false;
-  const components = Array.isArray(logged.components) && logged.components.length
+// A logged entry's components is a snapshot taken at confirm time (state.js:logPlanEntry),
+// separate from the still-live plan entry -- falls back to a single-item [base] array when
+// nothing was ever snapshotted (pre-extras logged meals, or logged.components empty).
+function loggedMealComponents(logged){
+  return Array.isArray(logged.components) && logged.components.length
     ? logged.components.slice()
     : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
-  components.push({recipeId: recipeId, portion: 1});
+}
+
+// Finds the LAST component matching {recipeId} or {foodId} -- duplicates are allowed on
+// add, so remove/set take back the most-recently-added match. Index 0 is always the base
+// recipe/food from loggedMealComponents, never itself a removable/adjustable extra, so
+// (unlike planner.js's findLastExtraIndex, whose entry.extras never carries a base) the
+// scan starts at index 1.
+function findLastLoggedComponentIndex(components, match){
+  for(let i = components.length - 1; i >= 1; i--){
+    const c = components[i];
+    if(!c) continue;
+    if(match.recipeId !== undefined && c.recipeId === match.recipeId) return i;
+    if(match.foodId !== undefined && c.foodId === match.foodId) return i;
+  }
+  return -1;
+}
+
+// Commits a mutated components array back onto a logged entry: recomputes frozen totals the
+// deterministic way (nutritionForRecipeComponents), never hand-set, and stamps logged.u for
+// sync. Logged entries are per-person (the log has no shared-meal concept the way plan
+// cells do), so -- unlike planner.js's mutateMealExtras -- there is no partner mirroring.
+function commitLoggedMealComponents(logged, components){
   const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
   logged.components = components;
   logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
@@ -917,112 +1043,62 @@ function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
   logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
   logged.u = Date.now();
   return true;
+}
+
+function addExtraToLoggedMeal(dateISO, person, slot, recipeId){
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged) return false;
+  const components = loggedMealComponents(logged);
+  components.push({recipeId: recipeId, portion: 1});
+  return commitLoggedMealComponents(logged, components);
 }
 
 function addFoodExtraToLoggedMeal(dateISO, person, slot, foodId, grams){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
-  const components = Array.isArray(logged.components) && logged.components.length
-    ? logged.components.slice()
-    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
+  const components = loggedMealComponents(logged);
   components.push({foodId: foodId, grams: grams});
-  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
-  logged.components = components;
-  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
-  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
-  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
-  logged.u = Date.now();
-  return true;
+  return commitLoggedMealComponents(logged, components);
 }
 
-// Mirror of addExtraToLoggedMeal — removes ONE matching occurrence from the logged entry's
-// components (never index 0, the base recipe) and recomputes totals the same deterministic
-// way (nutritionForRecipeComponents), never hand-set. Searches from the end so duplicates
-// remove the most-recently-added match, same convention as removeLastExtra (planner.js).
 function removeExtraFromLoggedMeal(dateISO, person, slot, recipeId){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
-  const components = Array.isArray(logged.components) && logged.components.length
-    ? logged.components.slice()
-    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
-  let idx = -1;
-  for(let i = components.length - 1; i >= 1; i--){
-    if(components[i] && components[i].recipeId === recipeId){ idx = i; break; }
-  }
+  const components = loggedMealComponents(logged);
+  const idx = findLastLoggedComponentIndex(components, {recipeId: recipeId});
   if(idx === -1) return false;
   components.splice(idx, 1);
-  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
-  logged.components = components;
-  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
-  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
-  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
-  logged.u = Date.now();
-  return true;
+  return commitLoggedMealComponents(logged, components);
 }
 
 function removeFoodExtraFromLoggedMeal(dateISO, person, slot, foodId){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
-  const components = Array.isArray(logged.components) && logged.components.length
-    ? logged.components.slice()
-    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
-  let idx = -1;
-  for(let i = components.length - 1; i >= 1; i--){
-    if(components[i] && components[i].foodId === foodId){ idx = i; break; }
-  }
+  const components = loggedMealComponents(logged);
+  const idx = findLastLoggedComponentIndex(components, {foodId: foodId});
   if(idx === -1) return false;
   components.splice(idx, 1);
-  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
-  logged.components = components;
-  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
-  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
-  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
-  logged.u = Date.now();
-  return true;
+  return commitLoggedMealComponents(logged, components);
 }
 
-// Mirror of removeExtraFromLoggedMeal — adjusts the portion of the LAST matching
-// component (never index 0, the base recipe) and recomputes totals the deterministic way.
 function setExtraPortionInLoggedMeal(dateISO, person, slot, recipeId, newPortion){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
-  const components = Array.isArray(logged.components) && logged.components.length
-    ? logged.components.slice()
-    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
-  let idx = -1;
-  for(let i = components.length - 1; i >= 1; i--){
-    if(components[i] && components[i].recipeId === recipeId){ idx = i; break; }
-  }
+  const components = loggedMealComponents(logged);
+  const idx = findLastLoggedComponentIndex(components, {recipeId: recipeId});
   if(idx === -1) return false;
   components[idx] = {recipeId: recipeId, portion: newPortion};
-  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
-  logged.components = components;
-  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
-  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
-  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
-  logged.u = Date.now();
-  return true;
+  return commitLoggedMealComponents(logged, components);
 }
 
 function setFoodExtraGramsInLoggedMeal(dateISO, person, slot, foodId, grams){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
-  const components = Array.isArray(logged.components) && logged.components.length
-    ? logged.components.slice()
-    : [{recipeId: logged.ref, portion: (typeof logged.portion === 'number' ? logged.portion : 1)}];
-  let idx = -1;
-  for(let i = components.length - 1; i >= 1; i--){
-    if(components[i] && components[i].foodId === foodId){ idx = i; break; }
-  }
+  const components = loggedMealComponents(logged);
+  const idx = findLastLoggedComponentIndex(components, {foodId: foodId});
   if(idx === -1) return false;
   components[idx] = {foodId: foodId, grams: Math.max(1, Math.min(2000, Math.round(grams)))};
-  const nut = roundedNutritionTotals(nutritionForRecipeComponents(components));
-  logged.components = components;
-  logged.kcal = nut.kcal; logged.protein = nut.protein; logged.carbs = nut.carbs;
-  logged.fat = nut.fat; logged.satFat = nut.satFat; logged.fiber = nut.fiber;
-  logged.sugars = nut.sugars; logged.freeSugars = nut.freeSugars;
-  logged.u = Date.now();
-  return true;
+  return commitLoggedMealComponents(logged, components);
 }
 
 // USER FEEDBACK item 1: per-extra portion stepper in the "In this meal" sheet rows.
@@ -1125,6 +1201,7 @@ function openShopping(){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+  attachShopListClickHandler();
 }
 
 // Switches the shopping sheet's own "This week | Next week" control without closing the
@@ -1132,6 +1209,7 @@ function openShopping(){
 function setShopWeek(mode){
   shopWeekMode = mode;
   document.getElementById('sheetBody').innerHTML = buildShopSheet();
+  attachShopListClickHandler();
 }
 
 // Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list
@@ -1152,20 +1230,19 @@ function toggleShop(id, name){
   }
 }
 
-// Escapes a name for safe embedding inside a single-quoted inline-JS string that itself
-// sits inside a double-quoted HTML attribute (e.g. onclick="foo('NAME')") — so it has to
-// be safe for BOTH contexts at once: backslash/single-quote for the JS-string boundary,
-// and double-quote/angle-brackets/ampersand for the HTML-attribute boundary (a name like
-// `x" onmouseover="…` would otherwise break out of the attribute with no angle brackets
-// needed at all).
-function jsAttr(s){
-  return String(s)
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\\/g, '\\\\')
-    .replace(/'/g, "\\'");
+// Delegated click handler for the shopping list's .shop-item rows (buildShopSheet below).
+// Ingredient NAMES can be user-authored (custom food/recipe names), so rows carry the name
+// only in a data-* attribute (htmlAttr-escaped once by the HTML-attribute parser, never
+// re-parsed as JS) instead of interpolating it into an onclick="..." JS string — same
+// re-attach-after-innerHTML-rebuild pattern as attachSwapSearchHandler (planner.js).
+function attachShopListClickHandler(){
+  const el = document.getElementById('sheetBody');
+  if(!el) return;
+  el.onclick = function(e){
+    const row = e.target.closest('.shop-item');
+    if(!row || !el.contains(row)) return;
+    toggleShop(row.id, row.getAttribute('data-shop-name') || '');
+  };
 }
 
 function buildShopSheet(){
@@ -1198,7 +1275,7 @@ function buildShopSheet(){
       const t = list.totals[name];
       const id = 'sh-' + (idx++);
       const done = checked[name] ? ' done' : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
     });
   });
   const stapleNames = Object.keys(list.staples).sort();
@@ -1207,7 +1284,7 @@ function buildShopSheet(){
     stapleNames.forEach(function(name){
       const id = 'sh-' + (idx++);
       const done = checked[name] ? ' done' : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" onclick="toggleShop(\''+id+'\',\''+jsAttr(name)+'\')"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
+      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
     });
   }
   return html;
@@ -1232,10 +1309,10 @@ function rebalanceProposalLabel(){
 
 function rebalanceSuggestionLabel(s){
   if(s.kind === 'swap'){
-    const to = RECIPES[s.toRecipeId];
+    const to = RECIPES_DB[s.toRecipeId];
     return DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + ' → ' + escapeHtml(to.title);
   }
-  const side = RECIPES[s.sideRecipeId];
+  const side = RECIPES_DB[s.sideRecipeId];
   return DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + ' + side ' + escapeHtml(side.title);
 }
 
@@ -1285,7 +1362,7 @@ function renderRebalanceSheet(){
     const who = s.unit.shared ? '' : (s.unit.person === 'elena' ? ' (Elena)' : ' (Andrea)');
     const last = i === rebalanceProposal.suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'swap' : 'side';
-    const icon = s.kind === 'swap' ? RECIPES[s.toRecipeId].emoji : RECIPES[s.sideRecipeId].emoji;
+    const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
     html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + icon + '</div>'
       + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
       + '<small>' + (kind === 'swap' ? 'Swap' : 'Add side') + ' · +' + g.label + '</small></div>'
@@ -1459,7 +1536,7 @@ function renderTodaySoFar(){
     const e = row.e;
     const removeBtn = '<button class="li-x" aria-label="Remove this entry" onclick="removeTodayEntry('+row.i+')">✕</button>';
     if(e.kind === 'plan'){
-      const r = RECIPES[e.ref];
+      const r = RECIPES_DB[e.ref];
       const emoji = r ? r.emoji : '🍽️';
       const title = escapeHtml(logEntryTitleWithComponents(e));
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + (e.t ? ' · ' + e.t : ' · earlier today');
@@ -1494,7 +1571,7 @@ function renderTodayRecords(){
     const deleteBtn = '<button class="li-x" aria-label="Delete this item" onclick="deleteTodayRecordGroup('+gi+')">✕</button>';
     if(group.kind === 'plan'){
       const e = group.entry;
-      const r = RECIPES[e.ref];
+      const r = RECIPES_DB[e.ref];
       const emoji = r ? r.emoji : '🍽️';
       const title = escapeHtml(logEntryTitleWithComponents(e));
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + ' · ' + macroSummaryFromTotals(logEntryNutrition(e)) + (e.t ? ' · ' + e.t : '');
@@ -1665,7 +1742,7 @@ function removeTodayEntry(index){
   if(!removed) return;
   let name = 'entry';
   if(removed.kind === 'plan'){
-    const r = RECIPES[removed.ref];
+    const r = RECIPES_DB[removed.ref];
     name = r ? r.title : 'meal';
   } else {
     const f = FOODS[removed.ref];
@@ -1804,12 +1881,12 @@ function loggedPlanEntryForSlot(dateISO, personKey, slot){
 
 function displayedSlotViewForDate(dateISO, personKey, slot, planned){
   const logged = loggedPlanEntryForSlot(dateISO, personKey, slot);
-  if(logged && RECIPES[logged.ref]){
+  if(logged && RECIPES_DB[logged.ref]){
     const nut = roundedNutritionTotals(logEntryNutrition(logged));
     const loggedComponents = Array.isArray(logged.components) && logged.components.length ? logged.components : [{recipeId: logged.ref, portion: logged.portion}];
     return {
       recipeId: logged.ref,
-      recipe: RECIPES[logged.ref],
+      recipe: RECIPES_DB[logged.ref],
       components: loggedComponents,
       extras: loggedComponents.slice(1),
       kcal: nut.kcal,
@@ -1825,7 +1902,7 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
       logged: true
     };
   }
-  const recipe = planned && RECIPES[planned.recipeId];
+  const recipe = planned && RECIPES_DB[planned.recipeId];
   const nut = planned ? roundedNutritionTotals(planEntryNutrition(planned)) : null;
   const plannedComponents = planned ? planEntryComponents(planned) : [];
   return {
@@ -1872,7 +1949,7 @@ function mealTitleWithExtras(view){
 
 function logEntryTitleWithComponents(entry){
   if(!entry || entry.kind !== 'plan') return '';
-  const base = RECIPES[entry.ref] ? RECIPES[entry.ref].title : 'Meal';
+  const base = RECIPES_DB[entry.ref] ? RECIPES_DB[entry.ref].title : 'Meal';
   const parts = Array.isArray(entry.components) ? entry.components.slice(1) : [];
   const extras = parts.map(componentTitle).filter(Boolean);
   return base + (extras.length ? ' + ' + extras.join(' + ') : '');
@@ -1908,8 +1985,8 @@ function renderTogetherPills(){
 function renderTodayMeals(){
   activeMenu = computeActiveMenu();
 
-  function tagsHtml(r, slot, pillId){
-    let html = r.tags.map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+  function tagsHtml(recipeId, slot, pillId){
+    let html = recipeDisplayPills(recipeId).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
     html += '<span class="pill together mini" id="'+pillId+'" style="display:'+(SHARED[slot]?'inline-flex':'none')+'">👥 Together</span>';
     return html;
   }
@@ -1919,28 +1996,28 @@ function renderTodayMeals(){
   document.getElementById('bfTitle').textContent = mealTitleWithExtras(bfv);
   document.getElementById('bfKcal').textContent = bfv.kcal;
   document.getElementById('bfDesc').textContent = 'Breakfast · ' + macroSummaryFromTotals(bfv);
-  document.getElementById('bfTags').innerHTML = tagsHtml(bf, 'breakfast', 'pillBreakfast');
+  document.getElementById('bfTags').innerHTML = tagsHtml(bfv.recipeId, 'breakfast', 'pillBreakfast');
 
   const luv = todaySlotView('lunch'), lu = luv.recipe;
   document.getElementById('lunchThumb').textContent = lu.emoji;
   document.getElementById('lunchTitle').textContent = mealTitleWithExtras(luv);
   document.getElementById('lunchKcal').textContent = luv.kcal;
   document.getElementById('lunchDesc').textContent = 'Lunch · ' + macroSummaryFromTotals(luv);
-  document.getElementById('lunchTags').innerHTML = tagsHtml(lu, 'lunch', 'pillLunch');
+  document.getElementById('lunchTags').innerHTML = tagsHtml(luv.recipeId, 'lunch', 'pillLunch');
 
   const div_ = todaySlotView('dinner'), di = div_.recipe;
   document.getElementById('dinnerThumb').textContent = di.emoji;
   document.getElementById('dinnerTitle').textContent = mealTitleWithExtras(div_);
   document.getElementById('dinnerKcal').textContent = div_.kcal;
   document.getElementById('dinnerDesc').textContent = 'Dinner · ' + macroSummaryFromTotals(div_);
-  document.getElementById('dinnerTags').innerHTML = tagsHtml(di, 'dinner', 'pillDinner');
+  document.getElementById('dinnerTags').innerHTML = tagsHtml(div_.recipeId, 'dinner', 'pillDinner');
 
   const snv = todaySlotView('snack'), sn = snv.recipe;
   document.getElementById('snackThumbEl').textContent = sn.emoji;
   document.getElementById('snackTitleEl').textContent = mealTitleWithExtras(snv);
   document.getElementById('snackKcalEl').textContent = snv.kcal;
   document.getElementById('snackDescEl').textContent = 'Snack · ' + macroSummaryFromTotals(snv);
-  document.getElementById('snackTags').innerHTML = tagsHtml(sn, 'snack', 'pillSnack');
+  document.getElementById('snackTags').innerHTML = tagsHtml(snv.recipeId, 'snack', 'pillSnack');
 
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
   renderTodayRecords();
@@ -2463,6 +2540,15 @@ let quickAdd = {query: '', selectedId: null, grams: 100};
 function openFoodSearch(){
   quickAdd = {query: '', selectedId: null, grams: 100};
   document.getElementById('sheetBody').innerHTML = buildFoodSearchSheet();
+  // Delegated click for the result rows (data-food-id, not inline onclick — food ids can
+  // be user-authored 'cf-' slugs). Attached on sheetBody so it also survives the
+  // grams-stepper "‹ Back" path and #foodSearchResults child-only re-renders.
+  const sheetBody = document.getElementById('sheetBody');
+  sheetBody.onclick = function(e){
+    const row = e.target.closest('.altrow[data-food-id]');
+    if(!row || !sheetBody.contains(row)) return;
+    selectQuickAddFood(row.getAttribute('data-food-id'));
+  };
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
@@ -2496,7 +2582,7 @@ function renderFoodSearchResults(){
   return ids.map(function(id){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
-    return '<div class="altrow" onclick="selectQuickAddFood(\''+id+'\')">'
+    return '<div class="altrow" data-food-id="'+htmlAttr(id)+'">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">'+escapeHtml(f.name)+'</div>'
       + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein · '+Math.round(f.sugars || 0)+'g sugars <b>/ '+per+'</b></div></div>'
@@ -2703,9 +2789,9 @@ function cancelImport(){
 
 // Overwrites STORE_KEY with the pending backup's exact bytes, then reloads: a full
 // reload (rather than re-running loadState() in place) guarantees every already-rendered
-// screen, in-memory global (PROF, weekPlan, logHistory, currentProf…) and the compat
-// RECIPES view rebuild from scratch against the new store, with zero risk of stale
-// in-memory state bleeding through.
+// screen and in-memory global (PROF, weekPlan, logHistory, currentProf, RECIPES_DB…)
+// rebuild from scratch against the new store, with zero risk of stale in-memory state
+// bleeding through.
 function confirmImport(){
   if(!pendingImportRaw){ closeSheet(); return; }
   try{

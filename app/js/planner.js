@@ -214,204 +214,103 @@ function preserveLoggedSlots(oldPlan, newPlan){
   refreshPlanNutrition(newPlan);
 }
 
-function addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, recipeId){
+// Finds the LAST extra in entry.extras matching {recipeId} or {foodId} — duplicates are
+// allowed on add, so remove/set take back the most-recently-added match. entry.extras
+// never carries the base dish, so index 0 is a valid match (unlike the logged-meal
+// components array in render.js, which reserves index 0 for the base). Returns -1 if
+// entry/extras/match aren't found.
+function findLastExtraIndex(entry, match){
+  if(!entry || !Array.isArray(entry.extras)) return -1;
+  for(let i = entry.extras.length - 1; i >= 0; i--){
+    const extra = entry.extras[i];
+    if(!extra) continue;
+    if(match.recipeId !== undefined && extra.recipeId === match.recipeId) return i;
+    if(match.foodId !== undefined && extra.foodId === match.foodId) return i;
+  }
+  return -1;
+}
+
+// Every meal-extra mutation (add/remove/set-portion/set-grams, for both recipe and plain-
+// food extras) shares this shape: look up the plan/day/meal/person entry, apply mutateFn
+// to it, stamp couple-sync timestamps, refresh nutrition, and — when the meal is shared —
+// apply the SAME mutateFn to the other person's entry (a shared meal moves as one dish, so
+// both sides always carry the same extras). mutateFn returns `false` to abort the whole
+// mutation (e.g. nothing to remove, or a validation failure) before anything is stamped;
+// any other return value means it succeeded.
+//
+// Stamp semantics: a shared meal keeps ONE timestamp on the meal cell (meal.t), since both
+// people's entries move together; a solo meal stamps only entry.t and clears any stale
+// meal.t so mergePlansSection compares at the right level. Getting these backwards
+// resurrects the couple-sync revert bug fixed in commit 50f6f30.
+function mutateMealExtras(weekStartDate, dayIndex, slot, person, mutateFn){
   const plan = editableWeekPlan(weekStartDate);
-  if(!plan || !plan.days[dayIndex] || !RECIPES_DB[recipeId]) return false;
+  if(!plan || !plan.days[dayIndex]) return false;
   const meal = plan.days[dayIndex].meals[slot];
   if(!meal || !meal[person]) return false;
   const entry = meal[person];
-  entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
-  entry.extras.push({recipeId: recipeId, portion: 1});
+  if(mutateFn(entry) === false) return false;
   if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
   refreshPlanEntryNutrition(entry);
-  if(meal.shared && meal.partner && person === 'elena'){
-    meal.partner.extras = Array.isArray(meal.partner.extras) ? meal.partner.extras : [];
-    meal.partner.extras.push({recipeId: recipeId, portion: 1});
-    refreshPlanEntryNutrition(meal.partner);
-  }
-  if(meal.shared && meal.elena && person === 'partner'){
-    meal.elena.extras = Array.isArray(meal.elena.extras) ? meal.elena.extras : [];
-    meal.elena.extras.push({recipeId: recipeId, portion: 1});
-    refreshPlanEntryNutrition(meal.elena);
+  const otherKey = person === 'elena' ? 'partner' : 'elena';
+  if(meal.shared && meal[otherKey]){
+    mutateFn(meal[otherKey]);
+    refreshPlanEntryNutrition(meal[otherKey]);
   }
   markWeekPlanEdited(plan);
   return true;
+}
+
+function addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, recipeId){
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!RECIPES_DB[recipeId]) return false;
+    entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
+    entry.extras.push({recipeId: recipeId, portion: 1});
+  });
 }
 
 function addExtraFoodToMeal(weekStartDate, dayIndex, slot, person, foodId, grams){
-  const plan = editableWeekPlan(weekStartDate);
-  if(!plan || !plan.days[dayIndex] || !FOODS[foodId]) return false;
-  const meal = plan.days[dayIndex].meals[slot];
-  if(!meal || !meal[person]) return false;
-  const entry = meal[person];
   const amount = (typeof grams === 'number' && grams > 0) ? grams : 100;
-  entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
-  entry.extras.push({foodId: foodId, grams: amount});
-  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
-  refreshPlanEntryNutrition(entry);
-  if(meal.shared && meal.partner && person === 'elena'){
-    meal.partner.extras = Array.isArray(meal.partner.extras) ? meal.partner.extras : [];
-    meal.partner.extras.push({foodId: foodId, grams: amount});
-    refreshPlanEntryNutrition(meal.partner);
-  }
-  if(meal.shared && meal.elena && person === 'partner'){
-    meal.elena.extras = Array.isArray(meal.elena.extras) ? meal.elena.extras : [];
-    meal.elena.extras.push({foodId: foodId, grams: amount});
-    refreshPlanEntryNutrition(meal.elena);
-  }
-  markWeekPlanEdited(plan);
-  return true;
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!FOODS[foodId]) return false;
+    entry.extras = Array.isArray(entry.extras) ? entry.extras : [];
+    entry.extras.push({foodId: foodId, grams: amount});
+  });
 }
 
-// Removes the LAST occurrence of recipeId from entry.extras (mirrors addExtraRecipeToMeal's
-// push — duplicates are allowed, so a removal takes back the most-recently-added match).
-// Returns true if something was actually removed.
-function removeLastExtra(entry, recipeId){
-  if(!entry || !Array.isArray(entry.extras)) return false;
-  for(let i = entry.extras.length - 1; i >= 0; i--){
-    if(entry.extras[i] && entry.extras[i].recipeId === recipeId){
-      entry.extras.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
-}
-
-function removeLastFoodExtra(entry, foodId){
-  if(!entry || !Array.isArray(entry.extras)) return false;
-  for(let i = entry.extras.length - 1; i >= 0; i--){
-    if(entry.extras[i] && entry.extras[i].foodId === foodId){
-      entry.extras.splice(i, 1);
-      return true;
-    }
-  }
-  return false;
-}
-
-// Mirror image of addExtraRecipeToMeal — same couple-sync stamp semantics, reversed:
-// shared meal -> stamp meal.t and ALSO drop one matching extra from the partner's own
-// entry (mirroring the add, which pushed onto both sides); solo meal -> stamp entry.t and
-// delete meal.t. Getting these backwards resurrects the sync-revert bug fixed in
-// commit 50f6f30, so this intentionally follows addExtraRecipeToMeal branch-for-branch.
-// Unlike addExtraRecipeToMeal, this does NOT require RECIPES_DB[recipeId] to still exist —
-// we're removing a reference that was already in the plan, not inserting a new one, so a
-// recipe that later dropped out of RECIPES_DB should still be removable.
+// Unlike the add path above, remove does NOT require RECIPES_DB[recipeId]/FOODS[foodId] to
+// still exist — we're dropping a reference already in the plan, not inserting a new one, so
+// a recipe/food that later dropped out of its DB should still be removable.
 function removeExtraRecipeFromMeal(weekStartDate, dayIndex, slot, person, recipeId){
-  const plan = editableWeekPlan(weekStartDate);
-  if(!plan || !plan.days[dayIndex]) return false;
-  const meal = plan.days[dayIndex].meals[slot];
-  if(!meal || !meal[person]) return false;
-  const entry = meal[person];
-  if(!removeLastExtra(entry, recipeId)) return false;
-  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
-  refreshPlanEntryNutrition(entry);
-  if(meal.shared && meal.partner && person === 'elena'){
-    removeLastExtra(meal.partner, recipeId);
-    refreshPlanEntryNutrition(meal.partner);
-  }
-  if(meal.shared && meal.elena && person === 'partner'){
-    removeLastExtra(meal.elena, recipeId);
-    refreshPlanEntryNutrition(meal.elena);
-  }
-  markWeekPlanEdited(plan);
-  return true;
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    const idx = findLastExtraIndex(entry, {recipeId: recipeId});
+    if(idx === -1) return false;
+    entry.extras.splice(idx, 1);
+  });
 }
 
 function removeExtraFoodFromMeal(weekStartDate, dayIndex, slot, person, foodId){
-  const plan = editableWeekPlan(weekStartDate);
-  if(!plan || !plan.days[dayIndex]) return false;
-  const meal = plan.days[dayIndex].meals[slot];
-  if(!meal || !meal[person]) return false;
-  const entry = meal[person];
-  if(!removeLastFoodExtra(entry, foodId)) return false;
-  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
-  refreshPlanEntryNutrition(entry);
-  if(meal.shared && meal.partner && person === 'elena'){
-    removeLastFoodExtra(meal.partner, foodId);
-    refreshPlanEntryNutrition(meal.partner);
-  }
-  if(meal.shared && meal.elena && person === 'partner'){
-    removeLastFoodExtra(meal.elena, foodId);
-    refreshPlanEntryNutrition(meal.elena);
-  }
-  markWeekPlanEdited(plan);
-  return true;
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    const idx = findLastExtraIndex(entry, {foodId: foodId});
+    if(idx === -1) return false;
+    entry.extras.splice(idx, 1);
+  });
 }
 
-// Adjusts the portion of the LAST extra matching recipeId (same "last matching, never
-// index 0" convention as removeLastExtra/removeExtraFromLoggedMeal) — same couple-sync
-// stamp + shared-mirror semantics as addExtraRecipeToMeal/removeExtraRecipeFromMeal, so
-// stepping an extra's portion on a shared meal mirrors the change onto the partner's own
-// entry and stamps meal.t; solo stamps entry.t and clears meal.t.
 function setExtraRecipePortion(weekStartDate, dayIndex, slot, person, recipeId, newPortion){
-  const plan = editableWeekPlan(weekStartDate);
-  if(!plan || !plan.days[dayIndex]) return false;
-  const meal = plan.days[dayIndex].meals[slot];
-  if(!meal || !meal[person]) return false;
-  const entry = meal[person];
-  if(!Array.isArray(entry.extras)) return false;
-  let idx = -1;
-  for(let i = entry.extras.length - 1; i >= 0; i--){
-    if(entry.extras[i] && entry.extras[i].recipeId === recipeId){ idx = i; break; }
-  }
-  if(idx === -1) return false;
-  entry.extras[idx].portion = newPortion;
-  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
-  refreshPlanEntryNutrition(entry);
-  if(meal.shared && meal.partner && person === 'elena'){
-    let pIdx = -1;
-    for(let i = meal.partner.extras.length - 1; i >= 0; i--){
-      if(meal.partner.extras[i] && meal.partner.extras[i].recipeId === recipeId){ pIdx = i; break; }
-    }
-    if(pIdx !== -1) meal.partner.extras[pIdx].portion = newPortion;
-    refreshPlanEntryNutrition(meal.partner);
-  }
-  if(meal.shared && meal.elena && person === 'partner'){
-    let eIdx = -1;
-    for(let i = meal.elena.extras.length - 1; i >= 0; i--){
-      if(meal.elena.extras[i] && meal.elena.extras[i].recipeId === recipeId){ eIdx = i; break; }
-    }
-    if(eIdx !== -1) meal.elena.extras[eIdx].portion = newPortion;
-    refreshPlanEntryNutrition(meal.elena);
-  }
-  markWeekPlanEdited(plan);
-  return true;
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    const idx = findLastExtraIndex(entry, {recipeId: recipeId});
+    if(idx === -1) return false;
+    entry.extras[idx].portion = newPortion;
+  });
 }
 
 function setExtraFoodGrams(weekStartDate, dayIndex, slot, person, foodId, grams){
-  const plan = editableWeekPlan(weekStartDate);
-  if(!plan || !plan.days[dayIndex]) return false;
-  const meal = plan.days[dayIndex].meals[slot];
-  if(!meal || !meal[person]) return false;
-  const entry = meal[person];
-  if(!Array.isArray(entry.extras)) return false;
-  let idx = -1;
-  for(let i = entry.extras.length - 1; i >= 0; i--){
-    if(entry.extras[i] && entry.extras[i].foodId === foodId){ idx = i; break; }
-  }
-  if(idx === -1) return false;
   const amount = Math.max(1, Math.min(2000, Math.round(grams)));
-  entry.extras[idx].grams = amount;
-  if(meal.shared) meal.t = Date.now(); else { entry.t = Date.now(); delete meal.t; }
-  refreshPlanEntryNutrition(entry);
-  if(meal.shared && meal.partner && person === 'elena'){
-    let pIdx = -1;
-    for(let i = meal.partner.extras.length - 1; i >= 0; i--){
-      if(meal.partner.extras[i] && meal.partner.extras[i].foodId === foodId){ pIdx = i; break; }
-    }
-    if(pIdx !== -1) meal.partner.extras[pIdx].grams = amount;
-    refreshPlanEntryNutrition(meal.partner);
-  }
-  if(meal.shared && meal.elena && person === 'partner'){
-    let eIdx = -1;
-    for(let i = meal.elena.extras.length - 1; i >= 0; i--){
-      if(meal.elena.extras[i] && meal.elena.extras[i].foodId === foodId){ eIdx = i; break; }
-    }
-    if(eIdx !== -1) meal.elena.extras[eIdx].grams = amount;
-    refreshPlanEntryNutrition(meal.elena);
-  }
-  markWeekPlanEdited(plan);
-  return true;
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    const idx = findLastExtraIndex(entry, {foodId: foodId});
+    if(idx === -1) return false;
+    entry.extras[idx].grams = amount;
+  });
 }
 
 function refreshPlanNutrition(plan){
@@ -1203,10 +1102,6 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   return scored.slice(0, 5);
 }
 
-function swapHtmlAttr(s){
-  return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-}
-
 function swapSearchText(id){
   const r = RECIPES_DB[id];
   if(!r) return '';
@@ -1268,10 +1163,11 @@ function applySwap(dayIndex, slot, person, newRecipeId, weekStartDate){
   const unit = {dayIndex: dayIndex, slot: slot, shared: !!(meal && meal.shared), person: person};
   applySwapToPlan(plan, unit, newRecipeId);
   markWeekPlanEdited(plan);
-  const r = RECIPES[newRecipeId] || RECIPES_DB[newRecipeId] || {title: 'Recipe', emoji: '🍽️', tags: []};
+  const r = RECIPES_DB[newRecipeId] || {title: 'Recipe', emoji: '🍽️'};
   const entry = plan.days[dayIndex].meals[slot][person];
   const view = planEntryView(entry, plan.days[dayIndex].meals[slot].shared);
-  return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: r.tags || [], kcal: view.kcal, protein: view.protein};
+  const tags = RECIPES_DB[newRecipeId] ? recipeDisplayPills(newRecipeId) : [];
+  return {recipeId: newRecipeId, title: r.title, emoji: r.emoji, tags: tags, kcal: view.kcal, protein: view.protein};
 }
 
 // Resolves a click on "Swap" (from Today, Log, or the recipe-detail screen) to a
@@ -1288,11 +1184,11 @@ function resolveSwapContext(mealKey){
 let swapCtx = null;
 
 function swapRecipeDisplay(id){
-  const r = RECIPES[id] || RECIPES_DB[id] || {};
+  const r = RECIPES_DB[id];
   return {
-    title: r.title || 'Recipe',
-    emoji: r.emoji || '🍽️',
-    tags: Array.isArray(r.tags) ? r.tags : []
+    title: (r && r.title) || 'Recipe',
+    emoji: (r && r.emoji) || '🍽️',
+    tags: r ? recipeDisplayPills(id) : []
   };
 }
 
@@ -1319,13 +1215,18 @@ function swapAltRowHtml(a, i){
     + '</div></div>';
 }
 
+// data-recipe-id (not an onclick="...chooseSwapRecipe('ID')..." JS string) — search
+// results come from buildSwapSearchOptions, which includes custom `cr-<slug>` recipes
+// whose id is influenced by a user-typed title. The delegated click handler in
+// attachSwapSearchHandler below reads the id back with getAttribute and never re-parses
+// it as JS.
 function swapRecipeRowHtml(a){
   const r = swapRecipeDisplay(a.id);
   const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   const yours = a.custom ? '<span class="pill terra">Yours</span>' : '';
   const avoid = a.avoidHit ? '<span class="pill ghost">Contains avoided</span>' : '';
-  return '<div class="altrow" onclick="chooseSwapRecipe(\'' + jsAttr(a.id) + '\')">'
+  return '<div class="altrow" data-recipe-id="' + htmlAttr(a.id) + '">'
     + '<div class="ae">' + r.emoji + '</div>'
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
@@ -1364,8 +1265,19 @@ function onSwapRecipeSearch(value){
 
 function attachSwapSearchHandler(){
   const input = document.getElementById('swapRecipeSearchInput');
-  if(!input) return;
-  input.oninput = function(){ onSwapRecipeSearch(this.value); };
+  if(input) input.oninput = function(){ onSwapRecipeSearch(this.value); };
+  // Delegated click for swapRecipeRowHtml's rows (data-recipe-id, not inline onclick — see
+  // that function's comment). #swapSearchResults itself is only ever recreated when the
+  // whole sheet reopens (this function is called again then), and onSwapRecipeSearch only
+  // replaces its CHILDREN via innerHTML on every keystroke, so one assignment here survives
+  // repeated searches within the same sheet-open, same non-accumulating-listener pattern as
+  // the oninput assignment above.
+  const results = document.getElementById('swapSearchResults');
+  if(results) results.onclick = function(e){
+    const row = e.target.closest('.altrow[data-recipe-id]');
+    if(!row || !results.contains(row)) return;
+    chooseSwapRecipe(row.getAttribute('data-recipe-id'));
+  };
 }
 
 // FEATURE ("Swap anything"): the sheet has a short "Best matches" section and a search
@@ -1389,7 +1301,7 @@ function buildSwapSheet(ctx){
   }
 
   html += '<div class="shop-cat">Search ' + slotLabel + ' recipes</div>'
-    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapRecipeSearchInput" placeholder="Search recipes, tags, yours..." value="' + swapHtmlAttr(swapCtx ? swapCtx.searchQuery || '' : '') + '" autocomplete="off">'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapRecipeSearchInput" placeholder="Search recipes, tags, yours..." value="' + htmlAttr(swapCtx ? swapCtx.searchQuery || '' : '') + '" autocomplete="off">'
     + '<div id="swapSearchResults">' + buildSwapSearchResults() + '</div>';
   return html;
 }

@@ -1,46 +1,93 @@
 /* ===================================================================
    state.js — Mesa app state
-   Data & mutable state variables only: recipe/meal-plan/week data,
-   profile data, shared-meal + logging state. No functions that write
-   to the DOM or do the target-engine math live here (see engine.js,
-   planner.js, render.js).
+   Data & mutable state variables: recipe-adjacent helpers (whyText(),
+   TAG_PILL_MAP), meal-plan/week data, profile data, shared-meal state,
+   and the user-content-library field lists. No functions that write to
+   the DOM or do the target-engine math live here (see engine.js,
+   planner.js, render.js). The day-by-day log-history API (logHistory
+   and everything that reads/writes it) moved out to js/log.js, loaded
+   right after this file — see that file's header.
 
    Persistence (task A2): a single versioned localStorage store
    (STORE_KEY, `mesa.v1`) — see the block at the bottom of this file
-   for loadState()/persist() and everything they read & write.
+   for loadState()/persist() and everything they read & write (including
+   logHistory, via js/log.js's functions — cross-file globals resolve at
+   call time in this shared, no-modules scope).
    =================================================================== */
 
 /* ===================================================================
-   recipe data — COMPATIBILITY VIEW (task C1)
+   Escaping helpers (stored-XSS hardening, 2026-07-16 consolidation)
 
-   `RECIPES` used to be a hand-typed object with every nutrition number
-   baked in. That violated the deterministic-numbers ground rule, so
-   nutrition now lives in data/foods.js + data/recipes.js and is summed
-   by engine.js:recipeNutrition(). This block instead builds a thin
-   compatibility view — same keys, same shape every renderer already
-   expects (title, emoji, kcal, protein, tags as legacy [class,label]
-   pills, ingredients as legacy [name,qty,unit] rows, steps) — from
-   RECIPES_DB so render.js/planner.js/app.js need no broader rewrite.
-   "why" is deliberately NOT part of this compat view (task C3): it's
-   per-PERSON (goals differ by profile), not per-recipe, so it can't be
-   baked into a single shared RECIPES[id] object — see whyText(recipeId,
-   profKey) above, called fresh by render.js wherever the why-box paints.
+   The app builds most UI as HTML strings assigned via innerHTML, with
+   inline onclick="..." handlers, and user-controlled strings (custom
+   food/recipe names, Open Food Facts product fields) flow into both.
+   These three helpers are the ONLY escapers in the app — defined once,
+   here, in the first-loaded js/*.js file, so every later file can call
+   them both at runtime and at parse/load time. Do not redefine any of
+   them elsewhere; if you need escaping, call one of these.
 
-   Since task C2 the planner draws from the FULL RECIPES_DB, so every
-   recipe in the DB gets a compatibility entry (the 10 original mockup
-   ids among them, unchanged).
-
-   RECIPES itself starts empty; buildLegacyRecipesCompat() (called once
-   from app.js, after data/foods.js + data/recipes.js + engine.js have
-   all loaded) fills it in. Every number inside is computed — nothing
-   here is typed in.
+   - escapeHtml(s) — use for TEXT NODE content (text between tags, e.g.
+     '<div>' + escapeHtml(name) + '</div>'). Never use it for attribute
+     values or for JS string literals — it does not escape quotes, so a
+     `"` or `'` passed through it is not safe inside value="..." or
+     inside a quoted JS string.
+   - htmlAttr(s) — use for HTML ATTRIBUTE VALUES (value="...", src="...",
+     aria-label="..."). Escapes & " < > so a value cannot close the
+     attribute or open a new tag. Never use it for a JS string literal
+     embedded inside an event-handler attribute — it does not touch
+     backslashes or single quotes, so it does not stop the string from
+     breaking out of onclick="foo('...')".
+   - jsAttr(s) — use for a STRING LITERAL embedded inside an inline
+     event-handler attribute, e.g. onclick="foo('VALUE')". The value
+     crosses two parsers at runtime (the HTML attribute parser, then the
+     JS parser reading the string literal), so it neutralizes both:
+     backslash and single-quote for the JS-string boundary, and
+     & " < > plus line terminators (CR/LF/U+2028/U+2029, which an
+     unescaped JS string literal cannot contain) for the HTML-attribute/
+     JS-source boundary. Never use it for plain text content — its
+     output is HTML-entity-encoded and would render literally (e.g.
+     "&amp;" instead of "&").
    =================================================================== */
-const RECIPES = {};
+function escapeHtml(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function htmlAttr(s){ return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+function jsAttr(s){
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r/g, '\\r')
+    .replace(/\n/g, '\\n')
+    .replace(/\u2028/g, '\\u2028')
+    .replace(/\u2029/g, '\\u2029');
+}
+
+/* ===================================================================
+   recipe data — RECIPES_DB is read directly (task C-compat removed)
+
+   Every renderer used to read a second, hand-synchronized compat object
+   (built by the now-deleted buildLegacyRecipesCompat(), rebuilt on every
+   library change by applyCustomRecipes()), keyed the same as RECIPES_DB
+   but reshaped for old render paths. That's gone: render.js reads
+   RECIPES_DB[id] directly for title/emoji/
+   time/steps, calls recipeNutrition(id, 1).totals (engine.js) for kcal/
+   protein, and uses two small render.js helpers — recipeDisplayIngredients(id)
+   and recipeDisplayPills(id) — for the two fields whose display shape
+   differs from RECIPES_DB's storage shape (per-serving ingredient rows
+   with piece-unit/to-taste conversion, and tag strings mapped through
+   TAG_PILL_MAP to legacy [pillClass, label] pairs). TAG_PILL_MAP stays
+   here since library.js's tagLabelForPreview also reads it.
+
+   "why" is per-PERSON (goals differ by profile), so it was never part of
+   the old compat view either — see whyText(recipeId, profKey) below,
+   called fresh by render.js wherever the why-box paints.
+   =================================================================== */
 const LEGACY_RECIPE_IDS = ['yogurt', 'omelette', 'lentil', 'salmon', 'skyrbowl', 'eggsturkey', 'chickenfarro', 'chiapudding', 'tunasalad', 'salmongreens'];
-// Task C2: the planner picks from the FULL RECIPES_DB (32-36 recipes), not just the 10
-// legacy ids, so every recipe needs a compat entry — buildLegacyRecipesCompat() below
-// now loops over every RECIPES_DB id. LEGACY_RECIPE_IDS + LEGACY_WHY are kept only for
-// their special-cased hand-written "why" copy on the 10 original mockup recipes.
+// Task C2: the planner picks from the FULL RECIPES_DB (32-36 recipes), not just these 10.
+// LEGACY_RECIPE_IDS + LEGACY_WHY are kept only for their special-cased hand-written "why"
+// copy on the 10 original mockup recipes (see whyText() below).
 
 // The mockup's hand-written "why this fits you" copy, kept verbatim per recipe id so
 // nothing user-visible degrades for the 10 legacy recipes (task C3 replaces this with
@@ -196,43 +243,6 @@ const TAG_PILL_MAP = {
 };
 
 function capitalizeFirst(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
-
-// Builds RECIPES[id] for every id in LEGACY_RECIPE_IDS from RECIPES_DB + FOODS +
-// recipeNutrition() (engine.js). Called once from app.js's boot sequence, after
-// data/foods.js, data/recipes.js and engine.js have all loaded. Every number here is
-// computed, never typed in (ground rule #1) — the one exception is TAG_PILL_MAP (a label
-// lookup, not a number). "why" copy is NOT built here — see whyText() above.
-function buildLegacyRecipesCompat(){
-  Object.keys(RECIPES_DB).forEach(function(id){
-    const src = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[id] : undefined;
-    if(!src){ console.error('buildLegacyRecipesCompat: "' + id + '" not found in RECIPES_DB'); return; }
-
-    const base = recipeNutrition(id, 1).totals; // one serving (batch / src.servings)
-
-    // Ingredient quantities per serving, matching the per-serving nutrition the
-    // recipe screen scales both by the same servings steppers.
-    const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
-    const ingredients = src.ingredients.map(function(ing){
-      const foodId = ing[0], grams = +(ing[1] / batchYield).toFixed(1);
-      const food = FOODS[foodId];
-      if(!food){ console.error('buildLegacyRecipesCompat: "' + id + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
-      if(food.unit === 'piece') return [food.name, +(grams / food.avgG).toFixed(2), ''];
-      return [food.name, grams, food.unit];
-    });
-    (src.toTaste || []).forEach(function(t){ ingredients.push([capitalizeFirst(t), null, 'to taste']); });
-
-    RECIPES[id] = {
-      emoji: src.emoji,
-      title: src.title,
-      time: src.time + ' min',
-      kcal: Math.round(base.kcal),
-      protein: Math.round(base.protein),
-      tags: src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; }),
-      ingredients: ingredients,
-      method: src.steps
-    };
-  });
-}
 
 /* meal-slot lookup for shared-meals logic — RECIPE_SLOT_DB (data/recipes.js) already
    covers every id in RECIPES_DB (the 10 legacy ids plus everything added in B2), so it
@@ -455,7 +465,7 @@ function checkedSetForWeek(weekStartDate){
    RECIPES_DB entry (title, emoji, slot, styles, time, ingredients, toTaste, steps, tags,
    avoid) — nutrition is NEVER stored (ground rule 1); tags/styles/avoid are AUTO-DERIVED
    from ingredients at save time (js/library.js:deriveRecipeMeta()). Merged into RECIPES_DB
-   the same way via applyCustomRecipes(), which also rebuilds the RECIPES compat view.
+   the same way via applyCustomRecipes().
    foodOverrides: built-in food id -> edited food object. recipeOverrides:
    built-in recipe id -> edited recipe object. deletedRecipes:
    recipe id -> tombstone for recipes the user removed from their library (built-in
@@ -514,330 +524,10 @@ function normalizeFood(food){
 let syncState = {code: null, lastSyncedAt: null, sectionRevs: {}, sectionUpdatedAt: {}};
 
 function todayISO(){
+  // Test hook for tools/check.js only — never set in the running app.
+  if(typeof MESA_TEST_TODAY !== 'undefined' && MESA_TEST_TODAY) return MESA_TEST_TODAY;
   const d = new Date();
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-}
-
-/* ===================================================================
-   log history (task D1) — replaces the old v1 single-day `todayLog`.
-
-   logHistory['YYYY-MM-DD'] = {
-     elena:   [LogEntry, ...],
-     partner: [LogEntry, ...],
-     targets: {elena: kcalNum|null, partner: kcalNum|null},  // each person's daily kcal
-       TARGET, frozen the first time THAT PERSON logs anything on this date (item 4a: a
-       later calorie-target change must never move a past day's 7-day bar). null until
-       then; computeInsights() (planner.js) falls back to the live target only for the
-       rare pre-D1 migrated day that has no snapshot (see migrateV1TodayLog() below).
-     skipped: {elena: {slot: true}, partner: {slot: true}}   // UI memory only — "you
-       tapped Skip for this slot today" — never summed into nutrition, just lets the Log
-       screen restore the skipped-tag across a reload (state, not a fact about food).
-   }
-
-   LogEntry = {kind:'plan'|'food', ref: recipeId|foodId, portion?, grams?, kcal, protein,
-     carbs, fat, satFat, fiber, sugars, freeSugars, slot?, t:'HH:MM'|null, u: epochMs}. Every macro number is computed
-   ONCE, at log time, via recipeNutrition()/foodMacros() (engine.js) and stored verbatim —
-   never re-derived from the live recipe/food DB on a later read, so editing a recipe or
-   swapping a plan meal never rewrites a past day's history (ground rule 1 + task D1's
-   explicit "history stability" requirement). kind:'plan' entries are keyed by `slot`
-   (breakfast/lunch/dinner/snack) — upsertLogEntry() replaces-in-place on that key, so a
-   swap on an already-logged slot corrects it rather than appending a duplicate. kind:'food'
-   (quick-add) entries always append.
-
-   Capped at LOG_HISTORY_RETENTION_DAYS days (pruned on every persist()) so the store
-   never grows unbounded.
-   =================================================================== */
-const LOG_HISTORY_RETENTION_DAYS = 60;
-let logHistory = {};
-
-function nowHHMM(){
-  const d = new Date();
-  return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
-}
-
-function emptyDayLog(){
-  return {elena: [], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}, tomb: {elena: [], partner: []}};
-}
-
-// Returns logHistory[dateISO], creating (and back-filling any missing sub-keys on) an
-// empty day record on first touch — every caller can read/push without a null-check dance.
-function getDayLog(dateISO){
-  if(!logHistory[dateISO]) logHistory[dateISO] = emptyDayLog();
-  const day = logHistory[dateISO];
-  if(!day.targets) day.targets = {elena: null, partner: null};
-  if(!day.skipped) day.skipped = {elena: {}, partner: {}};
-  if(!day.tomb) day.tomb = {elena: [], partner: []}; // task S1: back-fill on records logged before couple sync existed
-  if(!Array.isArray(day.elena)) day.elena = [];
-  if(!Array.isArray(day.partner)) day.partner = [];
-  return day;
-}
-
-/* ---------------- couple sync (task S1): entry identity + tombstones ----------------
-   Two devices append LogEntrys to the same logHistory independently; merging (js/sync.js)
-   needs a stable identity per entry so the SAME confirm/quick-add isn't duplicated when
-   both sides' copies are unioned, and a per-day "tombstone" list so a DELETE on one phone
-   (undo a confirm, remove a "Today so far" row) propagates as a delete on the other
-   instead of the removed entry silently reappearing next merge.
-
-   kind:'plan' entries are naturally singleton-per-slot (upsertLogEntry replaces in place),
-   so their identity is just the slot name. kind:'food' (quick-add) entries can repeat
-   (logging the same food twice today is normal), so they get a random `id` at creation
-   (genId(), assigned in logFoodEntry below) and identity is keyed on that; entries logged
-   before this existed have no `id` — entryIdentity() falls back to a composite of their
-   fields, good enough to dedupe/tombstone without being a perfect UUID. */
-function genId(){
-  if(typeof crypto !== 'undefined' && crypto.getRandomValues){
-    const bytes = new Uint8Array(6);
-    crypto.getRandomValues(bytes);
-    return Array.prototype.map.call(bytes, function(b){ return b.toString(16).padStart(2, '0'); }).join('');
-  }
-  return Math.random().toString(16).slice(2, 14); // fallback for a non-secure-context or old browser
-}
-
-function entryIdentity(e){
-  if(e.kind === 'plan') return 'plan:' + e.slot;
-  return 'food:' + (e.id || (e.ref + '|' + e.grams + '|' + e.t + '|' + e.kcal));
-}
-
-function logTombstoneId(t){
-  if(typeof t === 'string') return t;
-  return (t && typeof t === 'object' && typeof t.id === 'string') ? t.id : '';
-}
-
-function logTombstoneTime(t){
-  return (t && typeof t === 'object' && typeof t.u === 'number' && isFinite(t.u)) ? t.u : 0;
-}
-
-function isValidLogTombstone(t){
-  return typeof t === 'string'
-    || !!(t && typeof t === 'object' && typeof t.id === 'string' && typeof t.u === 'number' && isFinite(t.u));
-}
-
-function removeLogTombstone(dateISO, personKey, identity){
-  const day = getDayLog(dateISO);
-  day.tomb[personKey] = day.tomb[personKey].filter(function(t){ return logTombstoneId(t) !== identity; });
-}
-
-function tombstoneEntry(dateISO, personKey, identity){
-  const day = getDayLog(dateISO);
-  const now = Date.now();
-  let replaced = false;
-  day.tomb[personKey] = day.tomb[personKey].map(function(t){
-    if(logTombstoneId(t) !== identity) return t;
-    replaced = true;
-    return {id: identity, u: Math.max(now, logTombstoneTime(t))};
-  });
-  if(!replaced) day.tomb[personKey].push({id: identity, u: now});
-}
-
-// Freezes personKey's kcal TARGET for dateISO the first time they log anything that day
-// (task D1 item 4a). Callers must ensure PROF[personKey].calGoalNum is current first —
-// every live call site runs after ensureWeekPlan()/recomputeProf() have already refreshed
-// it (see planner.js:ensureWeekPlan, applyProf), so this is always the true target at the
-// moment of logging, not a stale one.
-function ensureTargetSnapshot(dateISO, personKey){
-  const day = getDayLog(dateISO);
-  if(typeof day.targets[personKey] !== 'number') day.targets[personKey] = PROF[personKey].calGoalNum;
-  return day;
-}
-
-// Adds one computed LogEntry, freezing the day's target snapshot first. kind:'plan'
-// entries replace any existing entry for the same slot (a swap corrects history rather
-// than duplicating it); kind:'food' entries always append. persist() is the caller's job
-// (same convention as every other mutating action in render.js/planner.js).
-function upsertLogEntry(dateISO, personKey, entry){
-  ensureTargetSnapshot(dateISO, personKey);
-  const day = getDayLog(dateISO);
-  const arr = day[personKey];
-  if(typeof entry.u !== 'number') entry.u = Date.now();
-  if(entry.kind === 'plan' && entry.slot){
-    removeLogTombstone(dateISO, personKey, 'plan:' + entry.slot);
-    removeLogTombstone(dateISO, personKey, 'skip:' + entry.slot);
-    delete day.skipped[personKey][entry.slot];
-    const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === entry.slot; });
-    if(idx !== -1){
-      entry.t = arr[idx].t || entry.t; // keep the original log time on an edit (e.g. a post-confirm swap)
-      entry.u = Date.now(); // but sync conflicts must see this edit as newer than the original confirm
-      arr[idx] = entry;
-      return entry;
-    }
-  }
-  arr.push(entry);
-  return entry;
-}
-
-// Builds + upserts a plan-kind LogEntry from a recipe id + portion, computing every macro
-// fresh via recipeNutrition() (engine.js). Used by logConfirm (first confirm — breakfast
-// included, see FIX 1: breakfast is a normal meal with its own Confirm/Swap/Skip, no more
-// auto-log), by chooseSwap (editing an already-logged slot), and by restoreTodayLog's
-// replay guard.
-function logPlanEntry(dateISO, personKey, slot, recipeId, portion, components){
-  const parts = Array.isArray(components) && components.length ? components : [{recipeId: recipeId, portion: portion}];
-  const nut = roundedNutritionTotals(nutritionForRecipeComponents(parts));
-  return upsertLogEntry(dateISO, personKey, {
-    kind: 'plan', ref: recipeId, portion: portion, components: parts,
-    kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
-    fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
-    sugars: nut.sugars, freeSugars: nut.freeSugars,
-    slot: slot, t: nowHHMM()
-  });
-}
-
-// Quick-add (task D1 item 2): a food-kind LogEntry from FOODS, computed via foodMacros().
-// `id` (task S1): a random identity token so couple sync can merge/dedupe/tombstone this
-// specific entry across two devices — see entryIdentity() above.
-function logFoodEntry(dateISO, personKey, foodId, grams){
-  const nut = roundedNutritionTotals(foodMacros(foodId, grams));
-  return upsertLogEntry(dateISO, personKey, {
-    kind: 'food', ref: foodId, grams: grams, id: genId(),
-    kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
-    fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
-    sugars: nut.sugars, freeSugars: nut.freeSugars,
-    t: nowHHMM()
-  });
-}
-
-// Skip = "not eaten", not a nutrition fact — recorded only so the Log screen can restore
-// the skipped-tag across a reload. Also drops any plan entry that might exist for that
-// slot (shouldn't normally happen, but keeps the two states mutually exclusive).
-function markSlotSkipped(dateISO, personKey, slot){
-  const day = getDayLog(dateISO);
-  removeLogTombstone(dateISO, personKey, 'skip:' + slot);
-  tombstoneEntry(dateISO, personKey, 'plan:' + slot);
-  day.skipped[personKey][slot] = true;
-  day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
-}
-
-// FIX 2 (feedback) — undo paths. Removing a slot's plan entry (and clearing any skipped
-// flag) sends slotLogStatus() back to null, which is exactly what restores the card's
-// Confirm/Swap/Skip actions on the next renderLogPlan(). Pure logHistory mutations:
-// every surface (Today ring/macros, Log pill, "Today so far", Insights) re-derives from
-// logHistory, so callers just re-render + persist() afterwards (same convention as every
-// other mutator in this file).
-// Task S1 (couple sync): records a tombstone for whatever this actually undid — a
-// confirmed plan entry ('plan:'+slot) and/or a skipped flag ('skip:'+slot) — so the undo
-// propagates to the other phone instead of the other side's still-standing copy quietly
-// resurrecting the entry/skip on the next merge (js/sync.js:mergeLogSection()).
-function removeLoggedSlot(dateISO, personKey, slot){
-  const day = getDayLog(dateISO);
-  const hadPlan = day[personKey].some(function(e){ return e.kind === 'plan' && e.slot === slot; });
-  const hadSkip = !!day.skipped[personKey][slot];
-  day[personKey] = day[personKey].filter(function(e){ return !(e.kind === 'plan' && e.slot === slot); });
-  delete day.skipped[personKey][slot];
-  if(hadPlan) tombstoneEntry(dateISO, personKey, 'plan:' + slot);
-  if(hadSkip) tombstoneEntry(dateISO, personKey, 'skip:' + slot);
-}
-
-// Removes ONE specific entry by its index in the day's per-person array — the "Today so
-// far" ✕ (quick-added foods AND confirmed plan meals alike). Returns the removed entry
-// (or null) so the caller can toast and, for a plan entry, restore the matching Log
-// card's actions. Task S1: tombstones the removed entry's identity (see entryIdentity()
-// above) so this delete propagates on the next couple sync rather than the entry
-// reappearing from the other phone's still-standing copy.
-function removeLogEntryAt(dateISO, personKey, index){
-  const arr = getDayLog(dateISO)[personKey];
-  if(!(index >= 0 && index < arr.length)) return null;
-  const removed = arr.splice(index, 1)[0];
-  tombstoneEntry(dateISO, personKey, entryIdentity(removed));
-  return removed;
-}
-
-// 'confirmed' | 'skipped' | null — drives the Log screen's per-slot restore (app.js:
-// restoreTodayLog) and lets chooseSwap (planner.js) know whether a swapped slot needs its
-// log entry corrected in place.
-function slotLogStatus(dateISO, personKey, slot){
-  const day = getDayLog(dateISO);
-  if(day[personKey].some(function(e){ return e.kind === 'plan' && e.slot === slot; })) return 'confirmed';
-  if(day.skipped[personKey][slot]) return 'skipped';
-  return null;
-}
-
-// Drops days older than LOG_HISTORY_RETENTION_DAYS (relative to today) — called from
-// persist() so the store never grows unbounded. String comparison is safe: ISO dates
-// sort lexicographically.
-function pruneLogHistory(){
-  const cutoff = addDaysISO(todayISO(), -LOG_HISTORY_RETENTION_DAYS);
-  Object.keys(logHistory).forEach(function(date){
-    if(date < cutoff) delete logHistory[date];
-  });
-}
-
-function normalizeLogEntry(e){
-  if(!e || typeof e !== 'object') return false;
-  if(e.kind !== 'plan' && e.kind !== 'food') return false;
-  if(typeof e.ref !== 'string') return false;
-  if(!['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].every(function(k){ return typeof e[k] === 'number' && isFinite(e[k]); })) return false;
-  const out = Object.assign({}, e);
-  ['sugars', 'freeSugars'].forEach(function(k){
-    if(typeof out[k] !== 'number' || !isFinite(out[k])) out[k] = 0;
-    if(out[k] < 0) out[k] = 0;
-  });
-  if(out.freeSugars > out.sugars) out.freeSugars = out.sugars;
-  return out;
-}
-
-function isValidLogEntry(e){
-  return !!normalizeLogEntry(e);
-}
-
-// v1 -> v2 migration: v1 stored only TODAY's plan-first confirm/skip status, un-keyed by
-// person (a known v1 gap — Log actions applied to whichever profile happened to be active
-// when tapped). loadState() only ever kept a v1 `log` whose date === today (older ones
-// were discarded outright), so there's at most one day to migrate. Rather than trust v1's
-// display-only {title, kcal} strings (no recipeId, no full macro breakdown), this recovers
-// the real recipeId + portion from the ALSO-persisted v1 weekPlan and recomputes full
-// macros via recipeNutrition() — so migrated entries are exactly as trustworthy as any
-// entry logged under v2. Attributed to v1's saved currentProf (the best available guess
-// for "whose log this was"). No-ops entirely once a v2 `logHistory` is present.
-function migrateV1TodayLog(saved){
-  if(saved.logHistory && typeof saved.logHistory === 'object') return;
-  if(!(saved.log && typeof saved.log === 'object' && saved.log.date === todayISO() && saved.log.slots && typeof saved.log.slots === 'object')) return;
-  const person = (typeof saved.currentProf === 'string' && PROF[saved.currentProf]) ? saved.currentProf : 'elena';
-  const wp = (saved.weekPlan && typeof saved.weekPlan === 'object' && typeof saved.weekPlan.weekStartDate === 'string' && Array.isArray(saved.weekPlan.days)) ? saved.weekPlan : null;
-  Object.keys(saved.log.slots).forEach(function(slot){
-    const rec = saved.log.slots[slot];
-    if(!rec || slot === 'breakfast') return; // breakfast had no v1 record (it was auto-logged pre-FIX-1, never persisted as a v1 slot)
-    if(rec.status === 'confirmed' && wp){
-      const dayIdx = Math.max(0, Math.min(6, diffDaysISO(todayISO(), wp.weekStartDate)));
-      const day = wp.days[dayIdx];
-      const planEntry = day && day.meals && day.meals[slot] && day.meals[slot][person];
-      if(planEntry && planEntry.recipeId){
-        const nut = recipeNutrition(planEntry.recipeId, planEntry.portion).totals;
-        getDayLog(todayISO())[person].push({
-          kind: 'plan', ref: planEntry.recipeId, portion: planEntry.portion,
-          kcal: Math.round(nut.kcal), protein: Math.round(nut.protein), carbs: Math.round(nut.carbs),
-          fat: Math.round(nut.fat), satFat: Math.round(nut.satFat), fiber: Math.round(nut.fiber),
-          slot: slot, t: null
-        });
-      }
-    } else if(rec.status === 'skipped'){
-      markSlotSkipped(todayISO(), person, slot);
-    }
-  });
-}
-
-// v2 -> v3 migration (feedback FIX 1): breakfast used to be auto-logged the moment its
-// plan slot was known (planner.js's now-removed ensureTodayBreakfastLogged()), so a store
-// saved by an older build may contain TODAY's breakfast plan-entry even though the user
-// never tapped Confirm. LogEntry (see the shape doc above) records no auto-vs-manual flag
-// — there's nothing in the stored shape that distinguishes a real confirm from the old
-// auto-log — so as a one-time migration (gated on the stored version being < 3, so this
-// never re-fires on a later load) we drop TODAY's breakfast plan-entry for both people.
-// A genuinely confirmed breakfast today is the rare case (this only matters on the exact
-// day the app updates) and is one tap to re-confirm; every other day's history, and every
-// other slot, is untouched.
-function migrateRemoveAutoBreakfast(saved){
-  const fromVersion = (typeof saved.v === 'number' && isFinite(saved.v)) ? saved.v : 0;
-  if(fromVersion >= 3) return;
-  if(!saved.logHistory || typeof saved.logHistory !== 'object') return;
-  const today = todayISO();
-  const day = saved.logHistory[today];
-  if(!day || typeof day !== 'object') return;
-  ['elena', 'partner'].forEach(function(person){
-    if(Array.isArray(day[person])){
-      day[person] = day[person].filter(function(e){ return !(e && e.kind === 'plan' && e.slot === 'breakfast'); });
-    }
-  });
 }
 
 // Fields copied verbatim between PROF[key] and the store. Deliberately

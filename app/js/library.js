@@ -17,11 +17,11 @@
    ingredients + computed totals by deriveRecipeMeta() below, from named
    threshold constants (AUTO_TAG_THRESHOLDS / AUTO_STYLE_THRESHOLDS).
    Custom recipes (id `cr-<slug>`, stored in `customRecipes`) are merged
-   into RECIPES_DB + RECIPE_SLOT_DB by applyCustomRecipes(), which also
-   rebuilds the RECIPES compat view (state.js:buildLegacyRecipesCompat())
-   so whyText(), the planner's candidatesFor(), computeShoppingList() and
-   every renderer that reads RECIPES[id]/RECIPES_DB[id] see them exactly
-   like a built-in recipe — no special-casing anywhere else.
+   into RECIPES_DB + RECIPE_SLOT_DB by applyCustomRecipes(), so whyText(),
+   the planner's candidatesFor(), computeShoppingList() and every renderer
+   that reads RECIPES_DB[id] (directly, or via render.js's recipeDisplay*
+   helpers) see them exactly like a built-in recipe — no special-casing
+   anywhere else.
 
    Both mutate `customRev` (state.js), a monotonic counter used by persistence/sync.
    Library changes do NOT regenerate an existing week: new recipes are available for
@@ -29,7 +29,7 @@
 
    Deleting a custom recipe never corrupts log history: LogEntry rows
    store frozen computed macros (state.js) and render.js already falls
-   back gracefully (🍽️ / "Meal") when RECIPES[e.ref] is missing.
+   back gracefully (🍽️ / "Meal") when RECIPES_DB[e.ref] is missing.
    =================================================================== */
 
 /* ---------------- built-in counts, captured before any merge ----------------
@@ -81,10 +81,6 @@ function applyCustomRecipes(){
     RECIPES_DB[id] = JSON.parse(JSON.stringify(customRecipes[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
-  // Rebuilds RECIPES[id] for EVERY id in RECIPES_DB (state.js) — custom ids included —
-  // so whyText()/renderRecipe()/renderWeek()/shopping list etc. need no special-casing.
-  buildLegacyRecipesCompat();
-  Object.keys(RECIPES).forEach(function(id){ if(!RECIPES_DB[id]) delete RECIPES[id]; });
 }
 
 /* ===================================================================
@@ -251,11 +247,6 @@ function uniqueSlug(base, dbObj, prefix){
   while(dbObj[prefix + slug]){ slug = base + '-' + n; n++; }
   return prefix + slug;
 }
-// HTML-attribute escaper (double-quoted value="..." contexts) — distinct from render.js's
-// jsAttr(), which escapes for single-quoted inline-JS string contexts.
-function htmlAttr(s){ return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-function escapeHtml(s){ return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
-
 // Profile → "Food library" section header line: "75 built-in · N yours".
 function renderFoodLibraryCount(){
   const el = document.getElementById('libFoodCount');
@@ -386,6 +377,28 @@ function openFoodLibrary(){
   libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
   libFoodFiltersOpen = false;
   setIngredientsScreenHtml(buildFoodLibrarySheet());
+  attachLibFoodListHandler();
+}
+
+// Delegated click handler for the Ingredients list's per-row action buttons
+// (renderLibFoodListMarkup). #libFoodList itself is only recreated by openFoodLibrary
+// (which re-runs this attach); search (onLibFoodSearchInput) and filters
+// (rerenderLibFoodFilteredView) replace its CHILDREN only, so one onclick assignment
+// survives them — same non-accumulating pattern as render.js:attachShopListClickHandler.
+function attachLibFoodListHandler(){
+  const el = document.getElementById('libFoodList');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('button[data-act]');
+    if(!btn || !el.contains(btn)) return;
+    const row = btn.closest('.altrow[data-food-id]');
+    if(!row) return;
+    const id = row.getAttribute('data-food-id');
+    const act = btn.getAttribute('data-act');
+    if(act === 'edit') openEditFoodForm(id);
+    else if(act === 'reset') resetFoodOverride(id);
+    else if(act === 'delete') deleteCustomFood(id);
+  };
 }
 
 function openAddMenu(){
@@ -910,8 +923,10 @@ function clearLibFoodFilters(){
   libFoodFiltersOpen = false;
   rerenderLibFoodFilteredView();
 }
-// Live re-render on toggle (same "re-render in place" pattern as onLibFoodSearchInput):
-// repaints both the filter bar (chip on/off + count/Clear) and the list below it.
+// Live re-render on filter toggle or search input: repaints both the filter bar (chip
+// on/off + count/Clear — the count reads libFoodQuery, so search must repaint it too)
+// and the list below it. The search input itself lives OUTSIDE #libFoodFilterBar, so
+// repainting the bar never destroys the focused input mid-typing.
 function rerenderLibFoodFilteredView(){
   const bar = document.getElementById('libFoodFilterBar');
   if(bar) bar.innerHTML = renderLibFoodFilterBar();
@@ -964,13 +979,17 @@ function renderLibFoodListMarkup(query){
         + Math.round((f.carbs || 0) * factor) + 'g C, of which ' + Math.round((f.sugars || 0) * factor) + 'g sugars · '
         + Math.round((f.fat || 0) * factor) + 'g F · '
         + Math.round((f.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
-      out += '<div class="altrow" style="cursor:default">'
+      // Food ids can be user-authored ('cf-<slug>' from a typed name), so the id rides in
+      // a data-* attribute (htmlAttr-escaped once, never re-parsed as JS) and the buttons
+      // carry a data-act verb for attachLibFoodListHandler's delegation below — same
+      // pattern as the shopping list (render.js:attachShopListClickHandler).
+      out += '<div class="altrow" style="cursor:default" data-food-id="' + htmlAttr(id) + '">'
         + '<div class="ae">' + foodIconHtml(id) + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + ' <span class="pill mini">' + sugarQualityLabel(f.sugarQuality) + '</span></div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
-        + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(f.name) + '" onclick="openEditFoodForm(\'' + id + '\')">✎</button>'
-        + (isEdited ? '<button class="lib-del" aria-label="Reset ' + htmlAttr(f.name) + '" onclick="resetFoodOverride(\'' + id + '\')">↺</button>' : '')
-        + (isCustom ? '<button class="lib-del" aria-label="Delete ' + htmlAttr(f.name) + '" onclick="deleteCustomFood(\'' + id + '\')">✕</button>' : '')
+        + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(f.name) + '">✎</button>'
+        + (isEdited ? '<button class="lib-del" data-act="reset" aria-label="Reset ' + htmlAttr(f.name) + '">↺</button>' : '')
+        + (isCustom ? '<button class="lib-del" data-act="delete" aria-label="Delete ' + htmlAttr(f.name) + '">✕</button>' : '')
         + '</div>';
     });
   });
@@ -979,8 +998,7 @@ function renderLibFoodListMarkup(query){
 
 function onLibFoodSearchInput(v){
   libFoodQuery = v;
-  const el = document.getElementById('libFoodList');
-  if(el) el.innerHTML = renderLibFoodListMarkup(v);
+  rerenderLibFoodFilteredView(); // bar too, so the "N ingredients" count tracks the query
 }
 
 /* ---------------- new ingredient form ---------------- */
@@ -1204,6 +1222,27 @@ function openMyRecipes(){
   libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
   libRecipeFiltersOpen = false;
   setRecipesScreenHtml(buildMyRecipesSheet());
+  attachLibRecipeListHandler();
+}
+
+// Delegated click handler for the Recipes list's per-row action buttons
+// (renderLibRecipeListMarkup) — same rationale and lifecycle as attachLibFoodListHandler
+// above: #libRecipeList is recreated only via openMyRecipes, child-only re-renders
+// (rerenderLibRecipeFilteredView, toggleRecipePref) leave the assignment in place.
+function attachLibRecipeListHandler(){
+  const el = document.getElementById('libRecipeList');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('button[data-act]');
+    if(!btn || !el.contains(btn)) return;
+    const row = btn.closest('.altrow[data-recipe-id]');
+    if(!row) return;
+    const id = row.getAttribute('data-recipe-id');
+    const act = btn.getAttribute('data-act');
+    if(act === 'favorite' || act === 'down') toggleRecipePref(id, act);
+    else if(act === 'edit') openEditRecipeForm(id);
+    else if(act === 'delete') deleteRecipe(id);
+  };
 }
 
 function filteredRecipeIds(){
@@ -1324,20 +1363,23 @@ function renderLibRecipeListMarkup(){
       ? 'No recipes match your filters.'
       : 'No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.') + '</p>';
   }
+  // Recipe ids can be user-authored ('cr-<slug>' from a typed title), so rows carry the
+  // id in data-recipe-id and the action buttons a data-act verb, resolved by
+  // attachLibRecipeListHandler's delegation — never interpolated into inline onclick JS.
   return '<div style="margin-top:4px">' + ids.map(function(id){
     const r = RECIPES_DB[id];
     const nut = recipeNutrition(id, 1).totals;
     const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
     const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
     const pref = recipePrefs[id] || null;
-    return '<div class="altrow" style="cursor:default"><div class="ae">' + r.emoji + '</div>'
+    return '<div class="altrow" style="cursor:default" data-recipe-id="' + htmlAttr(id) + '"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
       + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
       + '<div class="lib-recipe-actions">'
-      + '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" aria-label="Favorite ' + htmlAttr(r.title) + '" onclick="toggleRecipePref(\'' + id + '\',\'favorite\')">♡</button>'
-      + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" aria-label="Thumbs down ' + htmlAttr(r.title) + '" onclick="toggleRecipePref(\'' + id + '\',\'down\')">👎</button>'
-      + '<button class="lib-edit" aria-label="Edit ' + htmlAttr(r.title) + '" onclick="openEditRecipeForm(\'' + id + '\')">✎</button>'
-      + '<button class="lib-del" aria-label="Delete ' + htmlAttr(r.title) + '" onclick="deleteRecipe(\'' + id + '\')">✕</button>'
+      + '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">♡</button>'
+      + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">👎</button>'
+      + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">✎</button>'
+      + '<button class="lib-del" data-act="delete" aria-label="Delete ' + htmlAttr(r.title) + '">✕</button>'
       + '</div>'
       + '</div>';
   }).join('') + '</div>';
@@ -1552,6 +1594,15 @@ function removeRecipeIngredient(i){
 function openAddIngredientToRecipe(){
   recipeBuilder.pickerQuery = '';
   setRecipesScreenHtml(buildRecipeIngredientPickerSheet());
+  // Delegated click for the result rows (data-food-id — ids can be user-authored 'cf-'
+  // slugs, so no inline-onclick interpolation). #recIngResults keeps only its children
+  // replaced on each keystroke (onRecipeIngredientSearch), so one assignment survives.
+  const results = document.getElementById('recIngResults');
+  if(results) results.onclick = function(e){
+    const row = e.target.closest('.altrow[data-food-id]');
+    if(!row || !results.contains(row)) return;
+    addIngredientToRecipe(row.getAttribute('data-food-id'));
+  };
   const input = document.getElementById('recIngSearchInput');
   if(input) input.focus();
 }
@@ -1568,7 +1619,7 @@ function renderRecipeIngredientResults(q){
   return ids.map(function(id){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
-    return '<div class="altrow" onclick="addIngredientToRecipe(\'' + id + '\')">'
+    return '<div class="altrow" data-food-id="' + htmlAttr(id) + '">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
       + '<div class="ad">' + Math.round(f.kcal) + ' kcal · ' + f.protein + 'g protein <b>/ ' + per + '</b></div></div>'

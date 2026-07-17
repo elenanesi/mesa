@@ -132,7 +132,7 @@ function restoreTodayLog(){
     const status = slotLogStatus(dateISO, currentProf, slot);
     if(status === 'confirmed'){
       const entry = getDayLog(dateISO)[currentProf].find(function(e){ return e.kind === 'plan' && e.slot === slot; });
-      const r = entry && RECIPES[entry.ref];
+      const r = entry && RECIPES_DB[entry.ref];
       const card = document.getElementById('log-' + slot);
       if(card && r){
         const t = card.querySelector('.t'); if(t) t.textContent = r.title;
@@ -163,15 +163,15 @@ function renderTodayHeader(){
 
 /* ---------------- init ---------------- */
 // Must run after data/foods.js, data/recipes.js and engine.js (recipeNutrition) have
-// all loaded, and before anything reads RECIPES — see state.js for what this builds.
+// all loaded, and before anything reads RECIPES_DB — see render.js's recipeDisplay*
+// helpers for how the recipe screen/Today cards read it directly (no compat view).
 // applyProf() -> ensureWeekPlan() (planner.js) either keeps the persisted weekPlan (same
 // signature + same week) or regenerates it deterministically, then persists; it also
 // runs renderLogPlan(), which replays today's persisted confirms via restoreTodayLog().
 loadState();
-applyCustomFoods();     // js/library.js — merge customFoods into FOODS before recipes/compat view need them
-applyCustomRecipes();   // js/library.js — merge customRecipes into RECIPES_DB + RECIPE_SLOT_DB, rebuild the
-                         // RECIPES compat view (calls buildLegacyRecipesCompat() internally, for every id —
-                         // built-in and custom alike — so nothing below needs a separate compat-view call)
+applyCustomFoods();     // js/library.js — merge customFoods into FOODS before recipes need them
+applyCustomRecipes();   // js/library.js — merge customRecipes into RECIPES_DB + RECIPE_SLOT_DB
+                         // (built-in and custom alike — every renderer reads RECIPES_DB directly)
 // One-shot cleanup migration (js/library.js) for the pre-`u`-stamp couple-sync duplication
 // ratchet (see its doc block) — must run AFTER customRecipes is populated and BEFORE the
 // first render, so a just-cleaned-up library is what the user sees on open, not the ~200
