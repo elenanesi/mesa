@@ -51,7 +51,7 @@ const FOODS = {
   'mixed-berries': {
     name: 'Mixed berries (strawberry, blueberry, raspberry)', per: 100, unit: 'g',
     kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5, sugars: 7.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
+    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', breakfastPair: true, iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
   },
   'bell-pepper': {
     name: 'Bell pepper, red, raw', per: 100, unit: 'g',
@@ -121,12 +121,12 @@ const FOODS = {
   'peaches': {
     name: 'Peaches, raw', per: 100, unit: 'g',
     kcal: 44, protein: 0.9, carbs: 10.1, fat: 0.3, satFat: 0.0, fiber: 1.5, sugars: 8.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', season: 'spring/summer', breakfastPair: true, iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
   },
   'pears': {
     name: 'Pears, raw', per: 100, unit: 'g',
     kcal: 59, protein: 0.4, carbs: 15.2, fat: 0.1, satFat: 0.0, fiber: 3.1, sugars: 9.8, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
+    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', breakfastPair: true, iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
   },
   'mushrooms': {
     name: 'Mushrooms, raw', per: 100, unit: 'g',
@@ -186,17 +186,17 @@ const FOODS = {
   'oranges': {
     name: 'Oranges, raw', per: 100, unit: 'g',
     kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4, sugars: 9.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
+    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', breakfastPair: true, iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
   },
   'apples': {
     name: 'Apples, raw, with skin', per: 100, unit: 'g',
     kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4, sugars: 10.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
+    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', breakfastPair: true, iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
   },
   'bananas': {
     name: 'Bananas, raw', per: 100, unit: 'g',
     kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6, sugars: 12.2, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', iconKey: 'bananas', src: 'USDA FDC 173944 (banana, raw)'
+    flags: [], cat: 'Produce', breakfastPair: true, iconKey: 'bananas', src: 'USDA FDC 173944 (banana, raw)'
   },
   'rocket-arugula': {
     name: 'Rocket / arugula, raw', per: 100, unit: 'g',
@@ -414,17 +414,17 @@ const FOODS = {
   'rye-bread': {
     name: 'Rye bread', per: 100, unit: 'g',
     kcal: 257, protein: 8.5, carbs: 48.3, fat: 3.3, satFat: 0.5, fiber: 5.8,
-    flags: ['highFiber'], cat: 'Bakery', iconKey: 'rye-bread', src: 'USDA FDC 172686 (bread, rye)'
+    flags: ['highFiber'], cat: 'Bakery', breakfastPair: true, iconKey: 'rye-bread', src: 'USDA FDC 172686 (bread, rye)'
   },
   'wholewheat-bread': {
     name: 'Whole-wheat bread', per: 100, unit: 'g',
     kcal: 232, protein: 9.0, carbs: 41.3, fat: 3.4, satFat: 0.7, fiber: 7.0,
-    flags: ['highFiber'], cat: 'Bakery', iconKey: 'wholewheat-bread', src: 'USDA FDC 172687-style (bread, whole wheat)'
+    flags: ['highFiber'], cat: 'Bakery', breakfastPair: true, iconKey: 'wholewheat-bread', src: 'USDA FDC 172687-style (bread, whole wheat)'
   },
   'white-bread': {
     name: 'White bread / toast bread', per: 100, unit: 'g',
     kcal: 274, protein: 8.9, carbs: 49.0, fat: 3.5, satFat: 0.8, fiber: 2.7,
-    flags: [], cat: 'Bakery', iconKey: 'white-bread', src: 'USDA FDC 169230-style (white bread); kcal per 4/4/9'
+    flags: [], cat: 'Bakery', breakfastPair: true, iconKey: 'white-bread', src: 'USDA FDC 169230-style (white bread); kcal per 4/4/9'
   },
   'pizza-bianca': {
     name: 'Pizza bianca / focaccia romana', per: 100, unit: 'g',

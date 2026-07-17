@@ -165,9 +165,15 @@ function upsertLogEntry(dateISO, personKey, entry){
 // Builds + upserts a plan-kind LogEntry from a recipe id + portion, computing every macro
 // fresh via recipeNutrition() (engine.js). Used by logConfirm (first confirm — breakfast
 // included, see FIX 1: breakfast is a normal meal with its own Confirm/Swap/Skip, no more
-// auto-log), by chooseSwap (editing an already-logged slot), and by restoreTodayLog's
-// replay guard.
-function logPlanEntry(dateISO, personKey, slot, recipeId, portion, components){
+// auto-log), by chooseSwap (editing an already-logged slot), by restoreTodayLog's replay
+// guard, and by render.js:weekLogConfirm (B5 catch-up logging from the Week view).
+// `opts.tNull` (B5): backdated corrections for a PAST date carry `t: null` (unknown eating
+// time, same as the migrateV1TodayLog precedent) instead of the real clock time — passed as
+// a trailing opts argument rather than mutating the entry after the fact, so
+// upsertLogEntry's edit-keeps-original-t logic stays coherent. Every pre-existing call site
+// omits opts, so behavior there is unchanged (t: nowHHMM()).
+function logPlanEntry(dateISO, personKey, slot, recipeId, portion, components, opts){
+  opts = opts || {};
   const parts = Array.isArray(components) && components.length ? components : [{recipeId: recipeId, portion: portion}];
   const nut = roundedNutritionTotals(nutritionForRecipeComponents(parts));
   return upsertLogEntry(dateISO, personKey, {
@@ -175,7 +181,7 @@ function logPlanEntry(dateISO, personKey, slot, recipeId, portion, components){
     kcal: nut.kcal, protein: nut.protein, carbs: nut.carbs,
     fat: nut.fat, satFat: nut.satFat, fiber: nut.fiber,
     sugars: nut.sugars, freeSugars: nut.freeSugars,
-    slot: slot, t: nowHHMM()
+    slot: slot, t: opts.tNull ? null : nowHHMM()
   });
 }
 

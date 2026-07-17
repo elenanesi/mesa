@@ -61,6 +61,16 @@ function applyCustomFoods(){
   Object.keys(customFoods).forEach(function(id){ FOODS[id] = customFoods[id]; });
 }
 
+// task B2: `role` is required + enum-checked by data/validate.js (VALID_ROLES), but any
+// customRecipes/recipeOverrides entry saved BEFORE this field existed has no role at all —
+// normalize it to 'full' (a complete one-dish meal, matching how every such recipe behaved
+// in planning before roles existed) here at merge time, so validateData() stays green on
+// legacy user data without a silent migration writing back into localStorage.
+function normalizeRecipeRoleField(recipe){
+  if(recipe && VALID_ROLES.indexOf(recipe.role) === -1) recipe.role = 'full';
+  return recipe;
+}
+
 function applyCustomRecipes(){
   Object.keys(RECIPES_DB).forEach(function(id){ delete RECIPES_DB[id]; });
   Object.keys(RECIPE_SLOT_DB).forEach(function(id){ delete RECIPE_SLOT_DB[id]; });
@@ -68,17 +78,17 @@ function applyCustomRecipes(){
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
     if(deletedRecipes[id]) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
-    RECIPES_DB[id] = JSON.parse(JSON.stringify(src));
+    RECIPES_DB[id] = normalizeRecipeRoleField(JSON.parse(JSON.stringify(src)));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
   });
   Object.keys(recipeOverrides).forEach(function(id){
     if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id]) return;
-    RECIPES_DB[id] = JSON.parse(JSON.stringify(recipeOverrides[id]));
+    RECIPES_DB[id] = normalizeRecipeRoleField(JSON.parse(JSON.stringify(recipeOverrides[id])));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
   Object.keys(customRecipes).forEach(function(id){
     if(deletedRecipes[id]) return;
-    RECIPES_DB[id] = JSON.parse(JSON.stringify(customRecipes[id]));
+    RECIPES_DB[id] = normalizeRecipeRoleField(JSON.parse(JSON.stringify(customRecipes[id])));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
 }
@@ -202,6 +212,16 @@ function normalizeSeason(v){
   return SEASON_VALUES.indexOf(v) !== -1 ? v : 'evergreen';
 }
 function seasonLabel(v){ return SEASON_LABELS[normalizeSeason(v)]; }
+
+// task B2: recipe `role` picker (data/validate.js's VALID_ROLES = ['full','main','side'])
+// — orthogonal to meal slots, defaults to 'full' (a complete one-dish meal) so an existing
+// custom recipe or a builder draft that never touches this field behaves exactly as every
+// recipe did before this field existed.
+const ROLE_LABELS = {full: 'Full meal', main: 'Main', side: 'Side'};
+function normalizeRecipeRole(v){
+  return (typeof VALID_ROLES !== 'undefined' && VALID_ROLES.indexOf(v) !== -1) ? v : 'full';
+}
+function recipeRoleLabel(v){ return ROLE_LABELS[normalizeRecipeRole(v)]; }
 function foodSeason(foodOrId){
   const f = typeof foodOrId === 'string' ? FOODS[foodOrId] : foodOrId;
   return normalizeSeason(f && f.season);
@@ -1019,7 +1039,7 @@ function sugarQualityLabel(q){
 let newFoodForm = null;
 
 function openNewFoodForm(){
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: []};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false};
   renderNewFoodFormSheet();
 }
 
@@ -1040,7 +1060,8 @@ function openEditFoodForm(id){
     sugars: +((f.sugars || 0) * factor).toFixed(1),
     freeSugars: +((f.freeSugars || 0) * factor).toFixed(1),
     sugarQuality: f.sugarQuality || 'unknown',
-    flags: Array.isArray(f.flags) ? f.flags.slice() : []
+    flags: Array.isArray(f.flags) ? f.flags.slice() : [],
+    breakfastPair: !!f.breakfastPair
   };
   renderNewFoodFormSheet();
 }
@@ -1107,6 +1128,16 @@ function buildNewFoodFormSheet(){
     + FOOD_FORM_FLAGS.map(function(fl){ return '<button class="pill ghost chip-preset' + (f.flags.indexOf(fl) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodFlag(\'' + fl + '\')">' + flagLabel(fl) + '</button>'; }).join('')
     + '</div></div>';
 
+  // task B2: breakfastPair — an explicit whitelist (rather than inferring from cat:
+  // 'Produce', which also holds vegetables) of foods the planner may pair with a light
+  // breakfast main (e.g. skyr bowl + 1 pear). Same checkbox-row visual as Profile's goals
+  // list (render.js renderGoalsEditor's .opt/.ck pattern) — this app has no native
+  // <input type="checkbox"> anywhere, so this stays consistent with the rest of the UI.
+  html += '<div class="field"><label>Breakfast pairing</label>'
+    + '<div class="opt' + (f.breakfastPair ? ' sel' : '') + '" onclick="toggleNewFoodBreakfastPair()">'
+    + '<div class="ck">' + (f.breakfastPair ? '✓' : '') + '</div>'
+    + '<div><div class="ot">Can pair with a light breakfast</div><div class="od">Lets the planner combine this food (bread or fruit) with a plain protein breakfast main.</div></div></div></div>';
+
   html += '<button class="cta" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
     + '<button class="cta ghostbtn" onclick="openFoodLibrary()">Cancel</button>';
   return html;
@@ -1118,6 +1149,10 @@ function setNewFoodSugarQuality(value){ newFoodForm.sugarQuality = value; render
 function toggleNewFoodFlag(fl){
   const i = newFoodForm.flags.indexOf(fl);
   if(i === -1) newFoodForm.flags.push(fl); else newFoodForm.flags.splice(i, 1);
+  renderNewFoodFormSheet();
+}
+function toggleNewFoodBreakfastPair(){
+  newFoodForm.breakfastPair = !newFoodForm.breakfastPair;
   renderNewFoodFormSheet();
 }
 function stepNewFoodField(key, delta){
@@ -1160,6 +1195,7 @@ function saveNewFood(){
     kcal: kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, satFat: f.satFat, fiber: f.fiber,
     sugars: f.sugars, freeSugars: f.freeSugars, sugarQuality: f.sugarQuality || 'unknown',
     flags: f.flags.slice(), cat: f.cat, season: normalizeSeason(f.season), src: 'User-added ingredient',
+    breakfastPair: !!f.breakfastPair,
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   });
   delete saved.avgG;
@@ -1439,6 +1475,7 @@ function recipeToBuilder(id){
     emoji: r.emoji || '🍽️',
     slots: recipeSlotList(r).length ? recipeSlotList(r) : [r.slot || 'dinner'],
     season: recipeSeason(r),
+    role: normalizeRecipeRole(r.role),
     time: r.time || 20,
     servings: r.servings || 1,
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
@@ -1448,7 +1485,7 @@ function recipeToBuilder(id){
 }
 
 function openNewRecipeForm(){
-  recipeBuilder = {name: '', emoji: '🍽️', slots: ['dinner'], season: 'evergreen', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
+  recipeBuilder = {name: '', emoji: '🍽️', slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
   renderRecipeBuilderSheet();
 }
 
@@ -1500,6 +1537,10 @@ function buildRecipeBuilderSheet(){
   html += '<div class="field"><label>Season</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(rb.season) === s ? ' chipsel' : '') + '" onclick="setRecipeBuilderSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
     + '</div><div class="sub" style="margin-top:4px">Evergreen is always eligible; the seasonal tags limit automatic planning/re-balance to the current season.</div></div>';
+
+  html += '<div class="field"><label>Role</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + VALID_ROLES.map(function(role){ return '<button class="pill ghost chip-preset' + (normalizeRecipeRole(rb.role) === role ? ' chipsel' : '') + '" onclick="setRecipeBuilderRole(\'' + role + '\')">' + recipeRoleLabel(role) + '</button>'; }).join('')
+    + '</div><div class="sub" style="margin-top:4px">Full meal stands alone; Main pairs with a side; Side accompanies a main. How this recipe composes into a plan — separate from which meal slots it can serve.</div></div>';
 
   html += '<div class="field"><label>Prep time</label><div class="inp"><span>Minutes</span>'
     + '<span class="sv-stepper" style="margin:0">'
@@ -1564,6 +1605,7 @@ function toggleRecipeSlot(s){
   renderRecipeBuilderSheet();
 }
 function setRecipeBuilderSeason(season){ recipeBuilder.season = normalizeSeason(season); renderRecipeBuilderSheet(); }
+function setRecipeBuilderRole(role){ recipeBuilder.role = normalizeRecipeRole(role); renderRecipeBuilderSheet(); }
 function stepRecipeTime(delta){ recipeBuilder.time = Math.max(2, Math.min(180, recipeBuilder.time + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeServings(delta){ recipeBuilder.servings = Math.max(1, Math.min(12, recipeBuilder.servings + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeIngredientGrams(i, delta){
@@ -1898,6 +1940,7 @@ function saveRecipeBuilder(){
     title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: (rb.slots && rb.slots[0]) || 'dinner', slots: (rb.slots && rb.slots.length ? rb.slots.slice() : ['dinner']),
     styles: meta.styles, time: rb.time, servings: yieldN,
     season: normalizeSeason(rb.season || derivedRecipeSeasonFromIngredients(rb.ingredients)),
+    role: normalizeRecipeRole(rb.role),
     ingredients: rb.ingredients.map(function(r){ return [r.foodId, r.grams]; }),
     toTaste: [],
     steps: stepsArr.length ? stepsArr : ['Combine and enjoy.'],

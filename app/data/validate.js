@@ -29,12 +29,29 @@ const VALID_TAGS = ['thyroid', 'skin', 'heart', 'muscle', 'lowGI', 'omega3', 'hi
 const VALID_AVOID = ['lactose', 'gluten', 'shellfish', 'nuts', 'spicy', 'raw-onion'];
 const VALID_SEASONS = ['evergreen', 'winter/autumn', 'spring/summer'];
 
+// task B2: role is orthogonal to slot ('slots' says WHEN a recipe can be planned, 'role'
+// says HOW it composes) — 'full' one-dish meals, 'main' protein centerpieces that pair
+// with a side, 'side' accompaniments. Required + enum-checked (ERROR) so every recipe in
+// RECIPES_DB gets a deliberate tag; applyCustomRecipes() (js/library.js) normalizes legacy
+// custom recipes without a role to 'full' at read time so validateData() stays green.
+const VALID_ROLES = ['full', 'main', 'side'];
+
 // breakfast 300-650, lunch 400-750, dinner 400-800, snack 100-350 (PWA-MVP-plan.md B2 acceptance).
+// Applies only to role:'full' recipes — a composed main+side unit is what must land in the
+// slot band now, not the bare main/side component (task B2's "attempt to use, don't force").
 const KCAL_BAND = {
   breakfast: [300, 650],
   lunch: [400, 750],
   dinner: [400, 800],
   snack: [100, 350]
+};
+
+// task B2: plausibility-only (WARNING) bands for the two sub-full roles, computed per
+// serving via recipeMacros — a 'main' or 'side' is expected to be smaller than a full meal
+// on its own since it's meant to be combined with the other half of the composed unit.
+const ROLE_KCAL_BAND = {
+  main: [250, 650],
+  side: [60, 300]
 };
 
 // Elena's current avoid-list in the app (lactose, raw onion, very spicy — per the B2
@@ -130,9 +147,13 @@ function validateData() {
     const r = RECIPES_DB[id];
     const prefix = 'Recipe "' + id + '": ';
 
-    ['title', 'emoji', 'slot', 'styles', 'time', 'ingredients', 'toTaste', 'steps', 'tags', 'avoid'].forEach(function (f) {
+    ['title', 'emoji', 'slot', 'role', 'styles', 'time', 'ingredients', 'toTaste', 'steps', 'tags', 'avoid'].forEach(function (f) {
       if (!(f in r)) errors.push(prefix + 'missing field "' + f + '"');
     });
+
+    if (!('role' in r) || VALID_ROLES.indexOf(r.role) === -1) {
+      errors.push(prefix + 'invalid role "' + r.role + '" (must be one of ' + VALID_ROLES.join(', ') + ')');
+    }
 
     if (typeof r.title !== 'string' || !r.title) errors.push(prefix + 'title missing/empty');
     if (typeof r.emoji !== 'string' || !r.emoji) errors.push(prefix + 'emoji missing/empty');
@@ -236,15 +257,31 @@ function validateData() {
       }
     }
 
-    // kcal-band check — only once foods.js is loaded.
-    if (foodsLoaded && slotValid && KCAL_BAND[r.slot] && !r.occasional) {
+    // task B2: a role:'side' recipe whose slots don't include 'side' is likely a tagging
+    // slip (a side should be plannable as a side) — soft warning, not an error, since a
+    // recipe can legitimately be role:'side' shape-wise while only ever surfaced via a
+    // specific meal slot.
+    if (r.role === 'side' && recipeSlotList(r).indexOf('side') === -1) {
+      warnings.push(prefix + 'role is "side" but its slots ' + JSON.stringify(recipeSlotList(r)) + ' do not include "side" — possible tagging slip.');
+    }
+
+    // kcal-band check — only once foods.js is loaded. The strict per-slot band
+    // (KCAL_BAND) only applies to role:'full' recipes — a composed main+side unit is what
+    // must land in the slot band now, not the bare main or side component. role:'main'/
+    // 'side' get their own, looser WARNING-only plausibility bands (ROLE_KCAL_BAND) instead.
+    if (foodsLoaded && slotValid && !r.occasional && (r.role === 'full' ? KCAL_BAND[r.slot] : ROLE_KCAL_BAND[r.role])) {
       const m = recipeMacros(id);
       if (!m || !m.resolved) {
         warnings.push(prefix + 'could not compute macros (unresolved ingredient) — skipped kcal-band check.');
-      } else {
+      } else if (r.role === 'full') {
         const band = KCAL_BAND[r.slot];
         if (m.kcal < band[0] || m.kcal > band[1]) {
           warnings.push(prefix + 'computed kcal ' + Math.round(m.kcal) + ' is outside the plausible band ' + band[0] + '-' + band[1] + ' for slot "' + r.slot + '".');
+        }
+      } else {
+        const roleBand = ROLE_KCAL_BAND[r.role];
+        if (m.kcal < roleBand[0] || m.kcal > roleBand[1]) {
+          warnings.push(prefix + 'computed kcal ' + Math.round(m.kcal) + ' is outside the plausible band ' + roleBand[0] + '-' + roleBand[1] + ' for role "' + r.role + '".');
         }
       }
     }

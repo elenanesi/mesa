@@ -57,6 +57,15 @@ const PORTION_STEPS = [0.5, 1, 1.5, 2, 2.5, 3];
 // needed: a capped, under-target portion just scores worse on kcal-fit than a candidate
 // that doesn't need capping.
 const SLOT_MAX_PORTION = {breakfast: 1.5, lunch: 3, dinner: 3, snack: 1.5};
+// task B2 (composed meals): for each role:'main' candidate, only the top-K sides by
+// combined-at-1x kcal fit are evaluated (pair pruning — determinism + speed over the full
+// 9-recipe side pool). See sidePoolFor/topKSideIds below.
+const SIDE_TOP_K = 4;
+// Breakfast-pairing food amount steps (Decisions Q2 whitelist): piece-unit foods in whole
+// pieces (1-2x avgG), everything else in 30g steps up to 120g — deterministic, no search
+// beyond these fixed candidates.
+const BREAKFAST_PAIR_PIECE_STEPS = [1, 2];
+const BREAKFAST_PAIR_GRAM_STEPS = [30, 60, 90, 120];
 
 /* ---------------- small deterministic helpers ---------------- */
 // DJB2-xor string hash — stable across runs (no Math.random), used only as a tiny
@@ -112,6 +121,110 @@ function candidatesFor(slot, styleKey, avoidList, opts){
   }).sort();
 }
 function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the recipe as written" (1x)
+
+/* ---------------- task B2: composed lunch/dinner + breakfast pairing pools ----------------
+   generateWeek's candidate pool for lunch/dinner/breakfast is (per plan section B2):
+     role:'full' recipes (today's behavior, unchanged) UNION composed (main x side/food)
+     pairs built from role:'main' recipes + the pools below. Snack never composes — its
+     pool stays exactly what candidatesFor() already returns, role ignored entirely, per
+     the B2 tagging handoff ("Snack: Hummus & veg sticks... roles other than what
+     candidatesFor already returns are irrelevant there"). */
+
+// Every role:'side' recipe, filtered by avoid-list + season but DELIBERATELY NOT by
+// household style: a vegetable side fits any style, and the 9-recipe side pool is too
+// small to also style-filter without emptying for non-balanced styles (documented per the
+// B2 tagging handoff). Sides need not carry the current slot in `slots` — a side is a side
+// at lunch or dinner regardless of its own slot metadata (e.g. a side tagged only for
+// 'side'/'snack' can still compose into a lunch or dinner meal). Sorted id order.
+function sidePoolFor(avoidList){
+  return Object.keys(RECIPES_DB).filter(function(id){
+    const r = RECIPES_DB[id];
+    return r.role === 'side'
+      && !r.occasional
+      && recipePref(id) !== 'down'
+      && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
+      && !recipeHitsAvoid(r, avoidList);
+  }).sort();
+}
+
+// Plain-FOODS avoid check, mirroring library.js's own ingredient-derived avoid tagging
+// (deriveRecipeMeta: Dairy -> lactose, GLUTEN_FOOD_IDS -> gluten, prawns -> shellfish,
+// NUT_FOOD_IDS -> nuts). Breakfast-pairing foods are FOODS records, not recipes, so they
+// carry no `avoid` array of their own — this reuses the exact same derivation rule so a
+// person's avoid-list is respected identically whether the offending ingredient arrives
+// via a recipe or a plain paired food.
+function foodHitsAvoid(foodId, avoidList){
+  if(!avoidList || !avoidList.length) return false;
+  const food = FOODS[foodId];
+  if(!food) return false;
+  if(avoidList.indexOf('lactose') !== -1 && food.cat === 'Dairy') return true;
+  if(avoidList.indexOf('gluten') !== -1 && typeof GLUTEN_FOOD_IDS !== 'undefined' && GLUTEN_FOOD_IDS.indexOf(foodId) !== -1) return true;
+  if(avoidList.indexOf('shellfish') !== -1 && foodId === 'prawns') return true;
+  if(avoidList.indexOf('nuts') !== -1 && typeof NUT_FOOD_IDS !== 'undefined' && NUT_FOOD_IDS.indexOf(foodId) !== -1) return true;
+  return false;
+}
+
+// Decisions Q2 whitelist (breads + fruit) — FOODS[id].breakfastPair === true — filtered by
+// avoid-list and season (a summer breakfast shouldn't default-pair with a winter-only
+// fruit), sorted for deterministic iteration.
+function breakfastPairFoodIds(avoidList){
+  return Object.keys(FOODS).filter(function(id){
+    const f = FOODS[id];
+    if(!f || f.breakfastPair !== true) return false;
+    if(typeof foodSeason === 'function' && typeof currentSeasonKey === 'function'){
+      const s = foodSeason(id);
+      if(s !== 'evergreen' && s !== currentSeasonKey()) return false;
+    }
+    return !foodHitsAvoid(id, avoidList);
+  }).sort();
+}
+
+// The natural candidate amounts for a breakfast-pairing food: whole pieces (1-2x avgG) for
+// unit:'piece' foods, 30g steps up to 120g for everything else — fixed, deterministic
+// candidates, no continuous search.
+function foodPairingSteps(foodId){
+  const food = FOODS[foodId];
+  if(!food) return [];
+  if(food.unit === 'piece') return BREAKFAST_PAIR_PIECE_STEPS.map(function(n){ return n * food.avgG; });
+  return BREAKFAST_PAIR_GRAM_STEPS.slice();
+}
+
+// Pair pruning (B2 plan section 2): ranks a side pool against ONE main by combined-at-1x
+// kcal fit and keeps only the top K (deterministic err-then-id tie-break), so composition
+// stays O(mains x K) rather than O(mains x sides).
+function topKSideIds(mainBaseKcal, sidePool, desiredKcal, k){
+  const scored = sidePool.map(function(sideId){
+    const sideBase = dbBaseNutrition(sideId);
+    return {id: sideId, err: Math.abs(mainBaseKcal + sideBase.kcal - desiredKcal)};
+  });
+  scored.sort(function(a, b){
+    if(Math.abs(a.err - b.err) > 1e-9) return a.err - b.err;
+    return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
+  });
+  return scored.slice(0, k).map(function(s){ return s.id; });
+}
+
+// Light variety rule for sides/breakfast-pair foods (B2 plan section 5): drops any id used
+// on the day right before dayIndex (window = 1 day) by any of the given persons — but,
+// per the tagging handoff, SKIPS the rule (falls back to the unfiltered pool) rather than
+// ever emptying an already-tiny pool.
+function applyLightConsecutiveFilter(pool, prevDayUsedArrays){
+  const usedYesterday = {};
+  (prevDayUsedArrays || []).forEach(function(arr){ (arr || []).forEach(function(id){ usedYesterday[id] = true; }); });
+  const filtered = pool.filter(function(id){ return !usedYesterday[id]; });
+  return filtered.length ? filtered : pool;
+}
+
+// Records which side/food id a composed pick used that day, for the light consecutive-day
+// rule above (history.<person>.sideUse / .bfPairUse, parallel to the existing per-slot
+// history arrays). A no-op when the entry has no extras (full-recipe or standalone picks).
+function recordCompositionUsage(history, entry, person, slot, dayIndex){
+  if(!entry || !Array.isArray(entry.extras) || !entry.extras.length) return;
+  const extra = entry.extras[0];
+  const bucket = slot === 'breakfast' ? 'bfPairUse' : 'sideUse';
+  if(!history[person][bucket][dayIndex]) history[person][bucket][dayIndex] = [];
+  history[person][bucket][dayIndex].push(extra.recipeId || extra.foodId);
+}
 
 function planEntryComponents(entry){
   if(!entry || !entry.recipeId) return [];
@@ -518,6 +631,11 @@ function generateWeek(seed){
 
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
+  // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
+  // logs, keyed by dayIndex (sparse), for the light consecutive-day variety rule — separate
+  // from the main-recipe history arrays above, which main/full ids still join unchanged.
+  history.elena.sideUse = {}; history.partner.sideUse = {};
+  history.elena.bfPairUse = {}; history.partner.bfPairUse = {};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
@@ -551,24 +669,70 @@ function generateWeek(seed){
         // for both (same convention as the variety filter's history handling).
         const chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
         dayMeals[slot] = chosen;
-        remainingKcal.elena -= chosen.elena.kcal; remainingKcal.partner -= chosen.partner.kcal;
-        remainingProtein.elena -= chosen.elena.protein; remainingProtein.partner -= chosen.partner.protein;
+        // Deduct the WHOLE unit (main + any composed extra) via planEntryNutrition, not the
+        // raw entry.kcal/protein cache (which — like every existing manual meal-extra —
+        // stays base-recipe-only; see makePlanEntry/refreshPlanEntryNutrition). Identical to
+        // the old `chosen.elena.kcal` deduction whenever there's no extra, since
+        // planEntryNutrition({recipeId,portion}) === recipeNutrition(recipeId,portion) then.
+        const sharedNutE = planEntryNutrition(chosen.elena), sharedNutA = planEntryNutrition(chosen.partner);
+        remainingKcal.elena -= sharedNutE.kcal; remainingKcal.partner -= sharedNutA.kcal;
+        remainingProtein.elena -= sharedNutE.protein; remainingProtein.partner -= sharedNutA.protein;
         history.elena[slot][d] = chosen.recipeId; history.partner[slot][d] = chosen.recipeId;
+        recordCompositionUsage(history, chosen.elena, 'elena', slot, d);
+        recordCompositionUsage(history, chosen.partner, 'partner', slot, d);
       } else {
         const poolE = candidatesFor(slot, styleKey, avoidList.elena);
         const poolA = candidatesFor(slot, styleKey, avoidList.partner);
         const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
         const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
-        remainingKcal.elena -= chE.kcal; remainingKcal.partner -= chA.kcal;
-        remainingProtein.elena -= chE.protein; remainingProtein.partner -= chA.protein;
+        const soloNutE = planEntryNutrition(chE), soloNutA = planEntryNutrition(chA);
+        remainingKcal.elena -= soloNutE.kcal; remainingKcal.partner -= soloNutA.kcal;
+        remainingProtein.elena -= soloNutE.protein; remainingProtein.partner -= soloNutA.protein;
         history.elena[slot][d] = chE.recipeId; history.partner[slot][d] = chA.recipeId;
+        recordCompositionUsage(history, chE, 'elena', slot, d);
+        recordCompositionUsage(history, chA, 'partner', slot, d);
       }
       remainingWeight -= w;
     });
     days.push({date: addDaysISO(weekStartDate, d), meals: dayMeals});
   }
   return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days};
+}
+
+// task B2: builds every composed breakfast candidate for ONE role:'main' recipe — the
+// standalone pick (bp already computed by the caller, reused so "a light breakfast alone"
+// and "light breakfast + fruit" share the same main portion) plus one paired candidate per
+// whitelisted, avoid/season/variety-filtered breakfastPair food, each at whichever fixed
+// gram/piece step lands closest to the remaining gap (desired − standalone main kcal).
+// `push` is called once per candidate with (tieId, kcalTotal, proteinTotal, extra|null).
+function pushBreakfastPairCandidates(push, mainId, mainBase, bp, desired, foodPool){
+  foodPool.forEach(function(foodId){
+    let bestStep = null;
+    foodPairingSteps(foodId).forEach(function(grams){
+      const m = foodMacros(foodId, grams);
+      const err = Math.abs(bp.kcal + m.kcal - desired);
+      const better = !bestStep || err < bestStep.err - 1e-9 || (Math.abs(err - bestStep.err) <= 1e-9 && grams < bestStep.grams);
+      if(better) bestStep = {grams: grams, kcal: m.kcal, protein: m.protein, err: err};
+    });
+    if(!bestStep) return;
+    push(mainId + '|bf|' + foodId, bp.kcal + bestStep.kcal, mainBase.protein * bp.portion + bestStep.protein, {foodId: foodId, grams: bestStep.grams});
+  });
+}
+
+// task B2: builds every composed lunch/dinner candidate for ONE role:'main' recipe against
+// ONE person's desired kcal — top-K sides (topKSideIds) x fixed side-portion steps {0.5,1},
+// main portion re-searched via bestPortion against (desired − side kcal at that step).
+// `push` is called once per (side, sidePortion) candidate.
+function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, maxPortion, sidePool, topSideIds){
+  topSideIds.forEach(function(sideId){
+    const sideBase = dbBaseNutrition(sideId);
+    [0.5, 1].forEach(function(sidePortion){
+      const sideKcal = sideBase.kcal * sidePortion, sideProtein = sideBase.protein * sidePortion;
+      const bp = bestPortion(mainBase.kcal, desired - sideKcal, anchor, maxPortion);
+      push(mainId + '|side|' + sideId + '@' + sidePortion, bp.kcal + sideKcal, mainBase.protein * bp.portion + sideProtein, {recipeId: sideId, portion: sidePortion}, bp.portion);
+    });
+  });
 }
 
 function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludePrevWeekId){
@@ -582,25 +746,131 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   // written in sync, so hers stands for both.
   pool = applyCrossWeekFilter(pool, excludePrevWeekId);
   pool = applyVarietyFilter(pool, history, 'elena', slot, dayIndex);
+  const maxPortion = SLOT_MAX_PORTION[slot];
+
+  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams},
+  //              portionE, portionA, kcalE, kcalA, proteinE, proteinA}
+  const candidates = [];
+  function pushFull(id, base, bpE, bpA){
+    candidates.push({tieId: id, mainId: id, extra: null,
+      portionE: bpE.portion, portionA: bpA.portion,
+      kcalE: bpE.kcal, kcalA: bpA.kcal,
+      proteinE: base.protein * bpE.portion, proteinA: base.protein * bpA.portion});
+  }
+
+  if(slot === 'snack'){
+    // Snack never composes — every id in the pool (any role) is a standalone pick,
+    // exactly today's behavior (B2 tagging handoff).
+    pool.forEach(function(id){
+      const base = dbBaseNutrition(id);
+      const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+      const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+      pushFull(id, base, bpE, bpA);
+    });
+  } else {
+    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full'; });
+    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main'; });
+    fullIds.forEach(function(id){
+      const base = dbBaseNutrition(id);
+      const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+      const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+      pushFull(id, base, bpE, bpA);
+    });
+
+    const avoidBoth = unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []);
+
+    if(slot === 'breakfast'){
+      const foodPoolRaw = breakfastPairFoodIds(avoidBoth);
+      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history.elena.bfPairUse[dayIndex - 1], history.partner.bfPairUse[dayIndex - 1]]);
+      mainIds.forEach(function(id){
+        const base = dbBaseNutrition(id);
+        const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+        const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+        pushFull(id, base, bpE, bpA); // standalone role:'main' breakfast remains legal
+        // Paired candidates need each person's OWN kcal/protein total, but the extra
+        // (food+grams) must be the SAME for both (shared dish) — build each side's totals
+        // per person, then only keep candidates where both persons' step search picked the
+        // same food (grams may differ per person's remaining gap; see below).
+        pushBreakfastPairCandidates(function(tieId, kcalE, proteinE, extraE){
+          // Re-run the same food's step search against Elena's target to get her totals,
+          // and against Andrea's target for his — both share `extraE.foodId`, but each
+          // person's grams are chosen independently against their own desired kcal (same
+          // convention lunch/dinner's shared side-portion-but-per-person-main uses).
+          let bestStepA = null;
+          foodPairingSteps(extraE.foodId).forEach(function(grams){
+            const m = foodMacros(extraE.foodId, grams);
+            const err = Math.abs(bpA.kcal + m.kcal - desiredA);
+            const better = !bestStepA || err < bestStepA.err - 1e-9 || (Math.abs(err - bestStepA.err) <= 1e-9 && grams < bestStepA.grams);
+            if(better) bestStepA = {grams: grams, kcal: m.kcal, protein: m.protein, err: err};
+          });
+          candidates.push({
+            tieId: tieId, mainId: id, extra: {foodId: extraE.foodId, gramsE: extraE.grams, gramsA: bestStepA.grams},
+            portionE: bpE.portion, portionA: bpA.portion,
+            kcalE: kcalE, kcalA: bpA.kcal + bestStepA.kcal,
+            proteinE: proteinE, proteinA: base.protein * bpA.portion + bestStepA.protein
+          });
+        }, id, base, bpE, desiredE, foodPool);
+      });
+    } else if(slot === 'lunch' || slot === 'dinner'){
+      const sidePoolRaw = sidePoolFor(avoidBoth);
+      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history.elena.sideUse[dayIndex - 1], history.partner.sideUse[dayIndex - 1]]);
+      if(sidePool.length){
+        mainIds.forEach(function(mainId){
+          const mainBase = dbBaseNutrition(mainId);
+          const topsE = topKSideIds(mainBase.kcal, sidePool, desiredE, SIDE_TOP_K);
+          const topsA = topKSideIds(mainBase.kcal, sidePool, desiredA, SIDE_TOP_K);
+          const topsSet = {};
+          topsE.concat(topsA).forEach(function(id){ topsSet[id] = true; });
+          const tops = Object.keys(topsSet).sort();
+          // Side portion is shared (same dish, same amount for both); main portion is
+          // searched per person against (desired − side kcal at that shared portion).
+          tops.forEach(function(sideId){
+            const sideBase = dbBaseNutrition(sideId);
+            [0.5, 1].forEach(function(sidePortion){
+              const sideKcal = sideBase.kcal * sidePortion, sideProtein = sideBase.protein * sidePortion;
+              const bpE = bestPortion(mainBase.kcal, desiredE - sideKcal, PERSON_ANCHOR.elena, maxPortion);
+              const bpA = bestPortion(mainBase.kcal, desiredA - sideKcal, PERSON_ANCHOR.partner, maxPortion);
+              candidates.push({
+                tieId: mainId + '|side|' + sideId + '@' + sidePortion, mainId: mainId, extra: {recipeId: sideId, portion: sidePortion},
+                portionE: bpE.portion, portionA: bpA.portion,
+                kcalE: bpE.kcal + sideKcal, kcalA: bpA.kcal + sideKcal,
+                proteinE: mainBase.protein * bpE.portion + sideProtein, proteinA: mainBase.protein * bpA.portion + sideProtein
+              });
+            });
+          });
+        });
+      }
+    }
+  }
+
   let best = null;
-  pool.forEach(function(id){
-    const base = dbBaseNutrition(id);
-    const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[slot]);
-    const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[slot]);
-    const proteinE = base.protein * bpE.portion, proteinA = base.protein * bpA.portion;
-    const scoreE = mealScore(bpE.kcal, desiredE, proteinE, desiredProtE, dayIndex, slotIndex, id, weekSeed);
-    const scoreA = mealScore(bpA.kcal, desiredA, proteinA, desiredProtA, dayIndex, slotIndex, id, weekSeed);
+  candidates.forEach(function(c){
+    // mealScore's rotation/favorite-boost is keyed on the real MAIN recipe id (mainId) —
+    // never the composite tieId — so a composed unit's score treats "which main" exactly
+    // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
+    // ONLY for the final deterministic tie-break below.
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed);
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed);
     const total = scoreE + scoreA;
-    const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && id < best.id);
-    if(better) best = {id: id, total: total, portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal, kcalA: bpA.kcal, proteinE: proteinE, proteinA: proteinA};
+    const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
+    if(better) best = Object.assign({total: total}, c);
   });
   if(!best){
     console.error('pickSharedMeal: empty candidate pool for slot="' + slot + '" style="' + householdStyle + '" — check RECIPES_DB coverage for this avoid-list combination.');
     return {shared: true, recipeId: null, elena: {recipeId: null, portion: 1, kcal: 0, protein: 0}, partner: {recipeId: null, portion: 1, kcal: 0, protein: 0}};
   }
-  return {shared: true, recipeId: best.id,
-    elena: makePlanEntry(best.id, best.portionE),
-    partner: makePlanEntry(best.id, best.portionA)};
+  const elenaEntry = makePlanEntry(best.mainId, best.portionE);
+  const partnerEntry = makePlanEntry(best.mainId, best.portionA);
+  if(best.extra){
+    if(best.extra.foodId !== undefined && best.extra.gramsE !== undefined){
+      elenaEntry.extras = [{foodId: best.extra.foodId, grams: best.extra.gramsE}];
+      partnerEntry.extras = [{foodId: best.extra.foodId, grams: best.extra.gramsA}];
+    } else {
+      elenaEntry.extras = [{recipeId: best.extra.recipeId, portion: best.extra.portion}];
+      partnerEntry.extras = [{recipeId: best.extra.recipeId, portion: best.extra.portion}];
+    }
+  }
+  return {shared: true, recipeId: best.mainId, elena: elenaEntry, partner: partnerEntry};
 }
 
 function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, remainingProteinP, remainingWeight, history, weekSeed, excludePrevWeekId){
@@ -611,20 +881,69 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   // Cross-week filter first (with its own full-pool fallback), then within-week variety.
   pool = applyCrossWeekFilter(pool, excludePrevWeekId);
   pool = applyVarietyFilter(pool, history, person, slot, dayIndex);
+  const maxPortion = SLOT_MAX_PORTION[slot];
+  const avoidP = PROF[person].avoid || [];
+
+  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams}, portion, kcal, protein}
+  const candidates = [];
+  function pushFull(id, base, bp){
+    candidates.push({tieId: id, mainId: id, extra: null, portion: bp.portion, kcal: bp.kcal, protein: base.protein * bp.portion});
+  }
+
+  if(slot === 'snack'){
+    // Snack never composes — every id in the pool (any role) is a standalone pick.
+    pool.forEach(function(id){
+      const base = dbBaseNutrition(id);
+      pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion));
+    });
+  } else {
+    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full'; });
+    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main'; });
+    fullIds.forEach(function(id){
+      const base = dbBaseNutrition(id);
+      pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion));
+    });
+
+    if(slot === 'breakfast'){
+      const foodPoolRaw = breakfastPairFoodIds(avoidP);
+      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history[person].bfPairUse[dayIndex - 1]]);
+      mainIds.forEach(function(id){
+        const base = dbBaseNutrition(id);
+        const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
+        pushFull(id, base, bp); // standalone role:'main' breakfast remains legal
+        pushBreakfastPairCandidates(function(tieId, kcal, protein, extra){
+          candidates.push({tieId: tieId, mainId: id, extra: extra, portion: bp.portion, kcal: kcal, protein: protein});
+        }, id, base, bp, desired, foodPool);
+      });
+    } else if(slot === 'lunch' || slot === 'dinner'){
+      const sidePoolRaw = sidePoolFor(avoidP);
+      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history[person].sideUse[dayIndex - 1]]);
+      if(sidePool.length){
+        mainIds.forEach(function(mainId){
+          const mainBase = dbBaseNutrition(mainId);
+          const tops = topKSideIds(mainBase.kcal, sidePool, desired, SIDE_TOP_K);
+          pushComposedSideCandidates(function(tieId, kcal, protein, extra, portion){
+            candidates.push({tieId: tieId, mainId: mainId, extra: extra, portion: portion, kcal: kcal, protein: protein});
+          }, mainId, mainBase, desired, anchor, maxPortion, sidePool, tops);
+        });
+      }
+    }
+  }
+
   let best = null;
-  pool.forEach(function(id){
-    const base = dbBaseNutrition(id);
-    const bp = bestPortion(base.kcal, desired, anchor, SLOT_MAX_PORTION[slot]);
-    const protein = base.protein * bp.portion;
-    const score = mealScore(bp.kcal, desired, protein, desiredProt, dayIndex, slotIndex, id, weekSeed);
-    const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && id < best.id);
-    if(better) best = {id: id, score: score, portion: bp.portion, kcal: bp.kcal, protein: protein};
+  candidates.forEach(function(c){
+    // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed);
+    const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
+    if(better) best = Object.assign({score: score}, c);
   });
   if(!best){
     console.error('pickSoloMeal: empty candidate pool for person="' + person + '" slot="' + slot + '" style="' + householdStyle + '"');
     return {recipeId: null, portion: 1, kcal: 0, protein: 0};
   }
-  return makePlanEntry(best.id, best.portion);
+  const entry = makePlanEntry(best.mainId, best.portion);
+  if(best.extra) entry.extras = [best.extra];
+  return entry;
 }
 
 /* ---------------- keeping weekPlan fresh ---------------- */
@@ -1638,10 +1957,12 @@ function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson
   }
   const currentEntry = unit.shared ? m.elena : m[unit.person];
   const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
-  const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
   const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
   const currentDaily = dailyBandState(plan)[unit.dayIndex];
-  const sidePool = candidatesFor('side', styleKey, avoidL).filter(function(id){
+  // task B2: re-balance's side suggestions now come from the same role:'side' pool the
+  // generator composes with (sidePoolFor — avoid + season, deliberately not style-filtered),
+  // not the old slot='side' + style lookup.
+  const sidePool = sidePoolFor(avoidL).filter(function(id){
     return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
   });
   const results = [];

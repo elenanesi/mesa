@@ -32,11 +32,51 @@ function recommendedCal(p){ return round10(maintenanceOf(p) + p.goalAdj); }
 // Sane band for manual targets: never below ~110% of BMR, never above maintenance + 600.
 function calBand(p){ return [round10(bmrOf(p) * 1.1), round10(maintenanceOf(p) + 600)]; }
 
+/* ---------------- goal-derived numbers (task B1) ----------------
+   The bug this fixes: PROF[key].goalAdj used to be a fixed constant, so unchecking
+   "Gentle fat loss" on the Profile screen changed nothing — recommendedCal() kept
+   applying −325 regardless. goalAdj/goalName/goalTag are now PURE functions of
+   PROF[key].goals (state.js), the single source of truth; recomputeProf() below calls
+   them on every recompute so toggling a goal (render.js:toggleGoal) takes effect
+   immediately, the same way editing weight/height already did. Dispatches on which
+   calorie-goal key the profile's `goals` object carries (elena has `fatLoss`, partner
+   has `muscleGain`) rather than on profile identity, so these also work against a bare
+   {goals:{...}} object in tests. */
+function deriveGoalAdj(p){
+  if('fatLoss' in p.goals) return p.goals.fatLoss ? -325 : 0;
+  return p.goals.muscleGain ? 60 : 0;
+}
+function deriveGoalName(p){
+  if('fatLoss' in p.goals) return p.goals.fatLoss ? 'gentle fat loss' : 'maintenance';
+  return p.goals.muscleGain ? 'small muscle-gain surplus' : 'maintenance';
+}
+// Short "🎯 <calorie goal> · <other emoji> <other goal>" summary shown under the name
+// on the Profile screen (#goalTag). The second slot surfaces the person's most
+// distinctive OTHER active goal — same priority order as state.js's WHY_RULES (thyroid
+// > skin > muscle > heart for Elena; heart is the only other goal Andrea has) — and is
+// omitted entirely if none of those are on.
+function deriveGoalTag(p){
+  const g = p.goals;
+  const isElena = 'fatLoss' in g;
+  const calChip = isElena
+    ? (g.fatLoss ? '🎯 Gentle fat loss' : '🎯 At maintenance')
+    : (g.muscleGain ? '🎯 Muscle gain' : '🎯 At maintenance');
+  const other = isElena
+    ? (g.hashi ? '🦋 Hashimoto' : g.skin ? '✨ Skin' : g.muscle ? '💪 Muscle & protein' : g.heart ? '❤️ Heart-smart' : null)
+    : (g.heart ? '❤️ Heart-smart' : null);
+  return other ? (calChip + ' · ' + other) : calChip;
+}
+
 // Recomputes macro gram targets + fat good/sat split from the profile's split % and
 // daily calories. Consumed grams are fixed (already eaten today); only the target
 // denominators — and therefore the bar widths — move when the split changes.
 function recomputeProf(key){
   const p = PROF[key];
+  // Goal-derived numbers first (task B1) — recCal below reads p.goalAdj.
+  p.goalAdj = deriveGoalAdj(p);
+  p.goalName = deriveGoalName(p);
+  p.goalTag = deriveGoalTag(p);
+  p.hashi = !!p.goals.hashi; // mirrored convenience: Insights' selenium check reads PROF[key].hashi directly
   // Daily target: the Mifflin-St Jeor recommendation unless a manual override is set.
   p.recCal = recommendedCal(p);
   if(p.calCustom !== null && p.calCustom === p.recCal) p.calCustom = null; // drifted back onto the recommendation

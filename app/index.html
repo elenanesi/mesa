@@ -177,6 +177,12 @@
            call, so it already tracks the This/Next toggle and profile switch for free. -->
       <div class="week-summary" id="weekSummaryLine"></div>
 
+      <!-- B4: per-day averages (kcal/P/C/F), fiber + free-sugars avg/day vs their existing
+           targets, and the omega-3/sat-fat headline coverage chips — painted by
+           render.js:renderWeekNutriCard() on every renderWeek() call, so it already tracks
+           the This/Next toggle and profile switch for free, same as weekSummaryLine above. -->
+      <div class="card" id="weekNutriCard" style="padding:14px;margin-top:10px"></div>
+
       <h2>7-day plan</h2>
       <div class="week" id="weekList"></div>
 
@@ -507,11 +513,10 @@
       <p class="sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Your total calories stay the same — the split changes where they come from.<span class="chip-computed">✓ computed</span></p>
 
       <h2 id="sec-goals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Health goals</h2>
-      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Gentle fat loss</div><div class="od">~325 kcal below maintenance</div></div></div>
-      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Muscle & protein</div><div class="od">Protein-forward macro split · ~1.8–2 g/kg</div></div></div>
-      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Heart & metabolic</div><div class="od">High fiber, low sodium, Mediterranean base</div></div></div>
-      <div class="opt sel" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Beautiful skin</div><div class="od">Low-GI, omega-3 up, dairy/sugar down</div></div></div>
-      <div class="opt sel" id="hashiOpt" onclick="tog(this)"><div class="ck">✓</div><div><div class="ot">Hashimoto's-friendly 🦋</div><div class="od">Selenium, moderate iodine, anti-inflammatory</div></div></div>
+      <!-- task B1: rendered per-profile by render.js:renderGoalsEditor() from GOAL_DEFS
+           (state.js) — was 5 static checkboxes shared by both profiles (the bug: unchecking
+           "Gentle fat loss" as Andrea did nothing, and he saw a fat-loss goal he doesn't have). -->
+      <div id="goalsList"></div>
 
       <h2 id="sec-meals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="12" r="7"/><circle cx="15" cy="12" r="7"/></svg>Meals we share</h2>
       <p class="sub">Shared meals use one recipe with a portion for each of you. Solo meals are planned per person.</p>

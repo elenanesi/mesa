@@ -32,9 +32,6 @@ function parseDecimalInput(str){
   return isFinite(n) ? n : null;
 }
 
-// goal toggles
-function tog(el){ el.classList.toggle('sel'); el.querySelector('.ck').textContent = el.classList.contains('sel')?'✓':''; }
-
 /* ---------------- recipe detail rendering ---------------- */
 let recipeServingCtx = null;
 
@@ -423,45 +420,143 @@ function dayDateLabel(dateISO){
 // over the four slots. "Today" only ever highlights on the CURRENT week's row — next
 // week has no "today". Each meal row gets an inline 🔁 swap icon (weekStartDate-aware —
 // see openWeekSwap below) so a swap works on whichever week is displayed, not just today.
+// B4: per-day, per-slot displayed views + macro totals for `person` across a plan's 7
+// days, built from displayedSlotViewForDate() — the SAME per-slot view renderWeek()'s rows
+// paint from. Computed ONCE here so nutrition is never derived twice for a single render:
+// renderWeek() consumes dayViews[i].views[slot] for the row markup and dayViews[i].totals
+// for the day's macro line, and passes the whole array into renderWeekNutriCard for the
+// week-level averages. Pure/DOM-free (safe to call from tools/check.js). A slot with no
+// matching recipe (view.recipe falsy — same guard the row loop already used) contributes
+// nothing to that day's totals.
+// B4×B5 fix: a slot the person SKIPPED (slotLogStatus === 'skipped', current-week past
+// rows only — B5's catch-up log) still returns its planned/frozen macros from
+// displayedSlotViewForDate (view.kcal keeps showing that informational number on the row,
+// same convention as the Today card), but must NOT count toward the day/week "logged
+// overlay" totals — a skipped meal wasn't eaten, matching how recomputeConsumed/Insights
+// already zero it via the raw logHistory entries. Without this guard the day macro line
+// and week nutrient card silently disagreed with the row's own ∅ state.
+function weekDayNutriViews(plan, person){
+  return plan.days.map(function(day){
+    const views = {};
+    const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0};
+    SLOT_ORDER.forEach(function(slot){
+      const m = day.meals[slot];
+      const entry = m[person];
+      const view = displayedSlotViewForDate(day.date, person, slot, planEntryView(entry, m.shared));
+      views[slot] = view;
+      if(!view.recipe) return;
+      if(slotLogStatus(day.date, person, slot) === 'skipped') return;
+      totals.kcal += view.kcal; totals.protein += view.protein; totals.carbs += view.carbs;
+      totals.fat += view.fat; totals.fiber += view.fiber; totals.sugars += view.sugars; totals.freeSugars += view.freeSugars;
+    });
+    return {views: views, totals: totals};
+  });
+}
+
+// B4: pure week-level summary consumed by renderWeekNutriCard — per-day averages (kcal/P/
+// C/F), fiber and free-sugars averages against their existing single-sourced targets, and
+// the coverageGaps() object for the two headline household chips (omega-3, sat fat),
+// evaluated against the DISPLAYED week's plan (current or next). dayViews defaults to a
+// fresh weekDayNutriViews() call but renderWeek passes in the one it already built so nutri
+// totals are computed once per paint. Pure/DOM-free (safe to call from tools/check.js).
+function weekNutriSummary(plan, person, dayViews){
+  dayViews = dayViews || weekDayNutriViews(plan, person);
+  const days = dayViews.length || 7;
+  const sum = function(key){ return dayViews.reduce(function(s, d){ return s + d.totals[key]; }, 0); };
+  const avgKcal = sum('kcal') / days;
+  const avgProtein = sum('protein') / days;
+  const avgCarbs = sum('carbs') / days;
+  const avgFat = sum('fat') / days;
+  const avgFiber = sum('fiber') / days;
+  const avgFreeSugars = sum('freeSugars') / days;
+
+  const fiberTarget = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay; // single-sourced, never re-typed 25
+  const cov = computeWeeklyCoverage(plan);
+  const gaps = coverageGaps(cov);
+  const sugarTargetPct = gaps.freeSugars.target; // single-sourced, never re-typed 6
+  const calGoal = (PROF[person] && PROF[person].calGoalNum) || 0;
+  // Same grams conversion coverageTargetText already applies for this person's calorie goal
+  // — kept in sync by construction since both read gaps.freeSugars.target, never a literal.
+  const sugarTargetG = calGoal > 0 ? Math.round((sugarTargetPct / 100) * calGoal / 4) : 0;
+
+  return {
+    avgKcal: avgKcal, avgProtein: avgProtein, avgCarbs: avgCarbs, avgFat: avgFat,
+    avgFiber: avgFiber, avgFreeSugars: avgFreeSugars,
+    fiberTarget: fiberTarget, sugarTargetG: sugarTargetG, gaps: gaps
+  };
+}
+
 function renderWeek(){
   const mondayISO = weekScreenShowsNext ? nextMondayISO() : mondayOfWeek(todayISO());
   const plan = ensureWeekPlan(mondayISO);
   const todayIdx = weekScreenShowsNext ? -1 : todayDayIndex();
   const person = currentProf;
   const el = document.getElementById('weekList');
+  // B4: every row's view, computed exactly once, reused for the day macro lines AND the
+  // week card below (see weekDayNutriViews's header comment).
+  const dayViews = weekDayNutriViews(plan, person);
+  // B5 (catch-up logging): on the CURRENT week only, rows for dates up to and including
+  // today swap the pin/routine buttons for a single log-state button (data-act="log") so
+  // rows never exceed their existing button budget (decision Q3). Next week and future
+  // dates of this week are untouched — pins/routines on the past are meaningless anyway
+  // (re-balance already ignores them), so nothing of value is hidden.
   el.innerHTML = plan.days.map(function(day, di){
-    let dayKcal = 0;
+    const totals = dayViews[di].totals;
     const titles = [];
+    const logEligible = !weekScreenShowsNext && day.date <= todayISO();
     const rows = SLOT_ORDER.map(function(slot){
       const m = day.meals[slot];
-      const entry = m[person];
-      const view = displayedSlotViewForDate(day.date, person, slot, planEntryView(entry, m.shared));
+      const view = dayViews[di].views[slot];
       const r = view.recipe;
       if(!r) return '';
-      dayKcal += view.kcal;
       titles.push(escapeHtml(mealTitleWithExtras(view)));
       const together = view.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
-      const pinPerson = mealPinPersonForMeal(m, person);
-      const pinned = isMealPinned(plan.weekStartDate, di, slot, pinPerson);
       // Recipe ids can be user-authored ('cr-<slug>'), so every per-row argument rides in
       // data-* attributes (htmlAttr-escaped once, never re-parsed as JS) and clicks are
       // resolved by the delegated #weekList handler below instead of inline onclick JS.
       // The buttons' old event.stopPropagation() is replaced by handler ordering: the
       // delegated handler checks buttons before the row, and the row before the day.
-      const pinBtn = '<button class="dm-pin'+(pinned ? ' on' : '')+'" data-act="pin" data-pin-person="'+htmlAttr(pinPerson)+'" aria-label="'+(pinned ? 'Unpin this meal' : 'Pin this meal')+'">'+(pinned ? '📌' : '📍')+'</button>';
-      const routineBtn = '<button class="dm-rule" data-act="routine" aria-label="Set meal routine">↻</button>';
       const swapBtn = '<button class="dm-swap" data-act="swap" aria-label="Swap this meal">🔁</button>';
+      // B3: sides/extras button on EVERY row (This week and Next week alike) — opens
+      // openAddMealSheetForContext via the delegated handler below, same sheet the Today
+      // card ✎/＋ and recipe-screen "Manage" strip already use. Icon/label follow the same
+      // hasExtras convention as those entry points (renderTodayCardActions/buildLogSlotCard).
+      const hasExtras = !!(view.extras && view.extras.length);
+      const extrasAria = (hasExtras ? 'Edit ' : 'Add to ') + (SLOT_LABEL[slot] || slot);
+      const extrasBtn = '<button class="dm-extras" data-act="extras" aria-label="'+extrasAria+'">'+(hasExtras ? '✎' : '＋')+'</button>';
+      let actionBtns;
+      if(logEligible){
+        const status = slotLogStatus(day.date, person, slot);
+        const icon = status === 'confirmed' ? '✓' : (status === 'skipped' ? '∅' : '◯');
+        const label = SLOT_LABEL[slot] || slot;
+        const aria = (status === 'confirmed' ? 'Logged ' : (status === 'skipped' ? 'Skipped ' : 'Log ')) + label.toLowerCase();
+        const logBtn = '<button class="dm-log'+(status ? ' on' : '')+'" data-act="log" aria-label="'+aria+'">'+icon+'</button>';
+        actionBtns = logBtn + extrasBtn + swapBtn;
+      } else {
+        const pinPerson = mealPinPersonForMeal(m, person);
+        const pinned = isMealPinned(plan.weekStartDate, di, slot, pinPerson);
+        const pinBtn = '<button class="dm-pin'+(pinned ? ' on' : '')+'" data-act="pin" data-pin-person="'+htmlAttr(pinPerson)+'" aria-label="'+(pinned ? 'Unpin this meal' : 'Pin this meal')+'">'+(pinned ? '📌' : '📍')+'</button>';
+        const routineBtn = '<button class="dm-rule" data-act="routine" aria-label="Set meal routine">↻</button>';
+        actionBtns = pinBtn + routineBtn + extrasBtn + swapBtn;
+      }
       return '<div class="day-meal-row" data-di="'+di+'" data-slot="'+htmlAttr(slot)+'" data-recipe-id="'+htmlAttr(view.recipeId)+'">'
         + '<div class="dm-e">'+r.emoji+'</div>'
         + '<div class="dm-t">'+escapeHtml(mealTitleWithExtras(view))+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
         + '<div class="dm-k">'+Math.round(view.kcal)+'</div>'
-        + pinBtn + routineBtn + swapBtn + '</div>';
+        + actionBtns + '</div>';
     }).join('');
+    // B4 day-level macro line: current-profile totals for the day (dayViews[di].totals —
+    // already computed above, not re-derived), matching Insights' sugar-tracking convention
+    // (FREE sugars is the headline metric there — planner.js coverageGaps' 'freeSugars'
+    // entry, label "Free sugars" — so it's labeled the same way here rather than showing
+    // total sugars, which would be a second, disagreeing figure).
+    const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
+      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" data-di="'+di+'">'
-      + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(dayKcal))+' kcal <span class="chev">⌄</span></span></div>'
+      + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
-      + '<div class="day-meals">'+rows+'</div></div>';
+      + '<div class="day-meals">'+dayMacroLine+rows+'</div></div>';
   }).join('');
   // Delegated click handler for the whole week list (see the data-* note above): most
   // specific target first — action button, then meal row (open recipe), then day header
@@ -479,6 +574,8 @@ function renderWeek(){
       if(act === 'pin') toggleMealPin(plan.weekStartDate, di2, slot2, btn.getAttribute('data-pin-person'));
       else if(act === 'routine') openMealRoutineSheet(plan.weekStartDate, di2, slot2, person, mrow.getAttribute('data-recipe-id'));
       else if(act === 'swap') openWeekSwap(plan.weekStartDate, di2, slot2, person);
+      else if(act === 'log') openWeekLogSheet(plan.weekStartDate, di2, slot2, person);
+      else if(act === 'extras') openWeekAddMealSheet(plan.weekStartDate, di2, slot2, person);
       return;
     }
     const mealRow = e.target.closest('.day-meal-row');
@@ -491,12 +588,59 @@ function renderWeek(){
     if(day && el.contains(day)) toggleDay(+day.getAttribute('data-di'));
   };
   renderWeekSummaryLine(plan, person);
+  renderWeekNutriCard(plan, person, dayViews);
 
   // Nutrient coverage chips always reflect the CURRENT week regardless of which week is
   // toggled on-screen (renderNutrientChips reads the `weekPlan` compat getter, which only
   // ever mirrors the current week — planner.js:ensureWeekPlan) — no change needed there.
   renderNutrientChips();
   updateWeekActionsForMode();
+}
+
+// B4: paints weekNutriSummary(plan, person, dayViews) into #weekNutriCard — the compact
+// card ABOVE the day list, on BOTH This-week and Next-week modes: per-day averages
+// (kcal/P/C/F) for the CURRENT profile, fiber and free-sugars averages against the SAME
+// targets Insights already uses, and the two headline household coverage chips (omega-3
+// meals/wk, sat-fat share) for the DISPLAYED week's plan. dayViews are exactly what
+// renderWeek() already built from displayedSlotViewForDate() — current week's totals are
+// therefore logged-overlay-aware (what the rows show), and next week's are plan-only (no
+// logged overlay exists for future dates), with no special-casing needed here.
+function renderWeekNutriCard(plan, person, dayViews){
+  const wrap = document.getElementById('weekNutriCard');
+  if(!wrap) return;
+  const s = weekNutriSummary(plan, person, dayViews);
+
+  const macroLine = 'Avg/day — ' + fmtKcal(Math.round(s.avgKcal)) + ' kcal · P ' + Math.round(s.avgProtein) + 'g · C ' + Math.round(s.avgCarbs)
+    + 'g · F ' + Math.round(s.avgFat) + 'g';
+
+  // Fiber: single-sourced against WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay (never re-typed
+  // 25 here) — reuses coverageChipHtml's exact chip markup via a coverageGaps-shaped
+  // object built from OUR OWN per-day average (not the household worst-of-two Insights
+  // tracks), since fiber here is a per-profile, logged-overlay-aware figure.
+  const fiberGap = {
+    key: 'fiber', label: 'Fiber', value: Math.round(s.avgFiber), target: s.fiberTarget, unit: 'g/day',
+    gap: Math.max(0, (s.fiberTarget - s.avgFiber) / s.fiberTarget),
+    pct: Math.min(100, Math.round(s.avgFiber / s.fiberTarget * 100))
+  };
+
+  // Free sugars: same headline metric/label Insights already uses (planner.js coverageGaps
+  // 'freeSugars' — never total sugars), against the SAME 6%-of-kcal target (gaps.freeSugars
+  // .target, never re-typed as a literal 6, via weekNutriSummary's sugarTargetG) — the
+  // cap-note reuses coverageTargetText(gaps.freeSugars) verbatim so the target text never
+  // disagrees with Insights' own.
+  const sugarOver = s.sugarTargetG > 0 && s.avgFreeSugars > s.sugarTargetG;
+  const sugarPct = s.sugarTargetG > 0 ? Math.min(100, Math.round(s.avgFreeSugars / s.sugarTargetG * 100)) : 0;
+  const sugarChip = '<div class="n'+(sugarOver ? ' low' : '')+'"><div class="nt"><span>Free sugars</span><b>'+Math.round(s.avgFreeSugars)+' g/day</b></div>'
+    + '<div class="nbar"><i style="width:'+sugarPct+'%"></i></div>'
+    + '<div class="cap-note">Target ' + coverageTargetText(s.gaps.freeSugars) + ' — staying below is good</div></div>';
+
+  // Two headline household coverage chips, evaluated against the DISPLAYED week's plan
+  // (This or Next) via the exact same computeWeeklyCoverage/coverageGaps/coverageChipHtml
+  // Insights uses — never re-derived.
+  const covChips = ['omega3', 'satFat'].map(function(k){ return coverageChipHtml(s.gaps[k]); }).join('');
+
+  wrap.innerHTML = '<div class="sub" style="margin:0 0 10px">' + macroLine + '</div>'
+    + '<div class="nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
 }
 
 // T6: paints planner.js:summarizeWeekPlan(plan, person) into #weekSummaryLine as a single
@@ -629,6 +773,88 @@ function clearMealRoutine(){
   toast('Routine cleared');
 }
 
+/* ---------------- B5: catch-up logging from the Week view (current week only) ----------------
+   The ◯/✓/∅ button (see renderWeek's logEligible branch) opens this mini sheet for one
+   (dateISO, slot, currentProf) — same log-history funnel as Log/Today (logPlanEntry,
+   markSlotSkipped, removeLoggedSlot), just reachable for any past day of the CURRENT week
+   instead of only Today/Yesterday. Confirm/Skip both remain offered regardless of the
+   current status (so a skip can be corrected to a confirm and vice versa — upsertLogEntry/
+   markSlotSkipped already clear the other state's tombstone, see log.js); Undo only when
+   something is actually logged. Static onclicks with constant (zero-arg) calls are fine
+   here, same as openMealRoutineSheet's setMealRoutine('daily') pattern — weekLogCtx carries
+   the real arguments, and the only user string on the sheet (the meal title) is escaped. */
+let weekLogCtx = null;
+
+function weekLogStatusLabel(status){
+  if(status === 'confirmed') return '✓ Logged';
+  if(status === 'skipped') return '∅ Skipped';
+  return '◯ Not logged yet';
+}
+
+function openWeekLogSheet(weekStartDate, dayIndex, slot, person){
+  const plan = ensureWeekPlan(weekStartDate);
+  const day = plan.days[dayIndex];
+  const dateISO = day.date;
+  const meal = day.meals[slot];
+  const entry = meal[person];
+  weekLogCtx = {weekStartDate: plan.weekStartDate, dayIndex: dayIndex, slot: slot, person: person, dateISO: dateISO};
+  const view = displayedSlotViewForDate(dateISO, person, slot, planEntryView(entry, meal.shared));
+  const status = slotLogStatus(dateISO, person, slot);
+  const titleText = (view.recipe ? mealTitleWithExtras(view) : (SLOT_LABEL[slot] || slot)) + ' · ' + dayDateLabel(dateISO);
+  document.getElementById('sheetBody').innerHTML =
+    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(titleText) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub">Log what actually happened for ' + SLOT_LABEL[slot].toLowerCase() + ' on this day.</p>'
+    + '<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><b>Current</b><span class="pill ghost">' + weekLogStatusLabel(status) + '</span></div></div>'
+    + '<button class="cta" onclick="weekLogConfirm()">✓ Eaten as planned</button>'
+    + '<button class="cta ghostbtn" onclick="weekLogSkip()">∅ Skipped</button>'
+    + (status ? '<button class="cta ghostbtn" onclick="weekLogUndo()">↺ Undo</button>' : '');
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function weekLogConfirm(){
+  if(!weekLogCtx) return;
+  const ctx = weekLogCtx;
+  const plan = ensureWeekPlan(ctx.weekStartDate);
+  const entry = plan.days[ctx.dayIndex] && plan.days[ctx.dayIndex].meals[ctx.slot][ctx.person];
+  if(!entry || !entry.recipeId){ closeSheet(); return; }
+  // Confirm logs the meal AS PLANNED, extras included (planEntryComponents mirrors
+  // logConfirm's own v.components derivation) — only ctx.person's log is written, exactly
+  // like logConfirm's shared-meal semantics (the other person logs their own row separately).
+  const components = planEntryComponents(entry);
+  // Backdated days carry `t: null` (unknown eating time — the migrateV1TodayLog precedent);
+  // logging TODAY through this same sheet keeps the normal HH:MM stamp.
+  const opts = ctx.dateISO === todayISO() ? undefined : {tNull: true};
+  logPlanEntry(ctx.dateISO, ctx.person, ctx.slot, entry.recipeId, entry.portion, components, opts);
+  closeSheet();
+  refreshAfterLogChange();
+  renderWeek();
+  toast('✓ Logged ' + dayDateLabel(ctx.dateISO).toLowerCase());
+}
+
+function weekLogSkip(){
+  if(!weekLogCtx) return;
+  const ctx = weekLogCtx;
+  markSlotSkipped(ctx.dateISO, ctx.person, ctx.slot);
+  closeSheet();
+  refreshAfterLogChange();
+  renderWeek();
+  toast('∅ Skipped ' + dayDateLabel(ctx.dateISO).toLowerCase());
+}
+
+function weekLogUndo(){
+  if(!weekLogCtx) return;
+  const ctx = weekLogCtx;
+  const status = slotLogStatus(ctx.dateISO, ctx.person, ctx.slot);
+  if(!status){ closeSheet(); return; }
+  removeLoggedSlot(ctx.dateISO, ctx.person, ctx.slot);
+  closeSheet();
+  refreshAfterLogChange();
+  renderWeek();
+  toast('↺ Un-logged ' + dayDateLabel(ctx.dateISO).toLowerCase());
+}
+
 // The "Weekly nutrient coverage" card (FIX 3: moved from the Week screen to the TOP of
 // Insights — same markup/ids, same live wiring: renderWeek() still calls this after every
 // plan change, and renderInsights() also refreshes it on each visit): the 4 REAL computed metrics from
@@ -656,6 +882,16 @@ function coverageTargetText(g){
   }
   return '≥' + g.target + '/wk';
 }
+// Single chip's markup (.n/.nt/.nbar/.cap-note) for a coverageGaps() entry — factored out
+// of renderNutrientChips (Insights) so B4's week-level card (renderWeekNutriCard) can
+// paint the SAME two headline chips (omega-3, sat fat) with identical styling instead of
+// re-deriving the markup, per the B4 design note "reuse renderNutrientChips' chip styling".
+function coverageChipHtml(g){
+  const low = g.gap > 1e-9;
+  const capNote = g.cap ? '<div class="cap-note">Keep under ' + g.target + '% — staying below is good</div>' : '';
+  return '<div class="n'+(low ? ' low' : '')+'"><div class="nt"><span>'+g.label+'</span><b>'+coverageValueText(g)+'</b></div>'
+    + '<div class="nbar"><i style="width:'+g.pct+'%"></i></div>'+capNote+'</div>';
+}
 function renderNutrientChips(){
   const wrap = document.getElementById('nutriChips');
   if(!wrap) return;
@@ -663,13 +899,7 @@ function renderNutrientChips(){
   const order = ['omega3', 'selenium', 'fiber', 'satFat', 'freeSugars', 'freeSugarsWarn'].filter(function(k){
     return k !== 'selenium' || PROF.elena.hashi; // selenium target tracked only with the thyroid goal on
   });
-  wrap.innerHTML = order.map(function(k){
-    const g = gaps[k];
-    const low = g.gap > 1e-9;
-    const capNote = g.cap ? '<div class="cap-note">Keep under ' + g.target + '% — staying below is good</div>' : '';
-    return '<div class="n'+(low ? ' low' : '')+'"><div class="nt"><span>'+g.label+'</span><b>'+coverageValueText(g)+'</b></div>'
-      + '<div class="nbar"><i style="width:'+g.pct+'%"></i></div>'+capNote+'</div>';
-  }).join('');
+  wrap.innerHTML = order.map(function(k){ return coverageChipHtml(gaps[k]); }).join('');
   const worstKey = order.reduce(function(a, b){ return gaps[b].gap > gaps[a].gap ? b : a; });
   const worst = gaps[worstKey];
   const pill = document.getElementById('coveragePill');
@@ -712,7 +942,14 @@ function openLogSwap(slot, targetElId){
   openSwapSheetForContext(logDateSwapContext(slot), targetElId);
 }
 
-let addMealRecipeCtx = null;
+// B3: explicit context, mirroring swapCtx/openSwapSheetForContext below — the sheet no
+// longer resolves its own (weekStartDate, dayIndex) from an ambient "today" or
+// currentLogDateISO() dateISO; every opener builds {weekStartDate, dayIndex, slot, person}
+// up front (openAddMealRecipeSheet(slot, dateISO) below still exists as a thin adapter for
+// the Today/Log/recipe-screen call sites, which only ever know a dateISO) so the Week
+// screen's per-row ＋ button can open the sheet for ANY row (this week or next) the same
+// way openWeekSwap already does.
+let addMealCtx = null;
 let addMealFoodQuery = '';
 
 // (b)/(a) fix: the sheet is now three sections instead of one undifferentiated, slot-
@@ -771,14 +1008,20 @@ function mealRecipeOptionRowHtml(id){
     + '</div>';
 }
 
-function openAddMealRecipeSheet(slot, dateISO){
-  dateISO = dateISO || todayISO();
-  const weekStartDate = mondayOfWeek(dateISO);
-  const dayIndex = diffDaysISO(dateISO, weekStartDate);
-  const plan = editableWeekPlan(weekStartDate);
-  const meal = plan.days[dayIndex] && plan.days[dayIndex].meals[slot];
-  const logged = loggedPlanEntryForSlot(dateISO, currentProf, slot);
-  const entry = meal && meal[currentProf];
+// B3: the sheet's single entry point. ctx is the explicit {weekStartDate, dayIndex, slot,
+// person} shape (same shape swapCtx/openSwapSheetForContext use) — dateISO is DERIVED from
+// the plan day, never passed in ambiently. Logged-vs-plan branch keys off
+// `dateISO <= todayISO() && slotLogStatus(...) === 'confirmed'`: for any future date (next
+// week, or a not-yet-elapsed day of this week) that's automatically false, so the sheet is
+// plan-only there — no new special-casing needed for the Week row entry point below.
+function openAddMealSheetForContext(ctx){
+  const plan = editableWeekPlan(ctx.weekStartDate);
+  const day = plan.days[ctx.dayIndex];
+  const dateISO = day && day.date;
+  const meal = day && day.meals[ctx.slot];
+  const logged = (dateISO && dateISO <= todayISO() && slotLogStatus(dateISO, ctx.person, ctx.slot) === 'confirmed')
+    ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
+  const entry = meal && meal[ctx.person];
   if(!entry && !logged){ toast('Meal not found'); return; }
   const loggedComponents = logged
     ? (Array.isArray(logged.components) && logged.components.length ? logged.components : [{recipeId: logged.ref, portion: logged.portion || 1}])
@@ -789,7 +1032,8 @@ function openAddMealRecipeSheet(slot, dateISO){
   const allComponents = (loggedComponents || planEntryComponents(entry)).filter(function(c){
     return c && ((c.recipeId && RECIPES_DB[c.recipeId]) || (c.foodId && FOODS[c.foodId]));
   });
-  addMealRecipeCtx = {weekStartDate: plan.weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, logged: !!logged};
+  const slot = ctx.slot;
+  addMealCtx = {weekStartDate: plan.weekStartDate, dayIndex: ctx.dayIndex, slot: slot, person: ctx.person, logged: !!logged};
   const opts = mealRecipeOptions(allComponents);
   // USER FEEDBACK item 3: retitle "Edit X" once the meal already has extras — "Add to X"
   // undersells that this is also where you remove what you added earlier.
@@ -842,6 +1086,25 @@ function openAddMealRecipeSheet(slot, dateISO){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+}
+
+// Today card ✎/＋, the recipe screen's "Manage" strip, and the Log screen's Add/Edit
+// button only ever know a slot + (optionally) a dateISO — never a week/day index — so this
+// stays the entry point for all three, unchanged behavior: no dateISO means today, and any
+// dateISO resolves to its own week/day via the same mondayOfWeek/diffDaysISO math the sheet
+// used internally before this refactor (moved here, not removed).
+function openAddMealRecipeSheet(slot, dateISO){
+  dateISO = dateISO || todayISO();
+  const weekStartDate = mondayOfWeek(dateISO);
+  const dayIndex = diffDaysISO(dateISO, weekStartDate);
+  openAddMealSheetForContext({weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf});
+}
+
+// Week row ＋ entry point (task B3) — mirrors openWeekSwap's shape exactly, so a row on
+// EITHER This week or Next week can open the sheet directly from its own
+// (weekStartDate, dayIndex), without first converting back to a dateISO.
+function openWeekAddMealSheet(weekStartDate, dayIndex, slot, person){
+  openAddMealSheetForContext({weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: person});
 }
 
 // Delegated click handler for the whole add-meal sheet: composition-row steppers/remove
@@ -904,8 +1167,8 @@ function onMealFoodSearch(value){
 }
 
 function chooseMealExtraRecipe(recipeId){
-  if(!addMealRecipeCtx || !RECIPES_DB[recipeId]) return;
-  const ctx = addMealRecipeCtx;
+  if(!addMealCtx || !RECIPES_DB[recipeId]) return;
+  const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
     // Symmetric with removeMealExtraRecipe below: update BOTH the log entry AND the plan
@@ -928,8 +1191,8 @@ function chooseMealExtraRecipe(recipeId){
 }
 
 function chooseMealExtraFood(foodId){
-  if(!addMealRecipeCtx || !FOODS[foodId]) return;
-  const ctx = addMealRecipeCtx;
+  if(!addMealCtx || !FOODS[foodId]) return;
+  const ctx = addMealCtx;
   const grams = defaultMealFoodGrams(foodId);
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
@@ -964,8 +1227,8 @@ function chooseMealExtraFood(foodId){
 // Re-renders the sheet in place afterward (not closeSheet()) so several extras can be
 // removed back-to-back without reopening.
 function removeMealExtraRecipe(recipeId){
-  if(!addMealRecipeCtx) return;
-  const ctx = addMealRecipeCtx;
+  if(!addMealCtx) return;
+  const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = RECIPES_DB[recipeId] ? RECIPES_DB[recipeId].title : 'item';
   if(ctx.logged){
@@ -986,8 +1249,8 @@ function removeMealExtraRecipe(recipeId){
 }
 
 function removeMealExtraFood(foodId){
-  if(!addMealRecipeCtx) return;
-  const ctx = addMealRecipeCtx;
+  if(!addMealCtx) return;
+  const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = FOODS[foodId] ? FOODS[foodId].name : 'item';
   if(ctx.logged){
@@ -1106,8 +1369,8 @@ function setFoodExtraGramsInLoggedMeal(dateISO, person, slot, foodId, grams){
 // entry (when ctx.logged) AND the plan extra, run the standard refresh funnel, then
 // re-render the sheet in place so the stepper's new value shows without closing.
 function stepMealExtraPortion(recipeId, delta){
-  if(!addMealRecipeCtx) return;
-  const ctx = addMealRecipeCtx;
+  if(!addMealCtx) return;
+  const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const loggedComp = ctx.logged ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
   let current = 1;
@@ -1143,8 +1406,8 @@ function stepMealExtraPortion(recipeId, delta){
 }
 
 function stepMealExtraFoodGrams(foodId, delta){
-  if(!addMealRecipeCtx || !FOODS[foodId]) return;
-  const ctx = addMealRecipeCtx;
+  if(!addMealCtx || !FOODS[foodId]) return;
+  const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   let current = defaultMealFoodGrams(foodId);
   if(ctx.logged){
@@ -2051,9 +2314,12 @@ function renderBasics(){
   const btn = document.getElementById('calRestoreBtn');
   btn.style.display = isCustom ? 'inline-flex' : 'none';
   btn.textContent = '↺ Restore recommended (' + fmtKcal(p.recCal) + ')';
+  // task B1: p.goalAdj is 0 when the person's calorie-affecting goal (fatLoss/
+  // muscleGain) is off — drop the "+/- N <goalName>" clause entirely rather than
+  // print "+ 0 maintenance", so the line reads as plain maintenance-based copy.
   document.getElementById('calFormula').textContent =
-    'BMR ' + fmtKcal(Math.round(bmrOf(p))) + ' × ' + p.activity + ' activity '
-    + (p.goalAdj >= 0 ? '+ ' : '− ') + Math.abs(p.goalAdj) + ' ' + p.goalName
+    'BMR ' + fmtKcal(Math.round(bmrOf(p))) + ' × ' + p.activity + ' activity'
+    + (p.goalAdj !== 0 ? ' ' + (p.goalAdj >= 0 ? '+ ' : '− ') + Math.abs(p.goalAdj) + ' ' + p.goalName : ' (at maintenance)')
     + ' = ' + fmtKcal(p.recCal) + ' kcal recommended';
   document.getElementById('calNote').textContent = p.calNote || '';
 }
@@ -2273,6 +2539,53 @@ function renderSplitEditor(){
     || (customSplit ? 'Custom split — “Mesa default” restores ' + p.defaultSplit.P + '/' + p.defaultSplit.C + '/' + p.defaultSplit.F + '.' : '');
 }
 
+/* ---------------- "Health goals" editor (task B1) ----------------
+   Real per-profile checklist, replacing the 5 static checkboxes index.html used to show
+   IDENTICALLY for both people (the bug: unchecking "Gentle fat loss" did nothing, and
+   Andrea saw a fat-loss goal he doesn't have). Renders GOAL_DEFS[currentProf] (state.js
+   — single copy source) against PROF[currentProf].goals; titles/descriptions are fixed
+   developer copy (not user input), same trust level as ACTIVITY_LEVELS/renderBasics
+   above, so no escapeHtml needed. Mirrors renderAvoidEditor()'s structure: one function,
+   called from applyProf(), full re-render on every toggle (cheap — five rows). */
+function renderGoalsEditor(){
+  const key = currentProf;
+  const p = PROF[key];
+  const el = document.getElementById('goalsList');
+  if(!el) return; // Profile screen markup not present (shouldn't happen, but don't crash)
+  const defs = GOAL_DEFS[key] || [];
+  el.innerHTML = defs.map(function(g){
+    const on = !!p.goals[g.key];
+    return '<div class="opt' + (on ? ' sel' : '') + '" onclick="toggleGoal(\'' + key + '\',\'' + g.key + '\',this)">'
+      + '<div class="ck">' + (on ? '✓' : '') + '</div>'
+      + '<div><div class="ot">' + g.title + '</div><div class="od">' + g.desc + '</div></div></div>';
+  }).join('');
+}
+
+// Toggles one goal on the given profile (task B1 fix: was cosmetic tog(this), no state,
+// no recompute, no persistence). Follows the same funnel as addAvoid/removeAvoid below
+// and afterBasicsChange() above: mutate -> recomputeProf -> applyProf (re-derives every
+// display number, including recCal/calGoalNum, AND re-persists AND re-runs
+// ensureWeekPlan() — future plan days re-target off the new calorie goal exactly like a
+// weight edit does, since calGoalNum is part of computePlanSignature(); logged/past
+// slots stay protected by planner.js's existing preserveLoggedSlots() guard regardless).
+// Deliberately does NOT call scheduleMenuRebuild(): that funnel is specific to macro-
+// split changes (it re-derives householdStyle from kP/kC/kF and shows a "menu rebuilt
+// for x/y/z%" toast), neither of which applies here — a goal toggle never touches the
+// split, and applyProf()'s own ensureWeekPlan() call already re-targets the plan.
+function toggleGoal(profKey, goalKey, el){
+  const p = PROF[profKey];
+  if(!p || !p.goals || !(goalKey in p.goals)) return;
+  const before = p.calGoalNum;
+  p.goals[goalKey] = !p.goals[goalKey];
+  recomputeProf(profKey);
+  applyProf(profKey);
+  const def = (GOAL_DEFS[profKey] || []).find(function(g){ return g.key === goalKey; });
+  const label = def ? def.title : goalKey;
+  const on = p.goals[goalKey];
+  const calChanged = p.calGoalNum !== before;
+  toast(label + (on ? ' is back on' : ' turned off') + (calChanged ? ' — target now ' + p.calGoal + ' kcal' : ''));
+}
+
 /* ---------------- "Foods to avoid" editor (task C3 item 2) ---------------- */
 // Real editor over PROF[currentProf].avoid (state.js), replacing the three static demo
 // pills. Renders removable pills from the persisted array, plus a picker of the
@@ -2384,7 +2697,6 @@ function applyProf(key){
   const topAv = document.getElementById('topProfAv');
   if(topAv) topAv.textContent = p.av;
   renderBasics();
-  document.getElementById('hashiOpt').style.display = p.hashi ? 'flex':'none';
   const pKcal = Math.round(p.calGoalNum * p.kP / 100);
   const cKcal = Math.round(p.calGoalNum * p.kC / 100);
   const fKcal = p.calGoalNum - pKcal - cKcal;
@@ -2396,6 +2708,7 @@ function applyProf(key){
   document.getElementById('kcalFatMeta').textContent = p.targetF + 'g · ' + p.kF + '%';
   document.getElementById('kcalSplitLegend').textContent = 'Target split for ' + p.calGoal + ' today';
   renderSplitEditor();
+  renderGoalsEditor();  // task B1: real per-profile "Health goals" checklist
   renderAvoidEditor();  // task C3: "Foods to avoid" pills for whichever profile is now active
   if(typeof renderFoodLibraryCount === 'function') renderFoodLibraryCount(); // js/library.js: "N built-in · M yours"
   if(typeof renderCoupleSync === 'function') renderCoupleSync(); // js/sync.js (task S1): "Couple sync" section

@@ -154,7 +154,10 @@ const WHY_RULES = [
   },
   {
     goal: 'skin',
-    applies: function(profKey){ return profKey === 'elena'; },
+    // task B1: was `profKey === 'elena'` (skin is only ever offered to Elena, but that
+    // hardcoded the goal as always-on for her); now reads the real toggle so turning
+    // "Beautiful skin" off actually drops the clause, same as the thyroid rule below.
+    applies: function(profKey){ return !!(PROF[profKey].goals && PROF[profKey].goals.skin); },
     matches: function(recipe, flags){ return hasTag(recipe, 'skin') || flags.omega3 || hasTag(recipe, 'lowGI'); },
     clause: function(recipe, flags){
       return flags.omega3
@@ -339,9 +342,12 @@ const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack
 /* ---------------- profile data ---------------- */
 // Body stats are the source of truth; age, BMR, maintenance and the recommended daily
 // target are all derived from them (Mifflin-St Jeor × activity + goalAdj, rounded to 10).
-// goalAdj is each person's goal offset from maintenance: Elena −325 (gentle deficit),
-// Andrea +60 (small muscle-gain surplus) — chosen so current stats land exactly on the
-// familiar 1,820 / 2,480 defaults. calCustom is null while following the recommendation.
+// goalAdj (task B1: DERIVED, never stored — see engine.js:deriveGoalAdj) is each
+// person's goal offset from maintenance, driven by the `goals` booleans below: Elena
+// −325 while goals.fatLoss is on (gentle deficit), Andrea +60 while goals.muscleGain is
+// on (small muscle-gain surplus) — chosen so both goals-on defaults land exactly on the
+// familiar 1,820 / 2,480 targets; either offset goes to 0 ("at maintenance") when its
+// goal is toggled off. calCustom is null while following the recommendation.
 // avoid: per-person allergen/dislike keys (subset of AVOID_KEYS below, itself a mirror of
 // data/recipes.js's documented avoid vocabulary), read by the planner's hard avoid-list
 // filter (task C2 rule (a)) AND now editable from the Profile screen's real "Foods to
@@ -354,13 +360,38 @@ let currentProf = 'elena';
 const AVOID_KEYS = ['lactose', 'gluten', 'shellfish', 'nuts', 'raw-onion', 'spicy'];
 const AVOID_LABELS = {lactose: 'Lactose', gluten: 'Gluten', shellfish: 'Shellfish', nuts: 'Nuts', 'raw-onion': 'Raw onion', spicy: 'Spicy'};
 function avoidLabel(key){ return AVOID_LABELS[key] || capitalizeFirst(key); }
+
+// Per-profile goal checklist (task B1 — fixes the bug where unchecking "Gentle fat
+// loss" did nothing and Andrea saw Elena's fat-loss goal). Single copy source for
+// render.js:renderGoalsEditor() ("Profile" screen) — each entry's key is a boolean on
+// PROF[key].goals (defaults below reproduce today's behavior exactly: all true).
+// Only elena.fatLoss and partner.muscleGain move recommendedCal() (engine.js:
+// deriveGoalAdj) — the rest change copy/whyText only, never numbers.
+const GOAL_DEFS = {
+  elena: [
+    {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance'},
+    {key:'muscle', title:'Muscle & protein', desc:'Protein-forward macro split · ~1.8–2 g/kg'},
+    {key:'heart', title:'Heart & metabolic', desc:'High fiber, low sodium, Mediterranean base'},
+    {key:'skin', title:'Beautiful skin', desc:'Low-GI, omega-3 up, dairy/sugar down'},
+    {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Selenium, moderate iodine, anti-inflammatory'}
+  ],
+  partner: [
+    {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance · protein-forward split'},
+    {key:'heart', title:'Heart & metabolic', desc:'High fiber, low sodium, Mediterranean base'}
+  ]
+};
+
 const PROF = {
   elena:   {seg:'Elena', av:'E',
             sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,
-            activity:1.55, goalAdj:-325, goalName:'gentle fat loss',
+            activity:1.55,
             calCustom:null, calNote:'',
-            goalTag:'🎯 Gentle fat loss · 🦋 Hashimoto',
             coachT:'Today leans thyroid-friendly 🦋', hashi:true,
+            // goals (task B1): source of truth for goalAdj/goalName/goalTag, all derived
+            // by engine.js:recomputeProf() every call — see deriveGoalAdj/deriveGoalName/
+            // deriveGoalTag. Never set goalAdj etc. here: a stored magic number next to a
+            // derivation function is exactly the drift this batch removes.
+            goals: {fatLoss:true, muscle:true, heart:true, skin:true, hashi:true},
             coachD:'Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.',
             kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'],
             // consumed*/consumedKcal start at zero (task D1): they're overwritten by
@@ -369,10 +400,10 @@ const PROF = {
             consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:41,F:33}, splitNote:'', coachOverrideT:null, coachOverrideD:null},
   partner: {seg:'Andrea', av:'A',
             sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
-            activity:1.375, goalAdj:60, goalName:'small muscle-gain surplus',
+            activity:1.375,
             calCustom:null, calNote:'',
-            goalTag:'🎯 Muscle gain · ❤️ Heart-smart',
             coachT:'Today is built for muscle 💪', hashi:false,
+            goals: {muscleGain:true, heart:true},
             coachD:'Higher protein and a small surplus. Same Mediterranean base as Elena, scaled up — shared cooking, two targets.',
             kP:26, kC:43, kF:31, avoid:[],
             consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
@@ -385,9 +416,9 @@ const PROF = {
    menus, shopping totals) are NEVER stored here — they recompute at
    boot from the inputs below (deterministic-numbers rule). Only
    user-editable inputs and selection state are persisted:
-     - both PROF entries' editable fields (not goalAdj — that's a fixed
-       per-person constant, not user-editable), including each person's
-       avoid-list (task C2)
+     - both PROF entries' editable fields (not goalAdj/goalName/goalTag — task B1
+       made those pure derivations of `goals`, never user-editable directly),
+       including each person's avoid-list (task C2) and goals checklist (task B1)
      - SHARED slot toggles, svE/svM/svS servings, householdStyle,
        currentProf
      - the generated weekPlan (task C2) — the plan itself IS persisted
@@ -530,19 +561,24 @@ function todayISO(){
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
-// Fields copied verbatim between PROF[key] and the store. Deliberately
-// excludes goalAdj (fixed, not user-editable) and everything else on PROF
-// (consumed, targets, ring/bar strings, coach text…) which is recomputed
-// by recomputeProf()/applyProf() every render, never stored. `avoid` (task C2) is an
-// array field, handled specially below (PROFILE_FIELD_TYPE / the load loop) since every
-// other persisted profile field is a plain string/number.
-const PERSIST_PROFILE_FIELDS = ['sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid'];
+// Fields copied verbatim between PROF[key] and the store. Deliberately excludes
+// goalAdj/goalName/goalTag (task B1: fully derived from `goals` — see engine.js:
+// deriveGoalAdj/deriveGoalName/deriveGoalTag) and everything else on PROF (consumed,
+// targets, ring/bar strings, coach text…) which is recomputed by
+// recomputeProf()/applyProf() every render, never stored. `avoid` (task C2) and `goals`
+// (task B1) are non-scalar fields, handled specially below (PROFILE_FIELD_TYPE / the
+// load loop) since every other persisted profile field is a plain string/number.
+const PERSIST_PROFILE_FIELDS = ['sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid', 'goals'];
 
 function buildSnapshot(){
   const profiles = {};
   Object.keys(PROF).forEach(function(key){
     const p = PROF[key], out = {};
-    PERSIST_PROFILE_FIELDS.forEach(function(f){ out[f] = (f === 'avoid') ? (p.avoid || []).slice() : p[f]; });
+    PERSIST_PROFILE_FIELDS.forEach(function(f){
+      out[f] = (f === 'avoid') ? (p.avoid || []).slice()
+        : (f === 'goals') ? Object.assign({}, p.goals)
+        : p[f];
+    });
     profiles[key] = out;
   });
   const checkedByWeek = {};
@@ -652,12 +688,15 @@ function loadState(){
   }
 
   // Per-field type check: 'string' fields must be a string, 'number' fields must be a
-  // number, calCustom is special-cased since null is its valid "no override" value, and
-  // avoid (task C2) must be an array of strings.
+  // number, calCustom is special-cased since null is its valid "no override" value,
+  // avoid (task C2) must be an array of strings, and goals (task B1) is an object of
+  // booleans handled separately below (a store predating this batch has no `goals` key
+  // at all, and PROF[key].goals already carries the all-true defaults, so that case is a
+  // silent no-op — no store-version bump needed).
   const PROFILE_FIELD_TYPE = {
     sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
     activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
-    avoid: 'string[]'
+    avoid: 'string[]', goals: 'object'
   };
   if(saved.profiles && typeof saved.profiles === 'object'){
     Object.keys(PROF).forEach(function(key){
@@ -667,6 +706,18 @@ function loadState(){
       PERSIST_PROFILE_FIELDS.forEach(function(f){
         if(!Object.prototype.hasOwnProperty.call(sp, f)) return;
         const v = sp[f], want = PROFILE_FIELD_TYPE[f];
+        if(want === 'object'){
+          // goals: merge only the keys this profile actually has (GOAL_DEFS-defined),
+          // and only when the stored value is a boolean — an unknown/missing/malformed
+          // key just leaves that goal's existing default untouched, so a store from
+          // before a goal existed (or a corrupt entry) can't produce an undefined goal.
+          if(v && typeof v === 'object'){
+            Object.keys(p.goals).forEach(function(gk){
+              if(typeof v[gk] === 'boolean') p.goals[gk] = v[gk];
+            });
+          }
+          return;
+        }
         const ok = want === 'number|null' ? (v === null || typeof v === 'number')
           : want === 'string[]' ? (Array.isArray(v) && v.every(function(x){ return typeof x === 'string'; }))
           : (typeof v === want);

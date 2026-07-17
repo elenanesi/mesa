@@ -219,9 +219,16 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    whichever week — current or next — is displayed; render.js:openWeekSwap). 44x44
    tap target (ground rule: iPhone Safari targets >=44px); event.stopPropagation() on the
    button's onclick keeps the row's own openRecipe() tap separate. */
-.day-meal-row .dm-swap,.day-meal-row .dm-pin,.day-meal-row .dm-rule{flex:0 0 34px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;font-size:14px;line-height:1;cursor:pointer;border-radius:10px;color:var(--ink-soft);}
+.day-meal-row .dm-swap,.day-meal-row .dm-pin,.day-meal-row .dm-rule,.day-meal-row .dm-log,.day-meal-row .dm-extras{flex:0 0 34px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;background:transparent;border:0;font-size:14px;line-height:1;cursor:pointer;border-radius:10px;color:var(--ink-soft);}
 .day-meal-row .dm-pin.on{background:rgba(199,154,72,.18);color:#9b6b1f;}
-.day-meal-row .dm-swap:active,.day-meal-row .dm-pin:active,.day-meal-row .dm-rule:active{background:#e9e4d7;}
+/* B5: catch-up log button (◯/✓/∅) replacing pin/routine on past current-week rows —
+   `.on` marks confirmed OR skipped (anything non-null) so the row visually reads as
+   "handled" at a glance, same treatment as the pin's `.on` state. */
+.day-meal-row .dm-log{font-size:16px;}
+.day-meal-row .dm-log.on{background:rgba(127,147,100,.16);color:var(--sage-deep);}
+/* B3: sides/extras button — same 34x34 compact convention as pin/routine/swap/log. */
+.day-meal-row .dm-extras{font-size:16px;}
+.day-meal-row .dm-swap:active,.day-meal-row .dm-pin:active,.day-meal-row .dm-rule:active,.day-meal-row .dm-log:active,.day-meal-row .dm-extras:active{background:#e9e4d7;}
 
 /* recipe detail */
 .hero{height:170px;border-radius:18px;margin-top:8px;display:grid;place-items:center;font-size:74px;background:linear-gradient(135deg,#f6efd9,#edf1df);border:1px solid rgba(176,146,105,.38);}

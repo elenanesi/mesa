@@ -1,0 +1,236 @@
+# Features batch plan — 2026-07 (goal fix, meal roles, week-level sides/summaries/logging)
+
+Owner: Elena. Execution follows the Mesa agent workflow (Sonnet agents, one batch per
+agent, `node tools/check.js` green + real-browser verification before "done", sw.js via
+`node tools/build-sw.js`). Ground rules in `PWA-MVP-plan.md` apply to every task —
+especially: deterministic numbers, no frameworks/build step, visual parity, ≥44px targets.
+
+Recommended batch order (small/isolated → large): **B1 → B5 → B4 → B3 → B2.**
+B2 (meal roles) is last because it touches data + planner scoring; everything else is
+independent of it. B3 is sensibiy done after B2 (sides UI gets richer once roles exist)
+but works standalone against today's `'side'`-slot recipes if reordered.
+
+---
+
+## B1 — Profile goal toggles become real (fix: removing "lose weight" doesn't update calories)
+
+**Bug root cause.** The Profile "goals" checklist (index.html ~510-514) calls `tog(this)`
+(render.js) which only toggles a ✓ class — no state, no persistence, no recompute. The
+calorie deficit lives in `PROF[key].goalAdj` (elena −325, partner +60), a constant that
+`PERSIST_PROFILE_FIELDS` deliberately excludes. So unchecking "Gentle fat loss" changes
+nothing: `recommendedCal = round10(maintenance + goalAdj)` still applies −325.
+
+**Design.** Make all five toggles real, not just the calorie one (half-wired toggles are
+how this bug happened):
+- New persisted per-profile field `goals` (object of booleans):
+  elena: `{fatLoss, muscle, heart, skin, hashi}` defaults all true;
+  partner: `{muscleGain, heart}` defaults true. Add to `PERSIST_PROFILE_FIELDS`
+  (array-of-fields loop already handles non-scalar via the `avoid` precedent) — additive
+  with defaults matching today's behavior, so **no store-version bump** (repo convention),
+  and it rides the existing per-person `profile:*` LWW sync section for free.
+- `goalAdj` becomes DERIVED in engine.js: `deriveGoalAdj(p)` = (elena) `goals.fatLoss ? -325 : 0`;
+  (partner) `goals.muscleGain ? +60 : 0`. `recomputeProf()` calls it; delete the constant.
+  `goalName`/`goalTag` and the calories-explainer line (render.js ~2056) derive from the
+  same booleans ("at maintenance" when the calorie goal is off).
+- Downstream consumers switch from hardcoded checks to the booleans:
+  `PROF.elena.hashi` stays as a mirrored convenience but is set from `goals.hashi`;
+  whyText's skin rule (`profKey === 'elena'`) reads `goals.skin`; Insights' selenium
+  tracking already reads `.hashi` (works once mirrored).
+- Toggle handler: replace cosmetic `tog(this)` on these five with a real
+  `toggleGoal(profKey, goalKey, el)` → mutate → `recomputeProf` → `applyProf` refresh →
+  `persist()` → `scheduleMenuRebuild()` (same path a weight change takes, so the week
+  plan's future days re-target; past/logged days protected by existing guards).
+- Interplay with manual calorie override: unchanged — `calCustom` still wins while set;
+  the recommendation line under it updates.
+
+**Tests (tools/check.js).** `deriveGoalAdj` per combination; toggling fatLoss off ⇒
+`recommendedCal === round10(maintenance)`; persistence round-trip of `goals`; whyText
+skin/hashi clauses follow the booleans.
+
+**Verify in browser.** Profile → uncheck Gentle fat loss ⇒ daily target rises ~325 (1,820
+→ ~2,140s rounded to 10) immediately in header/ring/macro rows; recheck ⇒ restores; state
+survives reload; Andrea unaffected.
+
+---
+
+## B2 — Recipe roles: full meal / main course / side, and composed planning
+
+**Current behavior.** `generateWeek()` picks exactly ONE recipe per slot; recipes flagged
+`'side'` in `slots` (17 today) only enter plans via re-balance suggestions
+(`addSideToPlan`) or manual extras. So the plan "prefers full meals only".
+
+**Design decisions.**
+1. New recipe field `role: 'full' | 'main' | 'side'` — orthogonal to `slots` (slots say
+   WHEN, role says HOW IT COMPOSES). Required on every recipe (validate.js enforces enum +
+   presence, forcing a deliberate tagging pass over all built-ins; heuristic first pass:
+   current side-slotted recipes → 'side' unless clearly standalone; salads/one-pot bowls →
+   'full'; plain-protein dishes → 'main'). Custom recipes: role picker in the builder
+   (default 'full'); `deriveRecipeMeta` untouched otherwise. Additive → no store bump;
+   role rides library sync + D1 `data_json` automatically (README lesson: built-in changes
+   need Pages deploy AND a D1 seed/readback — include in the batch's deploy checklist).
+2. Foods gain `breakfastPair: true` on an explicit whitelist (breads/bakery suitable at
+   breakfast + fruit — fruit is NOT currently distinguishable from vegetables inside
+   `cat:'Produce'`, hence explicit flag rather than category inference; also add it to the
+   library ingredient form as a checkbox so custom foods can participate).
+3. **Composition emits extras** — no new plan-cell shape. A composed lunch/dinner is
+   `{recipeId: <main>, extras: [{recipeId: <side>, portion: p}]}`; a composed breakfast is
+   `{recipeId: <light main>, extras: [{foodId, grams}]}`. This reuses ALL existing
+   machinery (nutrition, Today/Log titles "X + Y", shopping aggregation, couple-sync
+   stamps, logging freeze) — verified live since v29/v38. Swap/pin/routine keep operating
+   on the main; removing/editing the side uses the existing extras editors.
+4. Planner algorithm (lunch/dinner, shared + solo paths):
+   - Candidate units = every `role:'full'` recipe (as today) ∪ (main × side) pairs.
+   - Pair pruning for determinism + speed: for each main, consider only the top-K (K=4)
+     sides by |main kcal + side kcal − desired| computed at portion 1, iterated in sorted
+     id order with the existing `1e-9`/lexicographic tie-breaks. Score the COMBINED
+     nutrition through the existing `mealScore`; portion search (`bestPortion`) applies to
+     the main, side stays at fixed portion steps {0.5, 1} evaluated both ways.
+   - No artificial bias for either shape: the score decides ("attempt to use" ≠ "force").
+     If Elena wants combos favored, a small deterministic bonus term is a one-line tune —
+     ship neutral first, tune after a week of real plans (open question Q1).
+   - Breakfast: mains with `role:'main'` (light) pair with one `breakfastPair` food;
+     grams chosen from the food's natural step (piece foods: 1 piece via `avgG`; else 30g
+     steps) that best fills the slot target. `role:'full'` breakfasts stay standalone.
+   - Variety: main history unchanged; add a parallel light history for sides (avoid the
+     SAME side two days running; window 2 vs the mains' stronger rule) and include side
+     ids in the cross-week comparison only at the main level (keep it simple).
+5. kcal-band validation (validate.js): bands keep applying to `role:'full'` recipes per
+   slot; `main`/`side` get a WARNING-level plausibility band only (main 250–650, side
+   60–300) so the composed unit, not the bare main, is what must land in the slot band —
+   enforced by a new check.js test over generated plans instead.
+
+**Tests.** Generation determinism unchanged (fixed date ⇒ identical plans); every
+composed unit's total kcal within slot band ± tolerance; sides come only from
+`role:'side'`, breakfast pair foods only from the whitelist; avoid-lists respected for
+BOTH components; extras shape round-trips persist/sync merge (reuse existing
+extras tests); validate.js still `ok:true` after the tagging pass.
+
+**Verify in browser.** Regenerate next week ⇒ see a mix of full meals and "Main + side"
+rows (title shows "X + Y"); shopping list includes side ingredients; swap on a composed
+meal swaps the main and keeps/offers sides; logging a composed meal freezes combined
+macros; breakfast shows e.g. "Skyr bowl + 1 pear".
+
+**Effort note.** This is the big one: data pass over ~100 recipes + planner surgery.
+Isolate the tagging pass (mechanical, reviewable via validate output) from the algorithm
+change (its own agent) if run as two agents.
+
+---
+
+## B3 — Sides add/edit at week level
+
+**Current.** The add/edit-extras sheet (`openAddMealRecipeSheet(slot, dateISO)`) is
+reachable only from Today/Log card contexts; Week rows offer pin/routine/swap only.
+
+**Design.**
+- Refactor the sheet's context to the explicit shape the swap sheet already uses:
+  `{weekStartDate, dayIndex, slot, person}` (replacing its internal reliance on
+  `currentLogDateISO()`-style ambient date), with `dateISO` derived from the plan day.
+  Logged-vs-plan behavior keys off `dateISO <= todayISO()` + `slotLogStatus` exactly as
+  now — for future dates it is automatically plan-only.
+- Week rows get a fourth action button `＋` (data-act="extras", following the existing
+  delegated `#weekList` handler pattern — most-specific-first, data-* only) opening that
+  sheet for the row's meal, on BOTH This week and Next week. Rows with extras show the
+  same "+ side" affix they already show via `mealTitleWithExtras` (no new display work).
+- Re-render on close: `renderWeek()` + `refreshAfterLogChange()` when the date is
+  today/past-logged (existing helpers).
+- 44px targets: 4 buttons per row is the iPhone limit — reuse the pin button's compact
+  style; verify on the 375px viewport.
+
+**Tests.** Context refactor covered by existing extras tests (they call the planner
+mutators directly); add one: adding an extra to a NEXT-week meal stamps/mirrors correctly
+and survives `ensureWeekPlan` re-validation (no signature reset — v22 guarantee).
+
+**Verify in browser.** Add a side from a next-week row; toggle to This week and back
+(persists); add to a past logged day ⇒ updates the eaten record path (v-consistency
+behavior); mobile viewport tap targets OK.
+
+---
+
+## B4 — Day + week nutrient/fiber summary (This week AND Next week)
+
+**Current.** Day headers show kcal only; week level has the one-line accomplishment
+summary (`summarizeWeekPlan`) and Insights-only coverage chips (`computeWeeklyCoverage`).
+
+**Design.**
+- Extend `displayedSlotViewForDate`'s returned view with the macro totals it already
+  computes internally (protein/carbs/fat/fiber/sugars via `planEntryNutrition`/frozen log
+  values — extras included since the consistency batch), so `renderWeek` can SUM per day
+  without recomputing: expanded day shows a compact line under the header —
+  `P 142g · C 180g · F 60g · fiber 31g · sugars 38g` (current profile, matching the rest
+  of the Week screen's per-person framing; sugar metric/label matches Insights' existing
+  sugar-tracking convention).
+- Week-level card above the day list (both weeks): per-day averages of kcal/P/C/F +
+  fiber vs the 25g/day target + the two headline coverage chips (omega-3 meals, satFat
+  share) — all from ONE pass reusing `dailyTotalsForPlan`/`computeWeeklyCoverage` given
+  the displayed week's plan. Current week sums the LOGGED overlay view (what the rows
+  show); next week sums the plan — same numbers the user sees, no divergence.
+- Style: reuse Insights' `renderNutrientChips` chip styling (no new CSS concepts);
+  numbers via the existing computed helpers only.
+
+**Tests.** Day summary equals the sum of that day's slot views (harness-computable with
+a fixed date + seeded logs, including an extras case and a logged-overlay case); week
+averages equal sum/7; fiber target constant single-sourced (reuse
+`WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay`, don't re-type 25).
+
+**Verify in browser.** Expand days on both weeks; confirm a meal today ⇒ today's day line
+and the week card shift accordingly; numbers cross-check against Insights for the same
+day.
+
+---
+
+## B5 — Catch-up logging from the Week view (current week)
+
+**Intent.** "I didn't have time to log on Tuesday; on Thursday I open Week and mark what
+I actually ate." Logging is currently reachable only for Today/Yesterday (Log screen
+toggle), though the underlying API (`logPlanEntry(dateISO, …)`, `markSlotSkipped`,
+`slotLogStatus`) is already fully date-generic and backdated corrections are already
+legitimate (v55/v56).
+
+**Design.**
+- On the CURRENT week only, for rows whose `day.date <= todayISO()`: add a log-state
+  button per meal row — `◯` unlogged / `✓` confirmed / `∅` skipped (data-act="log",
+  delegated handler as usual; hidden on next week and future dates).
+- Tap opens a mini action sheet for that (date, slot, person=current profile):
+  **Eaten as planned** → `logPlanEntry(dateISO, person, slot, recipeId, portion,
+  components)` with `t: null` (backdated — unknown eating time; `u` stamp = now so
+  couple-sync ordering is correct; follow the migrateV1 precedent for `t: null`),
+  **Skipped** → `markSlotSkipped`, **Undo** (shown when already logged/skipped) →
+  `removeLoggedSlot`. Shared meals still log per person — same semantics as the Log
+  screen.
+- Target snapshot caveat (document in-code): `ensureTargetSnapshot` freezes TODAY's
+  target for the backdated day if that day had no logs yet — same behavior Yesterday
+  logging already has; acceptable, not new.
+- Refresh: `refreshAfterLogChange()` + `renderWeek()`; day summary (B4) and Insights
+  7-day bars update immediately.
+- Row count pressure: this is a FIFTH row button on current-week past rows. Layout
+  decision: show the log button in place of pin/routine on PAST rows (pinning/routining
+  the past is meaningless — pins on past dates are already ignored by re-balance), so
+  rows never exceed 4 buttons. (Open question Q3 if Elena prefers otherwise.)
+
+**Tests.** Backdated confirm writes `logHistory[pastDate]` with frozen macros +
+tombstone clears; skip then undo round-trips; regeneration/re-balance still preserves
+the newly-logged past slot (existing guard tests extended with a backdated case);
+`t === null`, `u` fresh.
+
+**Verify in browser.** Set up: confirm nothing on a past weekday; from Week, mark its
+lunch eaten ⇒ ✓ appears, Insights bar for that day fills, Log screen (if switched to
+that date via Yesterday where applicable) agrees; skip its snack; undo both.
+
+---
+
+## Cross-cutting
+
+- **Store/schema:** all additive with safe defaults — no `CURRENT_STORE_VERSION` bump.
+  Sync: `goals` rides profile LWW; `role`/`breakfastPair` ride library/catalog paths.
+  D1: after B2's built-in tagging, deploy Pages AND seed/readback D1 global rows (README
+  lesson from the icon batch).
+- **Deploy:** per batch or at the end — `node tools/check.js` green → `node
+  tools/build-sw.js` → commit/push → Pages deploy (+ D1 seed for B2).
+- **Decisions (Elena, 2026-07-17):**
+  - **Q1 (B2):** combos compete on EQUAL scoring with full meals — no bias term.
+  - **Q2 (B2):** breakfast pairing whitelist approved as proposed: breads
+    (rye/wholewheat/white) + fruit (apples/pears/bananas/oranges/peaches/berries).
+  - **Q3 (B5):** confirmed — on past days the log button replaces pin/routine.
+  - **Q4 (B4):** day AND week summaries include sugars alongside P/C/F/fiber. Use the
+    same sugar metric/label the existing sugar-tracking feature already displays on
+    Insights (match its total-vs-free convention; don't invent a second one).

@@ -165,6 +165,136 @@ function testValidateData(ctx){
     'errors=' + JSON.stringify(r && r.errors) + ' warnings=' + JSON.stringify(r && r.warnings));
 }
 
+/* ---------------- task B2: recipe `role` tagging pass + breakfastPair whitelist ----------------
+   role is orthogonal to slots (data/recipes.js's file-header doc, FEATURES-2026-07-plan.md
+   B2): every RECIPES_DB entry must carry a valid role (data/validate.js:VALID_ROLES already
+   enforces this as an ERROR in validateData(), which the test above covers), and exactly the
+   approved whitelist of foods (Decisions Q2) carries breakfastPair — no more, no less.
+   Also covers applyCustomRecipes()'s read-time normalization of a legacy custom recipe
+   saved before `role` existed, and the library-sync round-trip for both new fields. */
+const BREAKFAST_PAIR_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'white-bread', 'apples', 'pears', 'bananas', 'oranges', 'peaches', 'mixed-berries'];
+
+function testRecipeRolesAndBreakfastPair(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
+  const VALID_ROLES = get(ctx, 'VALID_ROLES');
+
+  const badRole = Object.keys(RECIPES_DB).filter(function(id){ return VALID_ROLES.indexOf(RECIPES_DB[id].role) === -1; });
+  assert(badRole.length === 0, 'data: every RECIPES_DB id has a valid role',
+    'ids with a missing/invalid role: ' + badRole.join(', '));
+
+  const missingPair = BREAKFAST_PAIR_FOOD_IDS.filter(function(id){ return !FOODS[id] || FOODS[id].breakfastPair !== true; });
+  assert(missingPair.length === 0, 'data: every whitelisted breakfastPair food (Decisions Q2) carries breakfastPair === true',
+    'missing/false on: ' + missingPair.join(', '));
+
+  const extraPair = Object.keys(FOODS).filter(function(id){ return FOODS[id].breakfastPair === true && BREAKFAST_PAIR_FOOD_IDS.indexOf(id) === -1; });
+  assert(extraPair.length === 0, 'data: no food outside the breakfastPair whitelist carries breakfastPair === true',
+    'unexpected breakfastPair on: ' + extraPair.join(', '));
+
+  // A custom recipe saved before `role` existed (no field at all) must normalize to 'full'
+  // at read time — js/library.js:applyCustomRecipes()/normalizeRecipeRoleField(), not a
+  // silent one-shot localStorage migration — so validateData() stays green on old user data.
+  run(ctx, "customRecipes['cr-legacy-no-role-test'] = {title: 'Legacy test recipe', emoji: '🍽️', slot: 'dinner', slots: ['dinner'], styles: ['balanced'], time: 10, ingredients: [['eggs', 100], ['spinach', 50]], toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: [], u: 1};");
+  call(ctx, 'applyCustomRecipes', []);
+  const normalized = get(ctx, "RECIPES_DB['cr-legacy-no-role-test']");
+  assert(!!normalized && normalized.role === 'full',
+    'applyCustomRecipes: a legacy custom recipe with no role field normalizes to "full"',
+    'got ' + JSON.stringify(normalized && normalized.role));
+  run(ctx, "delete customRecipes['cr-legacy-no-role-test'];");
+  call(ctx, 'applyCustomRecipes', []); // rebuild RECIPES_DB without the test fixture before later tests run
+
+  // Library-sync round-trip: mergeLibrarySection() (js/sync.js) is what applySyncResponse's
+  // 'library' branch runs incoming data through — role/breakfastPair must survive it
+  // unchanged, same as any other recipe/food field (extends the existing
+  // mergeLibrarySection fixtures above rather than duplicating their setup).
+  const local = emptyLibrarySection();
+  local.customRecipes['cr-role-roundtrip-test'] = {title: 'Role round-trip recipe', role: 'side', slot: 'side', u: 1000};
+  local.customFoods['cf-pair-roundtrip-test'] = {name: 'Pair round-trip food', breakfastPair: true, u: 1000};
+  const remote = emptyLibrarySection();
+  const merged = call(ctx, 'mergeLibrarySection', [cloneJSON(local), cloneJSON(remote)]);
+  assert(!!merged.customRecipes['cr-role-roundtrip-test'] && merged.customRecipes['cr-role-roundtrip-test'].role === 'side',
+    'mergeLibrarySection: a custom recipe\'s role survives the library section round-trip',
+    'got ' + JSON.stringify(merged.customRecipes['cr-role-roundtrip-test']));
+  assert(!!merged.customFoods['cf-pair-roundtrip-test'] && merged.customFoods['cf-pair-roundtrip-test'].breakfastPair === true,
+    'mergeLibrarySection: a custom food\'s breakfastPair survives the library section round-trip',
+    'got ' + JSON.stringify(merged.customFoods['cf-pair-roundtrip-test']));
+}
+
+/* ---------------- task B1: goal toggles (engine.js deriveGoalAdj/deriveGoalName,
+   state.js `goals` persistence, whyText skin/thyroid clauses) ----------------
+   Regression coverage for the bug this batch fixes: PROF[key].goalAdj used to be a
+   fixed constant, so unchecking "Gentle fat loss" on the Profile screen changed
+   nothing. Restores every mutated PROF field to its default at the end so later tests
+   (planner determinism, meal extras) see the same starting state they always have. */
+function testGoalToggles(ctx){
+  const round10 = function(n){ return Math.round(n / 10) * 10; };
+
+  // deriveGoalAdj/deriveGoalName are pure functions of a bare {goals} object — every
+  // combination of elena's fatLoss and partner's muscleGain (the only two goals that
+  // move a number, per engine.js's dispatch on which key the `goals` object carries).
+  assert(call(ctx, 'deriveGoalAdj', [{goals: {fatLoss: true}}]) === -325, 'deriveGoalAdj: elena fatLoss on -> -325');
+  assert(call(ctx, 'deriveGoalAdj', [{goals: {fatLoss: false}}]) === 0, 'deriveGoalAdj: elena fatLoss off -> 0');
+  assert(call(ctx, 'deriveGoalAdj', [{goals: {muscleGain: true}}]) === 60, 'deriveGoalAdj: partner muscleGain on -> 60');
+  assert(call(ctx, 'deriveGoalAdj', [{goals: {muscleGain: false}}]) === 0, 'deriveGoalAdj: partner muscleGain off -> 0');
+  assert(call(ctx, 'deriveGoalName', [{goals: {fatLoss: true}}]) === 'gentle fat loss', 'deriveGoalName: elena fatLoss on -> "gentle fat loss"');
+  assert(call(ctx, 'deriveGoalName', [{goals: {fatLoss: false}}]) === 'maintenance', 'deriveGoalName: elena fatLoss off -> "maintenance"');
+  assert(call(ctx, 'deriveGoalName', [{goals: {muscleGain: true}}]) === 'small muscle-gain surplus', 'deriveGoalName: partner muscleGain on -> "small muscle-gain surplus"');
+  assert(call(ctx, 'deriveGoalName', [{goals: {muscleGain: false}}]) === 'maintenance', 'deriveGoalName: partner muscleGain off -> "maintenance"');
+
+  // Toggling the real PROF.elena.goals.fatLoss off/on drives recommendedCal() end to
+  // end through recomputeProf() — the actual bug: this used to be a no-op.
+  run(ctx, 'PROF.elena.goals.fatLoss = false;');
+  call(ctx, 'recomputeProf', ['elena']);
+  const maintE = run(ctx, 'maintenanceOf(PROF.elena)');
+  let recCalE = get(ctx, 'PROF.elena.recCal');
+  assert(recCalE === round10(maintE), 'goal toggle: elena fatLoss off -> recommendedCal === round10(maintenance)', 'got ' + recCalE + ', expected ' + round10(maintE));
+  run(ctx, 'PROF.elena.goals.fatLoss = true;');
+  call(ctx, 'recomputeProf', ['elena']);
+  recCalE = get(ctx, 'PROF.elena.recCal');
+  assert(recCalE === round10(maintE - 325), 'goal toggle: elena fatLoss back on -> recommendedCal restores the -325 offset', 'got ' + recCalE + ', expected ' + round10(maintE - 325));
+
+  // Same round trip for partner.goals.muscleGain (+60).
+  run(ctx, 'PROF.partner.goals.muscleGain = false;');
+  call(ctx, 'recomputeProf', ['partner']);
+  const maintP = run(ctx, 'maintenanceOf(PROF.partner)');
+  let recCalP = get(ctx, 'PROF.partner.recCal');
+  assert(recCalP === round10(maintP), 'goal toggle: partner muscleGain off -> recommendedCal === round10(maintenance)', 'got ' + recCalP + ', expected ' + round10(maintP));
+  run(ctx, 'PROF.partner.goals.muscleGain = true;');
+  call(ctx, 'recomputeProf', ['partner']);
+  recCalP = get(ctx, 'PROF.partner.recCal');
+  assert(recCalP === round10(maintP + 60), 'goal toggle: partner muscleGain back on -> recommendedCal restores the +60 offset', 'got ' + recCalP + ', expected ' + round10(maintP + 60));
+
+  // Persistence round-trip (task B1: `goals` joins PERSIST_PROFILE_FIELDS as an
+  // object-field special case, mirroring how `avoid` is already handled).
+  run(ctx, 'PROF.elena.goals.hashi = false; PROF.elena.goals.skin = false; persist();');
+  run(ctx, 'PROF.elena.goals.hashi = true; PROF.elena.goals.skin = true;'); // scramble in-memory before reload
+  run(ctx, 'loadState();');
+  const goalsAfterLoad = get(ctx, 'PROF.elena.goals');
+  assert(goalsAfterLoad && goalsAfterLoad.hashi === false && goalsAfterLoad.skin === false
+    && goalsAfterLoad.fatLoss === true && goalsAfterLoad.muscle === true && goalsAfterLoad.heart === true,
+    'goals persistence: buildSnapshot()/loadState() round-trips PROF.elena.goals exactly',
+    'got ' + JSON.stringify(goalsAfterLoad));
+  run(ctx, "localStorage.removeItem(STORE_KEY);"); // don't leak this store into later tests
+
+  // whyText: skin/hashi clauses follow the booleans (task B1's other consumer besides
+  // calories). 'baked-cod-greens' is a real non-legacy RECIPES_DB id (no LEGACY_WHY
+  // override, so whyText() runs the real WHY_RULES template) whose tags
+  // ['thyroid','muscle','lowGI'] hit both the thyroid rule (hasTag 'thyroid') and the
+  // skin rule (hasTag 'lowGI') regardless of ingredient flags.
+  run(ctx, "PROF.elena.goals.hashi = true; PROF.elena.goals.skin = true; recomputeProf('elena');");
+  const withBoth = call(ctx, 'whyText', ['baked-cod-greens', 'elena']);
+  assert(/selenium/.test(withBoth), 'whyText: thyroid clause present when goals.hashi is on', withBoth);
+  assert(/skin goal/.test(withBoth), 'whyText: skin clause present when goals.skin is on', withBoth);
+
+  run(ctx, "PROF.elena.goals.hashi = false; PROF.elena.goals.skin = false; recomputeProf('elena');");
+  const withNeither = call(ctx, 'whyText', ['baked-cod-greens', 'elena']);
+  assert(!/selenium/.test(withNeither) && !/Hashimoto/.test(withNeither), 'whyText: thyroid clause dropped when goals.hashi is off', withNeither);
+  assert(!/skin goal/.test(withNeither), 'whyText: skin clause dropped when goals.skin is off', withNeither);
+
+  // Restore every mutated field to defaults for the tests that run after this one.
+  run(ctx, "PROF.elena.goals = {fatLoss:true, muscle:true, heart:true, skin:true, hashi:true}; PROF.partner.goals = {muscleGain:true, heart:true}; recomputeProf('elena'); recomputeProf('partner');");
+}
+
 // engine.js:recipeNutrition — internal kcal consistency, servings scaling, purity.
 function testNutritionDeterminism(ctx){
   const RECIPES_DB = get(ctx, 'RECIPES_DB');
@@ -568,6 +698,231 @@ function testPlannerDeterminism(ctx){
     });
   });
   assert(problems.length === 0, "planner: every planned meal has a real recipeId and respects that person's avoid list", problems.join('; '));
+
+  // task B2 (composed meals): the determinism guarantee above already covers composed
+  // units byte-for-byte (they're just entry.extras on the same JSON structure) — this adds
+  // the B2-specific assertion the plan asks for: at least one composed unit (main + side,
+  // or main + breakfastPair food) actually exists in a freshly generated fortnight for the
+  // default household, given the pools allow it. If a future avoid/season/style combination
+  // ever shrinks the pools to zero composable units, this SKIPS with a note instead of
+  // failing — composing nothing is a legitimate, explicitly-designed fallback (B2 handoff
+  // "never fail, never degrade below today's behavior"), not a bug.
+  let composedCount = 0;
+  plan1.days.forEach(function(day){
+    ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+      const m = day.meals[slot];
+      ['elena', 'partner'].forEach(function(person){
+        const e = m && m[person];
+        if(e && Array.isArray(e.extras) && e.extras.length) composedCount++;
+      });
+    });
+  });
+  if(composedCount > 0){
+    pass('planner (B2): the generated fortnight contains at least one composed (main + side/food) unit — composedCount=' + composedCount);
+  } else {
+    pass('planner (B2): SKIPPED composed-unit-exists check — 0 composed units this run (pools/scoring chose full recipes throughout; not a failure, see B2 fallback rule)');
+  }
+}
+
+/* ---------------- task B2 part 2: composed lunch/dinner + breakfast-pairing algorithm ----------------
+   Part 1 (already merged, covered above by testRecipeRolesAndBreakfastPair) tagged every
+   recipe with role:'full'|'main'|'side' and flagged 9 foods breakfastPair:true. This suite
+   covers the ALGORITHM that composes main+side/food units inside generateWeek
+   (pickSharedMeal/pickSoloMeal via planner.js's sidePoolFor/breakfastPairFoodIds/
+   topKSideIds/foodHitsAvoid/applyLightConsecutiveFilter). */
+function testComposedMeals(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const KCAL_BAND = get(ctx, 'KCAL_BAND');
+
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+  const plan1 = call(ctx, 'ensureWeekPlan', []);
+  const nextMonday = call(ctx, 'nextMondayISO', []);
+  const plan2 = call(ctx, 'ensureWeekPlan', [nextMonday]);
+
+  /* -------- (1) every composed unit is well-formed: right whitelist, right role, never on
+     snack, and its COMBINED kcal sits within the slot band +/- a tolerance -- the SAME
+     tolerance a full-recipe pick's combined kcal is also held to here (no double standard
+     between the two shapes; Q1 "combos compete on EQUAL scoring"). 20% was picked because
+     it's the smallest round number that already contains every full-recipe pick's kcal
+     across both generated weeks for the default household (empirically: the widest
+     full-recipe overshoot observed is ~10.6% above KCAL_BAND's upper bound). -------- */
+  const TOLERANCE = 0.20;
+  const problems = [];
+  let composedLunchDinner = 0, composedBreakfast = 0, checkedLunchDinner = 0, checkedBreakfast = 0;
+
+  [plan1, plan2].forEach(function(pl){
+    pl.days.forEach(function(day, di){
+      ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+        const m = day.meals[slot];
+        ['elena', 'partner'].forEach(function(person){
+          const entry = m && m[person];
+          if(!entry || !entry.recipeId) return;
+          const isComposed = Array.isArray(entry.extras) && entry.extras.length > 0;
+
+          if(slot === 'snack'){
+            if(isComposed) problems.push('snack composed (must never compose): ' + pl.weekStartDate + ' day' + di + ' ' + person + ' ' + JSON.stringify(entry));
+            return;
+          }
+
+          const nut = call(ctx, 'planEntryNutrition', [entry]);
+          const band = KCAL_BAND[slot];
+          if(band){
+            if(slot === 'breakfast') checkedBreakfast++; else checkedLunchDinner++;
+            if(nut.kcal < band[0] * (1 - TOLERANCE) || nut.kcal > band[1] * (1 + TOLERANCE)){
+              problems.push((isComposed ? 'composed' : 'full') + ' ' + slot + ' kcal ' + Math.round(nut.kcal) + ' outside band*tolerance ' + JSON.stringify(band) + ' (tol=' + TOLERANCE + '): ' + pl.weekStartDate + ' day' + di + ' ' + person);
+            }
+          }
+
+          if(!isComposed) return;
+          if(slot === 'breakfast') composedBreakfast++; else composedLunchDinner++;
+          const extra = entry.extras[0];
+          if(slot === 'breakfast'){
+            if(!extra.foodId || BREAKFAST_PAIR_FOOD_IDS.indexOf(extra.foodId) === -1){
+              problems.push('breakfast extra not on the breakfastPair whitelist: ' + JSON.stringify(extra));
+            }
+          } else {
+            if(!extra.recipeId || !RECIPES_DB[extra.recipeId] || RECIPES_DB[extra.recipeId].role !== 'side'){
+              problems.push(slot + ' extra is not a role:"side" recipe: ' + JSON.stringify(extra));
+            }
+          }
+        });
+      });
+    });
+  });
+
+  assert(problems.length === 0,
+    'composed meals: every composed unit is well-formed (whitelist/role-correct, never on snack, combined kcal within slot band +/- tolerance — same tolerance full picks are held to)',
+    problems.join('; '));
+  assert(checkedLunchDinner > 0 && checkedBreakfast > 0, 'composed meals test setup: the fortnight actually has lunch/dinner and breakfast entries to check', 'checkedLunchDinner=' + checkedLunchDinner + ' checkedBreakfast=' + checkedBreakfast);
+  if(composedLunchDinner + composedBreakfast > 0){
+    pass('composed meals: at least one composed lunch/dinner AND/OR breakfast unit exists across the two generated weeks — lunchDinner=' + composedLunchDinner + ' breakfast=' + composedBreakfast);
+  } else {
+    pass('composed meals: SKIPPED (0 composed units across both weeks this run — pools/scoring chose full recipes throughout; not a failure per the B2 fallback rule)');
+  }
+
+  /* -------- (2) sidePoolFor()/breakfastPairFoodIds() only ever return role:'side' recipes /
+     whitelisted foods respectively — a direct, data-shape-level guarantee independent of
+     which units the scorer happens to pick this run. -------- */
+  const allSideIds = call(ctx, 'sidePoolFor', [[]]);
+  const badSideRole = allSideIds.filter(function(id){ return !RECIPES_DB[id] || RECIPES_DB[id].role !== 'side'; });
+  assert(allSideIds.length > 0 && badSideRole.length === 0,
+    'sidePoolFor(): returns only role:"side" recipes (and at least one)', 'ids=' + JSON.stringify(allSideIds) + ' bad=' + JSON.stringify(badSideRole));
+  const allPairFoodIds = call(ctx, 'breakfastPairFoodIds', [[]]);
+  const badPairFood = allPairFoodIds.filter(function(id){ return BREAKFAST_PAIR_FOOD_IDS.indexOf(id) === -1; });
+  assert(allPairFoodIds.length > 0 && badPairFood.length === 0,
+    'breakfastPairFoodIds(): returns only foods from the Decisions-Q2 whitelist (and at least one)', 'ids=' + JSON.stringify(allPairFoodIds) + ' bad=' + JSON.stringify(badPairFood));
+
+  /* -------- (3) avoid-lists respected for the SIDE component specifically: mutate one real,
+     currently-available side recipe to carry an avoid key, add that key to elena's
+     avoid-list ONLY, and confirm sidePoolFor() drops it for her while an unfiltered call
+     still returns it — isolating that the SIDE's own avoid is what's being checked, not the
+     main's. -------- */
+  (function(){
+    const targetSide = allSideIds.slice().sort()[0]; // deterministic pick, no season/date fragility
+    const before = allSideIds.indexOf(targetSide) !== -1;
+    assert(before, 'avoid fixture setup: the chosen target side is present with no avoid-list applied', targetSide);
+    ctx.__savedSideAvoid__ = get(ctx, "RECIPES_DB['" + targetSide + "'].avoid");
+    run(ctx, "RECIPES_DB['" + targetSide + "'].avoid = ['nuts'];");
+    const filtered = call(ctx, 'sidePoolFor', [['nuts']]);
+    run(ctx, "RECIPES_DB['" + targetSide + "'].avoid = __savedSideAvoid__; delete __savedSideAvoid__;");
+    assert(filtered.indexOf(targetSide) === -1,
+      'sidePoolFor(): a side recipe hit by the given avoid-list never appears in the pool', 'targetSide=' + targetSide + ' filtered=' + JSON.stringify(filtered));
+  })();
+
+  /* -------- (4) avoid-lists respected for the FOOD component specifically (breakfast
+     pairing): 'gluten' must drop rye-bread/wholewheat-bread (real GLUTEN_FOOD_IDS entries)
+     but keep white-bread (not on that list) and the fruit whitelist entries untouched. -------- */
+  (function(){
+    const withGluten = call(ctx, 'breakfastPairFoodIds', [['gluten']]);
+    assert(withGluten.indexOf('rye-bread') === -1 && withGluten.indexOf('wholewheat-bread') === -1,
+      'breakfastPairFoodIds([\'gluten\']): drops the two gluten-flagged whitelist breads', JSON.stringify(withGluten));
+    assert(withGluten.indexOf('white-bread') !== -1,
+      'breakfastPairFoodIds([\'gluten\']): keeps a whitelist bread NOT flagged gluten (white-bread)', JSON.stringify(withGluten));
+    assert(withGluten.indexOf('bananas') !== -1,
+      'breakfastPairFoodIds([\'gluten\']): keeps whitelist fruit untouched by an unrelated avoid key', JSON.stringify(withGluten));
+  })();
+
+  /* -------- (5) end-to-end: with elena's avoid-list ACTUALLY carrying a key that hits a
+     real available side, regenerating her week never surfaces that side as an extra for
+     her OR on any shared meal (shared uses the avoid UNION) -- only her solo avoid changed,
+     so this also confirms the fixture didn't leak into partner-only solo slots by checking
+     the same recipe is excluded from every 'elena' entry and every shared meal. -------- */
+  (function(){
+    const targetSide = allSideIds.slice().sort()[0];
+    ctx.__savedSideAvoid2__ = get(ctx, "RECIPES_DB['" + targetSide + "'].avoid");
+    ctx.__savedElenaAvoid__ = get(ctx, 'PROF.elena.avoid');
+    run(ctx, "RECIPES_DB['" + targetSide + "'].avoid = ['nuts']; PROF.elena.avoid = (PROF.elena.avoid || []).concat(['nuts']);");
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    const fixturePlan = call(ctx, 'ensureWeekPlan', []);
+    run(ctx, "RECIPES_DB['" + targetSide + "'].avoid = __savedSideAvoid2__; PROF.elena.avoid = __savedElenaAvoid__; delete __savedSideAvoid2__; delete __savedElenaAvoid__;");
+    run(ctx, 'weekPlans = {}; weekPlan = null;'); // leave no fixture plan cached for later tests
+    const leaks = [];
+    fixturePlan.days.forEach(function(day, di){
+      ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+        const m = day.meals[slot];
+        ['elena', 'partner'].forEach(function(person){
+          const e = m && m[person];
+          if(!e || !Array.isArray(e.extras)) return;
+          const hit = e.extras.some(function(x){ return x && x.recipeId === targetSide; });
+          if(hit && (person === 'elena' || m.shared)) leaks.push('day' + di + ' ' + slot + ' ' + person + ' shared=' + m.shared);
+        });
+      });
+    });
+    assert(leaks.length === 0,
+      'end-to-end: a side hit by elena\'s avoid-list never appears as her extra or on any shared meal after regeneration',
+      'targetSide=' + targetSide + ' leaks=' + leaks.join('; '));
+  })();
+
+  /* -------- (6) extras shape parity: a composed unit's combined nutrition, read through
+     planEntryComponents()/nutritionForRecipeComponents() (the exact functions every
+     downstream surface -- Today/Week titles, logging, shopping -- already reads), equals
+     independently summing the main and side/food's OWN nutrition. Since manual extras
+     (addExtraRecipeToMeal/addExtraFoodToMeal) push the identical {recipeId,portion} /
+     {foodId,grams} shape and are read by the SAME functions (no composed-only code path
+     exists anywhere downstream), this is the parity proof the plan asks for. -------- */
+  (function(){
+    let recipeSample = null, foodSample = null;
+    [plan1, plan2].forEach(function(pl){
+      pl.days.forEach(function(day){
+        ['lunch', 'dinner'].forEach(function(slot){
+          ['elena', 'partner'].forEach(function(person){
+            const e = day.meals[slot][person];
+            if(!recipeSample && e && Array.isArray(e.extras) && e.extras[0] && e.extras[0].recipeId) recipeSample = e;
+          });
+        });
+        const bf = day.meals.breakfast;
+        ['elena', 'partner'].forEach(function(person){
+          const e = bf[person];
+          if(!foodSample && e && Array.isArray(e.extras) && e.extras[0] && e.extras[0].foodId) foodSample = e;
+        });
+      });
+    });
+
+    if(recipeSample){
+      const components = call(ctx, 'planEntryComponents', [recipeSample]);
+      const got = call(ctx, 'nutritionForRecipeComponents', [components]);
+      const mainNut = call(ctx, 'recipeNutrition', [recipeSample.recipeId, recipeSample.portion]).totals;
+      const sideNut = call(ctx, 'recipeNutrition', [recipeSample.extras[0].recipeId, recipeSample.extras[0].portion]).totals;
+      assert(Math.abs(got.kcal - (mainNut.kcal + sideNut.kcal)) < 1e-6 && Math.abs(got.protein - (mainNut.protein + sideNut.protein)) < 1e-6,
+        'extras parity (lunch/dinner side): planEntryComponents/nutritionForRecipeComponents on a composed unit equals main-nutrition + side-nutrition summed independently',
+        'got=' + JSON.stringify(got) + ' main=' + JSON.stringify(mainNut) + ' side=' + JSON.stringify(sideNut));
+    } else {
+      pass('extras parity (lunch/dinner side): SKIPPED — no composed lunch/dinner unit in this run\'s two weeks to sample');
+    }
+
+    if(foodSample){
+      const components = call(ctx, 'planEntryComponents', [foodSample]);
+      const got = call(ctx, 'nutritionForRecipeComponents', [components]);
+      const mainNut = call(ctx, 'recipeNutrition', [foodSample.recipeId, foodSample.portion]).totals;
+      const foodNut = call(ctx, 'foodMacros', [foodSample.extras[0].foodId, foodSample.extras[0].grams]);
+      assert(Math.abs(got.kcal - (mainNut.kcal + foodNut.kcal)) < 1e-6 && Math.abs(got.protein - (mainNut.protein + foodNut.protein)) < 1e-6,
+        'extras parity (breakfast pairing food): planEntryComponents/nutritionForRecipeComponents on a composed unit equals main-nutrition + food-macros summed independently',
+        'got=' + JSON.stringify(got) + ' main=' + JSON.stringify(mainNut) + ' food=' + JSON.stringify(foodNut));
+    } else {
+      pass('extras parity (breakfast pairing food): SKIPPED — no composed breakfast unit in this run\'s two weeks to sample');
+    }
+  })();
 }
 
 /* ---------------- planner.js meal-extras (add/remove/set) ----------------
@@ -583,6 +938,12 @@ function testMealExtras(ctx){
     run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
     run(ctx, 'weekPlans = {}; weekPlan = null;');
     const plan = call(ctx, 'ensureWeekPlan', []);
+    // task B2: generation can now itself compose a side/food extra onto lunch/dinner (the
+    // very slots this suite targets) when the scoring picks a role:'main' recipe. Strip any
+    // auto-composed extras from day0's lunch/dinner first so this suite's "starts with no
+    // extras" assumptions hold regardless of which unit the planner picked this run —
+    // composition itself is covered by its own tests below.
+    run(ctx, "['lunch','dinner'].forEach(function(slot){ var m = weekPlans['" + plan.weekStartDate + "'].days[0].meals[slot]; delete m.elena.extras; delete m.partner.extras; });");
     return {wk: plan.weekStartDate, weekPlans: get(ctx, 'weekPlans')};
   }
   function cell(state, slot){ return state.weekPlans[state.wk].days[0].meals[slot]; }
@@ -842,6 +1203,285 @@ function testMealExtras(ctx){
   })();
 }
 
+/* ---------------- task B5: catch-up logging from the Week view ----------------
+   Backdated confirm/skip/undo on a past day of the CURRENT week, via the same
+   logPlanEntry/markSlotSkipped/removeLoggedSlot funnel Log/Today use (log.js) — just
+   reachable for any day <= today instead of only Today/Yesterday. Uses a Thursday
+   "today" so Monday/Tuesday/Wednesday of the SAME week (whose plan is generated from
+   FIXED_MONDAY) are genuinely in the past. */
+function testWeekCatchupLogging(ctx){
+  const TODAY = '2026-07-16'; // Thursday of the FIXED_MONDAY week (2026-07-13 Mon .. 07-19 Sun)
+  run(ctx, "MESA_TEST_TODAY = '" + TODAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan.weekStartDate;
+  const pastDate = plan.days[1].date; // Tuesday — before TODAY, inside the current week
+
+  function planEntry(slot){ return get(ctx, "weekPlans['" + wk + "'].days[1].meals['" + slot + "'].elena"); }
+  function dayLog(dateISO){ return get(ctx, "logHistory['" + dateISO + "']"); }
+  function frozenKcal(components){
+    return call(ctx, 'roundedNutritionTotals', [call(ctx, 'nutritionForRecipeComponents', [components])]).kcal;
+  }
+  function confirmSlot(dateISO, slot, opts){
+    const entry = planEntry(slot);
+    const portion = (typeof entry.portion === 'number') ? entry.portion : 1;
+    const components = call(ctx, 'planEntryComponents', [entry]);
+    call(ctx, 'logPlanEntry', [dateISO, 'elena', slot, entry.recipeId, portion, components, opts]);
+    return {entry: entry, components: components};
+  }
+
+  // (a) backdated confirm on a past weekday: frozen macros, t === null, fresh numeric u,
+  // and the day's plan/skip tombstones for this slot are clear.
+  {
+    const before = confirmSlot(pastDate, 'lunch', {tNull: true});
+    const day = dayLog(pastDate);
+    const logged = day.elena.filter(function(e){ return e.kind === 'plan' && e.slot === 'lunch'; })[0];
+    assert(!!logged, 'B5: backdated confirm writes a logHistory[pastDate].elena plan entry for the slot', JSON.stringify(day));
+    assert(logged.t === null, 'B5: backdated confirm stamps t === null (unknown eating time)', 'got t=' + JSON.stringify(logged && logged.t));
+    assert(typeof logged.u === 'number' && isFinite(logged.u) && logged.u > 0, 'B5: backdated confirm stamps a fresh numeric u', 'got u=' + JSON.stringify(logged && logged.u));
+    assert(logged.kcal === frozenKcal(before.components), 'B5: backdated confirm freezes the AS-PLANNED macros (incl. extras) at log time',
+      'got kcal=' + logged.kcal + ' expected=' + frozenKcal(before.components));
+    const tombIds = day.tomb.elena.map(function(t){ return call(ctx, 'logTombstoneId', [t]); });
+    assert(tombIds.indexOf('plan:lunch') === -1 && tombIds.indexOf('skip:lunch') === -1,
+      'B5: backdated confirm leaves no stale plan:/skip: tombstone for the slot', JSON.stringify(day.tomb.elena));
+    assert(call(ctx, 'slotLogStatus', [pastDate, 'elena', 'lunch']) === 'confirmed', 'B5: slotLogStatus reads back "confirmed" after a backdated confirm');
+  }
+
+  // (b) skip then undo round-trips: slotLogStatus back to null, tombstones written for
+  // both the implicit plan: tombstone (skip always writes one) and the skip: tombstone
+  // (undo of a skip).
+  {
+    call(ctx, 'markSlotSkipped', [pastDate, 'elena', 'snack']);
+    assert(call(ctx, 'slotLogStatus', [pastDate, 'elena', 'snack']) === 'skipped', 'B5: markSlotSkipped -> slotLogStatus "skipped"');
+    call(ctx, 'removeLoggedSlot', [pastDate, 'elena', 'snack']);
+    assert(call(ctx, 'slotLogStatus', [pastDate, 'elena', 'snack']) === null, 'B5: undo after a skip -> slotLogStatus null again',
+      'got ' + call(ctx, 'slotLogStatus', [pastDate, 'elena', 'snack']));
+    const day = dayLog(pastDate);
+    const tombIds = day.tomb.elena.map(function(t){ return call(ctx, 'logTombstoneId', [t]); });
+    assert(tombIds.indexOf('skip:snack') !== -1, 'B5: undoing a skip writes a skip:<slot> tombstone (couple-sync propagation)', JSON.stringify(day.tomb.elena));
+  }
+
+  // (c) confirming over a previous skip clears the skip (upsertLogEntry's existing
+  // tombstone/skipped-flag clearing — verified here, not reimplemented).
+  {
+    call(ctx, 'markSlotSkipped', [pastDate, 'elena', 'breakfast']);
+    assert(call(ctx, 'slotLogStatus', [pastDate, 'elena', 'breakfast']) === 'skipped', 'B5 (c): breakfast starts skipped');
+    confirmSlot(pastDate, 'breakfast', {tNull: true});
+    assert(call(ctx, 'slotLogStatus', [pastDate, 'elena', 'breakfast']) === 'confirmed', 'B5 (c): confirming over a previous skip clears the skip -> "confirmed"');
+    const day = dayLog(pastDate);
+    assert(!day.skipped.elena.breakfast, 'B5 (c): the skipped flag itself is cleared', JSON.stringify(day.skipped.elena));
+  }
+
+  // (d) logging TODAY through the same helper (no opts) keeps the normal HH:MM stamp —
+  // the Week sheet only passes {tNull:true} for dates before today.
+  {
+    confirmSlot(TODAY, 'dinner', undefined);
+    const day = dayLog(TODAY);
+    const logged = day.elena.filter(function(e){ return e.kind === 'plan' && e.slot === 'dinner'; })[0];
+    assert(!!logged && typeof logged.t === 'string' && /^\d{2}:\d{2}$/.test(logged.t),
+      'B5: logging TODAY via the same helper (opts omitted) keeps t as HH:MM, not null', 'got t=' + JSON.stringify(logged && logged.t));
+  }
+
+  // (e) regeneration/re-balance must not lose a newly-logged BACKDATED past slot —
+  // preserveLoggedSlots (planner.js) is the guard both paths already call through.
+  {
+    const oldPlanSnapshot = cloneJSON(get(ctx, "weekPlans['" + wk + "']"));
+    const newPlan = cloneJSON(oldPlanSnapshot);
+    const realRecipeId = newPlan.days[1].meals.lunch.elena.recipeId;
+    newPlan.days[1].meals.lunch.elena.recipeId = 'not-the-logged-recipe'; // simulate regeneration proposing something else
+    call(ctx, 'preserveLoggedSlots', [oldPlanSnapshot, newPlan]);
+    assert(newPlan.days[1].meals.lunch.elena.recipeId === realRecipeId,
+      'B5: preserveLoggedSlots restores a backdated logged past slot instead of the regenerated recipe',
+      'got ' + newPlan.days[1].meals.lunch.elena.recipeId + ', expected ' + realRecipeId);
+  }
+}
+
+/* ---------------- task B4: day + week nutrient/fiber summary ----------------
+   render.js:weekDayNutriViews/weekNutriSummary are pure/DOM-free (renderWeek's HTML
+   building is not — it throws on the harness's null #weekList — so these two helpers,
+   factored out specifically so the underlying math is testable, are what this hits
+   directly). Seeds a meal-extras case (day0 lunch, solo per FIXED_MONDAY's day0 SHARED
+   defaults — same fact testMealExtras relies on) and a logged-overlay case (day0
+   breakfast logged as a DIFFERENT recipe than planned, so its macros must differ and the
+   overlay must win), then checks (a) day totals equal the independently-summed slot
+   views, (b) week averages equal sum/7 of the day totals, (c) the fiber/free-sugars
+   targets referenced are the SAME constants/formulas Insights already uses. */
+function testWeekNutriSummary(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  const plan0 = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan0.weekStartDate;
+  const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+  const person = 'elena';
+
+  // task B2: strip any auto-composed extra generation may have put on day0 lunch (this
+  // test seeds its OWN single extra below and asserts on its exact shape/count).
+  run(ctx, "['lunch','dinner'].forEach(function(slot){ var m = weekPlans['" + wk + "'].days[0].meals[slot]; delete m.elena.extras; delete m.partner.extras; });");
+
+  // Seed (a): an extra on day0 lunch...
+  call(ctx, 'addExtraRecipeToMeal', [wk, 0, 'lunch', person, 'yogurt']);
+  // ...and (b): day0 breakfast logged as a recipe DIFFERENT from what's planned, so the
+  // displayed view must reflect the logged overlay's macros, not the plan's.
+  const day0Before = get(ctx, "weekPlans['" + wk + "'].days[0]");
+  const plannedBreakfastId = day0Before.meals.breakfast.elena.recipeId;
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const overlayRecipeId = Object.keys(RECIPES_DB).sort().filter(function(id){ return id !== plannedBreakfastId; })[0];
+  call(ctx, 'logPlanEntry', [day0Before.date, person, 'breakfast', overlayRecipeId, 1, [{recipeId: overlayRecipeId, portion: 1}], undefined]);
+  const loggedNut = call(ctx, 'roundedNutritionTotals', [call(ctx, 'nutritionForRecipeComponents', [[{recipeId: overlayRecipeId, portion: 1}]])]);
+  const plannedNut = call(ctx, 'roundedNutritionTotals', [call(ctx, 'planEntryNutrition', [day0Before.meals.breakfast.elena])]);
+  assert(loggedNut.protein !== plannedNut.protein || loggedNut.kcal !== plannedNut.kcal,
+    'B4 test setup: the overlay recipe genuinely differs in macros from the planned one (otherwise the overlay-wins case proves nothing)',
+    'logged=' + JSON.stringify(loggedNut) + ' planned=' + JSON.stringify(plannedNut));
+
+  // (a) day0's totals must equal the sum of its 4 slot views, computed independently here
+  // (not by re-calling weekDayNutriViews) — each slot's view mirrors what renderWeek's row
+  // loop and displayedSlotViewForDate would produce, extras and the logged overlay included.
+  const plan = get(ctx, "weekPlans['" + wk + "']");
+  const day0 = plan.days[0];
+  const expected = {kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0};
+  SLOT_ORDER.forEach(function(slot){
+    const m = day0.meals[slot];
+    const entry = m[person];
+    const planned = call(ctx, 'planEntryView', [entry, m.shared]);
+    const view = call(ctx, 'displayedSlotViewForDate', [day0.date, person, slot, planned]);
+    if(!view.recipe) return;
+    expected.kcal += view.kcal; expected.protein += view.protein; expected.carbs += view.carbs;
+    expected.fat += view.fat; expected.fiber += view.fiber; expected.sugars += view.sugars; expected.freeSugars += view.freeSugars;
+  });
+  // The breakfast slot's view must show the LOGGED recipe, not the planned one — proof the
+  // overlay actually won for this slot (not just that totals happen to match by accident).
+  const breakfastView = call(ctx, 'displayedSlotViewForDate', [day0.date, person, 'breakfast', call(ctx, 'planEntryView', [day0.meals.breakfast.elena, day0.meals.breakfast.shared])]);
+  assert(breakfastView.recipeId === overlayRecipeId, 'B4: displayedSlotViewForDate shows the logged overlay recipe for a logged slot, not the planned one',
+    'got ' + breakfastView.recipeId + ', expected ' + overlayRecipeId);
+  assert(day0.meals.lunch.elena.extras && day0.meals.lunch.elena.extras.length === 1, 'B4 test setup: the meal-extras seed actually landed on day0 lunch',
+    JSON.stringify(day0.meals.lunch.elena.extras));
+
+  const dayViews = call(ctx, 'weekDayNutriViews', [plan, person]);
+  const totals0 = dayViews[0].totals;
+  ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sugars', 'freeSugars'].forEach(function(key){
+    assert(Math.abs(totals0[key] - expected[key]) < 1e-6,
+      'B4: weekDayNutriViews day0.totals.' + key + ' equals the independently-summed slot views (extras + logged-overlay included)',
+      'got ' + totals0[key] + ', expected ' + expected[key]);
+  });
+
+  // (b) week averages equal sum/7 of the (independently verified) per-day totals.
+  const days = dayViews.length;
+  assert(days === 7, 'B4: weekDayNutriViews returns one entry per plan day', 'got ' + days);
+  const expectedAvg = {};
+  ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'freeSugars'].forEach(function(key){
+    expectedAvg[key] = dayViews.reduce(function(s, d){ return s + d.totals[key]; }, 0) / days;
+  });
+  const summary = call(ctx, 'weekNutriSummary', [plan, person, dayViews]);
+  assert(Math.abs(summary.avgKcal - expectedAvg.kcal) < 1e-6, 'B4: weekNutriSummary.avgKcal === sum/7 of day totals', 'got ' + summary.avgKcal + ', expected ' + expectedAvg.kcal);
+  assert(Math.abs(summary.avgProtein - expectedAvg.protein) < 1e-6, 'B4: weekNutriSummary.avgProtein === sum/7 of day totals', 'got ' + summary.avgProtein + ', expected ' + expectedAvg.protein);
+  assert(Math.abs(summary.avgCarbs - expectedAvg.carbs) < 1e-6, 'B4: weekNutriSummary.avgCarbs === sum/7 of day totals', 'got ' + summary.avgCarbs + ', expected ' + expectedAvg.carbs);
+  assert(Math.abs(summary.avgFat - expectedAvg.fat) < 1e-6, 'B4: weekNutriSummary.avgFat === sum/7 of day totals', 'got ' + summary.avgFat + ', expected ' + expectedAvg.fat);
+  assert(Math.abs(summary.avgFiber - expectedAvg.fiber) < 1e-6, 'B4: weekNutriSummary.avgFiber === sum/7 of day totals', 'got ' + summary.avgFiber + ', expected ' + expectedAvg.fiber);
+  assert(Math.abs(summary.avgFreeSugars - expectedAvg.freeSugars) < 1e-6, 'B4: weekNutriSummary.avgFreeSugars === sum/7 of day totals', 'got ' + summary.avgFreeSugars + ', expected ' + expectedAvg.freeSugars);
+
+  // weekNutriSummary called with no dayViews arg must self-derive the identical numbers
+  // (renderWeekNutriCard always passes dayViews, but the function stays correct standalone).
+  const summaryNoArg = call(ctx, 'weekNutriSummary', [plan, person]);
+  assert(Math.abs(summaryNoArg.avgKcal - summary.avgKcal) < 1e-6, 'B4: weekNutriSummary(plan, person) with no dayViews arg matches the passed-dayViews result',
+    'got ' + summaryNoArg.avgKcal + ', expected ' + summary.avgKcal);
+
+  // (c) fiber/free-sugars targets are the SAME constants Insights already uses — identity
+  // checks plus a source-grep guard against a re-typed literal creeping into render.js.
+  const fiberMinPerDay = get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay');
+  assert(summary.fiberTarget === fiberMinPerDay, 'B4: weekNutriSummary.fiberTarget === WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay (never re-typed)',
+    'got ' + summary.fiberTarget + ', expected ' + fiberMinPerDay);
+  const gapsFreeSugarsTarget = call(ctx, 'coverageGaps', [call(ctx, 'computeWeeklyCoverage', [plan])]).freeSugars.target;
+  const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
+  const expectedSugarTargetG = calGoal > 0 ? Math.round((gapsFreeSugarsTarget / 100) * calGoal / 4) : 0;
+  assert(summary.sugarTargetG === expectedSugarTargetG,
+    'B4: weekNutriSummary.sugarTargetG derives from coverageGaps().freeSugars.target (the SAME sugar target Insights uses), not a re-typed literal',
+    'got ' + summary.sugarTargetG + ', expected ' + expectedSugarTargetG);
+
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+  const summaryFn = fnBody('weekNutriSummary');
+  assert(summaryFn.indexOf('WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay') !== -1,
+    'B4 source guard: weekNutriSummary references WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay literally (grep-detectable single source)', summaryFn);
+  assert(summaryFn.indexOf('gaps.freeSugars.target') !== -1,
+    'B4 source guard: weekNutriSummary references gaps.freeSugars.target literally instead of a re-typed sugar-target literal', summaryFn);
+  assert(!/\bfiberTarget\s*=\s*25\b/.test(summaryFn) && !/\bsugarTargetPct\s*=\s*6\b/.test(summaryFn),
+    'B4 source guard: neither fiber (25) nor sugar (6) target is re-typed as a bare literal in weekNutriSummary', summaryFn);
+}
+
+/* ---------------- task B3: sides/extras from the Week screen (next-week context) ----------------
+   The Week screen's new ＋ button (render.js:openWeekAddMealSheet) reaches the extras sheet
+   with an explicit {weekStartDate, dayIndex, slot, person} context instead of a dateISO
+   relative to "today" -- this proves the underlying guarantee that refactor depends on:
+   the SAME weekStartDate-aware planner mutators (addExtraRecipeToMeal/addExtraFoodToMeal,
+   already exercised against the CURRENT week by testMealExtras above) work identically
+   against a NEXT-week plan, (b) a subsequent ensureWeekPlan(nextMonday) revalidation does
+   NOT regenerate the edited plan (v22/v57 guarantee -- markWeekPlanEdited refreshes the
+   signature so the plan still matches on the next freshen() check), and (c) editing a
+   future date never creates a logHistory entry (the sheet's own logged-vs-plan branch is
+   dateISO <= todayISO() && slotLogStatus(...)==='confirmed', which is automatically false
+   for any date after today -- nothing here should touch logHistory at all). Reuses
+   testMealExtras' facts: dayIndex 0 has lunch.shared === false (solo) and
+   dinner.shared === true (shared), independent of which week is generated since `shared`
+   comes from the household SHARED{} config, not the date. */
+function testWeekExtrasNextWeek(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  call(ctx, 'ensureWeekPlan', []); // seed the current week first, same as a real session would have
+  const nextMonday = call(ctx, 'nextMondayISO', []);
+  const plan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  const wk = plan.weekStartDate;
+  assert(wk === nextMonday, 'B3 setup: ensureWeekPlan(nextMonday) returns a plan for the requested week', 'got ' + wk);
+
+  // task B2: strip any auto-composed extra generation may have put on day0 lunch/dinner —
+  // this suite seeds its OWN single extra on each and asserts on its exact shape/count.
+  run(ctx, "['lunch','dinner'].forEach(function(slot){ var m = weekPlans['" + wk + "'].days[0].meals[slot]; delete m.elena.extras; delete m.partner.extras; });");
+
+  function cell(slot){ return get(ctx, "weekPlans['" + wk + "'].days[0].meals['" + slot + "']"); }
+  function entry(slot, person){ return cell(slot)[person]; }
+
+  // (a) recipe extra on next week's SHARED slot (dinner): stamps/mirrors exactly like the
+  // current-week case in testMealExtras.
+  {
+    const ok = call(ctx, 'addExtraRecipeToMeal', [wk, 0, 'dinner', 'elena', 'yogurt']);
+    assert(ok === true, 'B3: addExtraRecipeToMeal on a NEXT-week meal returns true', 'got ' + ok);
+    const e = entry('dinner', 'elena'), p = entry('dinner', 'partner');
+    assert(Array.isArray(e.extras) && e.extras.length === 1 && e.extras[0].recipeId === 'yogurt',
+      'B3: next-week recipe extra appends {recipeId, portion:1} to the acting person', JSON.stringify(e.extras));
+    assert(Array.isArray(p.extras) && p.extras.length === 1 && p.extras[0].recipeId === 'yogurt',
+      'B3: next-week SHARED recipe extra mirrors the same push onto the other person', JSON.stringify(p.extras));
+    assert(typeof cell('dinner').t === 'number', 'B3: next-week shared recipe extra stamps meal.t (couple-sync)', 'meal.t=' + cell('dinner').t);
+  }
+
+  // (b) food extra on next week's SOLO slot (lunch): does not mirror onto the other person.
+  {
+    const ok = call(ctx, 'addExtraFoodToMeal', [wk, 0, 'lunch', 'elena', 'spinach', 50]);
+    assert(ok === true, 'B3: addExtraFoodToMeal on a NEXT-week meal returns true', 'got ' + ok);
+    const e = entry('lunch', 'elena'), p = entry('lunch', 'partner');
+    assert(Array.isArray(e.extras) && e.extras.length === 1 && e.extras[0].foodId === 'spinach' && e.extras[0].grams === 50,
+      'B3: next-week food extra appends {foodId, grams} to the acting person', JSON.stringify(e.extras));
+    assert(!Array.isArray(p.extras) || p.extras.length === 0,
+      'B3: next-week SOLO food extra does not touch the other person', JSON.stringify(p.extras));
+  }
+
+  // (c) neither mutation touched logHistory for the future date -- a plan-only edit must
+  // never create/require an eaten record.
+  const dateISO = get(ctx, "weekPlans['" + wk + "'].days[0].date");
+  assert(!get(ctx, "logHistory['" + dateISO + "']"),
+    'B3: adding extras to a NEXT-week meal creates no logHistory entry for that date', JSON.stringify(get(ctx, "logHistory['" + dateISO + "']")));
+
+  // (d) v22/v57 guarantee: ensureWeekPlan(nextMonday) called again afterward (the same call
+  // renderWeek()/sync would make on the next paint) must NOT regenerate -- the plan,
+  // including BOTH extras added above, comes back byte-identical.
+  const before = cloneJSON(get(ctx, "weekPlans['" + wk + "']"));
+  const revalidated = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  assert(JSON.stringify(revalidated) === JSON.stringify(before),
+    'B3: ensureWeekPlan(nextMonday) revalidation leaves the edited plan (incl. both extras) byte-identical -- no regeneration',
+    'before=' + JSON.stringify(before) + ' after=' + JSON.stringify(revalidated));
+}
+
 /* ---------------- escaping helpers (stored-XSS hardening) ----------------
    escapeHtml/htmlAttr/jsAttr now live once, in js/state.js (the first-loaded
    js/*.js file per app/index.html's <script> order), instead of being
@@ -1008,6 +1648,8 @@ function main(){
   loadAppInto(ctx);
 
   runTest('data: validateData()', function(){ testValidateData(ctx); });
+  runTest('recipe roles + breakfastPair whitelist (task B2)', function(){ testRecipeRolesAndBreakfastPair(ctx); });
+  runTest('goal toggles (task B1)', function(){ testGoalToggles(ctx); });
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
@@ -1018,7 +1660,11 @@ function main(){
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
+  runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
+  runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
+  runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
+  runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch

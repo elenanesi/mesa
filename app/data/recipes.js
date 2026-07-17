@@ -48,7 +48,7 @@ const RECIPES_DB = {
   /* ================= BREAKFAST (11) ================= */
 
   yogurt: {
-    title: 'Greek yogurt & berry bowl', emoji: '🥣', slot: 'breakfast',
+    title: 'Greek yogurt & berry bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
     styles: ['balanced', 'highprotein'], time: 8,
     ingredients: [['greek-yogurt', 150], ['mixed-berries', 80], ['granola', 20], ['honey', 8], ['chia-seeds', 6]],
     toTaste: [],
@@ -57,7 +57,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   omelette: {
-    title: 'Veggie omelette & rye toast', emoji: '🍳', slot: 'breakfast',
+    title: 'Veggie omelette & rye toast', emoji: '🍳', slot: 'breakfast', role: 'full',
     styles: ['balanced', 'lowcarb'], time: 12,
     ingredients: [['eggs', 150], ['bell-pepper', 50], ['spinach', 30], ['rye-bread', 60], ['olive-oil', 5]],
     toTaste: ['herbs', 'black pepper'],
@@ -66,7 +66,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   skyrbowl: {
-    title: 'Skyr bowl, berries & seeds', emoji: '🥣', slot: 'breakfast',
+    title: 'Skyr bowl, berries & seeds', emoji: '🥣', slot: 'breakfast', role: 'full',
     styles: ['highprotein'], time: 6,
     ingredients: [['skyr', 200], ['mixed-berries', 80], ['pumpkin-chia-seeds', 25], ['honey', 8]],
     toTaste: [],
@@ -75,7 +75,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   eggsturkey: {
-    title: 'Eggs, turkey & rye', emoji: '🍳', slot: 'breakfast',
+    title: 'Eggs, turkey & rye', emoji: '🍳', slot: 'breakfast', role: 'full',
     styles: ['highprotein'], time: 10,
     ingredients: [['eggs', 100], ['turkey-breast', 80], ['rye-bread', 60], ['olive-oil', 5]],
     toTaste: ['herbs', 'black pepper'],
@@ -84,7 +84,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   chiapudding: {
-    title: 'Chia pudding, coconut & berries', emoji: '🍮', slot: 'breakfast',
+    title: 'Chia pudding, coconut & berries', emoji: '🍮', slot: 'breakfast', role: 'full',
     styles: ['lowcarb'], time: 5,
     ingredients: [['chia-seeds', 30], ['coconut-milk', 150], ['mixed-berries', 60]],
     toTaste: ['vanilla or cinnamon'],
@@ -93,7 +93,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'oats-berries-walnuts': {
-    title: 'Overnight oats, walnuts & berries', emoji: '🥣', slot: 'breakfast',
+    title: 'Overnight oats, walnuts & berries', emoji: '🥣', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 5,
     ingredients: [['oats', 50], ['milk', 150], ['walnuts', 15], ['mixed-berries', 50], ['honey', 8]],
     toTaste: [],
@@ -102,7 +102,7 @@ const RECIPES_DB = {
     avoid: ['nuts', 'lactose']
   },
   'avocado-eggs': {
-    title: 'Eggs & avocado', emoji: '🥑', slot: 'breakfast',
+    title: 'Eggs & avocado', emoji: '🥑', slot: 'breakfast', role: 'main',
     styles: ['lowcarb', 'highprotein'], time: 10,
     ingredients: [['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60], ['olive-oil', 5]],
     toTaste: ['lemon', 'black pepper'],
@@ -111,7 +111,7 @@ const RECIPES_DB = {
     avoid: []
   },
   shakshuka: {
-    title: 'Shakshuka', emoji: '🍳', slot: 'breakfast',
+    title: 'Shakshuka', emoji: '🍳', slot: 'breakfast', role: 'main',
     styles: ['balanced', 'lowcarb'], time: 20,
     ingredients: [['eggs', 150], ['tomatoes', 150], ['bell-pepper', 80], ['red-onion', 40], ['olive-oil', 10]],
     toTaste: ['garlic', 'paprika', 'herbs'],
@@ -120,7 +120,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'veg-frittata': {
-    title: 'Roast veg frittata', emoji: '🍳', slot: 'breakfast',
+    title: 'Roast veg frittata', emoji: '🍳', slot: 'breakfast', role: 'main',
     styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['eggs', 150], ['courgette', 60], ['bell-pepper', 60], ['parmesan', 20], ['olive-oil', 5]],
     toTaste: ['herbs'],
@@ -129,7 +129,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'almond-skyr-bowl': {
-    title: 'Skyr, almonds & chia', emoji: '🥣', slot: 'breakfast',
+    title: 'Skyr, almonds & chia', emoji: '🥣', slot: 'breakfast', role: 'main',
     styles: ['lowcarb', 'highprotein'], time: 5,
     ingredients: [['skyr', 200], ['almonds', 25], ['chia-seeds', 10]],
     toTaste: [],
@@ -138,7 +138,7 @@ const RECIPES_DB = {
     avoid: ['lactose', 'nuts']
   },
   'turkey-spinach-omelette': {
-    title: 'Turkey & spinach omelette', emoji: '🍳', slot: 'breakfast',
+    title: 'Turkey & spinach omelette', emoji: '🍳', slot: 'breakfast', role: 'main',
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['eggs', 150], ['turkey-breast', 60], ['spinach', 40], ['olive-oil', 5]],
     toTaste: ['herbs', 'black pepper'],
@@ -150,7 +150,7 @@ const RECIPES_DB = {
   /* ================= LUNCH (10) ================= */
 
   lentil: {
-    title: 'Lentil & roasted veg salad', emoji: '🥗', slot: 'lunch',
+    title: 'Lentil & roasted veg salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 20,
     ingredients: [['cooked-lentils', 150], ['courgette', 75], ['bell-pepper', 75], ['feta-cheese', 40], ['rocket-arugula', 20], ['olive-oil', 10]],
@@ -160,7 +160,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   chickenfarro: {
-    title: 'Chicken & farro bowl', emoji: '🍲', slot: 'lunch',
+    title: 'Chicken & farro bowl', emoji: '🍲', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['highprotein'], time: 22,
     ingredients: [['chicken-breast', 150], ['farro-cooked', 120], ['courgette', 50], ['bell-pepper', 50], ['olive-oil', 5]],
@@ -170,7 +170,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   tunasalad: {
-    title: 'Tuna & avocado chopped salad', emoji: '🥗', slot: 'lunch',
+    title: 'Tuna & avocado chopped salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 12,
     ingredients: [['tuna-in-olive-oil', 120], ['avocado', 80], ['cherry-tomatoes', 100], ['cucumber', 50], ['olive-oil', 5]],
@@ -180,7 +180,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'chicken-couscous-salad': {
-    title: 'Chicken & couscous salad', emoji: '🥗', slot: 'lunch',
+    title: 'Chicken & couscous salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['chicken-breast', 130], ['couscous', 80], ['cherry-tomatoes', 80], ['cucumber', 60], ['olive-oil', 5]],
@@ -190,7 +190,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'white-bean-tuna-salad': {
-    title: 'White bean & tuna salad', emoji: '🥗', slot: 'lunch',
+    title: 'White bean & tuna salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 10,
     ingredients: [['cannellini-beans', 150], ['tuna-in-olive-oil', 100], ['cherry-tomatoes', 60], ['rocket-arugula', 20], ['olive-oil', 5]],
@@ -200,7 +200,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'prawn-courgette-salad': {
-    title: 'Prawn & courgette salad', emoji: '🦐', slot: 'lunch',
+    title: 'Prawn & courgette salad', emoji: '🦐', slot: 'lunch', role: 'full',
     styles: ['lowcarb', 'highprotein'], time: 15,
     ingredients: [['prawns', 180], ['courgette', 150], ['cherry-tomatoes', 60], ['avocado', 80], ['olive-oil', 12]],
     toTaste: ['lemon', 'garlic'],
@@ -209,7 +209,7 @@ const RECIPES_DB = {
     avoid: ['shellfish']
   },
   'sardine-white-bean-salad': {
-    title: 'Sardine & white bean salad', emoji: '🐟', slot: 'lunch',
+    title: 'Sardine & white bean salad', emoji: '🐟', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 10,
     ingredients: [['sardines', 120], ['cannellini-beans', 100], ['rocket-arugula', 30], ['cherry-tomatoes', 60], ['olive-oil', 5]],
@@ -219,7 +219,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'greek-salad-big': {
-    title: 'Big Greek salad', emoji: '🥗', slot: 'lunch',
+    title: 'Big Greek salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner', 'side'],
     styles: ['lowcarb', 'balanced'], time: 10,
     ingredients: [['cucumber', 100], ['cherry-tomatoes', 100], ['bell-pepper', 60], ['feta-cheese', 70], ['olives', 40], ['olive-oil', 15]],
@@ -229,7 +229,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'chicken-caprese-salad': {
-    title: 'Chicken caprese salad', emoji: '🥗', slot: 'lunch',
+    title: 'Chicken caprese salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 15,
     ingredients: [['chicken-breast', 130], ['mozzarella', 60], ['cherry-tomatoes', 100], ['rocket-arugula', 20], ['olive-oil', 10]],
@@ -239,7 +239,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'tuna-egg-salad': {
-    title: 'Tuna & egg salad', emoji: '🥗', slot: 'lunch',
+    title: 'Tuna & egg salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 12,
     ingredients: [['tuna-in-olive-oil', 100], ['eggs', 100], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 5]],
@@ -252,7 +252,7 @@ const RECIPES_DB = {
   /* ================= DINNER (9) ================= */
 
   salmon: {
-    title: 'Baked salmon, quinoa & greens', emoji: '🐟', slot: 'dinner',
+    title: 'Baked salmon, quinoa & greens', emoji: '🐟', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['salmon-fillet', 140], ['quinoa-dry', 60], ['spinach', 40], ['broccoli', 100], ['olive-oil', 5]],
@@ -262,7 +262,7 @@ const RECIPES_DB = {
     avoid: []
   },
   salmongreens: {
-    title: 'Salmon & greens, no quinoa', emoji: '🐟', slot: 'dinner',
+    title: 'Salmon & greens, no quinoa', emoji: '🐟', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein'], time: 20,
     ingredients: [['salmon-fillet', 150], ['spinach', 60], ['broccoli', 75], ['courgette', 75], ['olive-oil', 5]],
@@ -272,7 +272,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'chicken-sweet-potato-broccoli': {
-    title: 'Roast chicken, sweet potato & broccoli', emoji: '🍗', slot: 'dinner',
+    title: 'Roast chicken, sweet potato & broccoli', emoji: '🍗', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['chicken-breast', 180], ['sweet-potato', 200], ['broccoli', 100], ['olive-oil', 10]],
@@ -282,7 +282,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'beef-courgette-ragu': {
-    title: 'Lean beef & courgette ragu', emoji: '🥩', slot: 'dinner',
+    title: 'Lean beef & courgette ragu', emoji: '🥩', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein', 'balanced'], time: 25,
     ingredients: [['beef-mince-lean', 180], ['tomatoes', 200], ['courgette', 200], ['olive-oil', 10]],
@@ -292,7 +292,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'turkey-roasted-veg': {
-    title: 'Turkey & roasted veg', emoji: '🍗', slot: 'dinner',
+    title: 'Turkey & roasted veg', emoji: '🍗', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein'], time: 30,
     ingredients: [['turkey-breast', 220], ['courgette', 150], ['bell-pepper', 100], ['olive-oil', 15]],
@@ -302,7 +302,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'chickpea-veg-stew': {
-    title: 'Chickpea & vegetable stew', emoji: '🍲', slot: 'dinner',
+    title: 'Chickpea & vegetable stew', emoji: '🍲', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch', 'side'],
     styles: ['balanced'], time: 30,
     ingredients: [['chickpeas', 200], ['tomatoes', 150], ['courgette', 80], ['bell-pepper', 80], ['olive-oil', 10]],
@@ -312,7 +312,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'baked-cod-greens': {
-    title: 'Baked cod & greens', emoji: '🐟', slot: 'dinner',
+    title: 'Baked cod & greens', emoji: '🐟', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch', 'side'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
     ingredients: [['cod', 220], ['broccoli', 200], ['spinach', 80], ['olive-oil', 15]],
@@ -322,7 +322,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'prawn-courgette-tomato': {
-    title: 'Prawn, courgette & tomato saute', emoji: '🦐', slot: 'dinner',
+    title: 'Prawn, courgette & tomato saute', emoji: '🦐', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch', 'side'],
     styles: ['lowcarb', 'highprotein', 'balanced'], time: 20,
     ingredients: [['prawns', 220], ['courgette', 200], ['cherry-tomatoes', 150], ['olive-oil', 15]],
@@ -332,7 +332,7 @@ const RECIPES_DB = {
     avoid: ['shellfish']
   },
   'pork-loin-farro-veg': {
-    title: 'Pork loin, farro & greens', emoji: '🍖', slot: 'dinner',
+    title: 'Pork loin, farro & greens', emoji: '🍖', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['pork-loin', 150], ['farro-cooked', 150], ['spinach', 60], ['olive-oil', 8]],
@@ -345,7 +345,7 @@ const RECIPES_DB = {
   /* ================= ELENA RECIPE WISHLIST — BREAKFAST ================= */
 
   'french-toast-fruit-maple': {
-    title: 'French toast with fruit & maple syrup', emoji: '🍞', slot: 'breakfast',
+    title: 'French toast with fruit & maple syrup', emoji: '🍞', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 15,
     ingredients: [['white-bread', 70], ['eggs', 50], ['milk', 80], ['mixed-berries', 80], ['maple-syrup', 15], ['olive-oil', 4]],
     toTaste: ['cinnamon', 'vanilla'],
@@ -354,7 +354,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'yogurt-cereali-frutta': {
-    title: 'Yogurt, cereali e frutta', emoji: '🥣', slot: 'breakfast',
+    title: 'Yogurt, cereali e frutta', emoji: '🥣', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 5,
     ingredients: [['greek-yogurt', 170], ['granola', 35], ['bananas', 60], ['mixed-berries', 60], ['honey', 8]],
     toTaste: [],
@@ -363,7 +363,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   pancakes: {
-    title: 'Pancakes', emoji: '🥞', slot: 'breakfast',
+    title: 'Pancakes', emoji: '🥞', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 18,
     ingredients: [['oats', 45], ['eggs', 50], ['milk', 100], ['bananas', 60], ['maple-syrup', 15], ['olive-oil', 4]],
     toTaste: ['cinnamon'],
@@ -372,7 +372,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'pancakes-proteici': {
-    title: 'Pancakes proteici', emoji: '🥞', slot: 'breakfast',
+    title: 'Pancakes proteici', emoji: '🥞', slot: 'breakfast', role: 'full',
     styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['oats', 40], ['whey-protein-powder', 30], ['eggs', 50], ['milk', 90], ['chocolate-hazelnut-spread', 12], ['bananas', 70], ['mixed-berries', 50], ['olive-oil', 3]],
     toTaste: ['cinnamon'],
@@ -381,7 +381,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose', 'nuts']
   },
   cereali: {
-    title: 'Cereali', emoji: '🥣', slot: 'breakfast',
+    title: 'Cereali', emoji: '🥣', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 3,
     ingredients: [['granola', 45], ['milk', 180], ['bananas', 70]],
     toTaste: [],
@@ -390,7 +390,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'uova-bacon': {
-    title: 'Uova e bacon', emoji: '🍳', slot: 'breakfast',
+    title: 'Uova e bacon', emoji: '🍳', slot: 'breakfast', role: 'main',
     styles: ['highprotein', 'lowcarb'], time: 12,
     ingredients: [['eggs', 100], ['bacon', 35], ['cherry-tomatoes', 80]],
     toTaste: ['black pepper'],
@@ -399,7 +399,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'uova-avocado-toast': {
-    title: 'Uova avocado toast', emoji: '🥑', slot: 'breakfast',
+    title: 'Uova avocado toast', emoji: '🥑', slot: 'breakfast', role: 'full',
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['wholewheat-bread', 70], ['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60]],
     toTaste: ['lemon', 'black pepper'],
@@ -408,7 +408,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'ricotta-pere-noci-toast': {
-    title: 'Ricotta, pere e noci toast', emoji: '🍐', slot: 'breakfast',
+    title: 'Ricotta, pere e noci toast', emoji: '🍐', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 8,
     ingredients: [['wholewheat-bread', 70], ['ricotta', 80], ['pears', 90], ['walnuts', 15], ['honey', 6]],
     toTaste: ['black pepper'],
@@ -420,7 +420,7 @@ const RECIPES_DB = {
   /* ================= ELENA RECIPE WISHLIST — LUNCH ================= */
 
   'insalata-pesche-feta': {
-    title: 'Insalata pesche e feta', emoji: '🥗', slot: 'lunch',
+    title: 'Insalata pesche e feta', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'lowcarb'], time: 10,
@@ -431,7 +431,7 @@ const RECIPES_DB = {
     avoid: ['lactose', 'nuts']
   },
   'insalata-greca-pizza-bianca': {
-    title: 'Insalata greca e pizza bianca', emoji: '🥗', slot: 'lunch',
+    title: 'Insalata greca e pizza bianca', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     styles: ['balanced'], time: 10,
     ingredients: [['cucumber', 100], ['cherry-tomatoes', 120], ['feta-cheese', 60], ['olives', 30], ['pizza-bianca', 80], ['olive-oil', 8]],
@@ -441,7 +441,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'bowl-insalata': {
-    title: 'Bowl insalata', emoji: '🥗', slot: 'lunch',
+    title: 'Bowl insalata', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['chicken-breast', 120], ['lettuce', 80], ['chickpeas', 90], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 8]],
@@ -451,7 +451,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'toast-eatsmiter': {
-    title: 'Toast eatsmiter', emoji: '🥪', slot: 'lunch',
+    title: 'Toast eatsmiter', emoji: '🥪', slot: 'lunch', role: 'full',
     styles: ['balanced'], time: 8,
     ingredients: [['wholewheat-bread', 90], ['turkey-breast', 70], ['mozzarella', 45], ['cherry-tomatoes', 50]],
     toTaste: ['mustard'],
@@ -460,7 +460,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'pasta-pomodorini-funghi-broccoli': {
-    title: 'Pasta pomodorini, funghi e broccoli', emoji: '🍝', slot: 'lunch',
+    title: 'Pasta pomodorini, funghi e broccoli', emoji: '🍝', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 22,
@@ -471,7 +471,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'club-sandwich': {
-    title: 'Club sandwich', emoji: '🥪', slot: 'lunch',
+    title: 'Club sandwich', emoji: '🥪', slot: 'lunch', role: 'full',
     styles: ['balanced', 'highprotein'], time: 15,
     ingredients: [['white-bread', 90], ['chicken-breast', 100], ['bacon', 25], ['lettuce', 30], ['cherry-tomatoes', 50]],
     toTaste: ['mustard'],
@@ -480,7 +480,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'uova-pomodoro': {
-    title: 'Uova e pomodoro', emoji: '🍳', slot: 'lunch',
+    title: 'Uova e pomodoro', emoji: '🍳', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     slots: ['lunch', 'breakfast'],
     styles: ['balanced', 'lowcarb'], time: 15,
@@ -491,7 +491,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'panino-gorgonzola-prosciutto': {
-    title: 'Panino gorgonzola e prosciutto', emoji: '🥪', slot: 'lunch',
+    title: 'Panino gorgonzola e prosciutto', emoji: '🥪', slot: 'lunch', role: 'full',
     styles: ['balanced'], time: 7,
     ingredients: [['white-bread', 90], ['gorgonzola', 45], ['prosciutto-cotto', 60], ['rocket-arugula', 20]],
     toTaste: [],
@@ -500,7 +500,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'insalata-noci-mele-senape': {
-    title: 'Insalata noci, mele e senape', emoji: '🥗', slot: 'lunch',
+    title: 'Insalata noci, mele e senape', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'side'],
     styles: ['balanced'], time: 10,
     ingredients: [['lettuce', 90], ['apples', 140], ['walnuts', 30], ['mustard', 8], ['olive-oil', 14], ['wholewheat-bread', 35]],
@@ -510,7 +510,7 @@ const RECIPES_DB = {
     avoid: ['nuts']
   },
   'couscous-legumi-limone': {
-    title: 'Cous cous legumi, pomodorini, cetriolo, cipolla, rucola e limone', emoji: '🥗', slot: 'lunch',
+    title: 'Cous cous legumi, pomodorini, cetriolo, cipolla, rucola e limone', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 18,
@@ -521,7 +521,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'raw-onion']
   },
   'pomodori-al-riso': {
-    title: 'Pomodori al riso', emoji: '🍅', slot: 'lunch',
+    title: 'Pomodori al riso', emoji: '🍅', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 55,
@@ -535,7 +535,7 @@ const RECIPES_DB = {
   /* ================= ELENA RECIPE WISHLIST — DINNER ================= */
 
   'pollo-bollito-brodo': {
-    title: 'Pollo bollito in brodo', emoji: '🍗', slot: 'dinner',
+    title: 'Pollo bollito in brodo', emoji: '🍗', slot: 'dinner', role: 'main',
     styles: ['highprotein', 'lowcarb'], time: 45,
     ingredients: [['chicken-breast', 190], ['carrots', 120], ['escarole', 100], ['olive-oil', 8]],
     toTaste: ['celery', 'onion', 'parsley'],
@@ -544,7 +544,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'pollo-al-forno': {
-    title: 'Pollo al forno', emoji: '🍗', slot: 'dinner',
+    title: 'Pollo al forno', emoji: '🍗', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 40,
     ingredients: [['chicken-thigh', 180], ['potatoes', 220], ['carrots', 120], ['olive-oil', 12]],
     toTaste: ['rosemary', 'garlic', 'lemon'],
@@ -553,7 +553,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'chicken-satay': {
-    title: 'Chicken satay', emoji: '🍢', slot: 'dinner',
+    title: 'Chicken satay', emoji: '🍢', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['chicken-breast', 170], ['almonds', 20], ['soy-sauce', 10], ['rice', 60], ['cucumber', 80]],
     toTaste: ['lime', 'ginger', 'chilli if wanted'],
@@ -562,7 +562,7 @@ const RECIPES_DB = {
     avoid: ['nuts']
   },
   'soy-ginger-chicken': {
-    title: 'Soy ginger chicken', emoji: '🍗', slot: 'dinner',
+    title: 'Soy ginger chicken', emoji: '🍗', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['chicken-breast', 170], ['soy-sauce', 15], ['ginger', 8], ['broccoli', 160], ['rice', 60], ['olive-oil', 6]],
     toTaste: ['garlic'],
@@ -571,7 +571,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'butter-chicken': {
-    title: 'Butter chicken', emoji: '🍛', slot: 'dinner',
+    title: 'Butter chicken', emoji: '🍛', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['chicken-breast', 160], ['tomatoes', 180], ['greek-yogurt', 80], ['rice', 60], ['olive-oil', 10]],
     toTaste: ['curry spices', 'garlic', 'ginger'],
@@ -580,7 +580,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'chicken-tacos-gyros': {
-    title: 'Chicken tacos / gyros', emoji: '🌮', slot: 'dinner',
+    title: 'Chicken tacos / gyros', emoji: '🌮', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['chicken-breast', 160], ['white-bread', 80], ['greek-yogurt', 60], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 6]],
     toTaste: ['lemon', 'oregano', 'paprika'],
@@ -589,7 +589,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'tacchino-arrosto-agrumi': {
-    title: 'Tacchino arrosto agli agrumi', emoji: '🦃', slot: 'dinner',
+    title: 'Tacchino arrosto agli agrumi', emoji: '🦃', slot: 'dinner', role: 'full',
     season: 'winter/autumn',
     styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['turkey-breast', 190], ['oranges', 80], ['sweet-potato', 180], ['green-beans', 140], ['olive-oil', 10]],
@@ -599,7 +599,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'filetto-maiale': {
-    title: 'Filetto di maiale', emoji: '🍖', slot: 'dinner',
+    title: 'Filetto di maiale', emoji: '🍖', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['pork-loin', 170], ['mushrooms', 120], ['potatoes', 200], ['olive-oil', 10]],
     toTaste: ['sage', 'garlic'],
@@ -608,7 +608,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'filetto-manzo': {
-    title: 'Filetto di manzo', emoji: '🥩', slot: 'dinner',
+    title: 'Filetto di manzo', emoji: '🥩', slot: 'dinner', role: 'main',
     styles: ['highprotein', 'lowcarb'], time: 25,
     ingredients: [['beef-mince-lean', 170], ['rocket-arugula', 50], ['cherry-tomatoes', 100], ['parmesan', 20], ['olive-oil', 10]],
     toTaste: ['lemon', 'black pepper'],
@@ -617,7 +617,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'salmone-o-sogliola': {
-    title: 'Salmone o sogliola con verdure', emoji: '🐟', slot: 'dinner',
+    title: 'Salmone o sogliola con verdure', emoji: '🐟', slot: 'dinner', role: 'main',
     season: 'spring/summer',
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
     ingredients: [['salmon-fillet', 150], ['asparagus', 120], ['green-beans', 120], ['olive-oil', 10]],
@@ -627,7 +627,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'pasta-zucca-fagioli-funghi': {
-    title: 'Pasta zucca, fagioli e funghi', emoji: '🍝', slot: 'dinner',
+    title: 'Pasta zucca, fagioli e funghi', emoji: '🍝', slot: 'dinner', role: 'full',
     season: 'winter/autumn',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 28,
@@ -638,7 +638,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'polpette-melanzane': {
-    title: 'Polpette di melanzane', emoji: '🧆', slot: 'dinner',
+    title: 'Polpette di melanzane', emoji: '🧆', slot: 'dinner', role: 'full',
     season: 'spring/summer',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 35,
@@ -649,7 +649,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   ramen: {
-    title: 'Ramen', emoji: '🍜', slot: 'dinner',
+    title: 'Ramen', emoji: '🍜', slot: 'dinner', role: 'full',
     styles: ['balanced'], time: 25,
     ingredients: [['ramen-noodles', 70], ['eggs', 50], ['chicken-breast', 90], ['mushrooms', 80], ['spinach', 60], ['soy-sauce', 15]],
     toTaste: ['ginger', 'garlic'],
@@ -658,7 +658,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'zuppa-broccolo-nero-lenticchie': {
-    title: 'Zuppa broccolo nero e lenticchie', emoji: '🍲', slot: 'dinner',
+    title: 'Zuppa broccolo nero e lenticchie', emoji: '🍲', slot: 'dinner', role: 'full',
     season: 'winter/autumn',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 30,
@@ -669,7 +669,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'polpette-tacchino-yogurt-menta': {
-    title: 'Polpette di tacchino, yogurt e menta', emoji: '🦃', slot: 'dinner',
+    title: 'Polpette di tacchino, yogurt e menta', emoji: '🦃', slot: 'dinner', role: 'full',
     styles: ['balanced', 'highprotein'], time: 28,
     ingredients: [['turkey-breast', 180], ['eggs', 50], ['wholewheat-bread', 35], ['greek-yogurt', 80], ['cucumber', 80], ['olive-oil', 8]],
     toTaste: ['mint', 'lemon'],
@@ -678,7 +678,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'burrito-vegetariano': {
-    title: 'Burrito vegetariano', emoji: '🌯', slot: 'dinner',
+    title: 'Burrito vegetariano', emoji: '🌯', slot: 'dinner', role: 'full',
     styles: ['balanced'], time: 22,
     ingredients: [['white-bread', 80], ['cannellini-beans', 130], ['rice', 55], ['avocado', 60], ['cherry-tomatoes', 80], ['feta-cheese', 25]],
     toTaste: ['lime', 'cumin'],
@@ -687,7 +687,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'tofu-noodles': {
-    title: 'Tofu e noodles', emoji: '🍜', slot: 'dinner',
+    title: 'Tofu e noodles', emoji: '🍜', slot: 'dinner', role: 'full',
     styles: ['balanced'], time: 22,
     ingredients: [['tofu', 160], ['egg-noodles', 70], ['broccoli', 120], ['carrots', 80], ['soy-sauce', 15], ['olive-oil', 8]],
     toTaste: ['ginger', 'garlic'],
@@ -696,7 +696,7 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'feta-filo-miele-noodles-verdure': {
-    title: 'Feta pasta filo e miele, noodles e verdura grigliata', emoji: '🧀', slot: 'dinner',
+    title: 'Feta pasta filo e miele, noodles e verdura grigliata', emoji: '🧀', slot: 'dinner', role: 'full',
     season: 'spring/summer',
     styles: ['balanced'], time: 30,
     ingredients: [['feta-cheese', 80], ['pasta-filo', 45], ['honey', 10], ['egg-noodles', 45], ['courgette', 100], ['bell-pepper', 100], ['olive-oil', 10]],
@@ -709,7 +709,7 @@ const RECIPES_DB = {
   /* ================= ELENA RECIPE WISHLIST — SIDES ================= */
 
   'carrots-over-hummus': {
-    title: 'Carrots over hummus', emoji: '🥕', slot: 'side',
+    title: 'Carrots over hummus', emoji: '🥕', slot: 'side', role: 'side',
     slots: ['side', 'snack', 'lunch'],
     styles: ['balanced'], time: 22,
     ingredients: [['carrots', 180], ['hummus', 70], ['maple-syrup', 5], ['olive-oil', 8]],
@@ -719,7 +719,7 @@ const RECIPES_DB = {
     avoid: []
   },
   scarola: {
-    title: 'Scarola', emoji: '🥬', slot: 'side',
+    title: 'Scarola', emoji: '🥬', slot: 'side', role: 'side',
     styles: ['lowcarb', 'balanced'], time: 15,
     ingredients: [['escarole', 220], ['olives', 25], ['capers', 10], ['olive-oil', 10]],
     toTaste: ['garlic'],
@@ -728,7 +728,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'cavolfiore-arrosto-paprika': {
-    title: 'Cavolfiore arrosto con paprika e spezie', emoji: '🥦', slot: 'side',
+    title: 'Cavolfiore arrosto con paprika e spezie', emoji: '🥦', slot: 'side', role: 'side',
     season: 'winter/autumn',
     styles: ['lowcarb', 'balanced'], time: 30,
     ingredients: [['cauliflower', 240], ['olive-oil', 12], ['greek-yogurt', 50]],
@@ -738,7 +738,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'asparagi-fagiolini-broccoli': {
-    title: 'Asparagi, fagiolini o broccoli', emoji: '🥦', slot: 'side',
+    title: 'Asparagi, fagiolini o broccoli', emoji: '🥦', slot: 'side', role: 'side',
     season: 'spring/summer',
     styles: ['lowcarb', 'balanced'], time: 15,
     ingredients: [['asparagus', 100], ['green-beans', 100], ['broccoli', 100], ['olive-oil', 10]],
@@ -748,7 +748,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'cole-slaw': {
-    title: 'Cole slaw', emoji: '🥬', slot: 'side',
+    title: 'Cole slaw', emoji: '🥬', slot: 'side', role: 'side',
     season: 'winter/autumn',
     styles: ['balanced', 'lowcarb'], time: 12,
     ingredients: [['cabbage', 160], ['carrots', 80], ['greek-yogurt', 60], ['mustard', 8]],
@@ -758,7 +758,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'verdure-wok': {
-    title: 'Verdure wok', emoji: '🥢', slot: 'side',
+    title: 'Verdure wok', emoji: '🥢', slot: 'side', role: 'side',
     slots: ['side', 'lunch'],
     styles: ['balanced', 'lowcarb'], time: 15,
     ingredients: [['broccoli', 120], ['bell-pepper', 100], ['carrots', 80], ['soy-sauce', 12], ['olive-oil', 8]],
@@ -768,7 +768,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'insalata-carote-cetrioli-marinate': {
-    title: 'Insalata carote e cetrioli marinate', emoji: '🥒', slot: 'side',
+    title: 'Insalata carote e cetrioli marinate', emoji: '🥒', slot: 'side', role: 'side',
     season: 'spring/summer',
     styles: ['lowcarb', 'balanced'], time: 10,
     ingredients: [['carrots', 100], ['cucumber', 140], ['balsamic-vinegar', 10], ['olive-oil', 8]],
@@ -778,7 +778,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'pak-choy-butter-side': {
-    title: 'Pak choy sautéed in butter', emoji: '🥬', slot: 'side',
+    title: 'Pak choy sautéed in butter', emoji: '🥬', slot: 'side', role: 'side',
     slots: ['side', 'lunch', 'dinner'],
     styles: ['balanced', 'lowcarb'], time: 10,
     ingredients: [['pak-choy', 220], ['butter', 12], ['soy-sauce', 8]],
@@ -788,7 +788,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   lasagna: {
-    title: 'Lasagna', emoji: '🍝', slot: 'dinner',
+    title: 'Lasagna', emoji: '🍝', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 60,
@@ -799,7 +799,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'cena-cinese': {
-    title: 'Cena cinese', emoji: '🥡', slot: 'dinner',
+    title: 'Cena cinese', emoji: '🥡', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 35,
@@ -813,7 +813,7 @@ const RECIPES_DB = {
   /* ================= SNACK (6) ================= */
 
   'brazil-nuts-apple': {
-    title: 'Snack: 2 Brazil nuts + apple', emoji: '🌰', slot: 'snack',
+    title: 'Snack: 2 Brazil nuts + apple', emoji: '🌰', slot: 'snack', role: 'full',
     styles: ['balanced'], time: 2,
     ingredients: [['brazil-nuts', 10], ['apples', 150]],
     toTaste: [],
@@ -822,7 +822,7 @@ const RECIPES_DB = {
     avoid: ['nuts']
   },
   'ricotta-walnuts': {
-    title: 'Snack: Ricotta & walnuts', emoji: '🧀', slot: 'snack',
+    title: 'Snack: Ricotta & walnuts', emoji: '🧀', slot: 'snack', role: 'full',
     styles: ['highprotein'], time: 3,
     ingredients: [['ricotta', 130], ['walnuts', 12]],
     toTaste: [],
@@ -831,7 +831,7 @@ const RECIPES_DB = {
     avoid: ['lactose', 'nuts']
   },
   'almonds-cheese-cubes': {
-    title: 'Snack: Almonds & cheese cubes', emoji: '🥜', slot: 'snack',
+    title: 'Snack: Almonds & cheese cubes', emoji: '🥜', slot: 'snack', role: 'full',
     styles: ['lowcarb'], time: 3,
     ingredients: [['almonds', 20], ['mozzarella', 40]],
     toTaste: [],
@@ -840,7 +840,7 @@ const RECIPES_DB = {
     avoid: ['lactose', 'nuts']
   },
   'hummus-veg-sticks': {
-    title: 'Snack: Hummus & veg sticks', emoji: '🥕', slot: 'snack',
+    title: 'Snack: Hummus & veg sticks', emoji: '🥕', slot: 'snack', role: 'side',
     slots: ['snack', 'side'],
     styles: ['balanced', 'lowcarb'], time: 5,
     ingredients: [['hummus', 60], ['cucumber', 80], ['cherry-tomatoes', 60]],
@@ -850,7 +850,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'greek-yogurt-honey-walnuts': {
-    title: 'Snack: Greek yogurt, honey & walnuts', emoji: '🥣', slot: 'snack',
+    title: 'Snack: Greek yogurt, honey & walnuts', emoji: '🥣', slot: 'snack', role: 'full',
     styles: ['highprotein', 'balanced'], time: 3,
     ingredients: [['greek-yogurt', 120], ['honey', 10], ['walnuts', 15]],
     toTaste: [],
@@ -859,7 +859,7 @@ const RECIPES_DB = {
     avoid: ['lactose', 'nuts']
   },
   'boiled-eggs-veg-sticks': {
-    title: 'Snack: Boiled eggs & veg sticks', emoji: '🥚', slot: 'snack',
+    title: 'Snack: Boiled eggs & veg sticks', emoji: '🥚', slot: 'snack', role: 'full',
     styles: ['highprotein', 'balanced'], time: 10,
     ingredients: [['eggs', 100], ['cucumber', 80]],
     toTaste: ['black pepper'],
@@ -868,7 +868,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'gelato-cioccolato': {
-    title: 'Gelato al cioccolato', emoji: '🍨', slot: 'snack',
+    title: 'Gelato al cioccolato', emoji: '🍨', slot: 'snack', role: 'full',
     occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [['gelato-chocolate', 120], ['dark-chocolate-85', 10]],
@@ -878,7 +878,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'gelato-stracciatella': {
-    title: 'Gelato stracciatella', emoji: '🍨', slot: 'snack',
+    title: 'Gelato stracciatella', emoji: '🍨', slot: 'snack', role: 'full',
     occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [['gelato-stracciatella', 130], ['dark-chocolate-85', 5]],
@@ -888,7 +888,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'gelato-yogurt': {
-    title: 'Gelato allo yogurt', emoji: '🍦', slot: 'snack',
+    title: 'Gelato allo yogurt', emoji: '🍦', slot: 'snack', role: 'full',
     occasional: true,
     styles: ['balanced'], time: 2,
     ingredients: [['gelato-yogurt', 130], ['mixed-berries', 30]],
@@ -898,7 +898,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'gelato-crema': {
-    title: 'Gelato alla crema', emoji: '🍨', slot: 'snack',
+    title: 'Gelato alla crema', emoji: '🍨', slot: 'snack', role: 'full',
     occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [['gelato-crema', 130], ['vanilla-cinnamon', 1]],
@@ -908,7 +908,7 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'brownie-dessert': {
-    title: 'Brownie', emoji: '🍫', slot: 'snack',
+    title: 'Brownie', emoji: '🍫', slot: 'snack', role: 'full',
     occasional: true,
     styles: ['balanced'], time: 2,
     ingredients: [['brownie', 80], ['milk', 80]],
@@ -918,7 +918,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'mcdonald-menu': {
-    title: "McDonald's menu", emoji: '🍔', slot: 'dinner',
+    title: "McDonald's menu", emoji: '🍔', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 5,
@@ -929,7 +929,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'burger-king-menu': {
-    title: 'Burger King menu', emoji: '🍔', slot: 'dinner',
+    title: 'Burger King menu', emoji: '🍔', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 5,
