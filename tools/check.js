@@ -1858,8 +1858,8 @@ function testWeekQuickAddNutrition(ctx){
 
   // (a) log two quick-add foods on the past day: one plain quick-add and one
   // beverage-style (cappuccino) — both go through logFoodEntry (the only kind:'food'
-  // writer), matching the plan's "quick-add foods (cappuccinos, gelato, beverages)" wording.
-  call(ctx, 'logFoodEntry', [pastDate, person, 'gelato-chocolate', 100]);
+  // writer), matching the plan's "quick-add foods (cappuccinos, beverages, pantry extras)" wording.
+  call(ctx, 'logFoodEntry', [pastDate, person, 'fruit-jam', 30]);
   call(ctx, 'logFoodEntry', [pastDate, person, 'cappuccino-unsweetened', 1]);
   const dayLog = get(ctx, "logHistory['" + pastDate + "']");
   const quickAdds = dayLog[person].filter(function(e){ return e.kind === 'food'; });

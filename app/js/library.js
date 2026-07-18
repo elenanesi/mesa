@@ -127,7 +127,8 @@ const AUTO_STYLE_THRESHOLDS = {
 // fish/meat/poultry food later needs a one-line addition here.
 const ANIMAL_FOOD_IDS = [
   'salmon-fillet', 'turkey-breast', 'chicken-breast', 'tuna-in-olive-oil', 'tuna',
-  'clams', 'cod', 'prawns', 'chicken-thigh', 'beef-mince-lean', 'pork-loin', 'bresaola'
+  'clams', 'mussels', 'cod', 'sole-fish', 'prawns', 'chicken-thigh', 'beef-mince-lean',
+  'pork-loin', 'pork-sausage', 'bresaola', 'speck'
 ];
 // Per the task brief's exact list.
 const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'oats'];
@@ -754,7 +755,7 @@ function firstText(){
 function inferOffCategory(product){
   const hay = ((product.categories || '') + ' ' + (product.categories_tags || []).join(' ')).toLowerCase();
   if(/yogurt|yoghurt|cheese|milk|dairy|formaggi|latte|yogurt/.test(hay)) return 'Dairy';
-  if(/fish|salmon|tuna|sardine|meat|chicken|turkey|beef|pork|egg|pesce|tonno|salmone|carne|pollo|uova/.test(hay)) return 'Protein';
+  if(/fish|salmon|sole|tuna|sardine|mussel|clam|shrimp|prawn|speck|sausage|meat|chicken|turkey|beef|pork|egg|pesce|tonno|salmone|cozza|cozze|vongol|gamber|sogliola|salsiccia|carne|pollo|uova/.test(hay)) return 'Protein';
   if(/vegetable|fruit|verdure|frutta|legume|legumi/.test(hay)) return 'Produce';
   if(/pasta|rice|cereal|flour|farina|riso|cereali/.test(hay)) return 'Pantry';
   if(/bread|bakery|pane|biscuit|cracker/.test(hay)) return 'Bakery';
@@ -772,7 +773,7 @@ function inferOffFlags(product, food){
   ].join(' ').toLowerCase();
   if((food.fiber || 0) >= 6) flags.push('highFiber');
   if(/gluten-free|senza-glutine|sans-gluten/.test(hay)) flags.push('glutenFree');
-  if(/salmon|salmone|sardine|tuna|tonno|mackerel|sgombro|anchovy|acciug/.test(hay)) flags.push('omega3');
+  if(/salmon|salmone|sardine|tuna|tonno|mackerel|sgombro|anchovy|acciug|sole|sogliola/.test(hay)) flags.push('omega3');
   if(/fermented|kefir|kimchi|sauerkraut|crauti|miso|tempeh/.test(hay)) flags.push('fermented');
   return flags;
 }

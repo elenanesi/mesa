@@ -53,6 +53,21 @@ const FOODS = {
     kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5, sugars: 7.0, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', breakfastPair: true, iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
   },
+  'blueberries': {
+    name: 'Blueberries, raw', per: 100, unit: 'g',
+    kcal: 64, protein: 0.7, carbs: 14.5, fat: 0.3, satFat: 0.0, fiber: 2.4, sugars: 10.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'blueberries', src: 'USDA FDC 171711-style (blueberries, raw); kcal per 4/4/9'
+  },
+  'strawberries': {
+    name: 'Strawberries, raw', per: 100, unit: 'g',
+    kcal: 36, protein: 0.7, carbs: 7.7, fat: 0.3, satFat: 0.0, fiber: 2.0, sugars: 4.9, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'strawberries', src: 'USDA FDC 167762-style (strawberries, raw); kcal per 4/4/9'
+  },
+  'wild-strawberries': {
+    name: 'Wild strawberries, raw', per: 100, unit: 'g',
+    kcal: 37, protein: 0.8, carbs: 7.5, fat: 0.4, satFat: 0.0, fiber: 2.0, sugars: 4.9, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'wild-strawberries', src: 'Wild strawberry representative raw-fruit table; kcal per 4/4/9'
+  },
   'bell-pepper': {
     name: 'Bell pepper, red, raw', per: 100, unit: 'g',
     kcal: 31, protein: 1.0, carbs: 6.0, fat: 0.3, satFat: 0.0, fiber: 2.1,
@@ -214,12 +229,6 @@ const FOODS = {
     flags: [], cat: 'Produce',
     iconKey: 'bell-pepper', src: 'Composite: 60% red bell pepper + 40% spinach, weighted avg of USDA raw values'
   },
-  'roasted-mixed-veg': {
-    name: 'Roasted mixed veg (courgette, pepper, aubergine, onion)', per: 100, unit: 'g',
-    kcal: 58, protein: 1.1, carbs: 6.1, fat: 3.2, satFat: 0.4, fiber: 2.0,
-    flags: ['highFiber'], cat: 'Produce', season: 'spring/summer',
-    iconKey: 'courgette', src: 'Composite: equal-weight courgette + red bell pepper + aubergine + red onion (USDA raw) + ~3g/100g roasting oil'
-  },
   'broccoli-courgette': {
     name: 'Broccoli & courgette (blend)', per: 100, unit: 'g',
     kcal: 31, protein: 2.0, carbs: 4.9, fat: 0.4, satFat: 0.1, fiber: 1.8,
@@ -280,6 +289,16 @@ const FOODS = {
     kcal: 144, protein: 25.5, carbs: 5.1, fat: 2.0, satFat: 0.2, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
     flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'clams', src: 'USDA FDC-style (clams, cooked, moist heat); kcal per 4/4/9'
   },
+  'mussels': {
+    name: 'Mussels, cooked', per: 100, unit: 'g',
+    kcal: 165, protein: 23.8, carbs: 7.4, fat: 4.5, satFat: 0.9, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'mussels', src: 'USDA FDC-style (mussels, cooked, moist heat); kcal per 4/4/9'
+  },
+  'sole-fish': {
+    name: 'Sole fish, raw', per: 100, unit: 'g',
+    kcal: 86, protein: 18.8, carbs: 0, fat: 1.2, satFat: 0.3, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'sole-fish', src: 'USDA FDC-style (flatfish/sole, raw); kcal per 4/4/9'
+  },
   'chicken-thigh': {
     name: 'Chicken thigh, skinless, raw', per: 100, unit: 'g',
     kcal: 141, protein: 17.0, carbs: 0, fat: 8.1, satFat: 2.3, fiber: 0,
@@ -295,6 +314,11 @@ const FOODS = {
     kcal: 127, protein: 21.5, carbs: 0, fat: 4.5, satFat: 1.6, fiber: 0,
     flags: ['selenium'], cat: 'Protein', iconKey: 'pork-loin', src: 'USDA FDC 167907-style (pork loin, lean, raw)'
   },
+  'pork-sausage': {
+    name: 'Pork sausage, raw', per: 100, unit: 'g',
+    kcal: 315, protein: 16.0, carbs: 1.5, fat: 27.0, satFat: 9.0, fiber: 0, sugars: 0.5, freeSugars: 0.5, sugarQuality: 'added/free',
+    flags: ['selenium'], cat: 'Protein', iconKey: 'pork-sausage', src: 'USDA FDC-style (pork sausage, raw); kcal per 4/4/9'
+  },
   'bresaola': {
     name: 'Bresaola (cured beef), sliced', per: 100, unit: 'g',
     kcal: 148, protein: 32.0, carbs: 0.5, fat: 2.0, satFat: 0.8, fiber: 0,
@@ -309,6 +333,11 @@ const FOODS = {
     name: 'Prosciutto cotto / cooked ham', per: 100, unit: 'g',
     kcal: 145, protein: 20.0, carbs: 1.5, fat: 6.5, satFat: 2.1, fiber: 0,
     flags: ['selenium'], cat: 'Protein', iconKey: 'prosciutto-cotto', src: 'CREA-style Italian food table / deli ham average'
+  },
+  'speck': {
+    name: 'Speck, sliced', per: 100, unit: 'g',
+    kcal: 294, protein: 28.0, carbs: 0.5, fat: 20.0, satFat: 7.0, fiber: 0, sugars: 0.5, freeSugars: 0.5, sugarQuality: 'added/free',
+    flags: ['selenium'], cat: 'Protein', iconKey: 'speck', src: 'CREA-style Italian food table / cured speck label average; kcal per 4/4/9'
   },
   'tofu': {
     name: 'Tofu, firm', per: 100, unit: 'g',
@@ -393,10 +422,25 @@ const FOODS = {
     kcal: 65, protein: 3.3, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0, sugars: 4.8, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'milk', src: 'USDA FDC 746782 (milk, whole, 3.25-3.5% fat)'
   },
+  'semi-skimmed-milk': {
+    name: 'Milk, semi-skimmed (1.5-2% fat)', per: 100, unit: 'ml',
+    kcal: 47, protein: 3.4, carbs: 4.8, fat: 1.6, satFat: 1.0, fiber: 0, sugars: 4.8, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'USDA FDC-style / EU semi-skimmed milk label average; kcal per 4/4/9'
+  },
   'oat-milk': {
     name: 'Oat milk, unsweetened', per: 100, unit: 'ml',
     kcal: 43, protein: 0.6, carbs: 6.7, fat: 1.5, satFat: 0.2, fiber: 0.8, sugars: 3.3, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic oat milk, unsweetened, manufacturer label average'
+  },
+  'soy-milk': {
+    name: 'Soy milk, unsweetened', per: 100, unit: 'ml',
+    kcal: 36, protein: 3.3, carbs: 1.7, fat: 1.8, satFat: 0.3, fiber: 0.6, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic unsweetened soy milk label average; kcal per 4/4/9'
+  },
+  'almond-milk': {
+    name: 'Almond milk, unsweetened', per: 100, unit: 'ml',
+    kcal: 13, protein: 0.4, carbs: 0.3, fat: 1.1, satFat: 0.1, fiber: 0.3, sugars: 0.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic unsweetened almond milk label average; kcal per 4/4/9'
   },
   'espresso-unsweetened': {
     name: 'Coffee / espresso, no sugar', per: 1, unit: 'piece', avgG: 1,
@@ -504,11 +548,6 @@ const FOODS = {
     kcal: 263, protein: 11.0, carbs: 36.0, fat: 8.0, satFat: 3.0, fiber: 2.0, sugars: 2.0, freeSugars: 0.5, sugarQuality: 'mixed',
     flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC-style (ravioli, cheese-filled, fresh); representative filled-pasta average'
   },
-  'spring-rolls': {
-    name: 'Spring rolls, vegetable, baked', per: 100, unit: 'g',
-    kcal: 218, protein: 4.0, carbs: 30.0, fat: 9.0, satFat: 1.4, fiber: 3.0, sugars: 3.5, freeSugars: 1.5, sugarQuality: 'mixed',
-    flags: [], cat: 'Frozen', iconKey: 'pasta-filo', src: 'USDA FDC-style (vegetable spring rolls, baked/frozen); representative appetizer average'
-  },
   'tomato-passata': {
     name: 'Tomato passata', per: 100, unit: 'g',
     kcal: 29, protein: 1.4, carbs: 5.0, fat: 0.2, satFat: 0.0, fiber: 1.4, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
@@ -584,35 +623,10 @@ const FOODS = {
     kcal: 402, protein: 80.0, carbs: 7.0, fat: 6.0, satFat: 3.0, fiber: 0,
     flags: [], cat: 'Pantry', iconKey: 'whey-protein-powder', src: 'Generic whey protein powder label average; kcal per 4/4/9'
   },
-  'gelato-chocolate': {
-    name: 'Gelato, chocolate', per: 100, unit: 'g',
-    kcal: 206, protein: 4.0, carbs: 25.0, fat: 10.0, satFat: 6.5, fiber: 1.5, sugars: 22.0, freeSugars: 18.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Frozen', iconKey: 'gelato-chocolate', src: 'Italian gelato manufacturer label average (chocolate)'
-  },
-  'gelato-stracciatella': {
-    name: 'Gelato, stracciatella', per: 100, unit: 'g',
-    kcal: 209, protein: 3.5, carbs: 24.0, fat: 11.0, satFat: 7.0, fiber: 0.5, sugars: 21.0, freeSugars: 17.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Frozen', iconKey: 'gelato-stracciatella', src: 'Italian gelato manufacturer label average (stracciatella)'
-  },
-  'gelato-yogurt': {
-    name: 'Gelato, yogurt', per: 100, unit: 'g',
-    kcal: 173, protein: 4.0, carbs: 28.0, fat: 5.0, satFat: 3.2, fiber: 0, sugars: 25.0, freeSugars: 19.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Frozen', iconKey: 'gelato-yogurt', src: 'Italian gelato manufacturer label average (yogurt)'
-  },
-  'gelato-crema': {
-    name: 'Gelato, crema', per: 100, unit: 'g',
-    kcal: 192, protein: 4.0, carbs: 26.0, fat: 8.0, satFat: 5.0, fiber: 0, sugars: 23.0, freeSugars: 18.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Frozen', iconKey: 'gelato-crema', src: 'Italian gelato manufacturer label average (crema)'
-  },
   'fast-food-beef-burger': {
     name: 'Fast-food beef burger', per: 100, unit: 'g',
     kcal: 255, protein: 12.0, carbs: 27.0, fat: 11.0, satFat: 4.0, fiber: 1.5,
     flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: 'USDA FDC-style branded fast-food cheeseburger average'
-  },
-  'fast-food-fries': {
-    name: 'Fast-food fries', per: 100, unit: 'g',
-    kcal: 313, protein: 3.4, carbs: 41.0, fat: 15.0, satFat: 2.3, fiber: 3.8,
-    flags: [], cat: 'Frozen', iconKey: 'fast-food-fries', src: 'USDA FDC 170698-style fast-food french fries average'
   },
   'cola': {
     name: 'Cola', per: 100, unit: 'ml',
@@ -670,11 +684,6 @@ const FOODS = {
     kcal: 605, protein: 30.2, carbs: 10.7, fat: 49.0, satFat: 8.7, fiber: 6.0,
     flags: ['omega3'], cat: 'Pantry', iconKey: 'pumpkin-seeds', src: 'USDA FDC 170556 (seeds, pumpkin, hulled, raw)'
   },
-  'hummus': {
-    name: 'Hummus', per: 100, unit: 'g',
-    kcal: 175, protein: 7.9, carbs: 14.3, fat: 9.6, satFat: 1.3, fiber: 6.0,
-    flags: ['highFiber', 'glutenFree'], cat: 'Pantry', iconKey: 'chickpeas', src: 'USDA FDC 172420-style (hummus, commercial)'
-  },
   'coconut-milk': {
     name: 'Coconut milk, canned (regular)', per: 100, unit: 'ml',
     kcal: 245, protein: 2.3, carbs: 5.5, fat: 23.8, satFat: 21.1, fiber: 2.2,
@@ -696,11 +705,17 @@ const FOODS = {
     flags: [], cat: 'Pantry', iconKey: 'herbs-black-pepper',
     src: 'Composite: generic dried mixed herbs + ground black pepper, USDA spice-table averages (used in "to taste" amounts, negligible actual contribution)'
   },
-  'vanilla-cinnamon': {
-    name: 'Vanilla or cinnamon (to taste)', per: 100, unit: 'g',
-    kcal: 202, protein: 2.0, carbs: 47.0, fat: 0.7, satFat: 0.2, fiber: 27.0,
-    flags: [], cat: 'Pantry', iconKey: 'vanilla-cinnamon',
-    src: 'Composite: 50/50 vanilla extract + ground cinnamon, USDA spice-table averages (used in "to taste" amounts, negligible actual contribution)'
+  'vanilla': {
+    name: 'Vanilla (to taste)', per: 100, unit: 'g',
+    kcal: 52, protein: 0.1, carbs: 12.7, fat: 0.1, satFat: 0.0, fiber: 0, sugars: 12.7, freeSugars: 12.7, sugarQuality: 'added/free',
+    flags: [], cat: 'Pantry', iconKey: 'vanilla',
+    src: 'USDA FDC-style vanilla extract macro-only entry; kcal per 4/4/9 (used in tiny to-taste amounts)'
+  },
+  'cinnamon': {
+    name: 'Cinnamon, ground', per: 100, unit: 'g',
+    kcal: 349, protein: 4.0, carbs: 80.6, fat: 1.2, satFat: 0.3, fiber: 53.1, sugars: 2.2, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['highFiber'], cat: 'Pantry', iconKey: 'cinnamon',
+    src: 'USDA FDC-style cinnamon, ground; kcal per 4/4/9 (used in tiny to-taste amounts)'
   }
 
 };
@@ -740,7 +755,6 @@ const FOOD_ALIASES = {
   'Olive oil': 'olive-oil',
   'Herbs & black pepper': 'herbs-black-pepper',
   'Cooked lentils': 'cooked-lentils',
-  'Roasted mixed veg': 'roasted-mixed-veg',
   'Feta cheese': 'feta-cheese',
   'Rocket / arugula': 'rocket-arugula',
   'Olive oil & lemon dressing': 'olive-oil-lemon-dressing',
@@ -759,7 +773,6 @@ const FOOD_ALIASES = {
   'Grilled chicken breast': 'chicken-breast',
   'Cooked farro': 'farro-cooked',
   'Coconut milk': 'coconut-milk',
-  'Vanilla or cinnamon': 'vanilla-cinnamon',
   'Tuna in olive oil, drained': 'tuna-in-olive-oil',
   'Avocado': 'avocado',
   'Cherry tomatoes & cucumber': 'cherry-tomatoes-cucumber',
@@ -788,10 +801,10 @@ const ALLOWED_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree'
 const RECIPE_INGREDIENT_NAMES = [
   'Greek yogurt, plain', 'Mixed berries', 'Granola', 'Honey', 'Chia seeds',
   'Eggs', 'Mixed peppers & spinach', 'Rye bread', 'Olive oil', 'Herbs & black pepper',
-  'Cooked lentils', 'Roasted mixed veg', 'Feta cheese', 'Rocket / arugula', 'Olive oil & lemon dressing',
+  'Cooked lentils', 'Feta cheese', 'Rocket / arugula', 'Olive oil & lemon dressing',
   'Salmon fillet', 'Quinoa, dry', 'Baby spinach', 'Broccoli', 'Olive oil, lemon, garlic',
   'Skyr, plain', 'Pumpkin & chia seeds', 'Sliced turkey breast', 'Grilled chicken breast', 'Cooked farro',
-  'Coconut milk', 'Vanilla or cinnamon', 'Tuna in olive oil, drained', 'Avocado', 'Cherry tomatoes & cucumber',
+  'Coconut milk', 'Tuna in olive oil, drained', 'Avocado', 'Cherry tomatoes & cucumber',
   'Broccoli & courgette'
 ];
 
