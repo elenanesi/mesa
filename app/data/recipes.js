@@ -34,6 +34,25 @@
      avoid   — ingredient-level allergen/dislike keys this dish
                inherently contains, subset of: lactose, gluten,
                shellfish, nuts, spicy, raw-onion
+     optionGroups — OPTIONAL (task D1, mains/full meals only), variants of a
+               dish: [{key, label, choices: [{id, label, ingredients:
+               [[foodId, grams], ...]}, ...]}, ...]. `ingredients` above
+               stays the BASE (common) list shared by every choice; a
+               recipe's EFFECTIVE ingredients = base + the chosen choice's
+               ingredients per group (js/engine.js:recipeEffectiveIngredients,
+               the single source nutrition/shopping/display/validation all
+               read through). choices[0] (authored order, NOT sorted by id)
+               is the deterministic default when no opts are given
+               (js/engine.js:normalizeRecipeOpts). The planner rotates the
+               choice per pick deterministically — see
+               js/planner.js:chosenOptsForRecipe for the exact formula — and
+               a choice with zero allowed options after a person's avoid-list
+               is filtered out (js/planner.js:allowedChoicesForGroup); a
+               group left with zero allowed choices drops the whole recipe
+               from that candidate pool (js/planner.js:recipeOptionsViable).
+               Display titles for a recipe with optionGroups append the
+               chosen choice's label(s) in parens (js/render.js:
+               recipeDisplayTitle), e.g. "Baked fish (sea bass)".
 
    The 10 mockup recipes (see app/js/state.js RECIPES) are migrated below
    under their EXACT original keys (yogurt, omelette, lentil, salmon,

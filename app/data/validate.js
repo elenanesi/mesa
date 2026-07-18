@@ -66,7 +66,16 @@ const SLOT_MIN = { breakfast: 7, lunch: 8, dinner: 9, snack: 6 };
 // have >=5 options per main slot"). Snack has no style-coverage requirement.
 const STYLE_SLOT_MIN = 5;
 
-function recipeMacros(recipeId) {
+// task D1: `opts` (optional, {groupKey: choiceId}) picks a variant combo when `recipeId`
+// carries optionGroups — resolved via engine.js:recipeEffectiveIngredients, the same
+// single source recipeNutrition/computeShoppingList/recipeDisplayIngredients read
+// through, so validate.js can never disagree with the live app about what a combo
+// contains. engine.js loads AFTER this file (app/index.html script order) but this
+// function is only ever CALLED after full app boot, by which time
+// recipeEffectiveIngredients is a defined global (functions resolve names at call time
+// in this shared no-modules scope, not at parse time) — guarded anyway for a headless
+// call before engine.js loads.
+function recipeMacros(recipeId, opts) {
   if (typeof RECIPES_DB === 'undefined') return null;
   const r = RECIPES_DB[recipeId];
   if (!r) return null;
@@ -77,8 +86,9 @@ function recipeMacros(recipeId) {
   // Ingredients describe the whole batch; r.servings (default 1) is how many
   // servings that batch makes. All checks here are per-serving quantities.
   const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
+  const ingredientList = (typeof recipeEffectiveIngredients === 'function') ? recipeEffectiveIngredients(r, opts) : (r.ingredients || []);
 
-  (r.ingredients || []).forEach(function (ing) {
+  ingredientList.forEach(function (ing) {
     const foodId = ing[0], grams = ing[1] / batchYield;
     const food = FOODS[foodId];
     if (!food) { resolved = false; return; }
@@ -210,6 +220,56 @@ function validateData() {
       });
     }
 
+    // task D1: optionGroups structural checks — ERROR level (a malformed combo can break
+    // planning/nutrition, not just look wrong). Unique group keys, unique choice ids per
+    // group, >=2 choices per group (a 1-choice "group" isn't a choice), labels on both
+    // groups and choices (recipeDisplayTitle/the recipe-screen chips read these), and
+    // (once foods.js is loaded) every choice ingredient id resolves against FOODS —
+    // exactly the same shape check the base `ingredients` array gets above.
+    if ('optionGroups' in r) {
+      if (!Array.isArray(r.optionGroups) || !r.optionGroups.length) {
+        errors.push(prefix + 'optionGroups must be a non-empty array when present');
+      } else {
+        const groupKeysSeen = {};
+        r.optionGroups.forEach(function (group) {
+          if (!group || typeof group.key !== 'string' || !group.key) {
+            errors.push(prefix + 'optionGroups entry missing a valid "key"');
+            return;
+          }
+          const gPrefix = prefix + 'optionGroups["' + group.key + '"] ';
+          if (groupKeysSeen[group.key]) errors.push(prefix + 'duplicate optionGroups key "' + group.key + '"');
+          groupKeysSeen[group.key] = true;
+          if (typeof group.label !== 'string' || !group.label) errors.push(gPrefix + 'missing a "label"');
+          if (!Array.isArray(group.choices) || group.choices.length < 2) {
+            errors.push(gPrefix + 'needs >= 2 choices');
+            return;
+          }
+          const choiceIdsSeen = {};
+          group.choices.forEach(function (choice) {
+            if (!choice || typeof choice.id !== 'string' || !choice.id) {
+              errors.push(gPrefix + 'choice missing a valid "id"');
+              return;
+            }
+            const cPrefix = gPrefix + 'choice "' + choice.id + '" ';
+            if (choiceIdsSeen[choice.id]) errors.push(gPrefix + 'duplicate choice id "' + choice.id + '"');
+            choiceIdsSeen[choice.id] = true;
+            if (typeof choice.label !== 'string' || !choice.label) errors.push(cPrefix + 'missing a "label"');
+            if (!Array.isArray(choice.ingredients) || !choice.ingredients.length) {
+              errors.push(cPrefix + 'needs a non-empty ingredients array');
+            } else {
+              choice.ingredients.forEach(function (ing) {
+                if (!Array.isArray(ing) || ing.length !== 2 || typeof ing[0] !== 'string' || typeof ing[1] !== 'number' || ing[1] <= 0) {
+                  errors.push(cPrefix + 'malformed ingredient entry ' + JSON.stringify(ing));
+                  return;
+                }
+                if (foodsLoaded && !FOODS[ing[0]]) errors.push(cPrefix + 'ingredient id "' + ing[0] + '" not found in FOODS');
+              });
+            }
+          });
+        });
+      }
+    }
+
     if(foodsLoaded){
       const m = recipeMacros(id);
       if(m && m.resolved){
@@ -284,6 +344,32 @@ function validateData() {
         if (m.kcal < roleBand[0] || m.kcal > roleBand[1]) {
           warnings.push(prefix + 'computed kcal ' + Math.round(m.kcal) + ' is outside the plausible band ' + roleBand[0] + '-' + roleBand[1] + ' for role "' + r.role + '".');
         }
+      }
+    }
+
+    // task D1: per-choice kcal-band plausibility — always a WARNING (never escalated to
+    // the recipe's ERROR set), since only the DEFAULT combo checked above is a real data
+    // problem; an individual variant landing outside the band is expected/acceptable
+    // (e.g. a leaner fish choice running a touch under a fattier default). Checked against
+    // the SAME band the default combo used above (role:'full' -> KCAL_BAND[slot], else
+    // ROLE_KCAL_BAND[role]), one choice at a time (every OTHER group held at its default
+    // via recipeMacros(id, {[group.key]: choice.id}) -> normalizeRecipeOpts).
+    if (foodsLoaded && slotValid && !r.occasional && Array.isArray(r.optionGroups) && r.optionGroups.length) {
+      const band = r.role === 'full' ? KCAL_BAND[r.slot] : ROLE_KCAL_BAND[r.role];
+      if (band) {
+        r.optionGroups.forEach(function (group) {
+          if (!group || typeof group.key !== 'string') return;
+          (group.choices || []).forEach(function (choice) {
+            if (!choice || typeof choice.id !== 'string') return;
+            const optsForChoice = {};
+            optsForChoice[group.key] = choice.id;
+            const cm = recipeMacros(id, optsForChoice);
+            if (!cm || !cm.resolved) return; // already reported as a structural error above
+            if (cm.kcal < band[0] || cm.kcal > band[1]) {
+              warnings.push(prefix + 'option "' + group.key + ':' + choice.id + '" computed kcal ' + Math.round(cm.kcal) + ' is outside the plausible band ' + band[0] + '-' + band[1] + ' (single-choice deviation from the default combo).');
+            }
+          });
+        });
       }
     }
   });

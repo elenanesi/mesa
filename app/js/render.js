@@ -45,13 +45,17 @@ function recipeServingContextFor(key){
     const dateISO = day.date || addDaysISO(plan.weekStartDate, dayIndex);
     const logged = loggedPlanEntryForSlot(dateISO, person, slot);
     if(logged && logged.ref === key){
-      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged'};
+      // task D1: the frozen variant this slot was actually logged with, if any — the
+      // recipe-screen chips (renderRecipeOptionsChips) open pre-selected to it.
+      const loggedComponents = Array.isArray(logged.components) && logged.components.length ? logged.components : null;
+      const loggedOpts = loggedComponents && loggedComponents[0] && loggedComponents[0].opts;
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged', opts: loggedOpts};
     }
     if(meal.shared && meal.recipeId === key){
-      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan'};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan', opts: meal.elena.opts};
     }
     if(meal[person] && meal[person].recipeId === key){
-      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan'};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan', opts: meal[person].opts};
     }
     return null;
   }
@@ -78,11 +82,18 @@ function recipeServingContextFor(key){
 // via avgG instead of showing grams; toTaste entries (pantry staples not counted in
 // nutrition) append as [label, null, 'to taste'] rows. updateServings() multiplies qty by
 // the current total servings at render time.
-function recipeDisplayIngredients(recipeId){
+// `opts` (task D1, optional — {groupKey: choiceId}): resolved through
+// engine.js:recipeEffectiveIngredients, the same single source recipeNutrition/
+// computeShoppingList/validate.js's recipeMacros read through, so the ingredient rows a
+// recipe with optionGroups shows always match whichever variant's numbers are on screen.
+// Every pre-existing call site omits `opts`, which normalizes to the deterministic
+// default combo for a recipe WITH optionGroups, or {} (bare `ingredients`, unchanged) for
+// one without — byte-identical to pre-D1 output either way.
+function recipeDisplayIngredients(recipeId, opts){
   const src = RECIPES_DB[recipeId];
   if(!src) return [];
   const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
-  const ingredients = src.ingredients.map(function(ing){
+  const ingredients = recipeEffectiveIngredients(src, opts).map(function(ing){
     const foodId = ing[0], grams = +(ing[1] / batchYield).toFixed(1);
     const food = FOODS[foodId];
     if(!food){ console.error('recipeDisplayIngredients: "' + recipeId + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
@@ -100,6 +111,27 @@ function recipeDisplayPills(recipeId){
   const src = RECIPES_DB[recipeId];
   if(!src) return [];
   return src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; });
+}
+
+// task D1: the ONE title helper every Today/Week/Log/recipe-screen path reads through
+// (mealTitleWithExtras, logEntryTitleWithComponents, renderRecipe/renderRecipeMealStrip
+// below) so a plan/log title can never show one variant's label while another surface
+// shows a different (or no) one. Recipes without optionGroups: identical to the bare
+// title (byte-for-byte — no parens, no behavior change). `opts` missing/invalid falls
+// back to the deterministic default combo (normalizeRecipeOpts), so a stale/legacy
+// component with no `.opts` field still shows a sensible ("default choice") label.
+function recipeDisplayTitle(id, opts){
+  const r = RECIPES_DB[id];
+  if(!r) return '';
+  if(!Array.isArray(r.optionGroups) || !r.optionGroups.length) return r.title;
+  const normalized = normalizeRecipeOpts(r, opts);
+  const labels = r.optionGroups.map(function(group){
+    if(!group || typeof group.key !== 'string') return null;
+    const choiceId = normalized[group.key];
+    const choice = (group.choices || []).filter(function(c){ return c && c.id === choiceId; })[0];
+    return choice ? choice.label : null;
+  }).filter(Boolean);
+  return labels.length ? (r.title + ' (' + labels.join(', ') + ')') : r.title;
 }
 
 const DEFAULT_RECIPE_IMAGE_ASSET = 'assets/recipes/default-recipe.png';
@@ -205,18 +237,89 @@ function renderRecipe(key){
       svS = recipeServingCtx.solo || 1;
     }
   }
-  const base = recipeNutrition(currentRecipeKey, 1).totals; // one serving, same scale the old compat view used
+  // task D1: opens pre-selected to whatever variant this slot is actually planned/logged
+  // with (recipeServingCtx.opts), falling back to the deterministic default combo when
+  // opened from the library (no plan/log context) or for a recipe without optionGroups —
+  // normalizeRecipeOpts handles both (bad/missing opts -> default, {} when no groups).
+  recipeOptsCtx = normalizeRecipeOpts(r, recipeServingCtx && recipeServingCtx.opts);
+  const base = recipeNutrition(currentRecipeKey, 1, recipeOptsCtx).totals; // one serving, same scale the old compat view used
   document.getElementById('recipeHero').innerHTML = recipeHeroHtml(r, currentRecipeKey);
-  document.getElementById('recipeTitle').textContent = r.title;
+  document.getElementById('recipeTitle').textContent = recipeDisplayTitle(currentRecipeKey, recipeOptsCtx);
   document.getElementById('rsTime').textContent = '⏱️ ' + r.time + ' min';
   document.getElementById('rsKcal').textContent = '🔥 ' + Math.round(base.kcal) + ' kcal';
   document.getElementById('rsProt').textContent = '💪 ' + Math.round(base.protein) + 'g protein';
   document.getElementById('recipeTags').innerHTML = recipeDisplayPills(currentRecipeKey).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+  renderRecipeOptionsChips();
   updateRecipeWhy();
   document.getElementById('recipeMethod').innerHTML = r.steps.map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('');
   updateServings();
   renderRecipeEatenState(); // fresh eaten/skipped read every time the recipe screen paints (open, re-render on plan change, swap)
   renderRecipeMealStrip();
+}
+
+/* ---------------- task D1: recipe options/variants — recipe-screen chips ----------------
+   recipeOptsCtx holds the currently-shown combo ({groupKey: choiceId}) for
+   currentRecipeKey — set fresh by renderRecipe() on open, updated in place by
+   chooseRecipeOption() on a chip tap. A chip row per optionGroups group (existing
+   .pill.chip-preset/.chipsel look, sized to the 44px tap-target minimum via
+   .recipe-opt-chip in mesa.css); nothing renders for a recipe without optionGroups. */
+let recipeOptsCtx = null;
+
+function renderRecipeOptionsChips(){
+  const wrap = document.getElementById('recipeOptionsWrap');
+  if(!wrap) return;
+  const r = RECIPES_DB[currentRecipeKey];
+  if(!r || !Array.isArray(r.optionGroups) || !r.optionGroups.length){
+    wrap.innerHTML = '';
+    wrap.style.display = 'none';
+    return;
+  }
+  recipeOptsCtx = normalizeRecipeOpts(r, recipeOptsCtx);
+  wrap.style.display = 'block';
+  // Choice ids are app-authored constants (built-in RECIPES_DB only, per D1's scope cut),
+  // but still ride data-* attributes with a delegated handler rather than inline onclick —
+  // same escaping discipline the rest of the app applies to every dynamic row.
+  wrap.innerHTML = r.optionGroups.map(function(group){
+    const chips = (group.choices || []).map(function(choice){
+      const on = recipeOptsCtx[group.key] === choice.id;
+      return '<button type="button" class="pill ghost chip-preset recipe-opt-chip' + (on ? ' chipsel' : '') + '"'
+        + ' data-opt-group="' + htmlAttr(group.key) + '" data-opt-choice="' + htmlAttr(choice.id) + '">'
+        + escapeHtml(choice.label) + '</button>';
+    }).join('');
+    return '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">'
+      + '<span class="sub" style="margin:0 2px 0 0">' + escapeHtml(group.label) + '</span>' + chips + '</div>';
+  }).join('');
+  attachRecipeOptionsHandler();
+}
+
+function attachRecipeOptionsHandler(){
+  const wrap = document.getElementById('recipeOptionsWrap');
+  if(!wrap) return;
+  wrap.onclick = function(e){
+    const btn = e.target.closest('button[data-opt-group]');
+    if(!btn || !wrap.contains(btn)) return;
+    chooseRecipeOption(btn.getAttribute('data-opt-group'), btn.getAttribute('data-opt-choice'));
+  };
+}
+
+// A chip tap: updates the currently-shown combo, recomputes ingredients/nutrition live at
+// the current servings (same recompute updateServings() already does on a servings-
+// stepper tap), writes back to whatever plan/log context this recipe screen opened from
+// (applyRecipeOptsOverride — mirrors adjServe/applyRecipeServingOverride's mechanics
+// exactly), and repaints the chip row so the new selection highlights.
+function chooseRecipeOption(groupKey, choiceId){
+  const r = RECIPES_DB[currentRecipeKey];
+  if(!r || !Array.isArray(r.optionGroups)) return;
+  const group = r.optionGroups.filter(function(g){ return g.key === groupKey; })[0];
+  if(!group || !(group.choices || []).some(function(c){ return c.id === choiceId; })) return;
+  const requested = Object.assign({}, recipeOptsCtx);
+  requested[groupKey] = choiceId;
+  recipeOptsCtx = normalizeRecipeOpts(r, requested);
+  document.getElementById('recipeTitle').textContent = recipeDisplayTitle(currentRecipeKey, recipeOptsCtx);
+  renderRecipeOptionsChips();
+  updateServings();
+  applyRecipeOptsOverride();
+  persist();
 }
 
 // Task C3: "why this fits you" is per-PERSON (whyText(recipeId, profKey) — state.js), so
@@ -252,7 +355,11 @@ function applyRecipeServingOverride(){
     const components = Array.isArray(logged.components) && logged.components.length
       ? logged.components.slice()
       : [{recipeId: logged.ref, portion: logged.portion || 1}];
-    components[0] = {recipeId: currentRecipeKey, portion: portion};
+    // task D1: carry forward whatever variant is currently shown (recipeOptsCtx) — a
+    // servings-only change must not silently drop an already-chosen combo back to default.
+    const baseComponent = {recipeId: currentRecipeKey, portion: portion};
+    if(recipeOptsCtx && Object.keys(recipeOptsCtx).length) baseComponent.opts = recipeOptsCtx;
+    components[0] = baseComponent;
     logPlanEntry(dateISO, recipeServingCtx.person || currentProf, slot, currentRecipeKey, portion, components);
     refreshAfterRecipeServingOverride(dateISO);
     return;
@@ -275,6 +382,57 @@ function applyRecipeServingOverride(){
     const entry = meal[person];
     if(!entry || entry.recipeId !== currentRecipeKey) return;
     entry.portion = svS;
+    refreshPlanEntryNutrition(entry);
+    entry.t = Date.now();
+    if(!meal.shared) delete meal.t;
+  }
+  refreshAfterRecipeServingOverride(dateISO);
+}
+
+// task D1: writes recipeOptsCtx (the combo currently shown after a chip tap) back to the
+// exact plan/log context this recipe screen opened from — mirrors
+// applyRecipeServingOverride() above line for line (logged -> correct the frozen
+// LogEntry's component[0] in place via logPlanEntry; plan -> mutate the meal entry/entries
+// directly + refreshPlanEntryNutrition), just setting `.opts` instead of `.portion`.
+// Library origin (recipeServingCtx null) previews only — nothing to write back to.
+function applyRecipeOptsOverride(){
+  if(!recipeServingCtx || !recipeServingCtx.slot) return;
+  const dateISO = recipeServingCtx.dateISO || todayISO();
+  const slot = recipeServingCtx.slot;
+  const opts = recipeOptsCtx;
+
+  if(recipeServingCtx.source === 'logged'){
+    const logged = loggedPlanEntryForSlot(dateISO, recipeServingCtx.person || currentProf, slot);
+    if(!logged || logged.ref !== currentRecipeKey) return;
+    const portion = recipeServingCtx.shared
+      ? (currentProf === 'partner' ? svM : svE)
+      : svS;
+    const components = Array.isArray(logged.components) && logged.components.length
+      ? logged.components.slice()
+      : [{recipeId: logged.ref, portion: logged.portion || 1}];
+    components[0] = {recipeId: currentRecipeKey, portion: portion, opts: opts};
+    logPlanEntry(dateISO, recipeServingCtx.person || currentProf, slot, currentRecipeKey, portion, components);
+    refreshAfterRecipeServingOverride(dateISO);
+    return;
+  }
+
+  const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
+  const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+  const plan = editableWeekPlan(weekStartDate);
+  const meal = plan && plan.days && plan.days[dayIndex] && plan.days[dayIndex].meals && plan.days[dayIndex].meals[slot];
+  if(!meal) return;
+
+  if(recipeServingCtx.shared && meal.shared && meal.recipeId === currentRecipeKey){
+    meal.elena.opts = opts;
+    meal.partner.opts = opts;
+    refreshPlanEntryNutrition(meal.elena);
+    refreshPlanEntryNutrition(meal.partner);
+    meal.t = Date.now();
+  } else {
+    const person = recipeServingCtx.person || currentProf;
+    const entry = meal[person];
+    if(!entry || entry.recipeId !== currentRecipeKey) return;
+    entry.opts = opts;
     refreshPlanEntryNutrition(entry);
     entry.t = Date.now();
     if(!meal.shared) delete meal.t;
@@ -315,7 +473,7 @@ function updateServings(){
     document.getElementById('rsServesMeta').textContent = '🍽️ ' + total + ' ' + label;
     document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' ' + label;
   }
-  const ingredients = recipeDisplayIngredients(currentRecipeKey);
+  const ingredients = recipeDisplayIngredients(currentRecipeKey, recipeOptsCtx);
   document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
     const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
     if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
@@ -333,7 +491,7 @@ function updateServings(){
 function updateNutritionGrid(total){
   const header = document.getElementById('nutriHeader');
   if(header) header.textContent = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
-  const nut = recipeNutrition(currentRecipeKey, total).totals;
+  const nut = recipeNutrition(currentRecipeKey, total, recipeOptsCtx).totals;
   const topKcal = document.getElementById('rsKcal');
   const topProt = document.getElementById('rsProt');
   if(topKcal) topKcal.textContent = '🔥 ' + fmtKcal(Math.round(nut.kcal)) + ' kcal';
@@ -441,14 +599,14 @@ function renderRecipeMealStrip(){
     wrap.innerHTML = '';
     return;
   }
-  const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion).totals);
+  const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion, view.opts).totals);
   let rows = '<div class="row between"><b style="font-size:14px">In this meal</b>'
     + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\'' + slot + '\')">Manage</button></div>'
-    + '<div class="logitem"><div class="li-t">' + escapeHtml(RECIPES_DB[view.recipeId].title) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';
+    + '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(view.recipeId, view.opts)) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';
   view.extras.forEach(function(c){
     if(!RECIPES_DB[c.recipeId]) return;
-    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1).totals);
-    rows += '<div class="logitem"><div class="li-t">' + escapeHtml(RECIPES_DB[c.recipeId].title) + '<small>' + nut.kcal + ' kcal</small></div></div>';
+    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1, c.opts).totals);
+    rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(c.recipeId, c.opts)) + '<small>' + nut.kcal + ' kcal</small></div></div>';
   });
   rows += '<div class="logitem" style="border-bottom:0"><div class="li-t"><b>Meal total</b><small><b>' + view.kcal + ' kcal</b></small></div></div>';
   wrap.innerHTML = rows;
@@ -1163,7 +1321,7 @@ function mealRecipeOptions(components){
 }
 
 function componentTitle(c){
-  if(c && c.recipeId && RECIPES_DB[c.recipeId]) return RECIPES_DB[c.recipeId].title;
+  if(c && c.recipeId && RECIPES_DB[c.recipeId]) return recipeDisplayTitle(c.recipeId, c.opts);
   if(c && c.foodId && FOODS[c.foodId]) return FOODS[c.foodId].name;
   return null;
 }
@@ -2347,6 +2505,7 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
     return {
       recipeId: logged.ref,
       recipe: RECIPES_DB[logged.ref],
+      opts: loggedComponents[0] && loggedComponents[0].opts,
       components: loggedComponents,
       extras: loggedComponents.slice(1),
       kcal: nut.kcal,
@@ -2368,6 +2527,7 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
   return {
     recipeId: planned ? planned.recipeId : null,
     recipe: recipe,
+    opts: plannedComponents[0] && plannedComponents[0].opts,
     components: plannedComponents,
     extras: plannedComponents.slice(1),
     kcal: nut ? nut.kcal : 0,
@@ -2399,19 +2559,24 @@ function displayedTodayRecipeId(slot){
   return view.recipeId;
 }
 
+// task D1: base title runs through recipeDisplayTitle(view.recipeId, view.opts) — appends
+// the chosen variant's label(s) in parens for a recipe with optionGroups, unchanged for
+// one without — so every Today/Week/pinned-routine card reading this (see call sites)
+// shows the actual planned/logged variant, never just the bare recipe title.
 function mealTitleWithExtras(view){
   if(!view || !view.recipe) return '';
   const extras = (view.extras || []).map(function(c){
     return componentTitle(c);
   }).filter(Boolean);
-  return view.recipe.title + (extras.length ? ' + ' + extras.join(' + ') : '');
+  return recipeDisplayTitle(view.recipeId, view.opts) + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
 function logEntryTitleWithComponents(entry){
   if(!entry || entry.kind !== 'plan') return '';
-  const base = RECIPES_DB[entry.ref] ? RECIPES_DB[entry.ref].title : 'Meal';
-  const parts = Array.isArray(entry.components) ? entry.components.slice(1) : [];
-  const extras = parts.map(componentTitle).filter(Boolean);
+  const parts = Array.isArray(entry.components) ? entry.components : [];
+  const baseOpts = parts[0] && parts[0].opts;
+  const base = RECIPES_DB[entry.ref] ? recipeDisplayTitle(entry.ref, baseOpts) : 'Meal';
+  const extras = parts.slice(1).map(componentTitle).filter(Boolean);
   return base + (extras.length ? ' + ' + extras.join(' + ') : '');
 }
 
