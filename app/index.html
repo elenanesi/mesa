@@ -193,13 +193,16 @@
 
     <!-- ============ RECIPE DETAIL ============ -->
     <section class="screen" id="recipe">
-      <button class="backbtn" onclick="go(recipeOrigin)">‹ Back</button>
-      <div class="hero" id="recipeHero">🐟</div>
-      <h1 style="margin-top:14px" id="recipeTitle">Baked salmon, quinoa & greens</h1>
-      <div class="meta-line" style="font-size:12.5px">
-        <span id="rsTime">⏱️ 25 min</span><span id="rsKcal">🔥 520 kcal</span><span id="rsProt">💪 38g protein</span><span id="rsServesMeta">👥 2.5 servings</span>
+      <div class="row between detail-title-row"><h1 id="recipeTitle">Baked salmon, quinoa & greens</h1><button class="backbtn" onclick="go(recipeOrigin)">‹ Back</button></div>
+      <div class="detail-hero recipe-detail-hero">
+        <div class="detail-hero-media recipe-hero-media" id="recipeHero">🐟</div>
+        <div class="detail-hero-body">
+          <div class="meta-line" style="font-size:12.5px">
+            <span id="rsTime">⏱️ 25 min</span><span id="rsKcal">🔥 520 kcal</span><span id="rsProt">💪 38g protein</span><span id="rsServesMeta">👥 2.5 servings</span>
+          </div>
+          <div class="tags detail-hero-badges" id="recipeTags"></div>
+        </div>
       </div>
-      <div class="tags" id="recipeTags" style="display:flex;gap:6px;flex-wrap:wrap;margin-top:12px"></div>
 
       <h2>Servings</h2>
       <div class="serve-row" id="serveRowShared">

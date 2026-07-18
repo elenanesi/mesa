@@ -204,16 +204,19 @@ function testRecipeRolesAndBreakfastPair(ctx){
   call(ctx, 'applyCustomRecipes', []); // rebuild RECIPES_DB without the test fixture before later tests run
 
   // Library-sync round-trip: mergeLibrarySection() (js/sync.js) is what applySyncResponse's
-  // 'library' branch runs incoming data through — role/breakfastPair must survive it
+  // 'library' branch runs incoming data through — role/imageKey/breakfastPair must survive it
   // unchanged, same as any other recipe/food field (extends the existing
   // mergeLibrarySection fixtures above rather than duplicating their setup).
   const local = emptyLibrarySection();
-  local.customRecipes['cr-role-roundtrip-test'] = {title: 'Role round-trip recipe', role: 'side', slot: 'side', u: 1000};
+  local.customRecipes['cr-role-roundtrip-test'] = {title: 'Role round-trip recipe', role: 'side', slot: 'side', imageKey: 'role-roundtrip-recipe', u: 1000};
   local.customFoods['cf-pair-roundtrip-test'] = {name: 'Pair round-trip food', breakfastPair: true, u: 1000};
   const remote = emptyLibrarySection();
   const merged = call(ctx, 'mergeLibrarySection', [cloneJSON(local), cloneJSON(remote)]);
   assert(!!merged.customRecipes['cr-role-roundtrip-test'] && merged.customRecipes['cr-role-roundtrip-test'].role === 'side',
     'mergeLibrarySection: a custom recipe\'s role survives the library section round-trip',
+    'got ' + JSON.stringify(merged.customRecipes['cr-role-roundtrip-test']));
+  assert(!!merged.customRecipes['cr-role-roundtrip-test'] && merged.customRecipes['cr-role-roundtrip-test'].imageKey === 'role-roundtrip-recipe',
+    'mergeLibrarySection: a custom recipe\'s imageKey survives the library section round-trip',
     'got ' + JSON.stringify(merged.customRecipes['cr-role-roundtrip-test']));
   assert(!!merged.customFoods['cf-pair-roundtrip-test'] && merged.customFoods['cf-pair-roundtrip-test'].breakfastPair === true,
     'mergeLibrarySection: a custom food\'s breakfastPair survives the library section round-trip',
@@ -645,6 +648,45 @@ function testRecipeDisplayHelpers(ctx){
     const ingredients = call(ctx, 'recipeDisplayIngredients', [id]);
     assert(JSON.stringify(ingredients) === JSON.stringify(expected.ingredients), 'recipeDisplayIngredients(' + JSON.stringify(id) + ') matches the frozen "ingredients" value', 'got ' + JSON.stringify(ingredients));
   });
+}
+
+function testRecipeImageHelpers(ctx){
+  assert(call(ctx, 'safeRecipeImageKey', ['salmon-greens']) === 'salmon-greens',
+    'safeRecipeImageKey: accepts a kebab-case image key', '');
+  assert(call(ctx, 'safeRecipeImageKey', ['../salmon']) === '',
+    'safeRecipeImageKey: rejects path traversal / format-invalid keys', '');
+  assert(call(ctx, 'safeRecipeImageAsset', ['assets/recipes/salmon-greens.png']) === 'assets/recipes/salmon-greens.png',
+    'safeRecipeImageAsset: accepts assets/recipes/<key>.png paths', '');
+  assert(call(ctx, 'safeRecipeImageAsset', ['assets/ingredients/salmon-greens.png']) === '',
+    'safeRecipeImageAsset: rejects non-recipe asset directories', '');
+
+  const recipe = {title: 'Hero test', emoji: '🍽️', imageKey: 'hero-test'};
+  assert(call(ctx, 'recipeImageAssetForRecipe', [recipe]) === 'assets/recipes/hero-test.png',
+    'recipeImageAssetForRecipe: maps imageKey to assets/recipes/<key>.png', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Breakfast bowl', emoji: '🥣', slot: 'breakfast', tags: [], ingredients: []}]) === 'assets/recipes/breakfast-bowl.png',
+    'recipeImageAssetForRecipe: infers the breakfast-bowl image for breakfast recipes', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Big salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}]) === 'assets/recipes/salad.png',
+    'recipeImageAssetForRecipe: infers the salad image for salad recipes', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Baked cod', emoji: '🐟', slot: 'dinner', tags: [], ingredients: [['cod', 120]]}]) === 'assets/recipes/fish-main.png',
+    'recipeImageAssetForRecipe: infers the fish-main image for fish recipes', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Roast chicken', emoji: '🍗', slot: 'dinner', tags: [], ingredients: [['chicken-breast', 120]]}]) === 'assets/recipes/meat-main.png',
+    'recipeImageAssetForRecipe: infers the meat-main image for meat recipes', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/default-recipe.png',
+    'recipeImageAssetForRecipe: custom recipes without imageKey use the default recipe image in this batch', '');
+
+  const html = call(ctx, 'recipeHeroHtml', [recipe]);
+  assert(html.indexOf('<img ') === 0 && html.indexOf('class="recipe-image"') !== -1 && html.indexOf('src="assets/recipes/hero-test.png"') !== -1,
+    'recipeHeroHtml: renders an image for recipes with imageKey', html);
+  assert(/onerror="this\.onerror=null;this\.replaceWith\(document\.createTextNode\(this\.getAttribute\('data-fallback'\)\|\|''\)\)"/.test(html),
+    'recipeHeroHtml: rendered image wires a DOM-level fallback to the recipe emoji', html);
+
+  const noImageHtml = call(ctx, 'recipeHeroHtml', [{title: 'No image', emoji: '<meal>'}]);
+  assert(noImageHtml.indexOf('src="assets/recipes/default-recipe.png"') !== -1 && noImageHtml.indexOf('data-fallback="&lt;meal&gt;"') !== -1,
+    'recipeHeroHtml: recipes without imageKey render the default image with escaped emoji/text fallback', noImageHtml);
+
+  const hostileHtml = call(ctx, 'recipeHeroHtml', [{title: 'Bad image', emoji: '🍽️', imageKey: '../evil'}]);
+  assert(hostileHtml.indexOf('../evil') === -1 && hostileHtml.indexOf('src="assets/recipes/default-recipe.png"') !== -1,
+    'recipeHeroHtml: format-invalid imageKey falls back without building a hostile image request', hostileHtml);
 }
 
 // Guard against the deleted RECIPES compat view (state.js:buildLegacyRecipesCompat(),
@@ -2312,6 +2354,11 @@ function testSwShellDrift(){
   const missingIcons = iconsOnDisk.filter(function(f){ return !listedSet.has('assets/ingredients/' + f); });
   assert(missingIcons.length === 0, 'sw: every app/assets/ingredients/*.png on disk is listed in SHELL_FILES', 'missing from SHELL_FILES: ' + missingIcons.join(', '));
 
+  const recipesDir = path.join(APP_DIR, 'assets', 'recipes');
+  const recipeImagesOnDisk = fs.existsSync(recipesDir) ? fs.readdirSync(recipesDir).filter(function(f){ return f.toLowerCase().endsWith('.png'); }) : [];
+  const missingRecipeImages = recipeImagesOnDisk.filter(function(f){ return !listedSet.has('assets/recipes/' + f); });
+  assert(missingRecipeImages.length === 0, 'sw: every app/assets/recipes/*.png on disk is listed in SHELL_FILES', 'missing from SHELL_FILES: ' + missingRecipeImages.join(', '));
+
   function missingForDir(dir, ext, prefix){
     return fs.readdirSync(path.join(APP_DIR, dir)).filter(function(f){ return f.endsWith(ext); }).filter(function(f){ return !listedSet.has(prefix + f); });
   }
@@ -2345,6 +2392,7 @@ function main(){
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
+  runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });

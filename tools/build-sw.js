@@ -49,9 +49,10 @@ function buildShellFiles(){
     .sort();
   const shellGroup = ['./', 'index.html', 'manifest.webmanifest'].concat(codeFiles);
 
-  // Ingredient icons: every PNG under assets/ingredients/ (skip junk
-  // such as .DS_Store).
+  // Ingredient icons and recipe images: every PNG under their asset
+  // directories (skip junk such as .DS_Store).
   const assetsGroup = listDir('assets/ingredients')
+    .concat(listDir('assets/recipes'))
     .filter(function(p){ return p.toLowerCase().endsWith('.png'); })
     .sort();
 

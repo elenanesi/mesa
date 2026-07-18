@@ -1456,9 +1456,9 @@ function buildFoodDetailMarkup(id){
 
   return '<div id="libFoodDetail">'
     + '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(f.name) + '</h2><button class="backbtn" style="margin:0" onclick="renderFoodLibraryList()">‹ Back</button></div>'
-    + '<div class="card" style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;margin-top:10px">'
-    + ingredientIconHtml(ingredientIconAssetForFood(f)).replace('class="ingredient-icon"', 'class="ingredient-icon-lg"')
-    + '<div>' + badges + '</div>'
+    + '<div class="detail-hero ingredient-detail-hero">'
+    + '<div class="detail-hero-media">' + ingredientIconHtml(ingredientIconAssetForFood(f)).replace('class="ingredient-icon"', 'class="ingredient-icon-lg"') + '</div>'
+    + '<div class="detail-hero-body"><div class="detail-hero-badges">' + badges + '</div></div>'
     + '</div>'
     + '<p class="sub" style="margin-top:10px">' + foodDetailBasisLabel(f) + ' · ' + escapeHtml(sugarQualityLabel(f.sugarQuality)) + '</p>'
     + nutri

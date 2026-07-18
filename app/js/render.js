@@ -102,6 +102,53 @@ function recipeDisplayPills(recipeId){
   return src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; });
 }
 
+const DEFAULT_RECIPE_IMAGE_ASSET = 'assets/recipes/default-recipe.png';
+
+function safeRecipeImageKey(v){
+  v = String(v || '').trim();
+  return /^[a-z0-9][a-z0-9-]*$/.test(v) ? v : '';
+}
+
+function safeRecipeImageAsset(v){
+  v = String(v || '').trim();
+  return /^assets\/recipes\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
+}
+
+function inferredRecipeImageKey(recipe, recipeId){
+  if(!recipe) return 'default-recipe';
+  if(recipeId && String(recipeId).indexOf('cr-') === 0 && !recipe.imageKey) return 'default-recipe';
+  const title = String(recipe.title || '').toLowerCase();
+  const emoji = String(recipe.emoji || '');
+  const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
+  const foodIds = Array.isArray(recipe.ingredients) ? recipe.ingredients.map(function(ing){ return ing && ing[0]; }) : [];
+  const foodText = foodIds.map(function(id){
+    const f = (typeof FOODS !== 'undefined') && FOODS[id];
+    return (id || '') + ' ' + (f && f.name ? f.name : '');
+  }).join(' ').toLowerCase();
+  const haystack = title + ' ' + emoji + ' ' + tags.join(' ') + ' ' + foodText;
+
+  if(recipe.slot === 'breakfast' || /breakfast|yogurt|skyr|oats|cereali|chia|pudding|bowl/.test(haystack)) return 'breakfast-bowl';
+  if(/salad|insalata|cous cous/.test(haystack) || emoji === '🥗') return 'salad';
+  if(/salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';
+  if(/chicken|pollo|turkey|tacchino|beef|manzo|pork|maiale|bacon|prosciutto|speck|sausage|meat|burger/.test(haystack)) return 'meat-main';
+  if(recipe.role === 'side' || tags.indexOf('veggie') !== -1 || /verdure|vegetable|veg|broccoli|cavolfiore|asparagi|pak choy|scarola|carrots|carote/.test(haystack)) return 'cooked-vegetables';
+  return 'default-recipe';
+}
+
+function recipeImageAssetForRecipe(recipe, recipeId){
+  if(!recipe) return '';
+  const imageKey = safeRecipeImageKey(recipe.imageKey) || inferredRecipeImageKey(recipe, recipeId);
+  const src = safeRecipeImageAsset('assets/recipes/' + imageKey + '.png');
+  return src || DEFAULT_RECIPE_IMAGE_ASSET;
+}
+
+function recipeHeroHtml(recipe, recipeId){
+  if(!recipe) return '';
+  const emoji = recipe.emoji || '';
+  const src = safeRecipeImageAsset(recipeImageAssetForRecipe(recipe, recipeId)) || DEFAULT_RECIPE_IMAGE_ASSET;
+  return '<img class="recipe-image" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" data-fallback="' + htmlAttr(emoji) + '" onerror="this.onerror=null;this.replaceWith(document.createTextNode(this.getAttribute(\'data-fallback\')||\'\'))">';
+}
+
 function renderRecipe(key){
   const r = RECIPES_DB[key] || RECIPES_DB.salmon;
   currentRecipeKey = RECIPES_DB[key] ? key : 'salmon';
@@ -116,7 +163,7 @@ function renderRecipe(key){
     }
   }
   const base = recipeNutrition(currentRecipeKey, 1).totals; // one serving, same scale the old compat view used
-  document.getElementById('recipeHero').textContent = r.emoji;
+  document.getElementById('recipeHero').innerHTML = recipeHeroHtml(r, currentRecipeKey);
   document.getElementById('recipeTitle').textContent = r.title;
   document.getElementById('rsTime').textContent = '⏱️ ' + r.time + ' min';
   document.getElementById('rsKcal').textContent = '🔥 ' + Math.round(base.kcal) + ' kcal';

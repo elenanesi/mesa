@@ -158,6 +158,7 @@ function validateData() {
     if (typeof r.title !== 'string' || !r.title) errors.push(prefix + 'title missing/empty');
     if (typeof r.emoji !== 'string' || !r.emoji) errors.push(prefix + 'emoji missing/empty');
     if (typeof r.time !== 'number' || r.time <= 0) errors.push(prefix + 'time must be a positive number');
+    if ('imageKey' in r && (typeof r.imageKey !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(r.imageKey))) errors.push(prefix + 'invalid imageKey');
     // servings (batch yield) is optional — absent means 1.
     if ('servings' in r && (typeof r.servings !== 'number' || r.servings <= 0)) errors.push(prefix + 'servings must be a positive number');
     if ('season' in r && VALID_SEASONS.indexOf(r.season) === -1) errors.push(prefix + 'invalid season "' + r.season + '"');
