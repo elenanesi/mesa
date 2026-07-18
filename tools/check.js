@@ -689,6 +689,14 @@ function testRecipeImageHelpers(ctx){
     'recipeHeroHtml: format-invalid imageKey falls back without building a hostile image request', hostileHtml);
 }
 
+function testLibraryRecipeRowsOpenDetail(){
+  const src = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
+  assert(src.indexOf("openRecipe(id, 'libraryRecipes')") !== -1,
+    'library recipes: tapping a recipe row opens the recipe detail screen with Back to Recipes', '');
+  assert(src.indexOf('style="cursor:default" data-recipe-id=') === -1,
+    'library recipes: recipe rows are no longer styled as non-clickable/default-cursor rows', '');
+}
+
 // Guard against the deleted RECIPES compat view (state.js:buildLegacyRecipesCompat(),
 // removed) creeping back in: no app/js/*.js source file may reference a bare `RECIPES`
 // identifier outside of `RECIPES_DB`/`RECIPE_SLOT_DB` — every reader must go through
@@ -2393,6 +2401,7 @@ function main(){
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
+  runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });

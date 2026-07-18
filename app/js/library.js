@@ -1515,7 +1515,7 @@ function openMyRecipes(){
   attachLibRecipeListHandler();
 }
 
-// Delegated click handler for the Recipes list's per-row action buttons
+// Delegated click handler for the Recipes list's tappable rows and per-row action buttons
 // (renderLibRecipeListMarkup) — same rationale and lifecycle as attachLibFoodListHandler
 // above: #libRecipeList is recreated only via openMyRecipes, child-only re-renders
 // (rerenderLibRecipeFilteredView, toggleRecipePref) leave the assignment in place.
@@ -1524,10 +1524,14 @@ function attachLibRecipeListHandler(){
   if(!el) return;
   el.onclick = function(e){
     const btn = e.target.closest('button[data-act]');
-    if(!btn || !el.contains(btn)) return;
-    const row = btn.closest('.altrow[data-recipe-id]');
+    const row = (btn ? btn.closest('.altrow[data-recipe-id]') : e.target.closest('.altrow[data-recipe-id]'));
     if(!row) return;
     const id = row.getAttribute('data-recipe-id');
+    if(!btn){
+      openRecipe(id, 'libraryRecipes');
+      return;
+    }
+    if(!el.contains(btn)) return;
     const act = btn.getAttribute('data-act');
     if(act === 'favorite' || act === 'down') toggleRecipePref(id, act);
     else if(act === 'edit') openEditRecipeForm(id);
@@ -1662,7 +1666,7 @@ function renderLibRecipeListMarkup(){
     const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
     const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
     const pref = recipePrefs[id] || null;
-    return '<div class="altrow" style="cursor:default" data-recipe-id="' + htmlAttr(id) + '"><div class="ae">' + r.emoji + '</div>'
+    return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
       + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
       + '<div class="lib-recipe-actions">'
