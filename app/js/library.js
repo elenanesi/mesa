@@ -396,6 +396,14 @@ function openFoodLibrary(){
   libFoodQuery = '';
   libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
   libFoodFiltersOpen = false;
+  renderFoodLibraryList();
+}
+
+// Task C4: repaints the Ingredients LIST screen without resetting libFoodQuery/
+// libFoodFilters — used by the detail page's back button so returning to the list
+// preserves whatever search/filter state was active before the row tap. openFoodLibrary()
+// above (fresh open) still resets that state first, then calls this.
+function renderFoodLibraryList(){
   setIngredientsScreenHtml(buildFoodLibrarySheet());
   attachLibFoodListHandler();
 }
@@ -405,19 +413,28 @@ function openFoodLibrary(){
 // (which re-runs this attach); search (onLibFoodSearchInput) and filters
 // (rerenderLibFoodFilteredView) replace its CHILDREN only, so one onclick assignment
 // survives them — same non-accumulating pattern as render.js:attachShopListClickHandler.
+// Task C4: extended with row-tap -> openFoodDetail(id), WITHOUT touching the existing
+// button behaviors. Precedence is resolved by checking the [data-act] button branch FIRST
+// and returning — a tap that lands on ✎/↺/✕ never falls through to also open the detail
+// page, since a click event's target is either inside a button or it isn't.
 function attachLibFoodListHandler(){
   const el = document.getElementById('libFoodList');
   if(!el) return;
   el.onclick = function(e){
     const btn = e.target.closest('button[data-act]');
-    if(!btn || !el.contains(btn)) return;
-    const row = btn.closest('.altrow[data-food-id]');
-    if(!row) return;
-    const id = row.getAttribute('data-food-id');
-    const act = btn.getAttribute('data-act');
-    if(act === 'edit') openEditFoodForm(id);
-    else if(act === 'reset') resetFoodOverride(id);
-    else if(act === 'delete') deleteCustomFood(id);
+    if(btn && el.contains(btn)){
+      const row = btn.closest('.altrow[data-food-id]');
+      if(!row) return;
+      const id = row.getAttribute('data-food-id');
+      const act = btn.getAttribute('data-act');
+      if(act === 'edit') openEditFoodForm(id);
+      else if(act === 'reset') resetFoodOverride(id);
+      else if(act === 'delete') deleteCustomFood(id);
+      return;
+    }
+    const row = e.target.closest('.altrow[data-food-id]');
+    if(!row || !el.contains(row)) return;
+    openFoodDetail(row.getAttribute('data-food-id'));
   };
 }
 
@@ -1002,8 +1019,11 @@ function renderLibFoodListMarkup(query){
       // Food ids can be user-authored ('cf-<slug>' from a typed name), so the id rides in
       // a data-* attribute (htmlAttr-escaped once, never re-parsed as JS) and the buttons
       // carry a data-act verb for attachLibFoodListHandler's delegation below — same
-      // pattern as the shopping list (render.js:attachShopListClickHandler).
-      out += '<div class="altrow" style="cursor:default" data-food-id="' + htmlAttr(id) + '">'
+      // pattern as the shopping list (render.js:attachShopListClickHandler). Task C4: the
+      // row itself is now tappable (opens the ingredient detail page) so it keeps .altrow's
+      // default cursor:pointer instead of the old cursor:default override, and carries an
+      // aria-label naming the action for screen readers.
+      out += '<div class="altrow" data-food-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(f.name) + '">'
         + '<div class="ae">' + foodIconHtml(id) + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + ' <span class="pill mini">' + sugarQualityLabel(f.sugarQuality) + '</span></div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
@@ -1241,6 +1261,150 @@ function deleteCustomFood(id){
   toast('✓ Deleted ' + name);
   renderFoodLibraryCount();
   if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) openFoodLibrary();
+}
+
+/* ===================================================================
+   FEATURE 1b — Ingredient detail page (task C4)
+
+   Tapping a row in the Ingredients list (anywhere except its ✎/↺/✕ buttons — see
+   attachLibFoodListHandler above) opens a read-only detail page on the SAME
+   'libraryIngredients' screen (setIngredientsScreenHtml, same lifecycle as the edit
+   form), showing the live merged FOODS[id] record (overrides applied — never re-typed).
+
+   Only the local watercolor icon is ever rendered (never a barcode product's remote
+   `imageUrl`): the icon asset already has the exact same resolution path + default-icon
+   fallback everywhere else in the app, works fully offline, and doesn't cost a network
+   fetch that would 404 without connectivity — simplest correct choice, per the task brief.
+
+   Actions reuse the existing handlers verbatim (openEditFoodForm/resetFoodOverride/
+   deleteCustomFood) rather than re-implementing them. Edit's own back path returns to the
+   LIST, not this detail page (acceptable per the task brief — no back-stack is built).
+   Reset re-renders THIS page afterward (values refresh in place); Delete already returns
+   to the list itself (existing behavior), so no re-render is layered on top of it.
+   =================================================================== */
+let libFoodDetailId = null;
+
+// Basis line: 'per 100g' / 'per 100ml' for normal foods, 'per piece (~NNg)' for unit:'piece'
+// foods (eggs, coffee) — matches how data/foods.js documents each record's own basis.
+function foodDetailBasisLabel(f){
+  return f.unit === 'piece' ? 'per piece (~' + Math.round(f.avgG || 0) + 'g)' : 'per 100' + f.unit;
+}
+
+// Open Food Facts tag strings look like 'en:gluten' or 'it:senza-lattosio' — strip the
+// locale prefix and turn dashes into spaces for a readable pill, still escapeHtml'd like
+// every other user-influenced string once it reaches the markup below.
+function offTagLabel(tag){
+  const s = String(tag || '').replace(/^[a-z]{2,3}:/, '').replace(/[-_]/g, ' ').trim();
+  return s ? s.charAt(0).toUpperCase() + s.slice(1) : String(tag || '');
+}
+
+function foodDetailNutriPill(label, value, unit){
+  return '<div class="n"><div class="nt"><span>' + escapeHtml(label) + '</span><b>' + value + (unit ? ' ' + unit : '') + '</b></div></div>';
+}
+
+// Barcode-import metadata (brand/quantity/label kcal/Nutri-Score/NOVA/allergens/traces/
+// ingredient text/source link) — rendered only when at least one such field exists, so a
+// hand-authored or built-in food shows nothing here. The OFF source link is rendered ONLY
+// when the URL starts with 'https://' (dropped otherwise, per the app's security
+// conventions), with rel="noopener" target="_blank".
+function foodDetailBarcodeSection(f){
+  const hasMeta = !!(f.brand || f.quantity || f.labelKcal || f.nutriscore || f.novaGroup
+    || (f.allergens && f.allergens.length) || (f.traces && f.traces.length) || f.ingredientsText || f.offUrl);
+  if(!hasMeta) return '';
+  let rows = '';
+  if(f.brand) rows += '<div class="ad"><b>Brand</b> ' + escapeHtml(f.brand) + '</div>';
+  if(f.quantity) rows += '<div class="ad"><b>Pack size</b> ' + escapeHtml(f.quantity) + '</div>';
+  if(typeof f.labelKcal === 'number') rows += '<div class="ad"><b>Label calories</b> ' + f.labelKcal + ' kcal</div>';
+  if(f.nutriscore) rows += '<div class="ad"><b>Nutri-Score</b> ' + escapeHtml(f.nutriscore) + '</div>';
+  if(f.novaGroup) rows += '<div class="ad"><b>NOVA group</b> ' + escapeHtml(String(f.novaGroup)) + '</div>';
+  if(f.allergens && f.allergens.length) rows += '<div class="ad"><b>Allergens</b> ' + f.allergens.map(offTagLabel).map(escapeHtml).join(', ') + '</div>';
+  if(f.traces && f.traces.length) rows += '<div class="ad"><b>Traces</b> ' + f.traces.map(offTagLabel).map(escapeHtml).join(', ') + '</div>';
+  const ingredientsBlock = f.ingredientsText
+    ? '<div class="field"><label>Ingredients from label</label><div class="why" style="margin-top:6px">' + escapeHtml(f.ingredientsText) + '</div></div>'
+    : '';
+  const sourceLink = (typeof f.offUrl === 'string' && f.offUrl.indexOf('https://') === 0)
+    ? '<div class="ad" style="margin-top:6px"><a href="' + htmlAttr(f.offUrl) + '" rel="noopener" target="_blank">View on Open Food Facts ↗</a></div>'
+    : '';
+  return '<div class="card" style="margin-top:12px"><b>Packaged product</b>' + rows + sourceLink + '</div>' + ingredientsBlock;
+}
+
+// Pure HTML-string builder (testable headlessly, no DOM access) — reads the live merged
+// FOODS[id] record, never re-typed numbers. Returns '' if the id no longer resolves (e.g.
+// a stale reference after a delete elsewhere) so callers can fall back gracefully.
+function buildFoodDetailMarkup(id){
+  const f = FOODS[id];
+  if(!f) return '';
+  const isCustom = !!customFoods[id];
+  const isEdited = !isCustom && !!foodOverrides[id];
+  const satFat = f.satFat || 0;
+  const unsatFat = Math.max(0, (f.fat || 0) - satFat);
+
+  let badges = '';
+  if(isCustom) badges += '<span class="pill mini gold">yours</span>';
+  if(isEdited) badges += '<span class="pill mini terra">edited</span>';
+  badges += '<span class="pill mini ghost">' + escapeHtml(f.cat || '') + '</span>';
+  badges += '<span class="pill mini ghost">' + escapeHtml(seasonLabel(foodSeason(f))) + '</span>';
+  if(f.breakfastPair) badges += '<span class="pill mini">Breakfast pairing</span>';
+
+  const flagsHtml = (f.flags || []).length
+    ? '<div style="margin-top:10px">' + f.flags.map(function(fl){ return '<span class="pill" style="margin:0 6px 6px 0">' + escapeHtml(flagLabel(fl)) + '</span>'; }).join('') + '</div>'
+    : '';
+
+  const nutri = '<div class="nutri" style="margin-top:14px">'
+    + foodDetailNutriPill('Calories', Math.round(f.kcal || 0), 'kcal')
+    + foodDetailNutriPill('Protein', f.protein || 0, 'g')
+    + foodDetailNutriPill('Carbs', f.carbs || 0, 'g')
+    + foodDetailNutriPill('Fat', f.fat || 0, 'g')
+    + foodDetailNutriPill('— saturated', satFat, 'g')
+    + foodDetailNutriPill('— unsaturated', +unsatFat.toFixed(1), 'g')
+    + foodDetailNutriPill('Fiber', f.fiber || 0, 'g')
+    + foodDetailNutriPill('Sugars', f.sugars || 0, 'g')
+    + foodDetailNutriPill('— free sugars', f.freeSugars || 0, 'g')
+    + '</div>';
+
+  const srcLine = f.src ? '<p class="sub" style="margin-top:10px">' + escapeHtml(f.src) + '</p>' : '';
+
+  return '<div id="libFoodDetail">'
+    + '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(f.name) + '</h2><button class="backbtn" style="margin:0" onclick="renderFoodLibraryList()">‹ Back</button></div>'
+    + '<div class="card" style="display:flex;flex-direction:column;align-items:center;gap:10px;text-align:center;margin-top:10px">'
+    + ingredientIconHtml(ingredientIconAssetForFood(f)).replace('class="ingredient-icon"', 'class="ingredient-icon-lg"')
+    + '<div>' + badges + '</div>'
+    + '</div>'
+    + '<p class="sub" style="margin-top:10px">' + foodDetailBasisLabel(f) + ' · ' + escapeHtml(sugarQualityLabel(f.sugarQuality)) + '</p>'
+    + nutri
+    + flagsHtml
+    + foodDetailBarcodeSection(f)
+    + srcLine
+    + '<button class="cta ghostbtn" style="margin-top:14px" data-act="edit">✎ Edit</button>'
+    + (isEdited ? '<button class="cta ghostbtn" data-act="reset">↺ Reset to default</button>' : '')
+    + (isCustom ? '<button class="cta ghostbtn" data-act="delete">✕ Delete</button>' : '')
+    + '</div>';
+}
+
+function openFoodDetail(id){
+  if(!FOODS[id]){ toast('Ingredient not found'); renderFoodLibraryList(); return; }
+  libFoodDetailId = id;
+  setIngredientsScreenHtml(buildFoodDetailMarkup(id));
+  attachFoodDetailHandler();
+}
+
+// Delegated handler for the detail page's own action buttons. The food id never enters
+// the HTML/onclick string at all here — it's read back from the libFoodDetailId closure
+// variable set by openFoodDetail(), which is the simplest way to keep a non-app-constant
+// id (a typed 'cf-<slug>') out of any inline-onclick/JS-string context.
+function attachFoodDetailHandler(){
+  const el = document.getElementById('libFoodDetail');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('button[data-act]');
+    if(!btn || !el.contains(btn)) return;
+    const id = libFoodDetailId;
+    if(!id) return;
+    const act = btn.getAttribute('data-act');
+    if(act === 'edit') openEditFoodForm(id);
+    else if(act === 'reset'){ resetFoodOverride(id); openFoodDetail(id); }
+    else if(act === 'delete') deleteCustomFood(id);
+  };
 }
 
 /* ===================================================================

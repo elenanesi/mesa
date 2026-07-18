@@ -340,3 +340,28 @@ days untouched; selection survives reload; zero console errors.
   none. Skin/thyroid framing intentionally NOT offered as goals — they map to omega-3 /
   lowSugar already, and medical-adjacent copy stays out (ground rule).
 - Tuning is household-level (plans are shared), not per-person.
+
+## C4 — Ingredient detail page (added 2026-07-18)
+
+Tapping an ingredient ROW in Library → Ingredients (anywhere except its ✎/↺/✕ action
+buttons) opens a detail PAGE on the ingredients screen (same setIngredientsScreenHtml
+pattern the edit form uses), with a ← back to the list preserving search/filter state.
+Contents: the watercolor image large (~112px vs the 44px list icon; same
+foodIconHtml/iconAsset source, default icon fallback included); name + badges (yours /
+edited / category / season / breakfast pairing); nutrition per the food's own basis
+(per-100g/ml or per-piece with avgG shown) — kcal, protein, carbs, fat (good/sat split),
+fiber, sugars + free sugars + sugar-quality label; flags as pills (existing
+flagLabel vocabulary); barcode-import metadata when present (brand, quantity, label
+kcal, Nutri-Score/NOVA, allergens/traces, ingredient text, source link — all
+escapeHtml'd, the URL attr-escaped and https-only); the `src` citation line for
+built-ins. Actions on the page: ✎ Edit (existing openEditFoodForm), ↺ Reset override
+(if edited), ✕ Delete (if custom) — reusing the existing handlers, then returning to
+the list (delete) or edit form. Detail applies ONLY to the Library ingredients list —
+quick-add search rows and the recipe-builder picker keep their select-on-tap behavior.
+Numbers come from the live merged FOODS record (overrides included) — never re-typed.
+
+Tests: detail markup builder returns escaped name/brand for a hostile-named custom food;
+per-piece food shows per-piece basis with avgG; built-in vs custom vs edited action sets;
+non-https source URL dropped. Verify in browser incl. hostile-named ingredient, an
+edited built-in, a barcode-imported food if present (else create-shaped fixture), and
+mobile 375x812.

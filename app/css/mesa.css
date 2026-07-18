@@ -410,6 +410,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .altrow:active{transform:scale(.98);}
 .altrow .ae{font-size:26px;width:48px;text-align:center;flex:0 0 48px;}
 .ingredient-icon{width:48px;height:48px;display:block;object-fit:cover;border-radius:10px;background:#fbf5e8;}
+.ingredient-icon-lg{width:112px;height:112px;display:block;object-fit:cover;border-radius:20px;background:#fbf5e8;}
 .altrow .at{flex:1;min-width:0;}
 .altrow .at .an{font-weight:600;font-size:14px;}
 .altrow .at .ad{font-size:12px;color:var(--muted);margin-top:2px;}

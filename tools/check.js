@@ -358,6 +358,73 @@ function testFoodMacrosLinearity(ctx){
     'fields failing: ' + bad.join(', '));
 }
 
+/* ---------------- ingredient detail page (task C4): buildFoodDetailMarkup() ----------------
+   library.js's buildFoodDetailMarkup(id) is the pure HTML-string builder behind
+   openFoodDetail() — it reads the live merged FOODS[id] record (overrides applied) and
+   returns a self-contained markup string with no DOM access, so it's testable headlessly
+   here exactly like renderLibFoodListMarkup()/buildRecipeIngredientPickerSheet() above. */
+function testFoodDetailMarkup(ctx){
+  const FOODS = get(ctx, 'FOODS');
+
+  // 1) Hostile-named custom food: name/brand escaped, no raw breakout. Custom food shows
+  // Delete, no Reset (it's not an override of a built-in).
+  run(ctx, "customFoods['cf-detail-hostile-test'] = {name: '\\\"><img src=x onerror=window.__xss1=1>', per: 100, unit: 'g', kcal: 100, protein: 5, carbs: 10, fat: 2, satFat: 1, fiber: 2, sugars: 3, freeSugars: 1, sugarQuality: 'mixed', flags: [], cat: 'Pantry', season: 'evergreen', brand: '\\\"><b>evil</b>', u: 1};");
+  call(ctx, 'applyCustomFoods', []);
+  const hostileHtml = call(ctx, 'buildFoodDetailMarkup', ['cf-detail-hostile-test']);
+  assert(hostileHtml.indexOf('<img src=x onerror') === -1 && hostileHtml.indexOf('<b>evil</b>') === -1,
+    'buildFoodDetailMarkup: hostile custom-food name/brand render escaped (no raw < or ")', hostileHtml);
+  assert(hostileHtml.indexOf('&quot;&gt;') !== -1 || hostileHtml.indexOf('&amp;quot;') !== -1 || /&lt;img/.test(hostileHtml),
+    'buildFoodDetailMarkup: hostile name is HTML-escaped, not silently dropped', hostileHtml);
+  assert(hostileHtml.indexOf('data-act="delete"') !== -1, 'buildFoodDetailMarkup: custom food shows a Delete action', hostileHtml);
+  assert(hostileHtml.indexOf('data-act="reset"') === -1, 'buildFoodDetailMarkup: custom (non-override) food shows no Reset action', hostileHtml);
+  run(ctx, "delete customFoods['cf-detail-hostile-test'];");
+  call(ctx, 'applyCustomFoods', []);
+
+  // 2) Per-piece food (eggs) shows the per-piece basis with avgG.
+  const eggsHtml = call(ctx, 'buildFoodDetailMarkup', ['eggs']);
+  assert(eggsHtml.indexOf('per piece (~50g)') !== -1,
+    'buildFoodDetailMarkup: per-piece food (eggs) shows "per piece (~50g)" basis', eggsHtml);
+
+  // 3) Built-in shows its src citation and NO delete button.
+  const builtinId = Object.keys(FOODS).find(function(id){ return FOODS[id].src && id.indexOf('cf-') !== 0 && !get(ctx, 'foodOverrides')[id]; });
+  const builtinHtml = call(ctx, 'buildFoodDetailMarkup', [builtinId]);
+  const escapedSrc = call(ctx, 'escapeHtml', [FOODS[builtinId].src]);
+  assert(builtinHtml.indexOf(escapedSrc) !== -1, 'buildFoodDetailMarkup: built-in shows its src citation line', builtinId + ' | ' + builtinHtml);
+  assert(builtinHtml.indexOf('data-act="delete"') === -1, 'buildFoodDetailMarkup: built-in shows NO delete button', builtinHtml);
+  assert(builtinHtml.indexOf('data-act="reset"') === -1, 'buildFoodDetailMarkup: unedited built-in shows no Reset action', builtinHtml);
+
+  // 4) Edited built-in shows Reset + "edited" badge.
+  run(ctx, "foodOverrides['" + builtinId + "'] = Object.assign({}, FOODS['" + builtinId + "'], {protein: FOODS['" + builtinId + "'].protein + 1, u: Date.now()});");
+  call(ctx, 'applyCustomFoods', []);
+  const editedHtml = call(ctx, 'buildFoodDetailMarkup', [builtinId]);
+  assert(editedHtml.indexOf('data-act="reset"') !== -1 && editedHtml.indexOf('pill mini terra">edited') !== -1,
+    'buildFoodDetailMarkup: edited built-in shows Reset action + "edited" badge', editedHtml);
+  assert(editedHtml.indexOf('data-act="delete"') === -1, 'buildFoodDetailMarkup: edited built-in (not custom) still shows no Delete', editedHtml);
+  run(ctx, "delete foodOverrides['" + builtinId + "'];");
+  call(ctx, 'applyCustomFoods', []);
+
+  // 5) sourceUrl scheme guard: http:// link dropped, https:// link rendered with rel="noopener".
+  run(ctx, "customFoods['cf-detail-url-test'] = {name: 'URL test food', per: 100, unit: 'g', kcal: 100, protein: 1, carbs: 1, fat: 1, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], cat: 'Pantry', season: 'evergreen', offUrl: 'http://evil', u: 1};");
+  call(ctx, 'applyCustomFoods', []);
+  const httpHtml = call(ctx, 'buildFoodDetailMarkup', ['cf-detail-url-test']);
+  assert(httpHtml.indexOf('<a href') === -1, 'buildFoodDetailMarkup: a non-https offUrl (http://evil) renders NO source link', httpHtml);
+  run(ctx, "customFoods['cf-detail-url-test'].offUrl = 'https://world.openfoodfacts.org/product/123';");
+  call(ctx, 'applyCustomFoods', []);
+  const httpsHtml = call(ctx, 'buildFoodDetailMarkup', ['cf-detail-url-test']);
+  assert(httpsHtml.indexOf('<a href="https://world.openfoodfacts.org/product/123" rel="noopener" target="_blank"') !== -1,
+    'buildFoodDetailMarkup: an https:// offUrl renders a link with rel="noopener"', httpsHtml);
+  run(ctx, "delete customFoods['cf-detail-url-test'];");
+  call(ctx, 'applyCustomFoods', []);
+
+  // 6) breakfastPair badge appears only for flagged foods.
+  const pairId = BREAKFAST_PAIR_FOOD_IDS.filter(function(id){ return !!FOODS[id]; })[0];
+  const pairHtml = call(ctx, 'buildFoodDetailMarkup', [pairId]);
+  assert(pairHtml.indexOf('Breakfast pairing') !== -1, 'buildFoodDetailMarkup: a breakfastPair-flagged food shows the Breakfast pairing badge', pairId + ' | ' + pairHtml);
+  const nonPairId = Object.keys(FOODS).find(function(id){ return !FOODS[id].breakfastPair && id.indexOf('cf-') !== 0; });
+  const nonPairHtml = call(ctx, 'buildFoodDetailMarkup', [nonPairId]);
+  assert(nonPairHtml.indexOf('Breakfast pairing') === -1, 'buildFoodDetailMarkup: a non-breakfastPair food shows no Breakfast pairing badge', nonPairId + ' | ' + nonPairHtml);
+}
+
 /* ---------------- render.js recipe-display helpers (compat-view removal) ----------------
    render.js used to read a second, hand-synchronized object (state.js:RECIPES, built by
    the now-deleted buildLegacyRecipesCompat()) for the recipe screen's display shape. That's
@@ -2164,6 +2231,7 @@ function main(){
   runTest('goal toggles (task B1)', function(){ testGoalToggles(ctx); });
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
+  runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
