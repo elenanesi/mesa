@@ -133,7 +133,9 @@ function safeRecipeImageAsset(v){
 
 function inferredRecipeImageKey(recipe, recipeId){
   if(!recipe) return 'default-recipe';
-  if(recipeId && String(recipeId).indexOf('cr-') === 0 && !recipe.imageKey) return 'default-recipe';
+  if(recipe.slot === 'breakfast') return 'breakfast-bowl';
+  if(recipe.slot === 'lunch') return 'salad';
+  if(recipe.slot === 'dinner') return 'default-recipe';
   const title = String(recipe.title || '').toLowerCase();
   const emoji = String(recipe.emoji || '');
   const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
@@ -144,7 +146,7 @@ function inferredRecipeImageKey(recipe, recipeId){
   }).join(' ').toLowerCase();
   const haystack = title + ' ' + emoji + ' ' + tags.join(' ') + ' ' + foodText;
 
-  if(recipe.slot === 'breakfast' || /breakfast|yogurt|skyr|oats|cereali|chia|pudding|bowl/.test(haystack)) return 'breakfast-bowl';
+  if(/breakfast|yogurt|skyr|oats|cereali|chia|pudding|bowl/.test(haystack)) return 'breakfast-bowl';
   if(/salad|insalata|cous cous/.test(haystack) || emoji === '🥗') return 'salad';
   if(/salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';
   if(/chicken|pollo|turkey|tacchino|beef|manzo|pork|maiale|bacon|prosciutto|speck|sausage|meat|burger/.test(haystack)) return 'meat-main';

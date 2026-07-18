@@ -670,13 +670,13 @@ function testRecipeImageHelpers(ctx){
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Breakfast bowl', emoji: '🥣', slot: 'breakfast', tags: [], ingredients: []}]) === 'assets/recipes/breakfast-bowl.png',
     'recipeImageAssetForRecipe: infers the breakfast-bowl image for breakfast recipes', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Big salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}]) === 'assets/recipes/salad.png',
-    'recipeImageAssetForRecipe: infers the salad image for salad recipes', '');
-  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Baked cod', emoji: '🐟', slot: 'dinner', tags: [], ingredients: [['cod', 120]]}]) === 'assets/recipes/fish-main.png',
-    'recipeImageAssetForRecipe: infers the fish-main image for fish recipes', '');
-  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Roast chicken', emoji: '🍗', slot: 'dinner', tags: [], ingredients: [['chicken-breast', 120]]}]) === 'assets/recipes/meat-main.png',
-    'recipeImageAssetForRecipe: infers the meat-main image for meat recipes', '');
-  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/default-recipe.png',
-    'recipeImageAssetForRecipe: custom recipes without imageKey use the default recipe image in this batch', '');
+    'recipeImageAssetForRecipe: uses the salad image for lunch recipes', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Baked cod', emoji: '🐟', slot: 'dinner', tags: [], ingredients: [['cod', 120]]}]) === 'assets/recipes/default-recipe.png',
+    'recipeImageAssetForRecipe: keeps the default image for dinner recipes unless explicitly changed', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Roast chicken', emoji: '🍗', slot: 'dinner', tags: [], ingredients: [['chicken-breast', 120]]}]) === 'assets/recipes/default-recipe.png',
+    'recipeImageAssetForRecipe: keeps the default image for meat dinners unless explicitly changed', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/salad.png',
+    'recipeImageAssetForRecipe: custom recipes in Auto use their slot default image', '');
 
   const html = call(ctx, 'recipeHeroHtml', [recipe]);
   assert(html.indexOf('<img ') === 0 && html.indexOf('class="recipe-image"') !== -1 && html.indexOf('src="assets/recipes/fish-main.png"') !== -1,
