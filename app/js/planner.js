@@ -603,6 +603,87 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
   return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + rotation * 0.5;
 }
 
+/* ---------------- task C2 (2026-07-18): next-week tuning bonus ----------------
+   tuningBonus(totals, tuningKey) is a small deterministic secondary term ADDED to
+   mealScore's result (both pickSharedMeal and pickSoloMeal, below) for the candidate
+   whose kcal/protein already went into that mealScore call. Magnitude analysis, read off
+   mealScore() above: a candidate's kcal-fit term (kcalErr*1000) typically separates real
+   candidates by tens of points whenever their portion search lands at meaningfully
+   different kcal residuals, and can reach ~1000 for a wildly-off pick; the protein-fit
+   term (proteinShort*100) is 0-100; prefBoost is a flat 35; the existing rotation
+   tie-break is the smallest term in the system at 0-0.5. tuningBonus must sit clearly
+   ABOVE rotation (or it would never survive being a real secondary signal) but clearly
+   BELOW kcal/protein-fit (or it would distort the targets the old banner promised to
+   keep — "same calories and protein"). 'none' returns exactly 0 regardless of weight — no
+   term, no floating-point-visible change to the score at all (x + 0 === x), which is what
+   keeps plan generation bit-identical to pre-this-batch output at the default.
+     protein / fiber : +weight * (grams / norm)      — norm ~= a "big" meal's grams for
+                        that nutrient (40g protein, 8g fiber).
+     lowSugar        : -weight * (freeSugars / 15)    — 15g norm ~= a moderately sweet meal.
+     lowSatFat       : -weight * (satFat / fat)        — already a natural 0..1 share, no
+                        norm needed; 0 when the unit has no fat at all.
+     omega3          : +weight flat, once, if ANY recipe in the composed unit (main or its
+                        recipe extra — a plain paired FOOD extra doesn't count, per the
+                        plan's "any recipe in the unit") carries the omega3 tag or
+                        ingredient-flag (recipeFlagSet/hasTag, state.js). Binary, so it's
+                        exactly the cap either way.
+
+   TUNING_WEIGHT=15 (caps each tuning term at 15 points) is the result of an empirical
+   investigation, not just the formula above — worth recording since a first pass at
+   TUNING_WEIGHT=4 (a stricter reading of "low relative to kcal/protein-fit": under half
+   of proteinShort's 100, a tenth of kcalErr's ~1000) turned out to violate the 'protein'
+   fortnight weak-monotonic test (tools/check.js) by a small margin (fortnight total
+   protein ~0.2% BELOW the 'none' plan's). Root-caused with a debug harness (not checked
+   in) that dumped per-candidate scores at the exact flipped slot: the regression was NOT
+   tuningBonus favoring a lower-protein candidate (it never does — it's a monotonic
+   function of totals.protein) but a knock-on effect of the PRE-EXISTING water-filling
+   remaining-budget mechanism in generateWeek(): an earlier same-day slot's tuning-nudged
+   choice already delivered more protein, so remainingProtein (and therefore that day's
+   LATER slot's desiredProt) shrank, which shrank mealScore's OWN proteinShort penalty for
+   a low-protein candidate enough to let it win on kcal-fit alone — a pre-existing
+   mechanism (the current rotation tie-break can trigger the identical cascade) that a
+   bounded per-candidate nudge cannot categorically prevent. A weight sweep (1-30) confirmed
+   this isn't "weight too low" in the sense the plan warns about special-casing: weights
+   1-10 stayed inert-or-regressed on this exact fixture (protein delta 0.00 at 1, then
+   negative at 2/3/4/5/6/8/10) and only >=15 turned all three required directions
+   (protein/fiber up, freeSugars down) non-negative for the real default household on
+   FIXED_MONDAY — verified with both the full fortnight and a frozen-current-week/
+   next-week-only isolation (ruling out cross-week filter noise as the sole cause). 15 is
+   still a fraction of kcalErr's scale and under half of prefBoost (35), so a favorited
+   recipe or a genuinely-better kcal fit still wins — it just needed to be bigger than 4 to
+   reliably beat the existing proteinShort/kcalErr terms' OWN budget-driven noise floor on
+   this dataset. See tools/check.js testNextWeekTuning for the pinned assertions. */
+const TUNING_WEIGHT = 15;
+const TUNING_PROTEIN_NORM = 40; // grams — a high-protein full meal
+const TUNING_FIBER_NORM = 8;    // grams — a high-fiber meal/side
+const TUNING_SUGAR_NORM = 15;   // grams — a moderately sweet meal
+
+function recipeHasOmega3(recipeId){
+  const r = RECIPES_DB[recipeId];
+  if(!r) return false;
+  return hasTag(r, 'omega3') || !!recipeFlagSet(recipeId).omega3;
+}
+
+// Scales one recipe's nutrition totals (already at 1x/dbBaseNutrition) by a portion —
+// only the fields tuningBonus needs, not a full nutrition object.
+function scaleNutrientTotals(base, portion){
+  return {protein: base.protein * portion, fiber: base.fiber * portion, freeSugars: base.freeSugars * portion, fat: base.fat * portion, satFat: base.satFat * portion};
+}
+function addNutrientTotals(a, b){
+  return {protein: a.protein + b.protein, fiber: a.fiber + b.fiber, freeSugars: a.freeSugars + b.freeSugars, fat: a.fat + b.fat, satFat: a.satFat + b.satFat};
+}
+function withOmega3(totals, flag){ totals.hasOmega3 = flag; return totals; }
+
+function tuningBonus(totals, tuningKey){
+  if(!totals || tuningKey === 'none') return 0;
+  if(tuningKey === 'protein') return TUNING_WEIGHT * (totals.protein / TUNING_PROTEIN_NORM);
+  if(tuningKey === 'fiber') return TUNING_WEIGHT * (totals.fiber / TUNING_FIBER_NORM);
+  if(tuningKey === 'lowSugar') return -TUNING_WEIGHT * (totals.freeSugars / TUNING_SUGAR_NORM);
+  if(tuningKey === 'lowSatFat') return -TUNING_WEIGHT * (totals.fat > 0 ? totals.satFat / totals.fat : 0);
+  if(tuningKey === 'omega3') return totals.hasOmega3 ? TUNING_WEIGHT : 0;
+  return 0; // unknown key (shouldn't happen — state.js validates on load/sync) behaves like 'none'
+}
+
 /* ---------------- week generation ---------------- */
 // seed = {weekStartDate, signature} — pure function of these plus the live PROF/SHARED/
 // householdStyle state AND weekPlans[weekStartDate − 7d] (the previous week's stored
@@ -749,13 +830,18 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   const maxPortion = SLOT_MAX_PORTION[slot];
 
   // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams},
-  //              portionE, portionA, kcalE, kcalA, proteinE, proteinA}
+  //              portionE, portionA, kcalE, kcalA, proteinE, proteinA,
+  //              totalsE, totalsA (task C2, 2026-07-18: per-person combined-unit nutrition
+  //              fed to tuningBonus() below — {protein,fiber,freeSugars,fat,satFat,hasOmega3})}
   const candidates = [];
   function pushFull(id, base, bpE, bpA){
+    const hasO3 = recipeHasOmega3(id);
     candidates.push({tieId: id, mainId: id, extra: null,
       portionE: bpE.portion, portionA: bpA.portion,
       kcalE: bpE.kcal, kcalA: bpA.kcal,
-      proteinE: base.protein * bpE.portion, proteinA: base.protein * bpA.portion});
+      proteinE: base.protein * bpE.portion, proteinA: base.protein * bpA.portion,
+      totalsE: withOmega3(scaleNutrientTotals(base, bpE.portion), hasO3),
+      totalsA: withOmega3(scaleNutrientTotals(base, bpA.portion), hasO3)});
   }
 
   if(slot === 'snack'){
@@ -803,11 +889,16 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
             const better = !bestStepA || err < bestStepA.err - 1e-9 || (Math.abs(err - bestStepA.err) <= 1e-9 && grams < bestStepA.grams);
             if(better) bestStepA = {grams: grams, kcal: m.kcal, protein: m.protein, err: err};
           });
+          const hasO3 = recipeHasOmega3(id); // extra here is a plain FOOD, never counts toward omega3
+          const foodMacrosE = foodMacros(extraE.foodId, extraE.grams);
+          const foodMacrosA = foodMacros(extraE.foodId, bestStepA.grams);
           candidates.push({
             tieId: tieId, mainId: id, extra: {foodId: extraE.foodId, gramsE: extraE.grams, gramsA: bestStepA.grams},
             portionE: bpE.portion, portionA: bpA.portion,
             kcalE: kcalE, kcalA: bpA.kcal + bestStepA.kcal,
-            proteinE: proteinE, proteinA: base.protein * bpA.portion + bestStepA.protein
+            proteinE: proteinE, proteinA: base.protein * bpA.portion + bestStepA.protein,
+            totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bpE.portion), foodMacrosE), hasO3),
+            totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bpA.portion), foodMacrosA), hasO3)
           });
         }, id, base, bpE, desiredE, foodPool);
       });
@@ -830,11 +921,15 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
               const sideKcal = sideBase.kcal * sidePortion, sideProtein = sideBase.protein * sidePortion;
               const bpE = bestPortion(mainBase.kcal, desiredE - sideKcal, PERSON_ANCHOR.elena, maxPortion);
               const bpA = bestPortion(mainBase.kcal, desiredA - sideKcal, PERSON_ANCHOR.partner, maxPortion);
+              const hasO3 = recipeHasOmega3(mainId) || recipeHasOmega3(sideId);
+              const sideTotals = scaleNutrientTotals(sideBase, sidePortion);
               candidates.push({
                 tieId: mainId + '|side|' + sideId + '@' + sidePortion, mainId: mainId, extra: {recipeId: sideId, portion: sidePortion},
                 portionE: bpE.portion, portionA: bpA.portion,
                 kcalE: bpE.kcal + sideKcal, kcalA: bpA.kcal + sideKcal,
-                proteinE: mainBase.protein * bpE.portion + sideProtein, proteinA: mainBase.protein * bpA.portion + sideProtein
+                proteinE: mainBase.protein * bpE.portion + sideProtein, proteinA: mainBase.protein * bpA.portion + sideProtein,
+                totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpE.portion), sideTotals), hasO3),
+                totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpA.portion), sideTotals), hasO3)
               });
             });
           });
@@ -849,8 +944,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // never the composite tieId — so a composed unit's score treats "which main" exactly
     // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
     // ONLY for the final deterministic tie-break below.
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed);
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed);
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed) + tuningBonus(c.totalsE, nextWeekTuning);
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed) + tuningBonus(c.totalsA, nextWeekTuning);
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
@@ -884,10 +979,13 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   const maxPortion = SLOT_MAX_PORTION[slot];
   const avoidP = PROF[person].avoid || [];
 
-  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams}, portion, kcal, protein}
+  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams}, portion,
+  //              kcal, protein, totals (task C2, 2026-07-18: combined-unit nutrition fed
+  //              to tuningBonus() below — {protein,fiber,freeSugars,fat,satFat,hasOmega3})}
   const candidates = [];
   function pushFull(id, base, bp){
-    candidates.push({tieId: id, mainId: id, extra: null, portion: bp.portion, kcal: bp.kcal, protein: base.protein * bp.portion});
+    candidates.push({tieId: id, mainId: id, extra: null, portion: bp.portion, kcal: bp.kcal, protein: base.protein * bp.portion,
+      totals: withOmega3(scaleNutrientTotals(base, bp.portion), recipeHasOmega3(id))});
   }
 
   if(slot === 'snack'){
@@ -911,8 +1009,10 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
         const base = dbBaseNutrition(id);
         const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
         pushFull(id, base, bp); // standalone role:'main' breakfast remains legal
+        const hasO3 = recipeHasOmega3(id); // extra here is a plain FOOD, never counts toward omega3
         pushBreakfastPairCandidates(function(tieId, kcal, protein, extra){
-          candidates.push({tieId: tieId, mainId: id, extra: extra, portion: bp.portion, kcal: kcal, protein: protein});
+          candidates.push({tieId: tieId, mainId: id, extra: extra, portion: bp.portion, kcal: kcal, protein: protein,
+            totals: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bp.portion), foodMacros(extra.foodId, extra.grams)), hasO3)});
         }, id, base, bp, desired, foodPool);
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
@@ -923,7 +1023,9 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
           const mainBase = dbBaseNutrition(mainId);
           const tops = topKSideIds(mainBase.kcal, sidePool, desired, SIDE_TOP_K);
           pushComposedSideCandidates(function(tieId, kcal, protein, extra, portion){
-            candidates.push({tieId: tieId, mainId: mainId, extra: extra, portion: portion, kcal: kcal, protein: protein});
+            const sideBase = dbBaseNutrition(extra.recipeId);
+            candidates.push({tieId: tieId, mainId: mainId, extra: extra, portion: portion, kcal: kcal, protein: protein,
+              totals: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, portion), scaleNutrientTotals(sideBase, extra.portion)), recipeHasOmega3(mainId) || recipeHasOmega3(extra.recipeId))});
           }, mainId, mainBase, desired, anchor, maxPortion, sidePool, tops);
         });
       }
@@ -933,7 +1035,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   let best = null;
   candidates.forEach(function(c){
     // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed) + tuningBonus(c.totals, nextWeekTuning);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
   });
@@ -959,7 +1061,10 @@ function computePlanSignature(){
     (e.avoid || []).slice().sort().join(','),
     (a.avoid || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
-    SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0
+    SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
+    nextWeekTuning // task C2 (2026-07-18): changing the tuning goal must regenerate future
+                   // (non-logged, non-pinned) days exactly like any other signature input —
+                   // 'none' is just another value here, no special-cased branch.
   ].join('|');
 }
 
@@ -1127,31 +1232,77 @@ function loggedDayCount(personKey){
   }).length;
 }
 
+// task C1: shared ±10% window classifier for the per-day nutrient-band bars — SAME
+// tolerance the kcal inBand check above uses, so "in band" never means something
+// different depending on which metric's bar you're looking at.
+function classifyWindowBand(value, target){
+  if(!(target > 0)) return 'in';
+  if(value > target * 1.10) return 'over';
+  if(value < target * 0.90) return 'under';
+  return 'in';
+}
+// Fiber only has a floor (WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay) — there's no "too much
+// fiber" band, so the only out-of-band state is 'under'.
+function classifyMinBand(value, min){
+  return (min > 0 && value < min) ? 'under' : 'in';
+}
+// Free sugars only has a ceiling (coverageGaps' 6%-of-kcal target, converted to grams for
+// the person's calorie goal) — the only out-of-band state is 'over'.
+function classifyMaxBand(value, max){
+  return (max > 0 && value > max) ? 'over' : 'in';
+}
+
 // Pure computation for the Insights screen (task D1 item 4). Every per-day kcal figure is
 // compared against that day's FROZEN target snapshot (state.js:ensureTargetSnapshot), so a
 // later calorie-target change never moves a past day's bar or band dot. Returns
 // hasEnoughData:false (with everything else zeroed) once fewer than 2 days have ever been
 // logged — render.js paints the empty-state pattern in that case.
 function computeInsights(personKey){
+  const prof = PROF[personKey];
+  // task C1: per-day nutrient bands — protein/carbs/fat vs the person's own targets (±10%,
+  // same window as kcal), fiber vs the single-sourced WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay
+  // (never re-typed 25), free sugars vs the coverageGaps-derived %-of-kcal target (never
+  // re-typed 6) converted to grams for this person's calorie goal — the SAME derivation
+  // render.js:weekNutriSummary already uses for sugarTargetG, so Insights and Week can never
+  // disagree on what "too much sugar" means.
+  const sugarTargetPct = coverageGaps(computeWeeklyCoverage()).freeSugars.target;
+  const sugarTargetG = prof.calGoalNum > 0 ? (sugarTargetPct / 100) * prof.calGoalNum / 4 : 0;
+
   const days = last7Dates().map(function(date){
     const day = getDayLog(date);
     const entries = day[personKey] || [];
     const logged = entries.length > 0;
-    let kcal = 0, protein = 0, fat = 0, satFat = 0, fiber = 0;
+    let kcal = 0, protein = 0, carbs = 0, fat = 0, satFat = 0, fiber = 0, freeSugars = 0;
     entries.forEach(function(e){
       const nut = logEntryNutrition(e);
-      kcal += nut.kcal; protein += nut.protein; fat += nut.fat; satFat += nut.satFat; fiber += nut.fiber;
+      kcal += nut.kcal; protein += nut.protein; carbs += nut.carbs; fat += nut.fat;
+      satFat += nut.satFat; fiber += nut.fiber; freeSugars += nut.freeSugars;
     });
-    const target = (typeof day.targets[personKey] === 'number') ? day.targets[personKey] : PROF[personKey].calGoalNum;
+    const target = (typeof day.targets[personKey] === 'number') ? day.targets[personKey] : prof.calGoalNum;
     const inBand = logged && target > 0 && Math.abs(kcal - target) <= target * 0.10;
+    const bands = logged ? {
+      protein: classifyWindowBand(protein, prof.targetP),
+      carbs: classifyWindowBand(carbs, prof.targetC),
+      fat: classifyWindowBand(fat, prof.targetF),
+      fiber: classifyMinBand(fiber, WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay),
+      freeSugars: classifyMaxBand(freeSugars, sugarTargetG)
+    } : null;
     return {date: date, letter: dayLetterFor(date), logged: logged, kcal: Math.round(kcal), target: Math.round(target),
-      protein: protein, fat: fat, satFat: satFat, fiber: fiber, inBand: inBand};
+      protein: protein, carbs: carbs, fat: fat, satFat: satFat, fiber: fiber, freeSugars: freeSugars,
+      inBand: inBand, bands: bands};
   });
+
+  // task C1: single-sourced band targets for render.js's nutrient-bands card (bar tooltips/
+  // labels) — computed once here so the renderer never re-derives the sugar-gram conversion
+  // itself (would risk re-typing 6).
+  const bandTargets = {protein: prof.targetP, carbs: prof.targetC, fat: prof.targetF,
+    fiber: WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay, freeSugars: Math.round(sugarTargetG)};
 
   const totalLoggedDays = loggedDayCount(personKey);
   if(totalLoggedDays < 2){
     return {hasEnoughData: false, days: days, inBandCount: 0, daysLoggedCount: 0,
-      avgProtein: 0, avgFiber: 0, pctUnsaturated: 0, targetProtein: PROF[personKey].targetP, callouts: []};
+      avgProtein: 0, avgFiber: 0, pctUnsaturated: 0, targetProtein: PROF[personKey].targetP,
+      bandTargets: bandTargets, callouts: []};
   }
 
   const loggedDays = days.filter(function(d){ return d.logged; });
@@ -1166,6 +1317,7 @@ function computeInsights(personKey){
   return {
     hasEnoughData: true, days: days, inBandCount: inBandCount, daysLoggedCount: loggedDays.length,
     avgProtein: avgProtein, avgFiber: avgFiber, pctUnsaturated: pctUnsaturated, targetProtein: targetProtein,
+    bandTargets: bandTargets,
     callouts: buildInsightCallouts(avgProtein, targetProtein, avgFiber, pctUnsaturated, inBandCount)
   };
 }

@@ -234,3 +234,109 @@ that date via Yesterday where applicable) agrees; skip its snack; undo both.
   - **Q4 (B4):** day AND week summaries include sugars alongside P/C/F/fiber. Use the
     same sugar metric/label the existing sugar-tracking feature already displays on
     Insights (match its total-vs-free convention; don't invent a second one).
+
+---
+---
+
+# Batch C — 2026-07-18 (Insights cleanup, goal tuning, week-count fix)
+
+Same execution rules as Batch B. Order: **C3 → C1 → C2** (bug-fix first, then UI
+cleanup, then the planner-touching feature). All three touch render.js — run
+sequentially.
+
+## C3 — Week screen must count everything LOGGED, not just planned meals (bug fix)
+
+**Confirmed diagnosis.** `computeInsights` (planner.js) iterates ALL of
+`getDayLog(date)[person]` — kind:'plan' AND kind:'food' — so Insights already counts
+quick-adds (cappuccinos, gelato, beverages). Today's ring likewise (recomputeConsumed).
+But B4's `weekDayNutriViews` (render.js) sums ONLY the four slot views from
+`displayedSlotViewForDate`, so kind:'food' quick-add entries never reach the Week
+screen's day macro lines or the week average card.
+
+**Fix.** In `weekDayNutriViews`, for CURRENT-week days with `date <= todayISO()`, add
+`logEntryNutrition(e)` for every `kind:'food'` entry in that day's log for the current
+profile (slot views already handle kind:'plan' overlay + skips — do not touch them; no
+double count possible since quick-adds are never slot views). Next week / future days:
+unchanged (no logs exist). The day header kcal (`renderWeek`'s dayKcal) must use the SAME
+summed totals so the header and the macro line can't diverge — restructure so both read
+one source. Show quick-adds' presence honestly: if a day has quick-add entries, append a
+small `+ N logged extras` note to the day's macro line (count only, no list — keep the
+row compact).
+
+**Tests.** Fixture: log 2 quick-add foods (one via logFoodEntry, one beverage-style) on a
+past current-week day ⇒ that day's weekDayNutriViews totals = slot-view sum + the two
+entries' logEntryNutrition; week card average shifts by exactly that amount / 7; next
+week unaffected; a test asserting Insights' computeInsights day kcal INCLUDES quick-adds
+(regression-documenting the already-correct behavior).
+
+**Verify in browser.** Quick-add a cappuccino + a gelato today; Week day line and week
+card rise by their kcal; day header matches Today's consumed count for the same date;
+next week untouched.
+
+## C1 — Insights page cleanup + per-day nutrient bands
+
+1. **Delete** the static "Last week in one minute" card (index.html — hardcoded mockup
+   content: fake wins + a toast-only "Plan next week" button; nothing computes it).
+2. **Rename** the "What's working" section header to **"Insights"** (keep the ✓ icon and
+   `#insightsWorking` card contents — the computed callouts stay unchanged).
+3. **Per-day nutrient bands**: extend `computeInsights` per-day sums with `carbs` and
+   `freeSugars` (kind-agnostic, same loop). New card (replacing the deleted one's slot,
+   above the stat tiles) showing, for the last 7 days, one row per metric — protein,
+   carbs, fat, fiber, free sugars — each as 7 mini-bars vs its ideal band:
+   protein/carbs/fat: person's targetP/targetC/targetF ±10% (same tolerance the kcal
+   in-band check uses); fiber: ≥ WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay; free sugars:
+   ≤ the existing 6%-of-kcal target via `coverageGaps`' constant (never re-type 25 or 6).
+   Bars reuse the existing `#insightsBarsCard` 7-day bar pattern/styles; unlogged days
+   render empty exactly as the kcal bars do. In-band / over / under states use existing
+   colors (sage / terra) — no new palette.
+
+**Tests.** computeInsights days now carry carbs/freeSugars summed over all entry kinds;
+band classification per metric (craft one day per state); constants are referenced, not
+re-typed (source-grep guard like B4's).
+
+**Verify in browser.** Bands card renders 5 rows × 7 days for both profiles; a logged
+high-sugar day shows the sugars bar over-band in terra; deleted card gone; renamed header
+shows "Insights"; zero console errors.
+
+## C2 — "Tune next week" toward a user-selected goal (replaces the fake Mesa-coach banner)
+
+**Delete** the static banner ("Weekly review · powered by Mesa coach ✨ … tuned for
+skin?") and its toast-only "Tune next week" button. In their place, a real card:
+
+- **State**: household-level `nextWeekTuning: 'none' | 'protein' | 'fiber' | 'lowSugar' |
+  'lowSatFat' | 'omega3'` (default 'none'). Persisted in the store; rides the `plans`
+  sync section next to householdStyle/SHARED (LWW) — add to plansSectionData/
+  applyPlansSectionData; folded into `computePlanSignature` so changing it regenerates
+  FUTURE days (existing preserve guards protect past/logged/pinned slots).
+- **Planner**: a small deterministic secondary term in unit scoring —
+  `tuningBonus(unitTotals, tuningKey)` added into mealScore's comparison with a weight
+  low enough that kcal/protein fit still dominates (the old banner's promise — "keeping
+  your calories and protein identical" — is the spirit: nudge selection among
+  similarly-fitting candidates, don't distort targets). protein: +protein density;
+  fiber: +fiber; lowSugar: −freeSugars; lowSatFat: −satFat share; omega3: bonus if the
+  unit's recipes carry the omega3 flag/tag (reuse recipeFlagSet/hasTag helpers). 'none':
+  zero term — and the scoring path must be BIT-IDENTICAL to today when 'none' (the
+  planner determinism tests pin this).
+- **UI on Insights**: chip picker (6 chips incl. "No tuning"), one-line computed
+  explanation per goal (fixed copy, no free text), current selection highlighted;
+  selecting persists + toasts + regenerates next week via the signature path. Copy must
+  not promise identity ("nudges next week's picks toward …").
+
+**Tests.** signature changes when tuning changes; 'none' ⇒ generated plan byte-identical
+to pre-C2 output (determinism test must NOT need re-fixturing for the default);
+'protein' ⇒ generated fortnight's avg protein ≥ the 'none' plan's (weak monotonic
+assertion — the nudge must at least not hurt the goal); same weak assertion for fiber
+and (≤) freeSugars; tuning survives the plans sync-section round-trip.
+
+**Verify in browser.** Pick "More fiber" ⇒ toast, next week regenerates (visible row
+changes), Week card fiber avg ≥ before; pick "No tuning" ⇒ regenerates back; past/logged
+days untouched; selection survives reload; zero console errors.
+
+## Decisions taken without asking (flag if wrong)
+
+- Tile rename: "What's working" → **"Insights"** (Elena: "insights or something like
+  that").
+- Tuning goal set: protein / fiber / less free sugar / less saturated fat / omega-3 /
+  none. Skin/thyroid framing intentionally NOT offered as goals — they map to omega-3 /
+  lowSugar already, and medical-adjacent copy stays out (ground rule).
+- Tuning is household-level (plans are shared), not per-person.

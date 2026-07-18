@@ -265,6 +265,32 @@ const HOUSEHOLD_STYLES = ['balanced', 'protein', 'lowcarb'];
 let householdStyle = 'balanced';
 let activeMenu = null;
 
+/* ---------------- next-week tuning goal (task C2, 2026-07-18 batch) ----------------
+   Household-level (same rationale as householdStyle above — plans are shared, not
+   per-person), replacing the fake Mesa-coach banner's toast-only "Tune next week"
+   button. Drives planner.js:tuningBonus(totals, nextWeekTuning), a small deterministic
+   secondary term folded into mealScore's comparison in pickSharedMeal/pickSoloMeal —
+   'none' (default) contributes exactly 0 to every candidate's score, so plan generation
+   is bit-identical to pre-this-batch output when the household hasn't opted into a goal.
+   Persisted additively (buildSnapshot/loadState below, no store-version bump) and rides
+   the 'plans' sync section next to householdStyle (js/sync.js:plansSectionData/
+   applyPlansSectionData) — LWW like its neighbors. Folded into
+   planner.js:computePlanSignature() so changing it regenerates future (non-logged,
+   non-pinned) plan days — see render.js:setNextWeekTuning() for the UI funnel. */
+const NEXT_WEEK_TUNING_DEFS = [
+  {key: 'none', title: 'No tuning', note: 'Next week is picked on calorie and protein fit only — nothing else nudges the choice.'},
+  {key: 'protein', title: 'More protein', note: "Nudges next week's picks toward more protein, within your calorie targets."},
+  {key: 'fiber', title: 'More fiber', note: "Nudges next week's picks toward more fiber, within your calorie targets."},
+  {key: 'lowSugar', title: 'Less free sugar', note: "Nudges next week's picks toward less free sugar, within your calorie targets."},
+  {key: 'lowSatFat', title: 'Less saturated fat', note: "Nudges next week's picks toward less saturated fat, within your calorie targets."},
+  {key: 'omega3', title: 'More omega-3', note: "Nudges next week's picks toward more omega-3, within your calorie targets."}
+];
+const NEXT_WEEK_TUNING_KEYS = NEXT_WEEK_TUNING_DEFS.map(function(d){ return d.key; });
+function nextWeekTuningDef(key){
+  return NEXT_WEEK_TUNING_DEFS.filter(function(d){ return d.key === key; })[0] || NEXT_WEEK_TUNING_DEFS[0];
+}
+let nextWeekTuning = 'none';
+
 /* ---------------- the week plan(s) (task C2, generalized for the two-week horizon) ----------------
    weekPlans is the source of truth for every meal both people eat, keyed by the Monday
    ('YYYY-MM-DD') that week starts — currently holds at most two entries: the CURRENT week
@@ -591,6 +617,7 @@ function buildSnapshot(){
     currentProf: currentProf,
     onboarded: onboarded,
     householdStyle: householdStyle,
+    nextWeekTuning: nextWeekTuning,
     shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
@@ -674,6 +701,9 @@ function loadState(){
 
   if(typeof saved.currentProf === 'string' && PROF[saved.currentProf]) currentProf = saved.currentProf;
   if(typeof saved.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(saved.householdStyle) !== -1) householdStyle = saved.householdStyle;
+  // task C2 (2026-07-18): invalid/unknown/missing stored values normalize to the 'none'
+  // in-code default above — no store-version bump needed (same pattern as householdStyle).
+  if(typeof saved.nextWeekTuning === 'string' && NEXT_WEEK_TUNING_KEYS.indexOf(saved.nextWeekTuning) !== -1) nextWeekTuning = saved.nextWeekTuning;
 
   if(saved.shared && typeof saved.shared === 'object'){
     Object.keys(SHARED).forEach(function(slot){

@@ -652,18 +652,24 @@ function testMergePlansSection(ctx){
   remotePlan.days[0].meals.dinner = {shared: true, recipeId: 'tunasalad', t: 5000,
     elena: half('tunasalad', 1, 400, 38, 5000), partner: half('tunasalad', 1.5, 600, 55, 5000)};
 
-  function plansSection(plan){
+  // task C2 (2026-07-18): nextWeekTuning param lets local/remote differ so the LWW
+  // assertion below actually exercises something (the other LWW fields here — SHARED/
+  // householdStyle/servings — are identical on both sides, shape-completeness only).
+  function plansSection(plan, tuning){
     const weekPlans = {}; weekPlans[monday] = plan;
     return {weekPlans: weekPlans, mealPins: {}, mealRules: [],
-      SHARED: {breakfast: false, lunch: false, dinner: true, snack: false}, householdStyle: 'balanced', servings: {svE: 1, svM: 1.5, svS: 1}};
+      SHARED: {breakfast: false, lunch: false, dinner: true, snack: false}, householdStyle: 'balanced',
+      nextWeekTuning: tuning || 'none', servings: {svE: 1, svM: 1.5, svS: 1}};
   }
 
-  const merged = call(ctx, 'mergePlansSection', [cloneJSON(plansSection(localPlan)), cloneJSON(plansSection(remotePlan)), false]);
+  const merged = call(ctx, 'mergePlansSection', [cloneJSON(plansSection(localPlan, 'protein')), cloneJSON(plansSection(remotePlan, 'fiber')), false]);
   const day0 = merged.weekPlans[monday].days[0];
   assert(day0.meals.breakfast.elena.recipeId === 'skyrbowl', "mergePlansSection: side A's newer per-person mutation (breakfast) is kept",
     'got ' + JSON.stringify(day0.meals.breakfast.elena));
   assert(day0.meals.dinner.recipeId === 'tunasalad', "mergePlansSection: side B's newer mutation on a DIFFERENT cell (dinner) is also kept",
     'got ' + JSON.stringify(day0.meals.dinner));
+  assert(merged.nextWeekTuning === 'fiber', 'mergePlansSection: nextWeekTuning stays LWW (remote wins), like householdStyle/SHARED/servings',
+    'got ' + JSON.stringify(merged.nextWeekTuning));
 }
 
 /* ---------------- planner.js determinism ---------------- */
@@ -722,6 +728,106 @@ function testPlannerDeterminism(ctx){
   } else {
     pass('planner (B2): SKIPPED composed-unit-exists check — 0 composed units this run (pools/scoring chose full recipes throughout; not a failure, see B2 fallback rule)');
   }
+}
+
+/* ---------------- task C2 (2026-07-18): "Tune next week" ----------------
+   nextWeekTuning (state.js) folds into computePlanSignature() and adds
+   planner.js:tuningBonus() as a low-weight secondary term in pickSharedMeal/
+   pickSoloMeal's candidate scoring. Covers: signature reacts to the setting and reverts
+   cleanly; the 'none' default is provably inert (byte-identical across two independent
+   generations, same guarantee testPlannerDeterminism already pins for the untouched
+   code path); each non-'none' goal at least doesn't hurt its own metric across a full
+   fortnight (weak monotonic — the nudge is deliberately small, see planner.js's
+   TUNING_WEIGHT doc); and the setting round-trips through both localStorage
+   (buildSnapshot/loadState) and the plans sync section (plansSectionData/
+   applyPlansSectionData), with invalid stored values normalizing to 'none'. */
+function testNextWeekTuning(ctx){
+  // ---- signature reacts + reverts ----
+  run(ctx, "nextWeekTuning = 'none';");
+  const sigNone = call(ctx, 'computePlanSignature', []);
+  run(ctx, "nextWeekTuning = 'protein';");
+  const sigProtein = call(ctx, 'computePlanSignature', []);
+  assert(sigNone !== sigProtein, 'computePlanSignature: changes when nextWeekTuning changes', 'sigNone=' + sigNone + ' sigProtein=' + sigProtein);
+  run(ctx, "nextWeekTuning = 'none';");
+  const sigNoneAgain = call(ctx, 'computePlanSignature', []);
+  assert(sigNoneAgain === sigNone, 'computePlanSignature: reverts to the same signature when nextWeekTuning is set back to none', 'got ' + sigNoneAgain + ', expected ' + sigNone);
+
+  // ---- 'none' is provably inert: byte-identical across two independent generations ----
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; nextWeekTuning = 'none'; weekPlans = {}; weekPlan = null;");
+  const noneA = call(ctx, 'ensureWeekPlan', []);
+  const noneAJson = JSON.stringify(noneA);
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+  const noneB = call(ctx, 'ensureWeekPlan', []);
+  const noneBJson = JSON.stringify(noneB);
+  assert(noneAJson === noneBJson, "'none' tuning: two independent generations for the same Monday are byte-identical (tuningBonus contributes exactly 0)",
+    'lengths differ or content differs (lenA=' + noneAJson.length + ', lenB=' + noneBJson.length + ')');
+
+  // ---- weak monotonic assertions over a full fortnight (current + next week) ----
+  function fortnightTotals(tuningKey){
+    run(ctx, "weekPlans = {}; weekPlan = null; nextWeekTuning = '" + tuningKey + "';");
+    const cur = call(ctx, 'ensureWeekPlan', []);
+    const nextMonday = call(ctx, 'nextMondayISO', []);
+    const next = call(ctx, 'ensureWeekPlan', [nextMonday]);
+    let protein = 0, fiber = 0, freeSugars = 0, n = 0;
+    [cur, next].forEach(function(plan){
+      plan.days.forEach(function(day){
+        Object.keys(day.meals).forEach(function(slot){
+          const m = day.meals[slot];
+          ['elena', 'partner'].forEach(function(person){
+            const entry = m && m[person];
+            if(!entry || !entry.recipeId) return;
+            const nut = call(ctx, 'planEntryNutrition', [entry]);
+            protein += nut.protein; fiber += nut.fiber; freeSugars += nut.freeSugars; n++;
+          });
+        });
+      });
+    });
+    return {protein: protein, fiber: fiber, freeSugars: freeSugars, n: n};
+  }
+
+  const totNone = fortnightTotals('none');
+  const totProtein = fortnightTotals('protein');
+  const totFiber = fortnightTotals('fiber');
+  const totLowSugar = fortnightTotals('lowSugar');
+  assert(totNone.n > 0 && totProtein.n === totNone.n && totFiber.n === totNone.n && totLowSugar.n === totNone.n,
+    'tuning fortnight totals: same number of planned meal-halves counted across all four runs (n=' + totNone.n + ')',
+    'n=' + JSON.stringify({none: totNone.n, protein: totProtein.n, fiber: totFiber.n, lowSugar: totLowSugar.n}));
+  assert(totProtein.protein >= totNone.protein - 1e-6, "'protein' tuning: fortnight total protein >= 'none' fortnight's",
+    'protein=' + totProtein.protein + ', none=' + totNone.protein);
+  assert(totFiber.fiber >= totNone.fiber - 1e-6, "'fiber' tuning: fortnight total fiber >= 'none' fortnight's",
+    'fiber=' + totFiber.fiber + ', none=' + totNone.fiber);
+  assert(totLowSugar.freeSugars <= totNone.freeSugars + 1e-6, "'lowSugar' tuning: fortnight total free sugars <= 'none' fortnight's",
+    'lowSugar=' + totLowSugar.freeSugars + ', none=' + totNone.freeSugars);
+
+  // ---- localStorage round-trip (buildSnapshot/loadState), plus invalid-value normalization ----
+  run(ctx, "nextWeekTuning = 'omega3'; persist();");
+  run(ctx, "nextWeekTuning = 'none';"); // scramble in-memory before reload, same convention testGoalToggles uses
+  run(ctx, 'loadState();');
+  assert(get(ctx, 'nextWeekTuning') === 'omega3', 'nextWeekTuning persistence: buildSnapshot()/loadState() round-trips the stored value', 'got ' + get(ctx, 'nextWeekTuning'));
+  run(ctx, "localStorage.removeItem(STORE_KEY);"); // don't leak this store into later tests
+
+  // Real boot always starts from the in-code default ('none', state.js) before loadState()
+  // ever runs — an invalid stored value must be REJECTED (loadState()'s guard is a no-op
+  // for it), leaving that in-code default in place. Unlike the goals-persistence test above
+  // (which proves a VALID stored value overwrites a scrambled in-memory one), scrambling to
+  // some other valid enum member here would test the wrong thing — it would only prove
+  // loadState() left nextWeekTuning untouched, not that it specifically fell back to 'none'.
+  run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign({}, buildSnapshot(), {nextWeekTuning: 'not-a-real-goal'})));");
+  run(ctx, "nextWeekTuning = 'none';"); // the real in-code default a fresh page load would have
+  run(ctx, 'loadState();');
+  assert(get(ctx, 'nextWeekTuning') === 'none', 'nextWeekTuning: an invalid stored value normalizes to the "none" default', 'got ' + get(ctx, 'nextWeekTuning'));
+  run(ctx, "localStorage.removeItem(STORE_KEY);");
+
+  // ---- plans sync-section round-trip (plansSectionData/applyPlansSectionData) ----
+  run(ctx, "nextWeekTuning = 'lowSatFat';");
+  const section = call(ctx, 'plansSectionData', []);
+  assert(section.nextWeekTuning === 'lowSatFat', 'plansSectionData: carries the live nextWeekTuning value', 'got ' + JSON.stringify(section.nextWeekTuning));
+  run(ctx, "nextWeekTuning = 'none';"); // scramble before applying, same reasoning as the loadState checks above
+  call(ctx, 'applyPlansSectionData', [section]);
+  assert(get(ctx, 'nextWeekTuning') === 'lowSatFat', 'applyPlansSectionData: nextWeekTuning round-trips through the plans sync section', 'got ' + get(ctx, 'nextWeekTuning'));
+
+  // Restore every mutated field to defaults for the tests that run after this one.
+  run(ctx, "nextWeekTuning = 'none'; weekPlans = {}; weekPlan = null;");
 }
 
 /* ---------------- task B2 part 2: composed lunch/dinner + breakfast-pairing algorithm ----------------
@@ -1411,6 +1517,138 @@ function testWeekNutriSummary(ctx){
     'B4 source guard: neither fiber (25) nor sugar (6) target is re-typed as a bare literal in weekNutriSummary', summaryFn);
 }
 
+/* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
+   Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
+   displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
+   gelato/any quick-add) never reached the Week screen's day totals or the week average
+   card, even though computeInsights (planner.js) and Today's ring already counted them —
+   both iterate the WHOLE day log, kind-agnostic. This suite pins the fix: (a) a past
+   current-week day's weekDayNutriViews totals, after logging two quick-adds, equal the
+   independently-computed slot-view sum PLUS the two entries' own logEntryNutrition, across
+   every metric; (b) the week average shifts by exactly that total / 7; (c) a different
+   week (next week) built from a DIFFERENT plan object is unaffected — no logHistory exists
+   for its (future) dates; (d) regression-documents that computeInsights already included
+   the quick-adds all along, so a future render.js refactor can never silently regress it. */
+function testWeekQuickAddNutrition(ctx){
+  const TODAY = '2026-07-16'; // Thursday of the FIXED_MONDAY week (2026-07-13 Mon .. 07-19 Sun)
+  run(ctx, "MESA_TEST_TODAY = '" + TODAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan.weekStartDate;
+  const person = 'elena';
+  const pastDate = plan.days[1].date; // Tuesday — before TODAY, inside the current week
+  const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+
+  // Independent slot-view sum for one day (same technique testWeekNutriSummary uses) —
+  // computed WITHOUT calling weekDayNutriViews, so the "totals include quick-adds" check
+  // below isn't just the function under test agreeing with itself.
+  function slotViewSum(dayIndex){
+    const day = get(ctx, "weekPlans['" + wk + "'].days[" + dayIndex + "]");
+    const sum = {kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0};
+    SLOT_ORDER.forEach(function(slot){
+      const m = day.meals[slot];
+      const entry = m[person];
+      const planned = call(ctx, 'planEntryView', [entry, m.shared]);
+      const view = call(ctx, 'displayedSlotViewForDate', [day.date, person, slot, planned]);
+      if(!view.recipe) return;
+      if(call(ctx, 'slotLogStatus', [day.date, person, slot]) === 'skipped') return;
+      sum.kcal += view.kcal; sum.protein += view.protein; sum.carbs += view.carbs;
+      sum.fat += view.fat; sum.fiber += view.fiber; sum.sugars += view.sugars; sum.freeSugars += view.freeSugars;
+    });
+    return sum;
+  }
+  const baseline1 = slotViewSum(1);
+
+  // Baseline dayViews/summary BEFORE any quick-add is logged — logHistory[pastDate]
+  // doesn't exist yet, so weekDayNutriViews' quick-add branch has nothing to add
+  // regardless of the fix's correctness; this doubles as the "no quick-adds yet" case.
+  const dayViewsBefore = call(ctx, 'weekDayNutriViews', [plan, person]);
+  assert(dayViewsBefore[1].quickAddCount === 0, 'C3: quickAddCount is 0 before any quick-add is logged', 'got ' + dayViewsBefore[1].quickAddCount);
+  ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sugars', 'freeSugars'].forEach(function(key){
+    assert(Math.abs(dayViewsBefore[1].totals[key] - baseline1[key]) < 1e-6,
+      'C3 test setup: day1 totals.' + key + ' match the independent slot-view sum before any quick-add', 'got ' + dayViewsBefore[1].totals[key] + ', expected ' + baseline1[key]);
+  });
+  const summaryBefore = call(ctx, 'weekNutriSummary', [plan, person, dayViewsBefore]);
+  // Insights snapshot BEFORE any quick-add: no meal for pastDate has been confirmed
+  // either, so logHistory[pastDate] is empty and computeInsights shows it unlogged.
+  const insightsBefore = call(ctx, 'computeInsights', [person]);
+  const insightsDayBefore = insightsBefore.days.filter(function(d){ return d.date === pastDate; })[0];
+  assert(!!insightsDayBefore && insightsDayBefore.logged === false && insightsDayBefore.kcal === 0,
+    'C3 test setup: computeInsights shows pastDate as unlogged/0kcal before any quick-add (nothing confirmed or quick-added yet)',
+    JSON.stringify(insightsDayBefore));
+
+  // (a) log two quick-add foods on the past day: one plain quick-add and one
+  // beverage-style (cappuccino) — both go through logFoodEntry (the only kind:'food'
+  // writer), matching the plan's "quick-add foods (cappuccinos, gelato, beverages)" wording.
+  call(ctx, 'logFoodEntry', [pastDate, person, 'gelato-chocolate', 100]);
+  call(ctx, 'logFoodEntry', [pastDate, person, 'cappuccino-unsweetened', 1]);
+  const dayLog = get(ctx, "logHistory['" + pastDate + "']");
+  const quickAdds = dayLog[person].filter(function(e){ return e.kind === 'food'; });
+  assert(quickAdds.length === 2, 'C3 test setup: both quick-add entries landed in logHistory[pastDate].elena', JSON.stringify(dayLog[person]));
+
+  const expectedExtra = {kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0};
+  quickAdds.forEach(function(e){
+    const nut = call(ctx, 'logEntryNutrition', [e]);
+    ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sugars', 'freeSugars'].forEach(function(k){ expectedExtra[k] += nut[k]; });
+  });
+  assert(expectedExtra.kcal > 0, 'C3 test setup: the quick-add entries carry nonzero kcal (otherwise the totals-increase assertion below proves nothing)', JSON.stringify(expectedExtra));
+
+  // (a) day1's weekDayNutriViews totals now equal the (unchanged) slot-view sum PLUS the
+  // quick-adds' own logEntryNutrition, for every metric.
+  const dayViewsAfter = call(ctx, 'weekDayNutriViews', [plan, person]);
+  const totals1 = dayViewsAfter[1].totals;
+  ['kcal', 'protein', 'carbs', 'fat', 'fiber', 'sugars', 'freeSugars'].forEach(function(key){
+    const expected = baseline1[key] + expectedExtra[key];
+    assert(Math.abs(totals1[key] - expected) < 1e-6,
+      'C3: weekDayNutriViews day1.totals.' + key + ' = slot-view sum + the 2 quick-adds’ logEntryNutrition',
+      'got ' + totals1[key] + ', expected ' + expected);
+  });
+  assert(dayViewsAfter[1].quickAddCount === 2, 'C3: weekDayNutriViews reports quickAddCount === 2 for the day with 2 quick-adds', 'got ' + dayViewsAfter[1].quickAddCount);
+
+  // Every OTHER day of the SAME week is untouched (quick-adds only landed on pastDate).
+  dayViewsAfter.forEach(function(dv, i){
+    if(i === 1) return;
+    assert(dv.quickAddCount === 0, 'C3: day' + i + ' (no quick-adds logged) still reports quickAddCount === 0', 'got ' + dv.quickAddCount);
+    assert(Math.abs(dv.totals.kcal - dayViewsBefore[i].totals.kcal) < 1e-6,
+      'C3: day' + i + ' totals.kcal unaffected by another day’s quick-adds', 'got ' + dv.totals.kcal + ', expected ' + dayViewsBefore[i].totals.kcal);
+  });
+
+  // (b) the week average shifts by exactly the quick-adds' total / 7 (7 plan days).
+  const summaryAfter = call(ctx, 'weekNutriSummary', [plan, person, dayViewsAfter]);
+  ['avgKcal', 'avgProtein', 'avgCarbs', 'avgFat', 'avgFiber', 'avgFreeSugars'].forEach(function(avgKey){
+    const rawKey = avgKey.slice(3, 4).toLowerCase() + avgKey.slice(4); // avgKcal -> kcal, avgFreeSugars -> freeSugars
+    const delta = summaryAfter[avgKey] - summaryBefore[avgKey];
+    const expectedDelta = expectedExtra[rawKey] / 7;
+    assert(Math.abs(delta - expectedDelta) < 1e-6,
+      'C3: weekNutriSummary.' + avgKey + ' shifts by exactly the quick-adds’ total / 7',
+      'got delta=' + delta + ', expected ' + expectedDelta);
+  });
+
+  // (c) a DIFFERENT week (next week, a distinct plan object) is unaffected by this week's
+  // logHistory — next week's dates have no log entries regardless of the fix's guard.
+  const nextMonday = call(ctx, 'nextMondayISO', []);
+  const nextPlan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  assert(nextPlan.weekStartDate !== wk, 'C3 test setup: next week is a genuinely different plan/week', nextPlan.weekStartDate);
+  const nextDayViews = call(ctx, 'weekDayNutriViews', [nextPlan, person]);
+  nextDayViews.forEach(function(dv, i){
+    assert(dv.quickAddCount === 0, 'C3: next week day' + i + ' quickAddCount === 0 (no logHistory exists for future dates)', 'got ' + dv.quickAddCount);
+  });
+
+  // (d) regression-document: computeInsights' per-day kcal for pastDate already INCLUDES
+  // the quick-adds (no meal was confirmed for pastDate in this test, so logHistory holds
+  // ONLY the 2 quick-add entries — Insights flipping from unlogged/0kcal to logged/
+  // expectedExtra.kcal proves it counts kind:'food' entries same as everything else,
+  // the already-correct Insights behavior this batch must never break).
+  const insightsAfter = call(ctx, 'computeInsights', [person]);
+  const insightsDayAfter = insightsAfter.days.filter(function(d){ return d.date === pastDate; })[0];
+  assert(!!insightsDayAfter, 'C3 regression check: computeInsights returns an entry for pastDate', pastDate);
+  assert(insightsDayAfter.logged === true, 'C3 regression-document: computeInsights marks pastDate logged once quick-adds exist', JSON.stringify(insightsDayAfter));
+  const expectedInsightsKcal = Math.round(expectedExtra.kcal);
+  assert(Math.abs(insightsDayAfter.kcal - expectedInsightsKcal) <= 1,
+    'C3 regression-document: computeInsights day kcal for pastDate INCLUDES the quick-adds (already-correct Insights behavior, pinned so it can never regress silently)',
+    'got ' + insightsDayAfter.kcal + ', expected ~' + expectedInsightsKcal);
+}
+
 /* ---------------- task B3: sides/extras from the Week screen (next-week context) ----------------
    The Week screen's new ＋ button (render.js:openWeekAddMealSheet) reaches the extras sheet
    with an explicit {weekStartDate, dayIndex, slot, person} context instead of a dateISO
@@ -1480,6 +1718,179 @@ function testWeekExtrasNextWeek(ctx){
   assert(JSON.stringify(revalidated) === JSON.stringify(before),
     'B3: ensureWeekPlan(nextMonday) revalidation leaves the edited plan (incl. both extras) byte-identical -- no regeneration',
     'before=' + JSON.stringify(before) + ' after=' + JSON.stringify(revalidated));
+}
+
+/* ---------------- task C1: Insights per-day nutrient bands ----------------
+   computeInsights (planner.js) now sums carbs/freeSugars (kind-agnostic, same entries
+   loop as kcal/protein/fat/fiber) and classifies each logged day against 5 bands:
+   protein/carbs/fat vs the person's own targetP/targetC/targetF (+-10%, same window the
+   kcal inBand check uses), fiber vs WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay (floor only),
+   free sugars vs coverageGaps().freeSugars.target converted to grams for the person's
+   calorie goal (ceiling only) -- the SAME derivation render.js:weekNutriSummary already
+   uses for sugarTargetG, so Insights and the Week card can never disagree on it. */
+function testInsightsNutrientBands(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  call(ctx, 'ensureWeekPlan', []); // populates weekPlan -- coverageGaps/computeWeeklyCoverage default to it
+  const person = 'elena';
+  call(ctx, 'recomputeProf', [person]); // fresh targetP/targetC/targetF/calGoalNum before reading them
+
+  const targetP = get(ctx, "PROF['" + person + "'].targetP");
+  const targetC = get(ctx, "PROF['" + person + "'].targetC");
+  const targetF = get(ctx, "PROF['" + person + "'].targetF");
+  assert(targetP > 0 && targetC > 0 && targetF > 0,
+    'C1 test setup: PROF.elena has positive targetP/targetC/targetF', 'P=' + targetP + ' C=' + targetC + ' F=' + targetF);
+
+  const last7 = call(ctx, 'last7Dates', []);
+  assert(Array.isArray(last7) && last7.length === 7 && last7[6] === FIXED_MONDAY,
+    'C1 test setup: last7Dates()[6] is today', JSON.stringify(last7));
+
+  // bandTargets is computed before computeInsights' <2-logged-days early return, so it's
+  // available even with zero logHistory -- read the free-sugars gram cap it derived,
+  // plus an INDEPENDENTLY computed expectation (same technique as B4's sugarTargetG test)
+  // to prove it's the coverageGaps()-derived value, not a re-typed literal.
+  const bandTargets0 = call(ctx, 'computeInsights', [person]).bandTargets;
+  const gapsFreeSugarsTarget = call(ctx, 'coverageGaps', [call(ctx, 'computeWeeklyCoverage', [])]).freeSugars.target;
+  const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
+  const expectedSugarCapG = calGoal > 0 ? Math.round((gapsFreeSugarsTarget / 100) * calGoal / 4) : 0;
+  assert(bandTargets0.freeSugars === expectedSugarCapG,
+    'C1: computeInsights().bandTargets.freeSugars derives from coverageGaps().freeSugars.target (the SAME sugar target Insights/Week already share), not a re-typed literal',
+    'got ' + bandTargets0.freeSugars + ', expected ' + expectedSugarCapG);
+  assert(bandTargets0.fiber === get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay'),
+    'C1: computeInsights().bandTargets.fiber === WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay (never re-typed)',
+    'got ' + bandTargets0.fiber);
+  const sugarCapG = bandTargets0.freeSugars;
+  assert(sugarCapG > 0, 'C1 test setup: sugarCapG is positive (otherwise the over/in-band sugars fixtures below prove nothing)', 'got ' + sugarCapG);
+
+  // (a) kind-agnostic carbs/freeSugars sums: a real PLAN entry (components -> recipeNutrition
+  // path) plus a real quick-add FOOD entry, on the same day, both counted.
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const recipeId = Object.keys(RECIPES_DB)[0];
+  const components = [{recipeId: recipeId, portion: 1}];
+  call(ctx, 'logPlanEntry', [FIXED_MONDAY, person, 'lunch', recipeId, 1, components]);
+  const FOODS = get(ctx, 'FOODS');
+  const foodId = Object.keys(FOODS)[0];
+  call(ctx, 'logFoodEntry', [FIXED_MONDAY, person, foodId, 100]);
+
+  const planNut = call(ctx, 'nutritionForRecipeComponents', [components]);
+  const foodNut = call(ctx, 'foodMacros', [foodId, 100]);
+  const expectedCarbs = planNut.carbs + foodNut.carbs;
+  const expectedFreeSugars = planNut.freeSugars + foodNut.freeSugars;
+
+  const dataToday = call(ctx, 'computeInsights', [person]);
+  const todayDay = dataToday.days[6];
+  assert(todayDay.date === FIXED_MONDAY, 'C1 test setup: computeInsights.days[6] is today', todayDay.date);
+  assert(Math.abs(todayDay.carbs - expectedCarbs) < 1e-6,
+    'C1: computeInsights day.carbs sums a plan entry + a quick-add (kind-agnostic, same loop as kcal/protein)',
+    'got ' + todayDay.carbs + ', expected ' + expectedCarbs);
+  assert(Math.abs(todayDay.freeSugars - expectedFreeSugars) < 1e-6,
+    'C1: computeInsights day.freeSugars sums a plan entry + a quick-add (kind-agnostic, same loop as kcal/protein)',
+    'got ' + todayDay.freeSugars + ', expected ' + expectedFreeSugars);
+
+  run(ctx, 'logHistory = {};'); // clear before crafting the per-band fixture days below
+
+  // (b) band classification: one crafted day each for in-band/over/under on PROTEIN (the
+  // representative +-10%-window metric: protein/carbs/fat all share classifyWindowBand),
+  // and in-band/over on FREE SUGARS (the representative ceiling-only metric alongside
+  // fiber's floor-only case -- sugars has no "too little" bad state by the C1 spec, so only
+  // 2 of the 3 states are meaningful there). Raw entries carry every NUTRIENT_KEYS field
+  // as a finite number, so logEntryNutrition() takes the direct fallback-fields path
+  // (engine.js) deterministically regardless of kind.
+  function pushRawEntry(date, overrides){
+    ctx.__c1Fixture__ = Object.assign({kind: 'food', ref: '__c1_fixture__', grams: 100,
+      id: 'c1-' + date + '-' + Math.random().toString(16).slice(2),
+      kcal: 500, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, t: '12:00'}, overrides);
+    run(ctx, "getDayLog('" + date + "')['" + person + "'].push(__c1Fixture__); delete __c1Fixture__;");
+  }
+
+  const proteinInDate = last7[0], proteinOverDate = last7[1], proteinUnderDate = last7[2];
+  pushRawEntry(proteinInDate, {protein: targetP}); // exactly at target -> within +-10%
+  pushRawEntry(proteinOverDate, {protein: targetP * 1.5}); // well above +10%
+  pushRawEntry(proteinUnderDate, {protein: targetP * 0.5}); // well below -10%
+
+  const sugarsInDate = last7[3], sugarsOverDate = last7[4];
+  pushRawEntry(sugarsInDate, {freeSugars: sugarCapG * 0.5}); // comfortably under the cap
+  pushRawEntry(sugarsOverDate, {freeSugars: sugarCapG * 2}); // well over the cap
+
+  const data = call(ctx, 'computeInsights', [person]);
+  const dayFor = function(date){ return data.days.filter(function(d){ return d.date === date; })[0]; };
+
+  const inDay = dayFor(proteinInDate), overDay = dayFor(proteinOverDate), underDay = dayFor(proteinUnderDate);
+  assert(!!inDay && !!inDay.bands, 'C1 test setup: protein in-band fixture day is logged/classified', JSON.stringify(inDay));
+  assert(inDay.bands.protein === 'in', 'C1: protein at target classifies as "in" band', 'got ' + (inDay.bands && inDay.bands.protein));
+  assert(overDay.bands.protein === 'over', 'C1: protein 50% over target classifies as "over" band', 'got ' + overDay.bands.protein);
+  assert(underDay.bands.protein === 'under', 'C1: protein 50% under target classifies as "under" band', 'got ' + underDay.bands.protein);
+
+  const sugarsInDay = dayFor(sugarsInDate), sugarsOverDay = dayFor(sugarsOverDate);
+  assert(sugarsInDay.bands.freeSugars === 'in', 'C1: free sugars at half the cap classifies as "in" band', 'got ' + sugarsInDay.bands.freeSugars);
+  assert(sugarsOverDay.bands.freeSugars === 'over', 'C1: free sugars at 2x the cap classifies as "over" band', 'got ' + sugarsOverDay.bands.freeSugars);
+
+  // unlogged days in the window carry bands: null (render.js paints the empty-state bar).
+  const unloggedDate = last7[6] === FIXED_MONDAY ? last7[5] : last7[6]; // any date not fixtured above
+  if([proteinInDate, proteinOverDate, proteinUnderDate, sugarsInDate, sugarsOverDate].indexOf(unloggedDate) === -1){
+    const unloggedDay = dayFor(unloggedDate);
+    assert(unloggedDay.logged === false && unloggedDay.bands === null,
+      'C1: an unlogged day in the 7-day window carries bands: null', JSON.stringify(unloggedDay));
+  }
+
+  run(ctx, 'logHistory = {};'); // don't leak these fixture days into later tests
+
+  // (c) source-grep guard: computeInsights references WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay
+  // and coverageGaps()'s freeSugars.target literally -- no re-typed 25/6 bare literal.
+  const plannerSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'planner.js'), 'utf8');
+  const insightsFnMatch = plannerSrc.match(/function computeInsights\([^)]*\)\{[\s\S]*?\n\}\n/);
+  const insightsFn = insightsFnMatch ? insightsFnMatch[0] : '';
+  assert(insightsFn.length > 0, 'C1 source guard: computeInsights() function body found in planner.js', 'not found');
+  assert(insightsFn.indexOf('WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay') !== -1,
+    'C1 source guard: computeInsights references WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay literally (grep-detectable single source)', insightsFn);
+  assert(insightsFn.indexOf('.freeSugars.target') !== -1,
+    'C1 source guard: computeInsights references coverageGaps(...).freeSugars.target literally instead of a re-typed sugar-target literal', insightsFn);
+  // Same targeted style as the B4 guard above -- an actual assignment of the bare number
+  // (the real regression risk), not a blanket "no digit 25/6 anywhere" scan (which would
+  // false-positive on this very function's own doc comments explaining it's NOT re-typed).
+  assert(!/\bfiberMinPerDay\s*=\s*25\b/.test(insightsFn) && !/\bsugarTargetPct\s*=\s*6\b/.test(insightsFn),
+    'C1 source guard: neither fiber (25) nor sugar (6) target is re-typed as a bare literal assignment in computeInsights', insightsFn);
+}
+
+/* ---------------- task C1: quick-add edit/delete must live-refresh the Week screen ----------------
+   Confirmed bug: refreshAfterLogChange() (render.js) — the single documented refresh funnel
+   for every log-affecting action — never called renderWeek(), so the Week screen's day rows/
+   totals (which also derive from logHistory) went stale after saveEditTodayFood/
+   deleteTodayRecordGroup/removeTodayEntry/deleteEditingTodayFood/undoLogSlot/
+   undoRecipeEatenSlot. Only the 3 B5 catch-up-logging paths (weekLogConfirm/weekLogSkip/
+   weekLogUndo) called renderWeek() themselves, explicitly, right after
+   refreshAfterLogChange(). The fix centralizes renderWeek() INSIDE refreshAfterLogChange
+   and removes those 3 now-redundant explicit calls -- exactly one Week render per action,
+   for every caller. A DOM-level test is impractical here: tools/check.js's document stub
+   returns null from getElementById (see this file's header doc), and renderWeek() itself
+   throws on that null #weekList, so this is a structural/source assertion instead: count
+   'renderWeek()' occurrences in each function's own extracted source. */
+function testRefreshAfterLogChangeRendersWeekOnce(){
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+  const occurrences = function(src, needle){ return src.length ? src.split(needle).length - 1 : 0; };
+
+  const refreshFn = fnBody('refreshAfterLogChange');
+  assert(refreshFn.length > 0, 'C1 setup: refreshAfterLogChange() function body found in render.js', 'not found');
+  assert(occurrences(refreshFn, 'renderWeek()') === 1,
+    'C1: refreshAfterLogChange() calls renderWeek() exactly once — the single shared funnel every log-affecting action now goes through',
+    refreshFn);
+
+  const callerNames = ['deleteTodayRecordGroup', 'saveEditTodayFood', 'removeTodayEntry',
+    'deleteEditingTodayFood', 'undoLogSlot', 'undoRecipeEatenSlot',
+    'weekLogConfirm', 'weekLogSkip', 'weekLogUndo'];
+  callerNames.forEach(function(name){
+    const fn = fnBody(name);
+    assert(fn.length > 0, 'C1 setup: ' + name + '() function body found in render.js', 'not found');
+    assert(fn.indexOf('refreshAfterLogChange()') !== -1,
+      'C1 setup: ' + name + '() calls refreshAfterLogChange()', fn);
+    assert(occurrences(fn, 'renderWeek()') === 0,
+      'C1: ' + name + '() does not ALSO call renderWeek() itself — exactly one Week re-render per action, via the shared funnel (regression test for the quick-add-delete-path bug)',
+      fn);
+  });
 }
 
 /* ---------------- escaping helpers (stored-XSS hardening) ----------------
@@ -1660,11 +2071,15 @@ function main(){
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
+  runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
+  runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
+  runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
+  runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch

@@ -295,6 +295,15 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 /* task D1: an un-logged day in the Insights 7-day bar chart — visually distinct (pale,
    flat) from a real short bar so it doesn't read as "a bad day". */
 .spark .col.empty{background:#eef0ec;}
+/* task C1: per-day nutrient-band bars — 'over' (too high, e.g. free sugars past the cap)
+   and 'under' (too low, e.g. fiber short of the floor) reuse the existing terra palette
+   instead of introducing new colors; 'hi' (sage, above) still means in-band. */
+.spark .col.over{background:var(--terra);}
+.spark .col.under{background:var(--terra-tint);}
+/* task C1: 5 rows share one card, so each row's bar chart is shorter than the single
+   #insightsBarsCard kcal chart; margin-bottom reserves room for the absolutely-positioned
+   day-letter labels (.spark .col b, bottom:-20px) so rows never overlap. */
+.spark.compact{height:34px;margin-top:4px;margin-bottom:22px;}
 
 /* weekly adherence band */
 .band{display:flex;gap:8px;margin-top:14px;}

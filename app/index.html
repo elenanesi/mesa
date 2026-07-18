@@ -350,13 +350,12 @@
         <div class="why" style="margin-top:12px" id="coverageNote"></div>
       </div>
 
-      <div class="card">
-        <div class="row between"><b style="font-size:14px">Last week in one minute</b><span class="pill ghost">Weekly reflection</span></div>
-        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🎉</div><div class="li-t">Win — protein on target 6 of 7 days<small>Lentil lunches carried the week</small></div></div>
-        <div class="logitem"><div class="li-i" style="background:var(--sage-tint)">🦋</div><div class="li-t">Win — selenium fully covered<small>Brazil nuts + salmon dinners</small></div></div>
-        <div class="logitem" style="border-bottom:0"><div class="li-i" style="background:var(--terra-tint)">🌤️</div><div class="li-t">Gentle focus — vitamin D dipped<small>Thu & Sat egg additions should help next week</small></div></div>
-        <button class="cta ghostbtn" onclick="toast('📅 Planning next week around this week\'s wins…')">Plan next week</button>
-      </div>
+      <!-- task C1: per-day nutrient bands (5 rows x 7 mini-bars: protein/carbs/fat/fiber/
+           free sugars) — replaces the deleted static "Last week in one minute" card, which
+           was hardcoded mockup content (fake wins + a toast-only button) nothing computed.
+           Painted by renderInsights() (render.js), same #insightsBarsCard visual pattern
+           (.spark/.col), same "<2 logged days" empty state as the other Insights cards. -->
+      <div class="card" id="insightsNutrientBands"></div>
 
       <!-- Rendered by renderInsights() (render.js, task D1): 4 real computed stat tiles,
            or one spanning "log a few days" empty-state tile below 2 logged days. -->
@@ -366,15 +365,23 @@
 
       <div class="card" id="insightsBarsCard"></div>
 
-      <h2><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>What's working</h2>
+      <h2><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>Insights</h2>
       <div class="card" style="padding:14px" id="insightsWorking"></div>
 
-      <div class="banner">
-        <div class="ai">Weekly review · powered by Mesa coach <span class="badge-mini">✨ Suggestion</span></div>
-        <div class="bt">Want next week tuned for skin?</div>
-        <div class="bd">I can nudge omega-3 up and dairy/sugar down while keeping your calories and protein identical.</div>
+      <!-- task C2: real "Tune next week" card, replacing the fake Mesa-coach banner + the
+           toast-only "Tune next week" button (neither computed anything). nextWeekTuning
+           (state.js) is a household-level setting (plans are shared, not per-person) —
+           6 fixed chips, same .pill.chip-preset/.chipsel pattern the macro-split presets
+           use (index.html #macroPresets), current selection highlighted, one fixed
+           explanation line below. Painted by renderTuningCard() (render.js), called from
+           renderInsights(). Selecting a chip runs setNextWeekTuning() (render.js): persist
+           → toast → ensureWeekPlan(nextMondayISO()) so next week regenerates against the
+           new planner.js:tuningBonus() term → re-render Week/Today/Log/Insights. -->
+      <div class="card" style="padding:14px" id="tuningCard">
+        <div class="row between" style="margin-bottom:4px"><b style="font-size:14px">Tune next week</b></div>
+        <div class="row" id="tuningChips" style="gap:7px;flex-wrap:wrap;margin-top:8px"></div>
+        <p class="sub" style="margin-top:10px" id="tuningNote"></p>
       </div>
-      <button class="cta" onclick="toast('✨ Tuning next week for skin…')">Tune next week</button>
     </section>
 
     <!-- ============ PROFILE ============ -->

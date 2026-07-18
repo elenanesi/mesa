@@ -435,6 +435,17 @@ function dayDateLabel(dateISO){
 // overlay" totals — a skipped meal wasn't eaten, matching how recomputeConsumed/Insights
 // already zero it via the raw logHistory entries. Without this guard the day macro line
 // and week nutrient card silently disagreed with the row's own ∅ state.
+// C3 fix: quick-add kind:'food' log entries (Log screen's quick-add foods/beverages —
+// cappuccinos, gelato, anything logged outside a meal slot) are NEVER slot views —
+// displayedSlotViewForDate only ever resolves a slot's kind:'plan' entry or the planned
+// recipe — so computeInsights/recomputeConsumed (which iterate the whole day log,
+// kind-agnostic) already counted them while this function didn't. Folded in here, once,
+// so both renderWeek's day-header kcal and its macro line (which both read THIS totals
+// object — see renderWeek below) can never disagree. Only for days that already have a
+// real log, i.e. day.date <= todayISO(): a next-week plan's days (and any future date
+// within the current week) always sort after today, so this single date check is enough
+// to skip them — no separate "is this the current week's plan" flag needed, and no
+// logHistory entries exist for future dates regardless.
 function weekDayNutriViews(plan, person){
   return plan.days.map(function(day){
     const views = {};
@@ -449,7 +460,19 @@ function weekDayNutriViews(plan, person){
       totals.kcal += view.kcal; totals.protein += view.protein; totals.carbs += view.carbs;
       totals.fat += view.fat; totals.fiber += view.fiber; totals.sugars += view.sugars; totals.freeSugars += view.freeSugars;
     });
-    return {views: views, totals: totals};
+    let quickAddCount = 0;
+    if(day.date <= todayISO()){
+      const dayLog = getDayLog(day.date);
+      const entries = (dayLog && dayLog[person]) || [];
+      entries.forEach(function(e){
+        if(!e || e.kind !== 'food') return;
+        quickAddCount++;
+        const nut = logEntryNutrition(e);
+        totals.kcal += nut.kcal; totals.protein += nut.protein; totals.carbs += nut.carbs;
+        totals.fat += nut.fat; totals.fiber += nut.fiber; totals.sugars += nut.sugars; totals.freeSugars += nut.freeSugars;
+      });
+    }
+    return {views: views, totals: totals, quickAddCount: quickAddCount};
   });
 }
 
@@ -550,8 +573,13 @@ function renderWeek(){
     // (FREE sugars is the headline metric there — planner.js coverageGaps' 'freeSugars'
     // entry, label "Free sugars" — so it's labeled the same way here rather than showing
     // total sugars, which would be a second, disagreeing figure).
+    // C3: honestly surface the quick-add entries folded into `totals` above (count only,
+    // no list — keeps the row compact per the plan) so the macro line doesn't silently
+    // read higher than the meal titles above it would suggest.
+    const extrasNote = dayViews[di].quickAddCount > 0
+      ? ' · <b>+ ' + dayViews[di].quickAddCount + ' logged extras</b>' : '';
     const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
-      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g</div>';
+      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g'+extrasNote+'</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" data-di="'+di+'">'
       + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
@@ -828,8 +856,7 @@ function weekLogConfirm(){
   const opts = ctx.dateISO === todayISO() ? undefined : {tNull: true};
   logPlanEntry(ctx.dateISO, ctx.person, ctx.slot, entry.recipeId, entry.portion, components, opts);
   closeSheet();
-  refreshAfterLogChange();
-  renderWeek();
+  refreshAfterLogChange(); // task C1: now renders Week itself — see that function's doc comment
   toast('✓ Logged ' + dayDateLabel(ctx.dateISO).toLowerCase());
 }
 
@@ -838,8 +865,7 @@ function weekLogSkip(){
   const ctx = weekLogCtx;
   markSlotSkipped(ctx.dateISO, ctx.person, ctx.slot);
   closeSheet();
-  refreshAfterLogChange();
-  renderWeek();
+  refreshAfterLogChange(); // task C1: now renders Week itself — see that function's doc comment
   toast('∅ Skipped ' + dayDateLabel(ctx.dateISO).toLowerCase());
 }
 
@@ -850,8 +876,7 @@ function weekLogUndo(){
   if(!status){ closeSheet(); return; }
   removeLoggedSlot(ctx.dateISO, ctx.person, ctx.slot);
   closeSheet();
-  refreshAfterLogChange();
-  renderWeek();
+  refreshAfterLogChange(); // task C1: now renders Week itself — see that function's doc comment
   toast('↺ Un-logged ' + dayDateLabel(ctx.dateISO).toLowerCase());
 }
 
@@ -1937,6 +1962,14 @@ function refreshAfterLogChange(){
   renderTodayRecords();
   renderBeverageCounts();
   if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // keep Today cards in sync only when editing today
+  // task C1 fix: the Week screen's day rows/totals also derive from logHistory (same as
+  // everything above), but previously only weekLogConfirm/weekLogSkip/weekLogUndo re-painted
+  // Week themselves after this funnel — every OTHER caller (quick-add edit/delete:
+  // saveEditTodayFood/deleteTodayRecordGroup/removeTodayEntry/deleteEditingTodayFood, plus
+  // undoLogSlot/undoRecipeEatenSlot) left Week stale until the next unrelated repaint.
+  // Centralizing the repaint here is the single funnel this function's own doc comment
+  // promises — those three callers' now-redundant explicit repaint calls were removed.
+  renderWeek();
   persist();
 }
 
@@ -2779,26 +2812,73 @@ function jumpToProfileSection(id, el){
    =================================================================== */
 const INSIGHTS_EMPTY_NOTE = 'Log a few days to unlock this — Mesa needs at least 2 logged days to show real trends here.';
 
+// task C1: the 5 nutrient-band rows, in fixed display order — each reuses the exact
+// #insightsBarsCard 7-day .spark/.col bar pattern (empty state included), just at a
+// shorter height (.spark.compact, css/mesa.css) so 5 rows fit in one card. Colors reuse
+// the existing sage ('hi', in-band)/terra ('over')/terra-tint ('under') palette — no new
+// design language, just two new modifier classes on the same .col element.
+const NUTRIENT_BAND_ROWS = [
+  {key: 'protein', label: 'Protein'},
+  {key: 'carbs', label: 'Carbs'},
+  {key: 'fat', label: 'Fat'},
+  {key: 'fiber', label: 'Fiber'},
+  {key: 'freeSugars', label: 'Free sugars'}
+];
+
+// Fiber/free-sugars are single-direction targets (floor / ceiling); protein/carbs/fat are
+// a symmetric ±10% window — the label prefix communicates which, using the SAME target
+// number computeInsights already derived (never re-typed here).
+function nutrientBandTargetLabel(key, target){
+  const g = Math.round(target);
+  if(key === 'fiber') return '≥' + g + 'g/day';
+  if(key === 'freeSugars') return '≤' + g + 'g/day';
+  return '~' + g + 'g/day';
+}
+
+function nutrientBandRowHtml(row, days, target){
+  const cols = days.map(function(d){
+    if(!d.logged) return '<div class="col empty" style="height:14%" title="Not logged"><b>'+d.letter+'</b></div>';
+    const value = d[row.key];
+    const pct = target > 0 ? Math.max(6, Math.min(100, Math.round(value / target * 100))) : 100;
+    const status = d.bands && d.bands[row.key];
+    const cls = status === 'over' ? 'over' : (status === 'under' ? 'under' : 'hi');
+    return '<div class="col '+cls+'" style="height:'+pct+'%" title="'+Math.round(value)+'g vs '+nutrientBandTargetLabel(row.key, target)+'"><b>'+d.letter+'</b></div>';
+  }).join('');
+  return '<div class="row between" style="margin-bottom:4px"><b style="font-size:13px">'+row.label+'</b><span class="pill ghost" style="font-size:10px">'+nutrientBandTargetLabel(row.key, target)+'</span></div>'
+    + '<div class="spark compact">' + cols + '</div>';
+}
+
 function renderInsights(){
   const statWrap = document.getElementById('insightsStats');
+  const bandsWrap = document.getElementById('insightsNutrientBands');
   const bandWrap = document.getElementById('insightsBandCard');
   const barsWrap = document.getElementById('insightsBarsCard');
   const workingWrap = document.getElementById('insightsWorking');
-  if(!statWrap || !bandWrap || !barsWrap || !workingWrap) return; // Insights markup not present
+  if(!statWrap || !bandsWrap || !bandWrap || !barsWrap || !workingWrap) return; // Insights markup not present
 
   // FIX 3 (feedback): the coverage card lives at the top of Insights now — refresh its
   // chips/pill/note on every visit (plan-derived, so not gated on logged-day count).
   renderNutrientChips();
+  // task C2 (2026-07-18): the "Tune next week" chip card is likewise plan-derived, not
+  // log-derived — paint it unconditionally too, same reasoning as renderNutrientChips().
+  renderTuningCard();
 
   const data = computeInsights(currentProf);
 
   if(!data.hasEnoughData){
     statWrap.innerHTML = '<div class="s" style="grid-column:1/-1"><div class="sl" style="font-size:13px;font-weight:700;color:var(--ink)">Stats</div><p class="sub" style="margin-top:6px">'+INSIGHTS_EMPTY_NOTE+'</p></div>';
+    bandsWrap.innerHTML = '<div class="row between"><b style="font-size:14px">Nutrient bands</b></div><p class="sub" style="margin-top:6px">'+INSIGHTS_EMPTY_NOTE+'</p>';
     bandWrap.innerHTML = '<div class="row between"><b style="font-size:14px">Your weekly band</b></div><p class="sub" style="margin-top:6px">'+INSIGHTS_EMPTY_NOTE+'</p>';
     barsWrap.innerHTML = '<div class="row between" style="margin-bottom:6px"><b style="font-size:14px">Calories vs target</b></div><p class="sub">'+INSIGHTS_EMPTY_NOTE+'</p>';
     workingWrap.innerHTML = '<p class="sub" style="margin:0">'+INSIGHTS_EMPTY_NOTE+'</p>';
     return;
   }
+
+  // task C1: 5-row nutrient bands (protein/carbs/fat/fiber/free sugars vs each metric's
+  // own band) — data.bandTargets/data.days[i].bands come straight from computeInsights, so
+  // this is pure paint, no re-derivation of any threshold.
+  bandsWrap.innerHTML = '<div class="row between" style="margin-bottom:10px"><b style="font-size:14px">Nutrient bands <span class="chip-computed">✓ computed</span></b><span class="pill">last 7 days</span></div>'
+    + NUTRIENT_BAND_ROWS.map(function(row){ return nutrientBandRowHtml(row, data.days, data.bandTargets[row.key]); }).join('');
 
   // stat tiles
   const tiles = [
@@ -2835,6 +2915,42 @@ function renderInsights(){
     const bg = c.good ? 'var(--sage-tint)' : 'var(--terra-tint)';
     return '<div class="logitem"'+(last ? ' style="border-bottom:0"' : '')+'><div class="li-i" style="background:'+bg+'">'+c.icon+'</div><div class="li-t">'+c.text+'</div></div>';
   }).join('');
+}
+
+/* ===================================================================
+   "Tune next week" chip card (task C2, 2026-07-18) — replaces the fake Mesa-coach
+   banner + toast-only button. Fixed vocabulary (NEXT_WEEK_TUNING_DEFS, state.js), so the
+   chips are built here but every onclick argument is a hardcoded constant — no user
+   string ever reaches this markup. Same .pill.chip-preset/.chipsel look #macroPresets
+   (index.html) already uses for a single-select chip row.
+   =================================================================== */
+function renderTuningCard(){
+  const chipsEl = document.getElementById('tuningChips');
+  const noteEl = document.getElementById('tuningNote');
+  if(!chipsEl || !noteEl) return; // Insights markup not present
+  chipsEl.innerHTML = NEXT_WEEK_TUNING_DEFS.map(function(d){
+    const on = d.key === nextWeekTuning;
+    return '<button class="pill ghost chip-preset' + (on ? ' chipsel' : '') + '" onclick="setNextWeekTuning(\'' + d.key + '\')">' + d.title + '</button>';
+  }).join('');
+  noteEl.textContent = nextWeekTuningDef(nextWeekTuning).note;
+}
+
+// Persists the household's tuning goal, regenerates next week (and current week's still-
+// unlogged/unpinned future slots — same signature-driven regen every other
+// computePlanSignature input already causes), and repaints every plan-derived screen —
+// mirrors the refresh scope applyProf() runs after a householdStyle-affecting change,
+// minus the profile-specific fields (goal tag, macro editor, avoid pills…) that tuning
+// never touches.
+function setNextWeekTuning(key){
+  if(NEXT_WEEK_TUNING_KEYS.indexOf(key) === -1) return;
+  nextWeekTuning = key;
+  persist();
+  toast('✓ ' + nextWeekTuningDef(key).title + ' — next week regenerating…');
+  ensureWeekPlan(nextMondayISO());
+  renderInsights();
+  renderWeek();
+  renderTodayMeals();
+  renderLogPlan();
 }
 
 /* ===================================================================
@@ -2968,6 +3084,12 @@ function confirmQuickAdd(){
   renderTodaySoFar();
   renderTodayRecords();
   renderBeverageCounts();
+  // C3: a quick-add is a kind:'food' logHistory entry, which weekDayNutriViews now folds
+  // into the CURRENT week's day totals (Week screen header/macro line) whenever the
+  // logged date is today-or-earlier — repaint Week here too, same as every other
+  // logHistory mutator in this file (confirm/skip/swap/extras), so it can't show stale
+  // numbers until some unrelated action happens to repaint it next.
+  renderWeek();
   persist();
   closeSheet();
   toast('✓ Added ' + grams + 'g ' + food.name + ' to ' + logDateLabel().toLowerCase());
@@ -2985,6 +3107,7 @@ function logBeverage(foodId){
   renderTodaySoFar();
   renderTodayRecords();
   renderBeverageCounts();
+  renderWeek(); // C3: same reasoning as confirmQuickAdd() above — this also writes a kind:'food' entry.
   persist();
   toast('✓ Added ' + food.name);
 }

@@ -19,11 +19,12 @@
      - plans               : per-meal-cell merge of weekPlans (each mutated
                              cell carries a `t` stamp; newer cell wins), so
                              two phones swapping DIFFERENT meals both keep
-                             their swap. SHARED + householdStyle + servings
-                             stay LWW (remote wins), as do weeks whose
-                             signatures differ (a regenerated week replaces
-                             wholesale — cell stamps aren't comparable
-                             across generations).
+                             their swap. SHARED + householdStyle + servings +
+                             nextWeekTuning (task C2, 2026-07-18) stay LWW
+                             (remote wins), as do weeks whose signatures
+                             differ (a regenerated week replaces wholesale —
+                             cell stamps aren't comparable across
+                             generations).
      - shopping            : union-merge of checked item names, per week.
      - profile:elena/partner: LWW each, one section per person so an
                              edit to Elena's profile can never clobber a
@@ -126,6 +127,7 @@ function plansSectionData(){
     mealRules: clone(mealRules),
     SHARED: {breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack},
     householdStyle: householdStyle,
+    nextWeekTuning: nextWeekTuning, // task C2 (2026-07-18): household-level, LWW like householdStyle
     servings: {svE: svE, svM: svM, svS: svS}
   };
 }
@@ -193,6 +195,10 @@ function applyPlansSectionData(data){
     Object.keys(SHARED).forEach(function(k){ if(typeof data.SHARED[k] === 'boolean') SHARED[k] = data.SHARED[k]; });
   }
   if(typeof data.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(data.householdStyle) !== -1) householdStyle = data.householdStyle;
+  // task C2 (2026-07-18): same LWW rule as householdStyle above (merged.* already carries
+  // remote's value via mergePlansSection's `clone(remote || {})` base for non-weekPlans
+  // fields — this just validates + applies it, same as every other plans-section field).
+  if(typeof data.nextWeekTuning === 'string' && NEXT_WEEK_TUNING_KEYS.indexOf(data.nextWeekTuning) !== -1) nextWeekTuning = data.nextWeekTuning;
   if(data.servings && typeof data.servings === 'object'){
     if(typeof data.servings.svE === 'number') svE = data.servings.svE;
     if(typeof data.servings.svM === 'number') svM = data.servings.svM;
@@ -265,8 +271,8 @@ function mergeShoppingSection(local, remote){
 // stepMealServings); per (week, day, slot) the later-touched cell wins. Weeks whose
 // signatures differ were REGENERATED (targets/library/shared toggles changed) — their
 // cells aren't comparable, so the newer SECTION wins that week whole (old LWW
-// behavior). SHARED/householdStyle/servings sub-fields also keep the old LWW rule
-// (remote wins) — merged starts as a clone of remote.
+// behavior). SHARED/householdStyle/servings/nextWeekTuning sub-fields also keep the old
+// LWW rule (remote wins) — merged starts as a clone of remote.
 function mergePlansSection(local, remote, remoteIsNewer){
   const merged = clone(remote || {});
   merged.weekPlans = merged.weekPlans || {};
