@@ -358,6 +358,21 @@ function foodIconHtml(foodId){
   return ingredientIconHtml(ingredientIconAssetForFood(FOODS[foodId]));
 }
 
+// task C5: the icon picker's vocabulary — unique, sorted iconKey values across BUILT-IN
+// FOODS records only (BUILTIN_FOODS_DB, the pre-merge snapshot below; NOT customFoods —
+// those are user-authored, not the curated watercolor set). Each key is validated through
+// the same safeIngredientIconKey/safeIngredientIconAsset helpers every other icon lookup
+// uses, so the picker can never offer a key that the renderer would reject. Derived at
+// runtime — no hardcoded list, no separate manifest file to keep in sync.
+function availableIngredientIconKeys(){
+  const seen = {};
+  Object.keys(BUILTIN_FOODS_DB).forEach(function(id){
+    const key = safeIngredientIconKey(BUILTIN_FOODS_DB[id].iconKey);
+    if(key && safeIngredientIconAsset('assets/ingredients/' + key + '.png')) seen[key] = true;
+  });
+  return Object.keys(seen).sort();
+}
+
 ensureDefaultFoodIconCached();
 
 function renderLibraryHub(){
@@ -1059,7 +1074,7 @@ function sugarQualityLabel(q){
 let newFoodForm = null;
 
 function openNewFoodForm(){
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false};
   renderNewFoodFormSheet();
 }
 
@@ -1081,11 +1096,20 @@ function openEditFoodForm(id){
     freeSugars: +((f.freeSugars || 0) * factor).toFixed(1),
     sugarQuality: f.sugarQuality || 'unknown',
     flags: Array.isArray(f.flags) ? f.flags.slice() : [],
-    breakfastPair: !!f.breakfastPair
+    breakfastPair: !!f.breakfastPair,
+    iconKey: safeIngredientIconKey(f.iconKey) || null,
+    iconPickerOpen: false
   };
   renderNewFoodFormSheet();
 }
-function renderNewFoodFormSheet(){ setIngredientsScreenHtml(buildNewFoodFormSheet()); }
+// Re-attaches the icon grid's delegated click handler every time (setIngredientsScreenHtml
+// replaces #libraryIngredientsBody's innerHTML wholesale, so any prior listener on the old
+// grid element is gone) — same per-render re-attach pattern as renderFoodLibraryList's
+// attachLibFoodListHandler call.
+function renderNewFoodFormSheet(){
+  setIngredientsScreenHtml(buildNewFoodFormSheet());
+  attachNewFoodIconGridHandler();
+}
 
 function computeNewFoodKcal(f){ return Math.round(4 * f.protein + 4 * f.carbs + 9 * f.fat); }
 
@@ -1158,6 +1182,20 @@ function buildNewFoodFormSheet(){
     + '<div class="ck">' + (f.breakfastPair ? '✓' : '') + '</div>'
     + '<div><div class="ot">Can pair with a light breakfast</div><div class="od">Lets the planner combine this food (bread or fruit) with a plain protein breakfast main.</div></div></div></div>';
 
+  // task C5: icon picker — current selection preview (default watercolor until chosen) +
+  // a "Choose icon" toggle expanding a grid of the existing built-in watercolor icons.
+  // f.iconPickerOpen persists on newFoodForm across renderNewFoodFormSheet() re-renders
+  // (the same state object survives every setNewFoodCat/stepNewFoodField/etc. call), so
+  // picking a tile doesn't collapse the grid.
+  const currentIconKey = safeIngredientIconKey(f.iconKey || '');
+  const previewSrc = currentIconKey ? 'assets/ingredients/' + currentIconKey + '.png' : '';
+  html += '<div class="field"><label>Icon</label><div class="row" style="gap:12px;align-items:center;margin-top:6px">'
+    + ingredientIconHtml(previewSrc)
+    + '<button class="pill ghost chip-preset" onclick="toggleNewFoodIconPicker()">' + (f.iconPickerOpen ? 'Hide icons' : 'Choose icon') + '</button>'
+    + '</div>'
+    + (f.iconPickerOpen ? buildNewFoodIconGrid(currentIconKey) : '')
+    + '</div>';
+
   html += '<button class="cta" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
     + '<button class="cta ghostbtn" onclick="openFoodLibrary()">Cancel</button>';
   return html;
@@ -1174,6 +1212,52 @@ function toggleNewFoodFlag(fl){
 function toggleNewFoodBreakfastPair(){
   newFoodForm.breakfastPair = !newFoodForm.breakfastPair;
   renderNewFoodFormSheet();
+}
+
+// task C5: tiles carry the icon key in data-icon-key (ingredient icon tiles use data-* +
+// a delegated handler, per the repo's established convention for interactive grid tiles —
+// same reasoning as attachLibFoodListHandler's data-food-id even though these values come
+// from availableIngredientIconKeys()/FOODS, not user input). A leading "Default" tile
+// carries an empty data-icon-key, which clears the field.
+function buildNewFoodIconGrid(currentIconKey){
+  const keys = availableIngredientIconKeys();
+  let html = '<div class="icon-grid" data-role="new-food-icon-grid" style="margin-top:10px">'
+    + '<button type="button" class="icon-tile' + (!currentIconKey ? ' sel' : '') + '" data-icon-key="" aria-label="Default icon">'
+    + ingredientIconHtml('') + '<span class="icon-tile-label">Default</span></button>';
+  keys.forEach(function(key){
+    const src = 'assets/ingredients/' + key + '.png';
+    html += '<button type="button" class="icon-tile' + (currentIconKey === key ? ' sel' : '') + '" data-icon-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(key.replace(/-/g, ' ')) + ' icon">'
+      + ingredientIconHtml(src) + '</button>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function toggleNewFoodIconPicker(){
+  newFoodForm.iconPickerOpen = !newFoodForm.iconPickerOpen;
+  renderNewFoodFormSheet();
+}
+
+function setNewFoodIconKey(rawKey){
+  // Read-side revalidation (safeIngredientIconKey) even though rawKey came from a tile this
+  // same form just rendered from FOODS/availableIngredientIconKeys() — same belt-and-braces
+  // convention as attachLibFoodListHandler's data-food-id.
+  const key = safeIngredientIconKey(rawKey);
+  newFoodForm.iconKey = key || null;
+  renderNewFoodFormSheet();
+}
+
+// Delegated click handler for the icon grid (buildNewFoodIconGrid) — re-attached on every
+// renderNewFoodFormSheet() call since setIngredientsScreenHtml replaces the sheet's
+// innerHTML wholesale each time (same lifecycle as attachLibFoodListHandler).
+function attachNewFoodIconGridHandler(){
+  const el = document.querySelector('[data-role="new-food-icon-grid"]');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('.icon-tile');
+    if(!btn || !el.contains(btn)) return;
+    setNewFoodIconKey(btn.getAttribute('data-icon-key') || '');
+  };
 }
 function stepNewFoodField(key, delta){
   newFoodForm[key] = Math.max(0, Math.min(100, +(newFoodForm[key] + delta).toFixed(1)));
@@ -1219,6 +1303,11 @@ function saveNewFood(){
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   });
   delete saved.avgG;
+  // task C5: iconKey only persists when the user picked one — Default (null) removes any
+  // previously-saved key on edit rather than writing an empty string, so a cleared custom
+  // food falls back to the generic default icon exactly like a food that never had one.
+  const chosenIconKey = safeIngredientIconKey(f.iconKey || '');
+  if(chosenIconKey) saved.iconKey = chosenIconKey; else delete saved.iconKey;
   if(id.indexOf('cf-') === 0) customFoods[id] = saved;
   else foodOverrides[id] = saved;
   customRev++;

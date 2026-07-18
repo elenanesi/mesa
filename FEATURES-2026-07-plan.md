@@ -365,3 +365,22 @@ per-piece food shows per-piece basis with avgG; built-in vs custom vs edited act
 non-https source URL dropped. Verify in browser incl. hostile-named ingredient, an
 edited built-in, a barcode-imported food if present (else create-shaped fixture), and
 mobile 375x812.
+
+## C5 — Icon picker for custom ingredients (added 2026-07-18)
+
+The new/edit ingredient form gains an "Icon" section: current selection preview (the
+generic default until chosen) + a "Choose icon" control expanding a tappable grid of the
+EXISTING watercolor icons. The available set is derived at runtime from built-in FOODS
+records' iconKey values (unique, sorted, resolved via the existing
+safeIngredientIconKey/ingredientIconAssetForFood helpers — no hardcoded asset list, no
+new manifest), plus an explicit "Default" tile. Picking one sets `iconKey` on the custom
+food (same field built-ins use), so the list row, detail page, quick-add and shopping
+render it with ZERO renderer changes; it rides library sync + D1 data_json automatically
+(catalogPayloadSignature already includes iconKey). Works for barcode-imported foods via
+the edit form too. Grid tiles ≥44px, delegated handler with data-icon-key (values come
+from FOODS but pass through safeIngredientIconKey anyway), form state round-trips
+new→save→edit→reset. No auto-matching by name (non-deterministic guesswork — future).
+
+Tests: picker vocabulary = unique built-in iconKeys; save persists iconKey and the list/
+detail builders emit the chosen asset; edit round-trip preserves it; clearing back to
+Default removes the field; sync section round-trip keeps it.

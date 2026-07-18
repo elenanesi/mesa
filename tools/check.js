@@ -425,6 +425,117 @@ function testFoodDetailMarkup(ctx){
   assert(nonPairHtml.indexOf('Breakfast pairing') === -1, 'buildFoodDetailMarkup: a non-breakfastPair food shows no Breakfast pairing badge', nonPairId + ' | ' + nonPairHtml);
 }
 
+/* ---------------- ingredient icon picker (task C5) ---------------- */
+function testIconPicker(ctx){
+  const FOODS = get(ctx, 'FOODS');
+  const BUILTIN_FOODS_DB = get(ctx, 'BUILTIN_FOODS_DB');
+
+  // 1) availableIngredientIconKeys(): unique, sorted, every key resolves to an asset path
+  // via the same safe helpers the renderers use, and matches exactly the set of iconKey
+  // values BUILTIN_FOODS_DB actually carries (built-ins only — customFoods excluded).
+  const keys = call(ctx, 'availableIngredientIconKeys', []);
+  assert(Array.isArray(keys) && keys.length > 0, 'availableIngredientIconKeys: returns a non-empty array', JSON.stringify(keys));
+  const sorted = keys.slice().sort();
+  assert(JSON.stringify(keys) === JSON.stringify(sorted), 'availableIngredientIconKeys: result is sorted', JSON.stringify(keys));
+  assert(new Set(keys).size === keys.length, 'availableIngredientIconKeys: result has no duplicates', JSON.stringify(keys));
+  assert(keys.every(function(k){ return call(ctx, 'safeIngredientIconAsset', ['assets/ingredients/' + k + '.png']) === 'assets/ingredients/' + k + '.png'; }),
+    'availableIngredientIconKeys: every key resolves to a valid asset path via safeIngredientIconAsset', JSON.stringify(keys));
+  const expectedKeys = Array.from(new Set(Object.keys(BUILTIN_FOODS_DB).map(function(id){ return BUILTIN_FOODS_DB[id].iconKey; }).filter(Boolean))).sort();
+  assert(JSON.stringify(keys) === JSON.stringify(expectedKeys), 'availableIngredientIconKeys: matches the unique iconKey set on BUILTIN_FOODS_DB', JSON.stringify(keys));
+  // customFoods contributions must NOT extend the vocabulary.
+  run(ctx, "customFoods['cf-icon-vocab-test'] = {name: 'Icon vocab test', per: 100, unit: 'g', kcal: 10, protein: 1, carbs: 1, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], cat: 'Pantry', season: 'evergreen', iconKey: 'zzz-not-a-builtin-key', u: 1};");
+  call(ctx, 'applyCustomFoods', []);
+  const keysAfterCustom = call(ctx, 'availableIngredientIconKeys', []);
+  assert(JSON.stringify(keysAfterCustom) === JSON.stringify(keys), 'availableIngredientIconKeys: a customFoods iconKey does not extend the picker vocabulary', JSON.stringify(keysAfterCustom));
+  run(ctx, "delete customFoods['cf-icon-vocab-test'];");
+  call(ctx, 'applyCustomFoods', []);
+
+  const pickedKey = keys[0];
+
+  // saveNewFood's tail (toast/openFoodLibrary/applyProf/renderFoodLibraryCount) is real-DOM
+  // paint code this DOM-free harness doesn't stub (document.getElementById always returns
+  // null here, per createMesaContext) — same reasoning js/render.js's file header already
+  // documents for "functions the tests never call". Stub the three that unconditionally
+  // dereference a DOM node (toast, openFoodLibrary, applyProf) for the DURATION of the two
+  // saveNewFood() calls below only, so this test exercises saveNewFood's actual persistence
+  // logic (not a hand-rolled re-implementation of it) without tripping over unrelated paint
+  // code; restored immediately after (renderFoodLibraryCount already no-ops on a null element
+  // and needs no stub).
+  run(ctx, "var __c5stub = {toast: toast, openFoodLibrary: openFoodLibrary, applyProf: applyProf}; toast = function(){}; openFoodLibrary = function(){}; applyProf = function(){};");
+
+  // 2) Save flow: openNewFoodForm -> pick an icon -> saveNewFood persists iconKey; the list
+  // row (renderLibFoodListMarkup) and detail page (buildFoodDetailMarkup) both emit that
+  // asset with ZERO renderer special-casing (foodIconHtml/ingredientIconAssetForFood read
+  // it straight off the record).
+  call(ctx, 'openNewFoodForm', []);
+  run(ctx, "newFoodForm.name = 'Icon picker test food'; newFoodForm.protein = 5; newFoodForm.carbs = 5; newFoodForm.fat = 1; newFoodForm.iconKey = " + JSON.stringify(pickedKey) + ";");
+  call(ctx, 'saveNewFood', []);
+  const savedId = Object.keys(get(ctx, 'customFoods')).find(function(id){ return get(ctx, 'customFoods')[id].name === 'Icon picker test food'; });
+  assert(!!savedId, 'saveNewFood: the icon-picker test food was saved', savedId);
+  assert(get(ctx, 'customFoods')[savedId].iconKey === pickedKey, 'saveNewFood: persists the chosen iconKey on the custom food record', JSON.stringify(get(ctx, 'customFoods')[savedId]));
+  const expectedAsset = 'assets/ingredients/' + pickedKey + '.png';
+  const listHtml = call(ctx, 'renderLibFoodListMarkup', ['']);
+  assert(listHtml.indexOf('src="' + expectedAsset + '"') !== -1, 'renderLibFoodListMarkup: the saved custom food renders the chosen icon asset', listHtml.indexOf(pickedKey) === -1 ? 'asset not found' : 'ok');
+  const detailHtml = call(ctx, 'buildFoodDetailMarkup', [savedId]);
+  assert(detailHtml.indexOf('src="' + expectedAsset + '"') !== -1, 'buildFoodDetailMarkup: the saved custom food\'s detail page renders the chosen icon asset', detailHtml);
+
+  // 3) Edit round-trip: openEditFoodForm seeds newFoodForm.iconKey from the existing record,
+  // and buildNewFoodFormSheet's picker shows it as the current selection (sel + preview src).
+  call(ctx, 'openEditFoodForm', [savedId]);
+  assert(get(ctx, 'newFoodForm').iconKey === pickedKey, 'openEditFoodForm: seeds newFoodForm.iconKey from the existing custom food', get(ctx, 'newFoodForm').iconKey);
+  run(ctx, 'newFoodForm.iconPickerOpen = true;');
+  const editSheetHtml = call(ctx, 'buildNewFoodFormSheet', []);
+  assert(editSheetHtml.indexOf('src="' + expectedAsset + '"') !== -1, 'buildNewFoodFormSheet: edit form preview shows the existing icon asset', editSheetHtml);
+  assert(editSheetHtml.indexOf('class="icon-tile sel" data-icon-key="' + pickedKey + '"') !== -1,
+    'buildNewFoodFormSheet: the matching tile is marked selected (class="icon-tile sel")', editSheetHtml);
+
+  // 4) Clearing to Default (setNewFoodIconKey('')) removes the field on save entirely —
+  // not just blanks it — so a cleared custom food falls back to the generic default icon
+  // exactly like a food that never had one.
+  call(ctx, 'setNewFoodIconKey', ['']);
+  assert(get(ctx, 'newFoodForm').iconKey === null, 'setNewFoodIconKey(""): clears newFoodForm.iconKey to null (Default)', String(get(ctx, 'newFoodForm').iconKey));
+  call(ctx, 'saveNewFood', []);
+  run(ctx, "toast = __c5stub.toast; openFoodLibrary = __c5stub.openFoodLibrary; applyProf = __c5stub.applyProf; delete __c5stub;");
+  assert(!('iconKey' in get(ctx, 'customFoods')[savedId]), 'saveNewFood: clearing to Default removes the iconKey field from the stored record entirely', JSON.stringify(get(ctx, 'customFoods')[savedId]));
+  const clearedDetailHtml = call(ctx, 'buildFoodDetailMarkup', [savedId]);
+  assert(clearedDetailHtml.indexOf(expectedAsset) === -1, 'buildFoodDetailMarkup: after clearing to Default, the picked asset no longer renders', clearedDetailHtml);
+
+  run(ctx, "delete customFoods['" + savedId + "'];");
+  call(ctx, 'applyCustomFoods', []);
+
+  // 5) Library sync round-trip: a custom food's iconKey survives mergeLibrarySection (the
+  // whole record clones through librarySectionData()/mergeLibrarySection unchanged, same as
+  // role/breakfastPair above — this is a minimal extension of that existing coverage).
+  const local = emptyLibrarySection();
+  local.customFoods['cf-icon-sync-test'] = {name: 'Icon sync test', per: 100, unit: 'g', kcal: 40, protein: 2, carbs: 6, fat: 1, satFat: 0, fiber: 1, sugars: 1, freeSugars: 0, sugarQuality: 'unknown', flags: [], cat: 'Pantry', season: 'evergreen', iconKey: pickedKey, u: 1000};
+  const remote = emptyLibrarySection();
+  const mergedSync = call(ctx, 'mergeLibrarySection', [cloneJSON(local), cloneJSON(remote)]);
+  assert(!!mergedSync.customFoods['cf-icon-sync-test'] && mergedSync.customFoods['cf-icon-sync-test'].iconKey === pickedKey,
+    'mergeLibrarySection: a custom food\'s iconKey survives the library section round-trip', JSON.stringify(mergedSync.customFoods['cf-icon-sync-test']));
+
+  // 6) Regression-document the safe-helper fallback for a bogus iconKey. Two layers:
+  //   a) a FORMAT-invalid key (path traversal, uppercase, punctuation) is rejected by
+  //      safeIngredientIconKey/safeIngredientIconAsset at the string level, so
+  //      ingredientIconAssetForFood returns '' — ingredientIconHtml() then falls back to
+  //      defaultFoodIconSrc() straight away (no request for a bad path is ever built).
+  //   b) a format-VALID but nonexistent key (e.g. a typo'd slug) still builds a normal
+  //      assets/ingredients/<key>.png src — the safe helpers only validate shape, not that
+  //      the file exists on disk — and the fallback to the default icon happens at the DOM
+  //      level via the <img>'s onerror handler, which every ingredientIconHtml() output
+  //      wires up unconditionally.
+  const bogusFood = {iconKey: '../../evil'};
+  assert(call(ctx, 'ingredientIconAssetForFood', [bogusFood]) === '', 'ingredientIconAssetForFood: a format-invalid (path-traversal) iconKey resolves to no asset', call(ctx, 'ingredientIconAssetForFood', [bogusFood]));
+  const bogusHtml = call(ctx, 'ingredientIconHtml', [call(ctx, 'ingredientIconAssetForFood', [bogusFood])]);
+  const expectedDefaultSrc = call(ctx, 'defaultFoodIconSrc', []);
+  assert(bogusHtml.indexOf('src="' + expectedDefaultSrc + '"') !== -1, 'ingredientIconHtml: a format-invalid iconKey falls back straight to the default icon src', bogusHtml);
+
+  const typoFood = {iconKey: 'not-a-real-icon-key'};
+  const typoAsset = call(ctx, 'ingredientIconAssetForFood', [typoFood]);
+  assert(typoAsset === 'assets/ingredients/not-a-real-icon-key.png', 'ingredientIconAssetForFood: a format-valid but nonexistent iconKey still builds a normal asset path (shape-only validation)', typoAsset);
+  const typoHtml = call(ctx, 'ingredientIconHtml', [typoAsset]);
+  assert(/onerror="this\.onerror=null;this\.src=defaultFoodIconSrc\(\)"/.test(typoHtml), 'ingredientIconHtml: every rendered icon wires an onerror fallback to the default icon (covers a nonexistent-but-well-formed key at the DOM level)', typoHtml);
+}
+
 /* ---------------- render.js recipe-display helpers (compat-view removal) ----------------
    render.js used to read a second, hand-synchronized object (state.js:RECIPES, built by
    the now-deleted buildLegacyRecipesCompat()) for the recipe screen's display shape. That's
@@ -2232,6 +2343,7 @@ function main(){
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
+  runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
