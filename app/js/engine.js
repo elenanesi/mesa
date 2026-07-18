@@ -135,19 +135,75 @@ function foodMacros(foodId, grams){
   };
 }
 
-// Sums a recipe's `ingredients` (never `toTaste` — unquantified garnish, see
-// data/recipes.js) at `servings` SERVINGS eaten. A recipe's ingredient list is the
-// batch as written; `recipe.servings` (default 1 — every pre-servings recipe wrote
-// its batch as one serving) says how many servings that batch yields, so one serving
-// = batch/yield. Returns both the scaled `totals` (what `servings` servings add up
-// to) and the servings-invariant `perServing`.
+// task D1 (recipe options/variants): resolves an `opts` object ({groupKey: choiceId})
+// against `recipe.optionGroups` into a COMPLETE, valid combo — every group gets exactly
+// one entry. Missing keys, unknown group keys in `opts`, and choice ids that don't
+// belong to that group all fall back to choices[0] (authored order — the deterministic
+// default, see data/recipes.js's optionGroups doc); unknown keys in `opts` that don't
+// match any group are silently dropped (never copied into the result, since this
+// iterates recipe.optionGroups, never `opts`, to build the output). Recipes without
+// optionGroups always resolve to {} — every downstream caller treats an empty/undefined
+// opts object identically, so this is the ONE place "bad opts" gets sanitized rather
+// than every reader re-guarding it.
+function normalizeRecipeOpts(recipe, opts){
+  const out = {};
+  if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return out;
+  const src = (opts && typeof opts === 'object') ? opts : {};
+  recipe.optionGroups.forEach(function(group){
+    if(!group || typeof group.key !== 'string') return;
+    const choices = Array.isArray(group.choices) ? group.choices : [];
+    if(!choices.length) return;
+    const requested = src[group.key];
+    const match = choices.filter(function(c){ return c && c.id === requested; })[0];
+    out[group.key] = match ? match.id : choices[0].id;
+  });
+  return out;
+}
+
+// task D1: the SINGLE source of a recipe's effective ingredient list — base `ingredients`
+// (data/recipes.js) plus, for every optionGroups entry, the chosen choice's ingredients
+// (normalizeRecipeOpts fills in the deterministic default for anything missing/invalid,
+// so a bad/stale `opts` object can never throw or silently drop a group). Every consumer
+// of a recipe's ingredients — recipeNutrition below, planner.js's computeShoppingList,
+// render.js's recipeDisplayIngredients, data/validate.js's recipeMacros — reads through
+// this so nutrition/shopping/display/validation can never disagree about what a chosen
+// variant actually contains. Recipes without optionGroups return `ingredients` unchanged
+// (same array contents, so options-less recipes stay byte-identical).
+function recipeEffectiveIngredients(recipe, opts){
+  if(!recipe) return [];
+  const base = Array.isArray(recipe.ingredients) ? recipe.ingredients.slice() : [];
+  if(!Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return base;
+  const normalized = normalizeRecipeOpts(recipe, opts);
+  const effective = base;
+  recipe.optionGroups.forEach(function(group){
+    if(!group || typeof group.key !== 'string') return;
+    const choices = Array.isArray(group.choices) ? group.choices : [];
+    if(!choices.length) return;
+    const chosenId = normalized[group.key];
+    const choice = choices.filter(function(c){ return c && c.id === chosenId; })[0] || choices[0];
+    if(choice && Array.isArray(choice.ingredients)) effective.push.apply(effective, choice.ingredients);
+  });
+  return effective;
+}
+
+// Sums a recipe's EFFECTIVE ingredients (recipeEffectiveIngredients — base `ingredients`
+// plus, when `opts` selects them, each optionGroups choice's ingredients; never `toTaste`
+// — unquantified garnish, see data/recipes.js) at `servings` SERVINGS eaten. A recipe's
+// ingredient list is the batch as written; `recipe.servings` (default 1 — every
+// pre-servings recipe wrote its batch as one serving) says how many servings that batch
+// yields, so one serving = batch/yield. Returns both the scaled `totals` (what `servings`
+// servings add up to) and the servings-invariant `perServing`.
+// `opts` (task D1, optional 3rd param — every pre-existing call site omits it, so it's
+// undefined -> normalizeRecipeOpts({}) -> the deterministic default combo for a recipe
+// WITH optionGroups, or {} for one without -> recipeEffectiveIngredients returns the bare
+// `ingredients` array unchanged -> byte-identical to pre-D1 behavior).
 // kcal is computed 4/4/9 from the SUMMED macros — same policy as foods.js — so a
 // recipe's kcal always stays internally consistent with its own protein/carbs/fat
 // instead of drifting from summing each ingredient's already-rounded kcal field.
 // goodFat = fat − satFat: the real ingredient-derived good/sat split for the recipe
 // screen (no more 75/25 approximation there — that approximation remains only for the
 // profile-level *target* split in recomputeProf, which this does not touch).
-function recipeNutrition(recipeId, servings){
+function recipeNutrition(recipeId, servings, opts){
   servings = (typeof servings === 'number' && servings > 0) ? servings : 1;
   const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown', goodFat:0};
   const r = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[recipeId] : undefined;
@@ -157,7 +213,7 @@ function recipeNutrition(recipeId, servings){
   }
   const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
   const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0};
-  (r.ingredients || []).forEach(function(ing){
+  recipeEffectiveIngredients(r, opts).forEach(function(ing){
     const m = foodMacros(ing[0], ing[1] * servings / batchYield);
     totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
     totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
@@ -178,7 +234,9 @@ function nutritionForRecipeComponents(components){
   (components || []).forEach(function(c){
     let nut = null;
     if(c && c.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId]){
-      nut = recipeNutrition(c.recipeId, c.portion).totals;
+      // task D1: c.opts (additive — undefined on every pre-D1 component) carries which
+      // variant this component froze/planned; recipeNutrition's opts param defaults it.
+      nut = recipeNutrition(c.recipeId, c.portion, c.opts).totals;
     } else if(c && c.foodId && typeof FOODS !== 'undefined' && FOODS[c.foodId]){
       nut = foodMacros(c.foodId, c.grams);
     }

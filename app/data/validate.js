@@ -34,7 +34,12 @@ const VALID_SEASONS = ['evergreen', 'winter/autumn', 'spring/summer'];
 // with a side, 'side' accompaniments. Required + enum-checked (ERROR) so every recipe in
 // RECIPES_DB gets a deliberate tag; applyCustomRecipes() (js/library.js) normalizes legacy
 // custom recipes without a role to 'full' at read time so validateData() stays green.
-const VALID_ROLES = ['full', 'main', 'side'];
+// task D2: 'sauce' — a condiment/sauce meant to be added to another dish (planner.js's
+// candidatesFor/sidePoolFor never select it: it isn't a real meal slot, and sidePoolFor
+// filters on role==='side' specifically), offered instead in js/render.js's add-meal
+// sheet "Sauces" section. Convention: sauces carry slots ['side'] like other side dishes
+// (see the warning below).
+const VALID_ROLES = ['full', 'main', 'side', 'sauce'];
 
 // breakfast 300-650, lunch 400-750, dinner 400-800, snack 100-350 (PWA-MVP-plan.md B2 acceptance).
 // Applies only to role:'full' recipes — a composed main+side unit is what must land in the
@@ -46,12 +51,14 @@ const KCAL_BAND = {
   snack: [100, 350]
 };
 
-// task B2: plausibility-only (WARNING) bands for the two sub-full roles, computed per
-// serving via recipeMacros — a 'main' or 'side' is expected to be smaller than a full meal
-// on its own since it's meant to be combined with the other half of the composed unit.
+// task B2: plausibility-only (WARNING) bands for the sub-full roles, computed per serving
+// via recipeMacros — a 'main' or 'side' is expected to be smaller than a full meal on its
+// own since it's meant to be combined with the other half of the composed unit. task D2:
+// 'sauce' — a condiment portion, smaller still.
 const ROLE_KCAL_BAND = {
   main: [250, 650],
-  side: [60, 300]
+  side: [60, 300],
+  sauce: [40, 250]
 };
 
 // Elena's current avoid-list in the app (lactose, raw onion, very spicy — per the B2
@@ -66,7 +73,16 @@ const SLOT_MIN = { breakfast: 7, lunch: 8, dinner: 9, snack: 6 };
 // have >=5 options per main slot"). Snack has no style-coverage requirement.
 const STYLE_SLOT_MIN = 5;
 
-function recipeMacros(recipeId) {
+// task D1: `opts` (optional, {groupKey: choiceId}) picks a variant combo when `recipeId`
+// carries optionGroups — resolved via engine.js:recipeEffectiveIngredients, the same
+// single source recipeNutrition/computeShoppingList/recipeDisplayIngredients read
+// through, so validate.js can never disagree with the live app about what a combo
+// contains. engine.js loads AFTER this file (app/index.html script order) but this
+// function is only ever CALLED after full app boot, by which time
+// recipeEffectiveIngredients is a defined global (functions resolve names at call time
+// in this shared no-modules scope, not at parse time) — guarded anyway for a headless
+// call before engine.js loads.
+function recipeMacros(recipeId, opts) {
   if (typeof RECIPES_DB === 'undefined') return null;
   const r = RECIPES_DB[recipeId];
   if (!r) return null;
@@ -77,8 +93,9 @@ function recipeMacros(recipeId) {
   // Ingredients describe the whole batch; r.servings (default 1) is how many
   // servings that batch makes. All checks here are per-serving quantities.
   const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
+  const ingredientList = (typeof recipeEffectiveIngredients === 'function') ? recipeEffectiveIngredients(r, opts) : (r.ingredients || []);
 
-  (r.ingredients || []).forEach(function (ing) {
+  ingredientList.forEach(function (ing) {
     const foodId = ing[0], grams = ing[1] / batchYield;
     const food = FOODS[foodId];
     if (!food) { resolved = false; return; }
@@ -210,6 +227,56 @@ function validateData() {
       });
     }
 
+    // task D1: optionGroups structural checks — ERROR level (a malformed combo can break
+    // planning/nutrition, not just look wrong). Unique group keys, unique choice ids per
+    // group, >=2 choices per group (a 1-choice "group" isn't a choice), labels on both
+    // groups and choices (recipeDisplayTitle/the recipe-screen chips read these), and
+    // (once foods.js is loaded) every choice ingredient id resolves against FOODS —
+    // exactly the same shape check the base `ingredients` array gets above.
+    if ('optionGroups' in r) {
+      if (!Array.isArray(r.optionGroups) || !r.optionGroups.length) {
+        errors.push(prefix + 'optionGroups must be a non-empty array when present');
+      } else {
+        const groupKeysSeen = {};
+        r.optionGroups.forEach(function (group) {
+          if (!group || typeof group.key !== 'string' || !group.key) {
+            errors.push(prefix + 'optionGroups entry missing a valid "key"');
+            return;
+          }
+          const gPrefix = prefix + 'optionGroups["' + group.key + '"] ';
+          if (groupKeysSeen[group.key]) errors.push(prefix + 'duplicate optionGroups key "' + group.key + '"');
+          groupKeysSeen[group.key] = true;
+          if (typeof group.label !== 'string' || !group.label) errors.push(gPrefix + 'missing a "label"');
+          if (!Array.isArray(group.choices) || group.choices.length < 2) {
+            errors.push(gPrefix + 'needs >= 2 choices');
+            return;
+          }
+          const choiceIdsSeen = {};
+          group.choices.forEach(function (choice) {
+            if (!choice || typeof choice.id !== 'string' || !choice.id) {
+              errors.push(gPrefix + 'choice missing a valid "id"');
+              return;
+            }
+            const cPrefix = gPrefix + 'choice "' + choice.id + '" ';
+            if (choiceIdsSeen[choice.id]) errors.push(gPrefix + 'duplicate choice id "' + choice.id + '"');
+            choiceIdsSeen[choice.id] = true;
+            if (typeof choice.label !== 'string' || !choice.label) errors.push(cPrefix + 'missing a "label"');
+            if (!Array.isArray(choice.ingredients) || !choice.ingredients.length) {
+              errors.push(cPrefix + 'needs a non-empty ingredients array');
+            } else {
+              choice.ingredients.forEach(function (ing) {
+                if (!Array.isArray(ing) || ing.length !== 2 || typeof ing[0] !== 'string' || typeof ing[1] !== 'number' || ing[1] <= 0) {
+                  errors.push(cPrefix + 'malformed ingredient entry ' + JSON.stringify(ing));
+                  return;
+                }
+                if (foodsLoaded && !FOODS[ing[0]]) errors.push(cPrefix + 'ingredient id "' + ing[0] + '" not found in FOODS');
+              });
+            }
+          });
+        });
+      }
+    }
+
     if(foodsLoaded){
       const m = recipeMacros(id);
       if(m && m.resolved){
@@ -261,9 +328,11 @@ function validateData() {
     // task B2: a role:'side' recipe whose slots don't include 'side' is likely a tagging
     // slip (a side should be plannable as a side) — soft warning, not an error, since a
     // recipe can legitimately be role:'side' shape-wise while only ever surfaced via a
-    // specific meal slot.
-    if (r.role === 'side' && recipeSlotList(r).indexOf('side') === -1) {
-      warnings.push(prefix + 'role is "side" but its slots ' + JSON.stringify(recipeSlotList(r)) + ' do not include "side" — possible tagging slip.');
+    // specific meal slot. task D2: 'sauce' follows the same slots-['side'] convention (the
+    // add-meal sheet's Sauces section reads the same recipeSlotList as Sides), so the
+    // check is extended to cover it identically.
+    if ((r.role === 'side' || r.role === 'sauce') && recipeSlotList(r).indexOf('side') === -1) {
+      warnings.push(prefix + 'role is "' + r.role + '" but its slots ' + JSON.stringify(recipeSlotList(r)) + ' do not include "side" — possible tagging slip.');
     }
 
     // kcal-band check — only once foods.js is loaded. The strict per-slot band
@@ -284,6 +353,32 @@ function validateData() {
         if (m.kcal < roleBand[0] || m.kcal > roleBand[1]) {
           warnings.push(prefix + 'computed kcal ' + Math.round(m.kcal) + ' is outside the plausible band ' + roleBand[0] + '-' + roleBand[1] + ' for role "' + r.role + '".');
         }
+      }
+    }
+
+    // task D1: per-choice kcal-band plausibility — always a WARNING (never escalated to
+    // the recipe's ERROR set), since only the DEFAULT combo checked above is a real data
+    // problem; an individual variant landing outside the band is expected/acceptable
+    // (e.g. a leaner fish choice running a touch under a fattier default). Checked against
+    // the SAME band the default combo used above (role:'full' -> KCAL_BAND[slot], else
+    // ROLE_KCAL_BAND[role]), one choice at a time (every OTHER group held at its default
+    // via recipeMacros(id, {[group.key]: choice.id}) -> normalizeRecipeOpts).
+    if (foodsLoaded && slotValid && !r.occasional && Array.isArray(r.optionGroups) && r.optionGroups.length) {
+      const band = r.role === 'full' ? KCAL_BAND[r.slot] : ROLE_KCAL_BAND[r.role];
+      if (band) {
+        r.optionGroups.forEach(function (group) {
+          if (!group || typeof group.key !== 'string') return;
+          (group.choices || []).forEach(function (choice) {
+            if (!choice || typeof choice.id !== 'string') return;
+            const optsForChoice = {};
+            optsForChoice[group.key] = choice.id;
+            const cm = recipeMacros(id, optsForChoice);
+            if (!cm || !cm.resolved) return; // already reported as a structural error above
+            if (cm.kcal < band[0] || cm.kcal > band[1]) {
+              warnings.push(prefix + 'option "' + group.key + ':' + choice.id + '" computed kcal ' + Math.round(cm.kcal) + ' is outside the plausible band ' + band[0] + '-' + band[1] + ' (single-choice deviation from the default combo).');
+            }
+          });
+        });
       }
     }
   });

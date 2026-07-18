@@ -117,7 +117,8 @@ function candidatesFor(slot, styleKey, avoidList, opts){
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && recipeSlotList(r).indexOf(slot) !== -1
       && r.styles.indexOf(styleKey) !== -1
-      && !recipeHitsAvoid(r, avoidList);
+      && !recipeHitsAvoid(r, avoidList)
+      && recipeOptionsViable(r, avoidList);
   }).sort();
 }
 function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the recipe as written" (1x)
@@ -157,11 +158,68 @@ function foodHitsAvoid(foodId, avoidList){
   if(!avoidList || !avoidList.length) return false;
   const food = FOODS[foodId];
   if(!food) return false;
+  // Explicit allergen list for composite foods (e.g. pesto-elena: Pantry cat, but
+  // contains dairy + almonds) — checked before the category/id heuristics below.
+  if(Array.isArray(food.containsAvoid) && food.containsAvoid.some(function(k){ return avoidList.indexOf(k) !== -1; })) return true;
   if(avoidList.indexOf('lactose') !== -1 && food.cat === 'Dairy') return true;
   if(avoidList.indexOf('gluten') !== -1 && typeof GLUTEN_FOOD_IDS !== 'undefined' && GLUTEN_FOOD_IDS.indexOf(foodId) !== -1) return true;
   if(avoidList.indexOf('shellfish') !== -1 && foodId === 'prawns') return true;
   if(avoidList.indexOf('nuts') !== -1 && typeof NUT_FOOD_IDS !== 'undefined' && NUT_FOOD_IDS.indexOf(foodId) !== -1) return true;
   return false;
+}
+
+/* ---------------- task D1: recipe options/variants — planner rotation ----------------
+   A recipe's optionGroups choices don't carry their own `avoid` tag array (data/
+   recipes.js's optionGroups doc) — a choice is disallowed for an avoid-list the same way
+   a breakfast-pairing FOOD is: ingredient-derived, via foodHitsAvoid() above (lactose/
+   gluten/shellfish/nuts by category/id), applied to every [foodId, grams] pair in the
+   choice's own ingredients. */
+function choiceHitsAvoid(choice, avoidList){
+  if(!choice || !Array.isArray(choice.ingredients)) return false;
+  return choice.ingredients.some(function(ing){ return foodHitsAvoid(ing[0], avoidList); });
+}
+
+// The choices of ONE group that survive `avoidList`, sorted by choice id — the "sorted by
+// choice id" order the rotation formula below indexes into (FEATURES-2026-07-plan.md D1:
+// "rotated ... modulo the ALLOWED choices, sorted by choice id").
+function allowedChoicesForGroup(group, avoidList){
+  return (group && Array.isArray(group.choices) ? group.choices : [])
+    .filter(function(c){ return c && typeof c.id === 'string' && !choiceHitsAvoid(c, avoidList); })
+    .slice()
+    .sort(function(a, b){ return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
+}
+
+// A recipe with optionGroups can only be planned under `avoidList` if EVERY group still
+// has >=1 allowed choice — one empty group makes the whole dish unservable for that
+// avoid-list, so the recipe drops from the candidate pool entirely (candidatesFor()
+// above calls this for every recipe, options or not — recipes without optionGroups are
+// always viable, unaffected). Recipes without optionGroups are always viable (true).
+function recipeOptionsViable(recipe, avoidList){
+  if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return true;
+  return recipe.optionGroups.every(function(group){ return allowedChoicesForGroup(group, avoidList).length > 0; });
+}
+
+// task D1 rotation formula: for each optionGroups group, index into that group's ALLOWED
+// choices (sorted by id) at `(weekSeed + dayIndex*7 + slotIndex) % allowed.length` — the
+// same dayIndex*7+slotIndex convention mealScore()'s own rotation term already uses
+// elsewhere in this file, so "which day/slot this is" always folds in the same way.
+// Zero randomness, zero Date.now — same (weekSeed, dayIndex, slotIndex, avoidList) always
+// picks the same combo. Only called once the planner has already committed to `recipe`
+// for this pick, i.e. after recipeOptionsViable(recipe, avoidList) gated the pool the
+// recipe came from — every group is expected to have >=1 allowed choice; returns null
+// (defensive, shouldn't happen given that gate) if one doesn't.
+function chosenOptsForRecipe(recipe, weekSeed, dayIndex, slotIndex, avoidList){
+  if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return null;
+  const opts = {};
+  for(let i = 0; i < recipe.optionGroups.length; i++){
+    const group = recipe.optionGroups[i];
+    if(!group || typeof group.key !== 'string') continue;
+    const allowed = allowedChoicesForGroup(group, avoidList);
+    if(!allowed.length) return null;
+    const idx = ((weekSeed || 0) + dayIndex * 7 + slotIndex) % allowed.length;
+    opts[group.key] = allowed[idx].id;
+  }
+  return opts;
 }
 
 // Decisions Q2 whitelist (breads + fruit) — FOODS[id].breakfastPair === true — filtered by
@@ -226,12 +284,22 @@ function recordCompositionUsage(history, entry, person, slot, dayIndex){
   history[person][bucket][dayIndex].push(extra.recipeId || extra.foodId);
 }
 
+// task D1: component[0] (the base dish) carries `.opts` when `entry.opts` is set (the
+// variant makePlanEntry/the recipe-screen write-back chose) — additive, so an entry
+// without optionGroups (the overwhelming majority, still 100% of built-ins pre-D2) never
+// gets an `opts` key at all and this stays byte-identical to pre-D1 output. Extras can
+// carry their own `.opts` too (generic — no built-in side/extra has optionGroups yet, but
+// nothing here assumes only the base does).
 function planEntryComponents(entry){
   if(!entry || !entry.recipeId) return [];
-  const components = [{recipeId: entry.recipeId, portion: (typeof entry.portion === 'number' ? entry.portion : 1)}];
+  const base = {recipeId: entry.recipeId, portion: (typeof entry.portion === 'number' ? entry.portion : 1)};
+  if(entry.opts && typeof entry.opts === 'object') base.opts = entry.opts;
+  const components = [base];
   (entry.extras || []).forEach(function(extra){
     if(extra && extra.recipeId && RECIPES_DB[extra.recipeId]){
-      components.push({recipeId: extra.recipeId, portion: (typeof extra.portion === 'number' && extra.portion > 0) ? extra.portion : 1});
+      const c = {recipeId: extra.recipeId, portion: (typeof extra.portion === 'number' && extra.portion > 0) ? extra.portion : 1};
+      if(extra.opts && typeof extra.opts === 'object') c.opts = extra.opts;
+      components.push(c);
     } else if(extra && extra.foodId && FOODS[extra.foodId]){
       components.push({foodId: extra.foodId, grams: (typeof extra.grams === 'number' && extra.grams > 0) ? extra.grams : 100});
     }
@@ -250,6 +318,7 @@ function planEntryView(entry, shared){
   return {
     recipeId: entry ? entry.recipeId : null,
     portion: entry && typeof entry.portion === 'number' ? entry.portion : 1,
+    opts: components[0] && components[0].opts,
     components: components,
     extras: components.slice(1),
     kcal: nut.kcal,
@@ -264,16 +333,27 @@ function planEntryView(entry, shared){
   };
 }
 
-function makePlanEntry(recipeId, portion, stamp){
-  const nut = recipeNutrition(recipeId, portion).totals;
+// task D1: `opts` (optional 4th param — {groupKey: choiceId}) is the variant the caller
+// already decided on (planner rotation via chosenOptsForRecipe, or a recipe-screen
+// chip switch); normalized against `recipeId`'s optionGroups so a bad/partial `opts`
+// object can never stick. Only stored on the entry (and only feeds recipeNutrition, so
+// entry.kcal/protein reflect the CHOSEN variant, not always the default) when the recipe
+// actually carries optionGroups — an options-less recipe never gets an `opts` field at
+// all, keeping every existing call site (which omits this param) byte-identical.
+function makePlanEntry(recipeId, portion, stamp, opts){
+  const r = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[recipeId] : undefined;
+  const hasOptions = !!(r && Array.isArray(r.optionGroups) && r.optionGroups.length);
+  const normalizedOpts = hasOptions ? normalizeRecipeOpts(r, opts) : null;
+  const nut = recipeNutrition(recipeId, portion, normalizedOpts).totals;
   const entry = {recipeId: recipeId, portion: portion, kcal: nut.kcal, protein: nut.protein};
   if(typeof stamp === 'number') entry.t = stamp;
+  if(normalizedOpts && Object.keys(normalizedOpts).length) entry.opts = normalizedOpts;
   return entry;
 }
 
 function refreshPlanEntryNutrition(entry){
   if(!entry || !entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
-  const nut = recipeNutrition(entry.recipeId, entry.portion).totals;
+  const nut = recipeNutrition(entry.recipeId, entry.portion, entry.opts).totals;
   const changed = Math.abs((entry.kcal || 0) - nut.kcal) > 1e-6 || Math.abs((entry.protein || 0) - nut.protein) > 1e-6;
   if(changed){
     entry.kcal = nut.kcal;
@@ -951,6 +1031,10 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   pool = applyCrossWeekFilter(pool, excludePrevWeekId);
   pool = applyVarietyFilter(pool, history, 'elena', slot, dayIndex);
   const maxPortion = SLOT_MAX_PORTION[slot];
+  // task D1: hoisted above the slot branches below (breakfast/lunch/dinner already
+  // computed this further down for the composed-pair pools) so the final opts-rotation
+  // step after `best` is picked can use it regardless of slot, snack included.
+  const avoidBoth = unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []);
 
   // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams},
   //              portionE, portionA, kcalE, kcalA, proteinE, proteinA,
@@ -985,8 +1069,6 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
       pushFull(id, base, bpE, bpA);
     });
-
-    const avoidBoth = unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []);
 
     if(slot === 'breakfast'){
       const foodPoolRaw = breakfastPairFoodIds(avoidBoth);
@@ -1077,8 +1159,13 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     console.error('pickSharedMeal: empty candidate pool for slot="' + slot + '" style="' + householdStyle + '" — check RECIPES_DB coverage for this avoid-list combination.');
     return {shared: true, recipeId: null, elena: {recipeId: null, portion: 1, kcal: 0, protein: 0}, partner: {recipeId: null, portion: 1, kcal: 0, protein: 0}};
   }
-  const elenaEntry = makePlanEntry(best.mainId, best.portionE);
-  const partnerEntry = makePlanEntry(best.mainId, best.portionA);
+  // task D1: the SAME variant for both people (one shared dish) — rotated deterministically
+  // off (weekSeed, dayIndex, slotIndex) over the choices allowed under avoidBoth (both
+  // people's avoid-lists, per the plan's "both people for shared slots"). null for a
+  // recipe without optionGroups; makePlanEntry's own normalizeRecipeOpts no-ops on null.
+  const sharedOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidBoth);
+  const elenaEntry = makePlanEntry(best.mainId, best.portionE, undefined, sharedOpts);
+  const partnerEntry = makePlanEntry(best.mainId, best.portionA, undefined, sharedOpts);
   if(best.extra){
     if(best.extra.foodId !== undefined && best.extra.gramsE !== undefined){
       elenaEntry.extras = [{foodId: best.extra.foodId, grams: best.extra.gramsE}];
@@ -1166,7 +1253,12 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     console.error('pickSoloMeal: empty candidate pool for person="' + person + '" slot="' + slot + '" style="' + householdStyle + '"');
     return {recipeId: null, portion: 1, kcal: 0, protein: 0};
   }
-  const entry = makePlanEntry(best.mainId, best.portion);
+  // task D1: rotated deterministically off (weekSeed, dayIndex, slotIndex) over the
+  // choices allowed under THIS person's own avoid-list (avoidP) — a solo slot can pick a
+  // different variant per person even on the same day/slot, since each person's avoid-
+  // list can allow a different set of choices. null for a recipe without optionGroups.
+  const soloOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidP);
+  const entry = makePlanEntry(best.mainId, best.portion, undefined, soloOpts);
   if(best.extra) entry.extras = [best.extra];
   return entry;
 }
@@ -1536,13 +1628,16 @@ function computeShoppingList(weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
   const totals = {};  // food display name -> {qty, unit}
   const staples = {}; // food display name -> true (toTaste garnish, unquantified)
-  function addRecipe(recipeId, factor){
+  function addRecipe(recipeId, factor, opts){
     const r = RECIPES_DB[recipeId];
     if(!r || !(factor > 0)) return;
     // `factor` is servings eaten; ingredients are the whole batch, which makes
     // r.servings servings — buy batch/servings per serving eaten.
     const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
-    r.ingredients.forEach(function(ing){
+    // task D1: recipeEffectiveIngredients (engine.js) resolves the CHOSEN variant's
+    // ingredients (base + the opts-selected choice per group) — the shopping list buys
+    // what was actually planned/eaten, not always the default combo.
+    recipeEffectiveIngredients(r, opts).forEach(function(ing){
       const foodId = ing[0], grams = ing[1] / batchYield;
       const food = FOODS[foodId];
       if(!food) return;
@@ -1572,8 +1667,8 @@ function computeShoppingList(weekStartDate){
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      planEntryComponents(m.elena).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion); else addFood(c.foodId, c.grams); });
-      planEntryComponents(m.partner).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion); else addFood(c.foodId, c.grams); });
+      planEntryComponents(m.elena).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion, c.opts); else addFood(c.foodId, c.grams); });
+      planEntryComponents(m.partner).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion, c.opts); else addFood(c.foodId, c.grams); });
     });
   });
   return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate};

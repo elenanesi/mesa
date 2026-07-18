@@ -34,6 +34,25 @@
      avoid   — ingredient-level allergen/dislike keys this dish
                inherently contains, subset of: lactose, gluten,
                shellfish, nuts, spicy, raw-onion
+     optionGroups — OPTIONAL (task D1, mains/full meals only), variants of a
+               dish: [{key, label, choices: [{id, label, ingredients:
+               [[foodId, grams], ...]}, ...]}, ...]. `ingredients` above
+               stays the BASE (common) list shared by every choice; a
+               recipe's EFFECTIVE ingredients = base + the chosen choice's
+               ingredients per group (js/engine.js:recipeEffectiveIngredients,
+               the single source nutrition/shopping/display/validation all
+               read through). choices[0] (authored order, NOT sorted by id)
+               is the deterministic default when no opts are given
+               (js/engine.js:normalizeRecipeOpts). The planner rotates the
+               choice per pick deterministically — see
+               js/planner.js:chosenOptsForRecipe for the exact formula — and
+               a choice with zero allowed options after a person's avoid-list
+               is filtered out (js/planner.js:allowedChoicesForGroup); a
+               group left with zero allowed choices drops the whole recipe
+               from that candidate pool (js/planner.js:recipeOptionsViable).
+               Display titles for a recipe with optionGroups append the
+               chosen choice's label(s) in parens (js/render.js:
+               recipeDisplayTitle), e.g. "Baked fish (sea bass)".
 
    The 10 mockup recipes (see app/js/state.js RECIPES) are migrated below
    under their EXACT original keys (yogurt, omelette, lentil, salmon,
@@ -339,11 +358,27 @@ const RECIPES_DB = {
   'french-toast-fruit-maple': {
     title: 'French toast with fruit & maple syrup', emoji: '🍞', slot: 'breakfast', role: 'full',
     styles: ['balanced'], time: 15,
-    ingredients: [['white-bread', 70], ['eggs', 50], ['milk', 80], ['mixed-berries', 80], ['maple-syrup', 15], ['olive-oil', 4]],
+    // task D2: mixed-berries moved out of the base list into optionGroups.fruit's default
+    // choice (choices[0] = 'berries') so the base stays common to every fruit choice; the
+    // no-opts effective ingredient list is base.concat(choices[0].ingredients), same bag of
+    // [foodId, grams] pairs as the original array (order differs, sum doesn't) — see
+    // tools/check.js's testFrenchToastOptionsPreserveOriginalNutrition for the exact
+    // pre-D2 kcal/protein/carbs/fat/fiber/sugars totals asserted unchanged.
+    ingredients: [['white-bread', 70], ['eggs', 50], ['milk', 80], ['maple-syrup', 15], ['olive-oil', 4]],
     toTaste: ['cinnamon', 'vanilla'],
     steps: ['Whisk egg, milk, cinnamon and vanilla.', 'Dip the bread and cook in a lightly oiled pan until golden.', 'Top with fruit and maple syrup.'],
     tags: ['quick'],
-    avoid: ['gluten', 'lactose']
+    avoid: ['gluten', 'lactose'],
+    optionGroups: [
+      {
+        key: 'fruit', label: 'Fruit',
+        choices: [
+          {id: 'berries', label: 'Mixed berries', ingredients: [['mixed-berries', 80]]},
+          {id: 'banana', label: 'Banana', ingredients: [['bananas', 80]]},
+          {id: 'peach', label: 'Peach', ingredients: [['peaches', 80]]}
+        ]
+      }
+    ]
   },
   'yogurt-cereali-frutta': {
     title: 'Yogurt, cereal & fruit', emoji: '🥣', slot: 'breakfast', role: 'full',
@@ -565,6 +600,7 @@ const RECIPES_DB = {
   'butter-chicken': {
     title: 'Butter chicken', emoji: '🍛', slot: 'dinner', role: 'full',
     imageKey: 'butter-chicken',
+    season: 'winter/autumn',
     styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['chicken-breast', 160], ['tomatoes', 180], ['greek-yogurt', 80], ['rice', 60], ['olive-oil', 10]],
     toTaste: ['curry spices', 'garlic', 'ginger'],
@@ -836,6 +872,101 @@ const RECIPES_DB = {
     steps: ['Cook the spaghetti and toss with a little soy sauce.', 'Stir-fry the chicken with almonds until golden, then add pak choy.', 'Pan-crisp the ravioli and prepare small cabbage-carrot spring rolls.', 'Serve everything together as one mixed dinner.'],
     tags: ['muscle'],
     avoid: ['gluten', 'nuts']
+  },
+
+  /* ================= TASK D2 — recipe options, mains, sauces ================= */
+
+  'baked-fish': {
+    title: 'Baked fish', emoji: '🐟', slot: 'lunch', role: 'main',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 20,
+    ingredients: [['olive-oil', 10], ['lemon-juice', 20]],
+    toTaste: ['herbs', 'garlic', 'black pepper'],
+    steps: ['Rub the fish fillet with olive oil, lemon juice and herbs.', 'Bake at 200C for 12-15 min until just cooked through.', 'Rest briefly, then finish with an extra squeeze of lemon.'],
+    tags: ['muscle', 'thyroid', 'lowGI'],
+    avoid: [],
+    optionGroups: [
+      {
+        key: 'fish', label: 'Fish',
+        choices: [
+          {id: 'salmon', label: 'Salmon', ingredients: [['salmon-fillet', 180]]},
+          {id: 'sea-bass', label: 'Sea bass', ingredients: [['sea-bass-fillet', 220]]},
+          {id: 'sole', label: 'Sole', ingredients: [['sole-fish', 220]]},
+          {id: 'cod', label: 'Cod', ingredients: [['cod', 220]]}
+        ]
+      }
+    ]
+  },
+  pasta: {
+    title: 'Pasta', emoji: '🍝', slot: 'lunch', role: 'full',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 20,
+    ingredients: [['pasta', 100], ['olive-oil', 8]],
+    toTaste: ['salt', 'black pepper', 'garlic'],
+    steps: ['Bring a pot of salted water to the boil and cook the pasta until al dente.', 'While the pasta cooks, warm the chosen condiment through in a pan with the olive oil.', 'Drain the pasta, reserving a splash of cooking water.', 'Toss the pasta with the condiment, loosening with the reserved water if needed.'],
+    tags: [],
+    avoid: ['gluten'],
+    optionGroups: [
+      {
+        key: 'condiment', label: 'Condiment',
+        choices: [
+          {id: 'tomato-basil', label: 'Tomato & basil', ingredients: [['tomato-passata', 150], ['basil', 8]]},
+          {id: 'pesto', label: 'Pesto Elena', ingredients: [['pesto-elena', 60]]},
+          {id: 'tuna-olives', label: 'Tuna & olives', ingredients: [['tuna-in-olive-oil', 90], ['olives', 30]]},
+          {id: 'courgette-ricotta', label: 'Courgette & ricotta', ingredients: [['courgette', 150], ['ricotta', 100]]}
+        ]
+      }
+    ]
+  },
+  'lemon-herb-chicken-breast': {
+    title: 'Lemon-herb chicken breast', emoji: '🍗', slot: 'lunch', role: 'main',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 18,
+    ingredients: [['chicken-breast', 180], ['olive-oil', 8], ['lemon-juice', 15]],
+    toTaste: ['garlic', 'herbs', 'black pepper'],
+    steps: ['Rub the chicken breast with olive oil, lemon juice and herbs.', 'Pan-sear or grill until cooked through, 6-8 min per side.', 'Rest briefly, then slice and finish with an extra squeeze of lemon.'],
+    tags: ['muscle', 'thyroid', 'lowGI'],
+    avoid: []
+  },
+  'turkey-cutlets-sage': {
+    title: 'Turkey cutlets with sage', emoji: '🦃', slot: 'lunch', role: 'main',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 18,
+    ingredients: [['turkey-breast', 220], ['olive-oil', 10]],
+    toTaste: ['sage', 'garlic', 'black pepper'],
+    steps: ['Season the turkey cutlets with sage, garlic and black pepper.', 'Pan-sear in olive oil until golden and cooked through, 3-4 min per side.', 'Rest briefly, then slice and serve.'],
+    tags: ['muscle', 'thyroid'],
+    avoid: []
+  },
+  'white-bean-rosemary-mash': {
+    title: 'White bean & rosemary mash', emoji: '🫘', slot: 'lunch', role: 'main',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 15,
+    ingredients: [['cannellini-beans', 300], ['olive-oil', 15]],
+    toTaste: ['rosemary', 'garlic', 'lemon', 'black pepper'],
+    steps: ['Warm the cannellini beans with olive oil, rosemary and garlic.', 'Mash roughly with a fork, leaving some texture.', 'Season with black pepper and a squeeze of lemon if wanted.'],
+    tags: ['veggie', 'highFiber', 'lowGI', 'heart'],
+    avoid: []
+  },
+  'tomato-basil-sauce': {
+    title: 'Tomato-basil sauce', emoji: '🍅', slot: 'side', role: 'sauce',
+    slots: ['side'],
+    styles: ['balanced', 'lowcarb'], time: 15,
+    ingredients: [['tomato-passata', 150], ['basil', 15], ['olive-oil', 10]],
+    toTaste: ['garlic', 'oregano', 'salt'],
+    steps: ['Warm the olive oil in a pan with garlic.', 'Add the tomato passata and simmer 8-10 min until thickened.', 'Stir in torn basil off the heat and season to taste.'],
+    tags: ['veggie'],
+    avoid: []
+  },
+  'yogurt-herb-sauce': {
+    title: 'Yogurt-herb sauce', emoji: '🥣', slot: 'side', role: 'sauce',
+    slots: ['side'],
+    styles: ['balanced', 'lowcarb'], time: 5,
+    ingredients: [['greek-yogurt', 150], ['lemon-juice', 15], ['olive-oil', 8]],
+    toTaste: ['dill or mint', 'garlic', 'black pepper', 'salt'],
+    steps: ['Stir the yogurt with lemon juice and olive oil until smooth.', 'Season with herbs, salt and pepper.', 'Chill briefly before serving.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: ['lactose']
   },
 
   /* ================= SNACK (6) ================= */

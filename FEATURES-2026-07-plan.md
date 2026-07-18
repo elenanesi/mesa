@@ -384,3 +384,86 @@ new→save→edit→reset. No auto-matching by name (non-deterministic guesswork
 Tests: picker vocabulary = unique built-in iconKeys; save persists iconKey and the list/
 detail builders emit the chosen asset; edit round-trip preserves it; clearing back to
 Default removes the field; sync section round-trip keeps it.
+
+---
+---
+
+# Batch D — 2026-07-19 (recipe options/variants, sauce role, catalog additions)
+
+Executed on branch `claude/recipe-options` (worktree /private/tmp/mesa-recipe-options)
+because a codex agent concurrently works recipe images on `codex/ingredient-icons` —
+merge to main only after green, rebasing on latest origin/main. Do NOT touch recipe
+`imageKey` fields or app/assets/recipes/ (the codex agent's surface); new recipes ship
+WITHOUT imageKey (slot defaults cover them).
+
+## D1 — Recipe options (variants) for mains/full meals
+
+**Model.** A built-in recipe may declare:
+`optionGroups: [{key, label, choices: [{id, label, ingredients: [[foodId, grams], ...]}, ...]}, ...]`
+- `recipe.ingredients` stays the BASE (common) list; the recipe's effective ingredients =
+  base + the chosen choice's list per group. FIRST choice = deterministic default.
+- One shared helper `recipeEffectiveIngredients(recipe, opts)` is the single source for
+  nutrition, shopping, display and validation (`opts` = {groupKey: choiceId}, missing/
+  invalid keys fall back to the default choice).
+- `recipeNutrition(id, servings, opts?)` gains an optional third param (all existing
+  call sites unchanged ⇒ default combo). Plan entries and log components gain an
+  additive `opts` field; `planEntryComponents`/`nutritionForRecipeComponents`/
+  `computeShoppingList` thread it through. Log freeze already goes through components ⇒
+  a confirmed meal freezes the chosen variant's macros.
+- Titles: when a recipe has optionGroups, display titles append the chosen labels,
+  e.g. "Baked fish (sea bass)" — one helper used by Today/Week/Log title paths.
+- **Planner**: per pick, the choice is rotated deterministically (weekSeed + dayIndex +
+  slotIndex modulo the ALLOWED choices, sorted by choice id) — variety across the week
+  with zero randomness. A choice is allowed only if its ingredients pass the relevant
+  avoid-list(s) (both people for shared slots); zero allowed choices ⇒ the recipe drops
+  from that pool. Recipes without optionGroups: bit-identical behavior (determinism
+  tests must pass without re-fixturing).
+- **Recipe screen**: a chip row per group (existing chip styles) under the header;
+  changing a chip recomputes the grid/ingredient rows live and writes back to the
+  plan/log context exactly like the servings stepper does (markWeekPlanEdited + logged
+  entry correction); from library origin it just previews.
+- **Scope cut (v1)**: custom-recipe builder does NOT author optionGroups (built-ins
+  only); swap sheet shows base titles; re-balance treats recipes at their planned opts.
+- validate.js: optionGroups structural checks (unique keys/ids, ≥2 choices, labels,
+  resolvable ingredient ids) at ERROR level; kcal band: default combo at the existing
+  ERROR/WARN level, each single-choice deviation from default at WARNING.
+- Sync/D1: optionGroups ride data_json; plan-cell `opts` rides the existing cell-stamp
+  merge. Additive everywhere ⇒ no store bump.
+
+**Tests.** Effective-ingredients resolution incl. bad opts fallback; nutrition differs
+correctly between two fish choices; planner rotation is deterministic (two runs
+identical) and respects avoid (fixture: person avoiding shellfish never gets the prawn
+choice; shared slot uses the intersection); options-less recipes byte-identical plans;
+shopping aggregates the CHOSEN variant's ingredients; frozen log entry keeps the variant
+macros after the recipe data changes; title helper output.
+
+## D2 — Sauce role + catalog additions + fixes
+
+- **Role `'sauce'`** (label "Sauce & condiment"): VALID_ROLES + library role picker gain
+  it. Excluded from standalone slot planning AND from side auto-composition; offered in
+  the add-extra sheet as a new "Sauces" section (delegated rows like Sides). Convention:
+  sauces carry slots ['side']; validate's side-slot warning extended to accept sauce
+  role; kcal plausibility WARNING band 40–250/serving.
+- **Fixes**: `butter-chicken` season → 'winter/autumn'. Burrito title: already
+  "Vegetarian burrito" on main — verify nothing user-visible still says "Burrito
+  vegetariano" (the stale D1 mirror gets rewritten by the post-merge seed).
+- **New ingredients** (only those missing; per-100g values with honest src citations in
+  the existing foods.js style): sea bass (branzino) fillet, sole fillet, plus anything
+  the new recipes need. No invented numbers — cite USDA FDC/CREA like neighbors.
+- **New/extended recipes** (all ingredient-derived, styles/tags/avoid/season/role per
+  conventions, validate green, NO imageKey):
+  - `baked-fish` — main, lunch/dinner, optionGroups fish: salmon / sea bass / sole /
+    cod (those with ingredients available); base: olive oil, lemon, herbs toTaste.
+  - `pasta` — full, lunch/dinner, optionGroups condiment: tomato & basil / Pesto Elena /
+    tuna & olives / courgette & ricotta (use existing ingredients where possible).
+  - `french-toast-fruit-maple` — add optionGroups fruit: berries / banana / peach
+    (existing fruit ingredients).
+  - 2-3 additional `main` recipes to fatten the thin pools (lunch mains balanced ≈ 2):
+    e.g. lemon-herb chicken breast, turkey cutlets, plus 1 vegetarian main.
+  - 2 `sauce` recipes: tomato-basil sauce, yogurt-herb sauce.
+- README STATUS entry for the batch.
+
+Verify (browser, from the WORKTREE copy): fresh plans show rotated variants in titles;
+recipe screen chips switch fish/condiment and update numbers live; confirm freezes the
+chosen variant; shopping shows the chosen fish; sauces appear in add-extra under Sauces
+and never as planned meals; butter chicken filtered out of summer plans.

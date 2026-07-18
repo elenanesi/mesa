@@ -299,6 +299,11 @@ const FOODS = {
     kcal: 86, protein: 18.8, carbs: 0, fat: 1.2, satFat: 0.3, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
     flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'sole-fish', src: 'USDA FDC-style (flatfish/sole, raw); kcal per 4/4/9'
   },
+  'sea-bass-fillet': {
+    name: 'Sea bass (branzino) fillet, raw', per: 100, unit: 'g',
+    kcal: 92, protein: 18.4, carbs: 0, fat: 2.0, satFat: 0.5, fiber: 0,
+    flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'sea-bass-fillet', src: 'USDA FDC 175142 (fish, sea bass, mixed species, raw); kcal per 4/4/9'
+  },
   'chicken-thigh': {
     name: 'Chicken thigh, skinless, raw', per: 100, unit: 'g',
     kcal: 141, protein: 17.0, carbs: 0, fat: 8.1, satFat: 2.3, fiber: 0,
@@ -671,6 +676,10 @@ const FOODS = {
   'pesto-elena': {
     name: 'Pesto Elena (basil, parmesan, pecorino, almonds)', per: 100, unit: 'g',
     kcal: 362, protein: 20.8, carbs: 4.3, fat: 29.1, satFat: 10.8, fiber: 1.4,
+    // containsAvoid: composite food whose category can't reveal its allergens — the
+    // avoid-derivation helpers (planner.js:foodHitsAvoid, library.js:deriveRecipeMeta)
+    // read this explicitly, since cat:'Pantry' would otherwise hide the dairy + almonds.
+    containsAvoid: ['lactose', 'nuts'],
     flags: ['fermented'], cat: 'Pantry', season: 'spring/summer',
     iconKey: 'basil', src: 'Composite Elena recipe: 50g fresh basil + 70g parmesan + 30g pecorino romano + 15g almonds + assumed 20ml olive oil ("a sentimento"); per 100g of ~185g batch, kcal per 4/4/9'
   },

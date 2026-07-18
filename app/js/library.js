@@ -127,8 +127,8 @@ const AUTO_STYLE_THRESHOLDS = {
 // fish/meat/poultry food later needs a one-line addition here.
 const ANIMAL_FOOD_IDS = [
   'salmon-fillet', 'turkey-breast', 'chicken-breast', 'tuna-in-olive-oil', 'tuna',
-  'clams', 'mussels', 'cod', 'sole-fish', 'prawns', 'chicken-thigh', 'beef-mince-lean',
-  'pork-loin', 'pork-sausage', 'bresaola', 'speck'
+  'clams', 'mussels', 'cod', 'sole-fish', 'sea-bass-fillet', 'prawns', 'chicken-thigh',
+  'beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck'
 ];
 // Per the task brief's exact list.
 const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'oats'];
@@ -184,6 +184,9 @@ function deriveRecipeMeta(ingredients, totals, timeMinutes){
   // avoid
   const avoidSet = {};
   rows.forEach(function(x){
+    // Composite foods declare allergens their category hides (foods.js containsAvoid,
+    // e.g. pesto-elena) — same rule planner.js:foodHitsAvoid applies for options/pairing.
+    (Array.isArray(x.food.containsAvoid) ? x.food.containsAvoid : []).forEach(function(k){ avoidSet[k] = true; });
     if(x.food.cat === 'Dairy') avoidSet.lactose = true;
     if(GLUTEN_FOOD_IDS.indexOf(x.row.foodId) !== -1) avoidSet.gluten = true;
     if(x.row.foodId === 'prawns') avoidSet.shellfish = true;
@@ -214,11 +217,13 @@ function normalizeSeason(v){
 }
 function seasonLabel(v){ return SEASON_LABELS[normalizeSeason(v)]; }
 
-// task B2: recipe `role` picker (data/validate.js's VALID_ROLES = ['full','main','side'])
-// — orthogonal to meal slots, defaults to 'full' (a complete one-dish meal) so an existing
-// custom recipe or a builder draft that never touches this field behaves exactly as every
-// recipe did before this field existed.
-const ROLE_LABELS = {full: 'Full meal', main: 'Main', side: 'Side'};
+// task B2: recipe `role` picker (data/validate.js's VALID_ROLES = ['full','main','side',
+// 'sauce'] as of task D2) — orthogonal to meal slots, defaults to 'full' (a complete
+// one-dish meal) so an existing custom recipe or a builder draft that never touches this
+// field behaves exactly as every recipe did before this field existed. 'sauce' (task D2):
+// a condiment/sauce meant to be added to another dish, never planned standalone — see
+// data/validate.js's role-kcal band and js/render.js's add-meal sheet "Sauces" section.
+const ROLE_LABELS = {full: 'Full meal', main: 'Main', side: 'Side', sauce: 'Sauce & condiment'};
 function normalizeRecipeRole(v){
   return (typeof VALID_ROLES !== 'undefined' && VALID_ROLES.indexOf(v) !== -1) ? v : 'full';
 }

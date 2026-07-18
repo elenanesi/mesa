@@ -2460,6 +2460,653 @@ function testNoNetwork(){
 }
 
 /* ===================================================================
+   task D1: recipe options/variants — no built-in RECIPES_DB recipe carries
+   optionGroups yet (D2 adds real ones: baked-fish, pasta, french-toast-fruit-maple), so
+   every scenario below is exercised against INJECTED fixture recipes, registered into
+   the sandbox's live RECIPES_DB via run()+JSON.stringify (same pattern
+   testRecipeRolesAndBreakfastPair's legacy-custom-recipe fixture uses) and removed again
+   at the end so later tests see the real, unmodified catalog.
+   =================================================================== */
+function testRecipeOptions(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
+  const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+
+  // -------- (0) real built-in optionGroups (task D2) + generateWeek() determinism against
+  // the REAL catalog: D2 wired optionGroups onto three real built-ins (baked-fish, pasta,
+  // french-toast-fruit-maple, per this file's header comment above) — confirm exactly those
+  // three carry optionGroups (a regression guard: catches an accidental optionGroups drop OR
+  // an accidental addition on some other id), then confirm two independent generateWeek()
+  // calls with identical inputs are still byte-identical JSON now that real rotation/avoid-
+  // filtering logic runs against real optionGroups data, not just the synthetic fixture used
+  // below (testPlannerDeterminism covers the options-less case separately). --------
+  (function(){
+    const expectedOptionGroupIds = ['baked-fish', 'french-toast-fruit-maple', 'pasta'];
+    const actualOptionGroupIds = Object.keys(RECIPES_DB).filter(function(id){
+      return Array.isArray(RECIPES_DB[id].optionGroups) && RECIPES_DB[id].optionGroups.length;
+    }).sort();
+    assert(JSON.stringify(actualOptionGroupIds) === JSON.stringify(expectedOptionGroupIds),
+      'D2: exactly the expected built-in recipes carry optionGroups', JSON.stringify(actualOptionGroupIds));
+
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    const sigA = call(ctx, 'computePlanSignature', []);
+    const genA = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sigA}]);
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    const sigB = call(ctx, 'computePlanSignature', []);
+    const genB = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sigB}]);
+    assert(JSON.stringify(genA) === JSON.stringify(genB),
+      'D2: generateWeek() output is byte-identical across two independent generations against the REAL catalog (now containing real optionGroups recipes)',
+      'lenA=' + JSON.stringify(genA).length + ' lenB=' + JSON.stringify(genB).length);
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+  })();
+
+  // -------- fixture: role:'full' (never composes, so it's always a standalone pick in
+  // both pickers regardless of slot), two optionGroups so multi-group normalization/
+  // rotation is exercised together: "protein" (salmon default / cod / prawns — prawns is
+  // the real FOODS shellfish id foodHitsAvoid() checks) and "carb" (rice default /
+  // potato). Base `ingredients` is a single evergreen pantry item so recipeSeason() can
+  // never filter it out regardless of the harness's fixed "today". --------
+  const FIXTURE_ID = '__d1_fixture_recipe__';
+  const fixtureRecipe = {
+    title: 'D1 fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 10,
+    ingredients: [['olive-oil', 5]],
+    toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: [],
+    optionGroups: [
+      {key: 'protein', label: 'Protein', choices: [
+        {id: 'salmon', label: 'Salmon', ingredients: [['salmon-fillet', 150]]},
+        {id: 'cod', label: 'Cod', ingredients: [['cod', 150]]},
+        {id: 'prawns', label: 'Prawns', ingredients: [['prawns', 150]]}
+      ]},
+      {key: 'carb', label: 'Carb', choices: [
+        {id: 'rice', label: 'Rice', ingredients: [['rice', 100]]},
+        {id: 'potato', label: 'Potato', ingredients: [['potatoes', 150]]}
+      ]}
+    ]
+  };
+
+  // -------- (1) recipeEffectiveIngredients: default combo, an explicit combo, and a bad-
+  // opts fallback (unknown group key, unknown choice id, wrong-typed value) all resolve
+  // sanely — none of it needs RECIPES_DB registration since the function takes the recipe
+  // object directly. --------
+  (function(){
+    const effDefault = call(ctx, 'recipeEffectiveIngredients', [fixtureRecipe, null]);
+    assert(JSON.stringify(effDefault) === JSON.stringify([['olive-oil', 5], ['salmon-fillet', 150], ['rice', 100]]),
+      'recipeEffectiveIngredients: default combo = base + choices[0] of every group (authored order)', JSON.stringify(effDefault));
+
+    const effChosen = call(ctx, 'recipeEffectiveIngredients', [fixtureRecipe, {protein: 'cod', carb: 'potato'}]);
+    assert(JSON.stringify(effChosen) === JSON.stringify([['olive-oil', 5], ['cod', 150], ['potatoes', 150]]),
+      'recipeEffectiveIngredients: an explicit valid opts combo resolves to base + each chosen choice', JSON.stringify(effChosen));
+
+    const effBad = call(ctx, 'recipeEffectiveIngredients', [fixtureRecipe, {protein: 'not-a-real-choice', bogusGroup: 'x', carb: 42}]);
+    assert(JSON.stringify(effBad) === JSON.stringify(effDefault),
+      'recipeEffectiveIngredients: bad opts (unknown choice id, unknown group key, wrong-typed value) falls back to the default combo', JSON.stringify(effBad));
+
+    const effUndefinedRecipe = call(ctx, 'recipeEffectiveIngredients', [null, {protein: 'cod'}]);
+    assert(Array.isArray(effUndefinedRecipe) && effUndefinedRecipe.length === 0,
+      'recipeEffectiveIngredients: a null recipe returns [] rather than throwing', JSON.stringify(effUndefinedRecipe));
+  })();
+
+  // -------- (2) normalizeRecipeOpts: default-fill, unknown-key-drop, partial-override. --------
+  (function(){
+    const normDefault = call(ctx, 'normalizeRecipeOpts', [fixtureRecipe, null]);
+    assert(JSON.stringify(normDefault) === JSON.stringify({protein: 'salmon', carb: 'rice'}),
+      'normalizeRecipeOpts(recipe, null): fills every group with its choices[0] default', JSON.stringify(normDefault));
+
+    const normBad = call(ctx, 'normalizeRecipeOpts', [fixtureRecipe, {protein: 'not-real', extraneousKey: 'ignored'}]);
+    assert(JSON.stringify(normBad) === JSON.stringify({protein: 'salmon', carb: 'rice'}),
+      'normalizeRecipeOpts: an invalid choice id falls back to default, and a key matching no group is dropped', JSON.stringify(normBad));
+
+    const normPartial = call(ctx, 'normalizeRecipeOpts', [fixtureRecipe, {carb: 'potato'}]);
+    assert(JSON.stringify(normPartial) === JSON.stringify({protein: 'salmon', carb: 'potato'}),
+      'normalizeRecipeOpts: a partial opts object fills in only the missing group(s) with their default', JSON.stringify(normPartial));
+
+    const normNoGroups = call(ctx, 'normalizeRecipeOpts', [RECIPES_DB.yogurt, {anything: 'x'}]);
+    assert(JSON.stringify(normNoGroups) === '{}',
+      'normalizeRecipeOpts: a recipe without optionGroups always resolves to {}', JSON.stringify(normNoGroups));
+  })();
+
+  // -------- (3) nutrition differs correctly between two choices, cross-checked against an
+  // independently-computed sum (never a re-typed literal) — protein is directly additive,
+  // so a difference there proves the ingredient swap actually took effect. --------
+  (function(){
+    run(ctx, "RECIPES_DB['" + FIXTURE_ID + "'] = " + JSON.stringify(fixtureRecipe) + ';');
+
+    const codNut = call(ctx, 'recipeNutrition', [FIXTURE_ID, 1, {protein: 'cod', carb: 'rice'}]).totals;
+    const expectedCodProtein = call(ctx, 'foodMacros', ['olive-oil', 5]).protein
+      + call(ctx, 'foodMacros', ['cod', 150]).protein
+      + call(ctx, 'foodMacros', ['rice', 100]).protein;
+    assert(Math.abs(codNut.protein - expectedCodProtein) < 1e-6,
+      'recipeNutrition(id, servings, opts): protein matches an independently-summed foodMacros() total for the chosen combo',
+      'got=' + codNut.protein + ' expected=' + expectedCodProtein);
+
+    const prawnsNut = call(ctx, 'recipeNutrition', [FIXTURE_ID, 1, {protein: 'prawns', carb: 'rice'}]).totals;
+    assert(Math.abs(codNut.protein - prawnsNut.protein) > 1e-6,
+      'recipeNutrition: two different choices in the same group produce different nutrition (cod vs prawns protein, both at the same 150g)',
+      'cod=' + codNut.protein + ' prawns=' + prawnsNut.protein);
+
+    const defaultNut = call(ctx, 'recipeNutrition', [FIXTURE_ID, 1]).totals; // 3rd param omitted entirely
+    const salmonNut = call(ctx, 'recipeNutrition', [FIXTURE_ID, 1, null]).totals;
+    assert(Math.abs(defaultNut.protein - salmonNut.protein) < 1e-6,
+      'recipeNutrition: omitting opts entirely behaves exactly like passing null (both resolve to the default combo)',
+      'omitted=' + defaultNut.protein + ' explicitNull=' + salmonNut.protein);
+  })();
+
+  // -------- (4) rotation formula: (weekSeed + dayIndex*7 + slotIndex) % allowed.length,
+  // over the group's choices sorted by id — deterministic (two identical calls agree) and
+  // matches a hand-computed expected index. --------
+  (function(){
+    const weekSeed = call(ctx, 'stableHash', [FIXED_MONDAY]);
+    const optsA = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, weekSeed, 2, 1, []]);
+    const optsB = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, weekSeed, 2, 1, []]);
+    assert(JSON.stringify(optsA) === JSON.stringify(optsB),
+      'chosenOptsForRecipe: deterministic — identical (recipe, weekSeed, dayIndex, slotIndex, avoidList) always picks the same combo', JSON.stringify(optsA) + ' vs ' + JSON.stringify(optsB));
+
+    const proteinAllowedSorted = ['cod', 'prawns', 'salmon']; // group.choices ids, already alphabetical
+    const carbAllowedSorted = ['potato', 'rice'];
+    const expectedProteinIdx = (weekSeed + 2 * 7 + 1) % proteinAllowedSorted.length;
+    const expectedCarbIdx = (weekSeed + 2 * 7 + 1) % carbAllowedSorted.length;
+    assert(optsA.protein === proteinAllowedSorted[expectedProteinIdx] && optsA.carb === carbAllowedSorted[expectedCarbIdx],
+      'chosenOptsForRecipe: index = (weekSeed + dayIndex*7 + slotIndex) % allowed.length, over choices sorted by id, matches a hand-computed expectation for both groups',
+      'got=' + JSON.stringify(optsA) + ' expected protein=' + proteinAllowedSorted[expectedProteinIdx] + ' carb=' + carbAllowedSorted[expectedCarbIdx]);
+
+    // Varying only slotIndex across the group's own choice count sweeps every allowed index
+    // at least once — a second, formula-independent way of pinning the rotation (not just
+    // trusting the same arithmetic twice).
+    const seenProtein = {};
+    for(let si = 0; si < proteinAllowedSorted.length; si++){
+      const o = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, 0, 0, si, []]);
+      seenProtein[o.protein] = true;
+    }
+    assert(Object.keys(seenProtein).length === proteinAllowedSorted.length,
+      'chosenOptsForRecipe: sweeping slotIndex across the group\'s own choice count visits every allowed choice at least once (real rotation, not a constant)',
+      JSON.stringify(seenProtein));
+  })();
+
+  // -------- (5) avoid-respect: a shellfish avoid-list never yields the prawns choice,
+  // across a wide sweep of (dayIndex, slotIndex) — and WOULD yield prawns for at least one
+  // combo with no avoid-list, proving the exclusion is real, not just unreachable. --------
+  (function(){
+    let prawnsWithAvoid = false, prawnsWithoutAvoid = false;
+    for(let d = 0; d < 7; d++){
+      for(let si = 0; si < 4; si++){
+        const withAvoid = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, 0, d, si, ['shellfish']]);
+        if(withAvoid.protein === 'prawns') prawnsWithAvoid = true;
+        const withoutAvoid = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, 0, d, si, []]);
+        if(withoutAvoid.protein === 'prawns') prawnsWithoutAvoid = true;
+      }
+    }
+    assert(prawnsWithAvoid === false, 'chosenOptsForRecipe: a person avoiding shellfish never gets the prawns choice, across a full week x slot sweep', '');
+    assert(prawnsWithoutAvoid === true, 'D1 test setup: with no avoid-list, the same sweep DOES reach the prawns choice at least once (the assertion above is a real exclusion, not vacuously true)', '');
+
+    // "both people for shared slots": the SAME union-of-avoid-lists mechanism candidatesFor
+    // and the shared picker already use elsewhere (unionAvoid) — only ELENA avoids
+    // shellfish, but the union still carries it, so a shared pick still never gets prawns.
+    const avoidUnion = call(ctx, 'unionAvoid', [['shellfish'], []]);
+    let prawnsInSharedUnion = false;
+    for(let d = 0; d < 7; d++){
+      for(let si = 0; si < 4; si++){
+        const o = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, 0, d, si, avoidUnion]);
+        if(o.protein === 'prawns') prawnsInSharedUnion = true;
+      }
+    }
+    assert(prawnsInSharedUnion === false,
+      'chosenOptsForRecipe under unionAvoid(elenaAvoid, partnerAvoid): a shared pick respects EITHER person\'s avoid-list, never just the acting person\'s', '');
+  })();
+
+  // -------- (6) zero allowed choices in a group excludes the whole recipe from the pool —
+  // both at the pure allowedChoicesForGroup/recipeOptionsViable level and end-to-end
+  // through candidatesFor(). --------
+  const FIXTURE_ALL_SHELLFISH_ID = '__d1_fixture_allshellfish__';
+  (function(){
+    const allShellfishGroup = {key: 'protein', label: 'Protein', choices: [
+      {id: 'prawns-a', label: 'Prawns A', ingredients: [['prawns', 100]]},
+      {id: 'prawns-b', label: 'Prawns B', ingredients: [['prawns', 120]]}
+    ]};
+    const allShellfishRecipe = {
+      title: 'D1 all-shellfish fixture', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 10, ingredients: [['olive-oil', 5]],
+      toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: [],
+      optionGroups: [allShellfishGroup]
+    };
+    const allowedNone = call(ctx, 'allowedChoicesForGroup', [allShellfishGroup, ['shellfish']]);
+    assert(Array.isArray(allowedNone) && allowedNone.length === 0,
+      'allowedChoicesForGroup: every choice hit by the avoid-list leaves zero allowed', JSON.stringify(allowedNone));
+    assert(call(ctx, 'recipeOptionsViable', [allShellfishRecipe, ['shellfish']]) === false,
+      'recipeOptionsViable: false once a group has zero allowed choices under the avoid-list', '');
+    assert(call(ctx, 'recipeOptionsViable', [allShellfishRecipe, []]) === true,
+      'recipeOptionsViable: true with no avoid-list restricting the group', '');
+    assert(call(ctx, 'chosenOptsForRecipe', [allShellfishRecipe, 0, 0, 0, ['shellfish']]) === null,
+      'chosenOptsForRecipe: returns null (cannot pick) when a group has zero allowed choices', '');
+
+    run(ctx, "RECIPES_DB['" + FIXTURE_ALL_SHELLFISH_ID + "'] = " + JSON.stringify(allShellfishRecipe) + ';');
+    const poolNoAvoid = call(ctx, 'candidatesFor', ['dinner', 'balanced', []]);
+    assert(poolNoAvoid.indexOf(FIXTURE_ALL_SHELLFISH_ID) !== -1,
+      'candidatesFor: a recipe whose optionGroups all still have >=1 allowed choice stays in the pool', '');
+    const poolShellfishAvoid = call(ctx, 'candidatesFor', ['dinner', 'balanced', ['shellfish']]);
+    assert(poolShellfishAvoid.indexOf(FIXTURE_ALL_SHELLFISH_ID) === -1,
+      'candidatesFor: a recipe with a zero-allowed-choices group drops from the pool entirely once the avoid-list is applied', '');
+    run(ctx, "delete RECIPES_DB['" + FIXTURE_ALL_SHELLFISH_ID + "'];");
+  })();
+
+  // -------- (7) planner wiring end-to-end: pickSoloMeal/pickSharedMeal, called directly
+  // with a single-candidate pool (so the fixture is guaranteed to win — this isolates the
+  // opts-assignment wiring from the unrelated kcal/protein scoring competition against the
+  // real 30+ recipe catalog), actually store the rotated combo on entry.opts, agree with
+  // chosenOptsForRecipe() called with the same inputs, and are deterministic across two
+  // calls. --------
+  (function(){
+    function freshHistory(){
+      const h = {};
+      SLOT_ORDER.forEach(function(s){ h[s] = []; });
+      h.sideUse = {}; h.bfPairUse = {};
+      return h;
+    }
+    const history = {elena: freshHistory(), partner: freshHistory()};
+    const weekSeed = call(ctx, 'stableHash', [FIXED_MONDAY]);
+
+    ctx.__savedElenaAvoid__ = get(ctx, 'PROF.elena.avoid');
+    run(ctx, 'PROF.elena.avoid = [];');
+    const soloEntry1 = call(ctx, 'pickSoloMeal', [[FIXTURE_ID], 'elena', 'snack', 3, 2, 600, 30, 1, history, weekSeed, null]);
+    const soloEntry2 = call(ctx, 'pickSoloMeal', [[FIXTURE_ID], 'elena', 'snack', 3, 2, 600, 30, 1, history, weekSeed, null]);
+    run(ctx, 'PROF.elena.avoid = __savedElenaAvoid__; delete __savedElenaAvoid__;');
+
+    assert(JSON.stringify(soloEntry1) === JSON.stringify(soloEntry2),
+      'pickSoloMeal: two calls with identical inputs produce a byte-identical entry (incl. .opts)', JSON.stringify(soloEntry1) + ' vs ' + JSON.stringify(soloEntry2));
+    assert(soloEntry1.recipeId === FIXTURE_ID && !!soloEntry1.opts,
+      'pickSoloMeal: the single-candidate pool is picked and its entry carries an .opts field', JSON.stringify(soloEntry1));
+    const expectedSoloOpts = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, weekSeed, 3, 2, []]);
+    assert(JSON.stringify(soloEntry1.opts) === JSON.stringify(expectedSoloOpts),
+      'pickSoloMeal: entry.opts matches chosenOptsForRecipe() called with the same (weekSeed, dayIndex, slotIndex, avoidList=PROF.elena.avoid)',
+      'got=' + JSON.stringify(soloEntry1.opts) + ' expected=' + JSON.stringify(expectedSoloOpts));
+
+    ctx.__savedElenaAvoid2__ = get(ctx, 'PROF.elena.avoid');
+    ctx.__savedPartnerAvoid__ = get(ctx, 'PROF.partner.avoid');
+    run(ctx, "PROF.elena.avoid = ['shellfish']; PROF.partner.avoid = [];");
+    const sharedRemainingKcal = {elena: 1200, partner: 1500};
+    const sharedRemainingProtein = {elena: 60, partner: 80};
+    const sharedEntry = call(ctx, 'pickSharedMeal', [[FIXTURE_ID], 'snack', 4, 1, sharedRemainingKcal, sharedRemainingProtein, 1, history, weekSeed, null]);
+    run(ctx, 'PROF.elena.avoid = __savedElenaAvoid2__; PROF.partner.avoid = __savedPartnerAvoid__; delete __savedElenaAvoid2__; delete __savedPartnerAvoid__;');
+
+    assert(sharedEntry.shared === true && sharedEntry.recipeId === FIXTURE_ID,
+      'pickSharedMeal: the single-candidate pool is picked for the shared unit', JSON.stringify(sharedEntry));
+    assert(JSON.stringify(sharedEntry.elena.opts) === JSON.stringify(sharedEntry.partner.opts),
+      'pickSharedMeal: elena and partner get the SAME variant on a shared dish', JSON.stringify(sharedEntry.elena.opts) + ' vs ' + JSON.stringify(sharedEntry.partner.opts));
+    assert(sharedEntry.elena.opts.protein !== 'prawns',
+      'pickSharedMeal: with only elena avoiding shellfish, the SHARED pick (avoid union) still never gets prawns', JSON.stringify(sharedEntry.elena.opts));
+  })();
+
+  // -------- (8) shopping list aggregates the CHOSEN variant's ingredients, not the default
+  // combo — differential check (before/after) so a coincidental real-recipe use of the same
+  // foods elsewhere in the week can't produce a false pass. --------
+  (function(){
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    const plan = call(ctx, 'ensureWeekPlan', []);
+    const wk = plan.weekStartDate;
+    const before = call(ctx, 'computeShoppingList', [wk]);
+    const prawnsName = FOODS.prawns.name, potatoesName = FOODS.potatoes.name;
+    const beforePrawns = (before.totals[prawnsName] && before.totals[prawnsName].qty) || 0;
+    const beforePotatoes = (before.totals[potatoesName] && before.totals[potatoesName].qty) || 0;
+
+    const chosenEntry = {recipeId: FIXTURE_ID, portion: 1, kcal: 0, protein: 0, opts: {protein: 'prawns', carb: 'potato'}};
+    run(ctx, "weekPlans['" + wk + "'].days[0].meals.lunch.elena = " + JSON.stringify(chosenEntry) + ';');
+    const after = call(ctx, 'computeShoppingList', [wk]);
+    const afterPrawns = (after.totals[prawnsName] && after.totals[prawnsName].qty) || 0;
+    const afterPotatoes = (after.totals[potatoesName] && after.totals[potatoesName].qty) || 0;
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+
+    assert(Math.abs((afterPrawns - beforePrawns) - 150) < 1e-6,
+      'computeShoppingList: buys the CHOSEN variant\'s ingredient (150g prawns), not the default (salmon)', 'delta=' + (afterPrawns - beforePrawns));
+    assert(Math.abs((afterPotatoes - beforePotatoes) - 150) < 1e-6,
+      'computeShoppingList: buys the CHOSEN variant\'s carb choice (150g potatoes), not the default (rice)', 'delta=' + (afterPotatoes - beforePotatoes));
+  })();
+
+  // -------- (9) a frozen log entry keeps the variant's macros after the fixture recipe's
+  // choice data is mutated afterward — proving `.opts` pins the CHOICE, and the entry's own
+  // snapshot fields never re-derive from a later DB edit (log.js's frozen-history contract).
+  // A live recompute of the SAME components (nutritionForRecipeComponents) DOES change post-
+  // mutation, so the frozen assertion below is a real guarantee, not a vacuous one. --------
+  (function(){
+    run(ctx, 'logHistory = {};');
+    const chosenOpts = {protein: 'cod', carb: 'rice'};
+    const components = [{recipeId: FIXTURE_ID, portion: 1, opts: chosenOpts}];
+    const preMutationNut = call(ctx, 'nutritionForRecipeComponents', [components]);
+    call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', FIXTURE_ID, 1, components]);
+
+    function loggedDinnerEntry(){
+      const arr = get(ctx, "logHistory['" + FIXED_MONDAY + "'].elena");
+      return arr.filter(function(e){ return e.kind === 'plan' && e.slot === 'dinner'; })[0];
+    }
+    const before = loggedDinnerEntry();
+    assert(!!before && before.kcal === Math.round(preMutationNut.kcal) && before.protein === Math.round(preMutationNut.protein),
+      'logPlanEntry: freezes the CHOSEN variant\'s macros at log time (matches an independently-computed nutritionForRecipeComponents total)',
+      'got=' + JSON.stringify(before) + ' expected kcal=' + Math.round(preMutationNut.kcal) + ' protein=' + Math.round(preMutationNut.protein));
+
+    // Mutate the fixture's "cod" choice drastically (150g -> 900g) directly in RECIPES_DB.
+    run(ctx, "RECIPES_DB['" + FIXTURE_ID + "'].optionGroups[0].choices[1].ingredients = [['cod', 900]];");
+    const postMutationNut = call(ctx, 'nutritionForRecipeComponents', [components]);
+    assert(Math.abs(postMutationNut.kcal - preMutationNut.kcal) > 50,
+      'D1 test setup: mutating the fixture\'s chosen choice DOES change a fresh live recompute (proves the frozen-entry assertion below is meaningful, not vacuous)',
+      'pre=' + preMutationNut.kcal + ' post=' + postMutationNut.kcal);
+
+    const after = loggedDinnerEntry();
+    assert(after.kcal === before.kcal && after.protein === before.protein,
+      'logPlanEntry: the already-frozen LogEntry\'s macros are UNCHANGED after the fixture recipe\'s choice data is mutated',
+      'before=' + JSON.stringify(before) + ' after=' + JSON.stringify(after));
+
+    run(ctx, 'logHistory = {};');
+  })();
+
+  // -------- (10) title helper: recipeDisplayTitle + its wiring into
+  // mealTitleWithExtras/logEntryTitleWithComponents. --------
+  (function(){
+    const titleDefault = call(ctx, 'recipeDisplayTitle', [FIXTURE_ID, null]);
+    assert(titleDefault === 'D1 fixture dish (Salmon, Rice)',
+      'recipeDisplayTitle: default combo appends every group\'s choices[0] label in parens', titleDefault);
+
+    const titleChosen = call(ctx, 'recipeDisplayTitle', [FIXTURE_ID, {protein: 'cod', carb: 'potato'}]);
+    assert(titleChosen === 'D1 fixture dish (Cod, Potato)',
+      'recipeDisplayTitle: an explicit combo appends the CHOSEN labels', titleChosen);
+
+    const titleBadOpts = call(ctx, 'recipeDisplayTitle', [FIXTURE_ID, {protein: 'nonsense'}]);
+    assert(titleBadOpts === titleDefault,
+      'recipeDisplayTitle: bad opts falls back to the default-combo title', titleBadOpts);
+
+    const plainTitle = call(ctx, 'recipeDisplayTitle', ['yogurt', null]);
+    assert(plainTitle === RECIPES_DB.yogurt.title,
+      'recipeDisplayTitle: a recipe without optionGroups is identical to the bare title (byte-for-byte, no parens)', plainTitle);
+
+    const mtwe = call(ctx, 'mealTitleWithExtras', [{recipe: {title: 'ignored'}, recipeId: FIXTURE_ID, opts: {protein: 'cod', carb: 'potato'}, extras: []}]);
+    assert(mtwe === 'D1 fixture dish (Cod, Potato)',
+      'mealTitleWithExtras: reads the base title through recipeDisplayTitle(view.recipeId, view.opts)', mtwe);
+
+    const letc = call(ctx, 'logEntryTitleWithComponents', [{kind: 'plan', ref: FIXTURE_ID, components: [{recipeId: FIXTURE_ID, portion: 1, opts: {protein: 'prawns', carb: 'rice'}}]}]);
+    assert(letc === 'D1 fixture dish (Prawns, Rice)',
+      'logEntryTitleWithComponents: reads the base title through recipeDisplayTitle(entry.ref, components[0].opts)', letc);
+  })();
+
+  // -------- cleanup: leave RECIPES_DB/weekPlans/logHistory exactly as every other test
+  // expects them. --------
+  run(ctx, "delete RECIPES_DB['" + FIXTURE_ID + "']; weekPlans = {}; weekPlan = null; logHistory = {};");
+}
+
+/* ===================================================================
+   task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
+   (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
+   recipes, 2 role:'sauce' recipes), butter-chicken season fix.
+   =================================================================== */
+function testD2SauceRoleAndCatalog(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
+  const VALID_ROLES = get(ctx, 'VALID_ROLES');
+  const SAUCE_IDS = ['tomato-basil-sauce', 'yogurt-herb-sauce'];
+
+  // -------- (0) containsAvoid: composite foods declare allergens their category hides.
+  // The regression this guards: pesto-elena (cat 'Pantry', contains parmesan/pecorino/
+  // almonds) passed foodHitsAvoid for a lactose avoider, so the pasta recipe's
+  // "Pesto Elena" option could be rotated onto Elena's plan. --------
+  (function(){
+    const containsAvoid = FOODS['pesto-elena'] && FOODS['pesto-elena'].containsAvoid;
+    assert(Array.isArray(containsAvoid) && containsAvoid.indexOf('lactose') !== -1 && containsAvoid.indexOf('nuts') !== -1,
+      'pesto-elena declares containsAvoid lactose+nuts');
+    const VALID_AVOID = get(ctx, 'VALID_AVOID');
+    Object.keys(FOODS).forEach(function(id){
+      (FOODS[id].containsAvoid || []).forEach(function(k){
+        assert(VALID_AVOID.indexOf(k) !== -1, 'containsAvoid key "' + k + '" on ' + id + ' is a valid avoid key');
+      });
+    });
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['lactose']]) === true, 'foodHitsAvoid: pesto-elena hits lactose');
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['nuts']]) === true, 'foodHitsAvoid: pesto-elena hits nuts');
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['gluten']]) === false, 'foodHitsAvoid: pesto-elena clean for gluten');
+    // End-to-end: a lactose avoider's allowed choices for the pasta condiment group
+    // exclude BOTH dairy routes — Pesto Elena (containsAvoid) and courgette & ricotta
+    // (cat Dairy) — while tomato & basil stays allowed.
+    const pastaGroups = RECIPES_DB['pasta'] && RECIPES_DB['pasta'].optionGroups;
+    assert(pastaGroups && pastaGroups.length === 1, 'pasta has its condiment optionGroup');
+    const allowed = call(ctx, 'allowedChoicesForGroup', [pastaGroups[0], ['lactose']]).map(function(c){ return c.id; });
+    assert(allowed.indexOf('pesto-elena') === -1 && allowed.join(',').indexOf('pesto') === -1,
+      'lactose avoider: pesto choice excluded (got: ' + allowed.join(',') + ')');
+    assert(allowed.some(function(id){ return id.indexOf('tomato') !== -1; }),
+      'lactose avoider: tomato & basil choice still allowed');
+    // Custom-recipe derivation agrees: a recipe built on pesto-elena derives lactose+nuts.
+    const meta = call(ctx, 'deriveRecipeMeta', [[{foodId: 'pesto-elena', grams: 30}, {foodId: 'pasta', grams: 100}], call(ctx, 'recipeNutrition', ['pasta', 1]).totals, 15]);
+    assert(meta.avoid.indexOf('lactose') !== -1 && meta.avoid.indexOf('nuts') !== -1,
+      'deriveRecipeMeta: pesto-based custom recipe derives lactose+nuts');
+  })();
+
+  // -------- (1) new ingredient: sea-bass-fillet, real-source macros, 4/4/9 kcal policy
+  // (foods.js's own stated convention — see the file header), and wired into
+  // ANIMAL_FOOD_IDS (js/library.js) for the custom-recipe builder's auto-veggie-tag
+  // derivation, same as every other fish/meat/poultry id. --------
+  (function(){
+    const f = FOODS['sea-bass-fillet'];
+    assert(!!f, 'D2: sea-bass-fillet food exists', JSON.stringify(f));
+    if(!f) return;
+    assert(f.cat === 'Protein' && f.unit === 'g' && f.per === 100,
+      'D2: sea-bass-fillet is a per-100g Protein-category food', JSON.stringify(f));
+    assert(typeof f.src === 'string' && /FDC/.test(f.src),
+      'D2: sea-bass-fillet cites a real USDA FDC source (ground rule: no invented numbers)', f.src);
+    const expectedKcal = Math.round(4 * f.protein + 4 * f.carbs + 9 * f.fat);
+    assert(f.kcal === expectedKcal,
+      'D2: sea-bass-fillet.kcal follows foods.js\'s stated 4/4/9-from-sourced-macros policy',
+      'kcal=' + f.kcal + ' expected=' + expectedKcal);
+
+    const ANIMAL_FOOD_IDS = get(ctx, 'ANIMAL_FOOD_IDS');
+    assert(ANIMAL_FOOD_IDS.indexOf('sea-bass-fillet') !== -1,
+      'D2: sea-bass-fillet is registered in ANIMAL_FOOD_IDS (custom-recipe builder veggie-tag derivation)', JSON.stringify(ANIMAL_FOOD_IDS));
+  })();
+
+  // -------- (2) role 'sauce': VALID_ROLES + library role-picker label. --------
+  (function(){
+    assert(VALID_ROLES.indexOf('sauce') !== -1, 'D2: VALID_ROLES includes "sauce"', JSON.stringify(VALID_ROLES));
+    const label = call(ctx, 'recipeRoleLabel', ['sauce']);
+    assert(label === 'Sauce & condiment', 'D2: recipeRoleLabel("sauce") === "Sauce & condiment"', label);
+  })();
+
+  // -------- (3) the two new sauce recipes: role/slots convention + WARNING-band kcal. --------
+  (function(){
+    SAUCE_IDS.forEach(function(id){
+      const r = RECIPES_DB[id];
+      assert(!!r, 'D2: sauce recipe "' + id + '" exists', id);
+      if(!r) return;
+      assert(r.role === 'sauce', 'D2: "' + id + '".role === "sauce"', r.role);
+      const slots = call(ctx, 'recipeSlotList', [r]);
+      assert(slots.length === 1 && slots[0] === 'side',
+        'D2: "' + id + '" carries the sauce convention slots === [\'side\']', JSON.stringify(slots));
+      const kcal = call(ctx, 'recipeNutrition', [id, 1]).totals.kcal;
+      assert(kcal >= 40 && kcal <= 250,
+        'D2: "' + id + '" computed kcal ' + Math.round(kcal) + ' is within the sauce WARNING band 40-250', kcal);
+    });
+  })();
+
+  // -------- (4) sauce exclusion is structural, not a planner special-case: never a
+  // candidatesFor() result (real meal slots only) and never a sidePoolFor() result (that
+  // pool filters role==='side' specifically, and 'sauce' !== 'side'). --------
+  (function(){
+    const hits = [];
+    ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+      ['balanced', 'highprotein', 'lowcarb'].forEach(function(style){
+        const pool = call(ctx, 'candidatesFor', [slot, style, [], {includeThumbsDown: true}]);
+        SAUCE_IDS.forEach(function(id){ if(pool.indexOf(id) !== -1) hits.push(slot + '/' + style + '/' + id); });
+      });
+    });
+    assert(hits.length === 0, 'D2: candidatesFor() never returns a sauce id for any real meal slot', JSON.stringify(hits));
+
+    const sidePool = call(ctx, 'sidePoolFor', [[]]);
+    const sideHits = SAUCE_IDS.filter(function(id){ return sidePool.indexOf(id) !== -1; });
+    assert(sideHits.length === 0, 'D2: sidePoolFor() never returns a sauce id (filters role===\'side\', not \'sauce\')', JSON.stringify(sideHits));
+  })();
+
+  // -------- (5) add-meal sheet: mealRecipeOptions() puts both sauces in their own
+  // "Sauces" bucket, absent from both "Sides" and "Full recipes". --------
+  (function(){
+    const opts = call(ctx, 'mealRecipeOptions', [[]]);
+    assert(JSON.stringify(opts.sauces.slice().sort()) === JSON.stringify(SAUCE_IDS.slice().sort()),
+      'D2: mealRecipeOptions().sauces is exactly the two sauce recipes', JSON.stringify(opts.sauces));
+    const inSides = SAUCE_IDS.filter(function(id){ return opts.sides.indexOf(id) !== -1; });
+    const inFull = SAUCE_IDS.filter(function(id){ return opts.full.indexOf(id) !== -1; });
+    assert(inSides.length === 0 && inFull.length === 0,
+      'D2: sauce recipes never leak into the Sides or Full-recipes buckets', 'sides=' + JSON.stringify(inSides) + ' full=' + JSON.stringify(inFull));
+  })();
+
+  // -------- (6) end-to-end: a real two-week generated plan never contains a sauce id,
+  // neither as a standalone base meal nor as a composed side/extra. --------
+  (function(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const sig1 = call(ctx, 'computePlanSignature', []);
+    const week1 = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sig1}]);
+    const week2Start = call(ctx, 'addDaysISO', [FIXED_MONDAY, 7]);
+    const sig2 = call(ctx, 'computePlanSignature', []);
+    const week2 = call(ctx, 'generateWeek', [{weekStartDate: week2Start, signature: sig2}]);
+
+    function sauceHitsIn(week){
+      const hits = [];
+      (week.days || []).forEach(function(day){
+        Object.keys(day.meals || {}).forEach(function(slot){
+          ['elena', 'partner'].forEach(function(person){
+            const entry = day.meals[slot] && day.meals[slot][person];
+            if(!entry) return;
+            if(SAUCE_IDS.indexOf(entry.recipeId) !== -1) hits.push(day.date + '/' + slot + '/' + person + ' (base)');
+            (entry.extras || []).forEach(function(ex){
+              if(SAUCE_IDS.indexOf(ex.recipeId) !== -1) hits.push(day.date + '/' + slot + '/' + person + ' (extra)');
+            });
+          });
+        });
+      });
+      return hits;
+    }
+    const hits = sauceHitsIn(week1).concat(sauceHitsIn(week2));
+    assert(hits.length === 0, 'D2: a generated fortnight never contains a sauce id (standalone or composed)', JSON.stringify(hits));
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+  })();
+
+  // -------- (7) butter-chicken season fix + Vegetarian burrito title stays clean. --------
+  (function(){
+    assert(RECIPES_DB['butter-chicken'].season === 'winter/autumn',
+      'D2: butter-chicken.season === "winter/autumn"', RECIPES_DB['butter-chicken'].season);
+    const staleTitles = Object.keys(RECIPES_DB).filter(function(id){
+      return /burrito vegetariano/i.test(RECIPES_DB[id].title || '');
+    });
+    assert(staleTitles.length === 0, 'D2: no recipe title regresses to the stale Italian "Burrito vegetariano"', JSON.stringify(staleTitles));
+    assert(RECIPES_DB['burrito-vegetariano'].title === 'Vegetarian burrito',
+      'D2: burrito-vegetariano.title is the corrected English title', RECIPES_DB['burrito-vegetariano'].title);
+  })();
+
+  // -------- (8) baked-fish (role:'main'): default combo + every fish choice lands inside
+  // ROLE_KCAL_BAND.main [250,650] — the WARNING band data/validate.js checks. --------
+  (function(){
+    const ROLE_KCAL_BAND = get(ctx, 'ROLE_KCAL_BAND');
+    const band = ROLE_KCAL_BAND.main;
+    const r = RECIPES_DB['baked-fish'];
+    assert(!!r && r.role === 'main' && JSON.stringify(call(ctx, 'recipeSlotList', [r])) === JSON.stringify(['lunch', 'dinner']),
+      'D2: baked-fish is role:"main", slots ["lunch","dinner"]', JSON.stringify(r));
+    const fishGroup = r.optionGroups.filter(function(g){ return g.key === 'fish'; })[0];
+    assert(!!fishGroup && fishGroup.choices.length === 4, 'D2: baked-fish has a 4-choice "fish" optionGroup', JSON.stringify(fishGroup));
+    const defaultKcal = call(ctx, 'recipeNutrition', ['baked-fish', 1]).totals.kcal;
+    assert(defaultKcal >= band[0] && defaultKcal <= band[1],
+      'D2: baked-fish default combo (salmon) kcal ' + Math.round(defaultKcal) + ' is within the main band ' + band.join('-'), defaultKcal);
+    const outOfBand = fishGroup.choices.filter(function(choice){
+      const opts = {fish: choice.id};
+      const kcal = call(ctx, 'recipeNutrition', ['baked-fish', 1, opts]).totals.kcal;
+      return kcal < band[0] || kcal > band[1];
+    });
+    assert(outOfBand.length === 0, 'D2: every baked-fish fish choice lands inside the main band ' + band.join('-'), JSON.stringify(outOfBand));
+  })();
+
+  // -------- (9) pasta (role:'full', slot 'lunch'): default combo + every condiment choice
+  // lands inside KCAL_BAND.lunch [400,750] — the ERROR-level band for the default, WARNING
+  // for the other choices (data/validate.js). --------
+  (function(){
+    const KCAL_BAND = get(ctx, 'KCAL_BAND');
+    const band = KCAL_BAND.lunch;
+    const r = RECIPES_DB.pasta;
+    assert(!!r && r.role === 'full' && r.slot === 'lunch',
+      'D2: pasta is role:"full", primary slot "lunch"', JSON.stringify(r && {role: r.role, slot: r.slot}));
+    const condimentGroup = r.optionGroups.filter(function(g){ return g.key === 'condiment'; })[0];
+    assert(!!condimentGroup && condimentGroup.choices.length === 4, 'D2: pasta has a 4-choice "condiment" optionGroup', JSON.stringify(condimentGroup));
+    const defaultKcal = call(ctx, 'recipeNutrition', ['pasta', 1]).totals.kcal;
+    assert(defaultKcal >= band[0] && defaultKcal <= band[1],
+      'D2: pasta default combo (tomato & basil) kcal ' + Math.round(defaultKcal) + ' is within the lunch band ' + band.join('-'), defaultKcal);
+    const outOfBand = condimentGroup.choices.filter(function(choice){
+      const opts = {condiment: choice.id};
+      const kcal = call(ctx, 'recipeNutrition', ['pasta', 1, opts]).totals.kcal;
+      return kcal < band[0] || kcal > band[1];
+    });
+    assert(outOfBand.length === 0, 'D2: every pasta condiment choice lands inside the lunch band ' + band.join('-'), JSON.stringify(outOfBand));
+  })();
+
+  // -------- (10) french-toast-fruit-maple: the no-opts effective ingredient list must
+  // compute IDENTICAL nutrition to the recipe before this batch's edit (mixed-berries
+  // moved from the base array into optionGroups.fruit's default choice) — literals
+  // captured from `recipeNutrition('french-toast-fruit-maple', 1)` against the pre-D2
+  // ingredients array [['white-bread',70],['eggs',50],['milk',80],['mixed-berries',80],
+  // ['maple-syrup',15],['olive-oil',4]], BEFORE any D2 edit. --------
+  (function(){
+    const PRE_D2_TOTALS = {
+      kcal: 422.98499999999996, protein: 15.81, carbs: 57.389999999999986,
+      fat: 14.465000000000002, satFat: 4.632, fiber: 4.69,
+      sugars: 18.515, freeSugars: 9.075, goodFat: 9.833000000000002
+    };
+    const noOpts = call(ctx, 'recipeNutrition', ['french-toast-fruit-maple', 1]).totals;
+    Object.keys(PRE_D2_TOTALS).forEach(function(k){
+      assert(Math.abs(noOpts[k] - PRE_D2_TOTALS[k]) < 1e-6,
+        'D2: french-toast-fruit-maple no-opts nutrition unchanged from before the D2 edit (' + k + ')',
+        'got ' + noOpts[k] + ' expected ' + PRE_D2_TOTALS[k]);
+    });
+    const berriesChoice = call(ctx, 'recipeNutrition', ['french-toast-fruit-maple', 1, {fruit: 'berries'}]).totals;
+    Object.keys(PRE_D2_TOTALS).forEach(function(k){
+      assert(Math.abs(berriesChoice[k] - noOpts[k]) < 1e-6,
+        'D2: french-toast-fruit-maple explicit {fruit:"berries"} matches the no-opts default exactly (' + k + ')',
+        'got ' + berriesChoice[k] + ' expected ' + noOpts[k]);
+    });
+    // Banana/peach choices exist, resolve, and stay inside the breakfast plausibility band.
+    const KCAL_BAND = get(ctx, 'KCAL_BAND');
+    const band = KCAL_BAND.breakfast;
+    ['banana', 'peach'].forEach(function(choiceId){
+      const kcal = call(ctx, 'recipeNutrition', ['french-toast-fruit-maple', 1, {fruit: choiceId}]).totals.kcal;
+      assert(kcal >= band[0] && kcal <= band[1],
+        'D2: french-toast-fruit-maple {fruit:"' + choiceId + '"} kcal ' + Math.round(kcal) + ' is within the breakfast band ' + band.join('-'), kcal);
+    });
+  })();
+
+  // -------- (11) new role:'main' recipes exist with sane roles/slots (lemon-herb-chicken-
+  // breast, turkey-cutlets-sage, white-bean-rosemary-mash), each inside ROLE_KCAL_BAND.main. --------
+  (function(){
+    const ROLE_KCAL_BAND = get(ctx, 'ROLE_KCAL_BAND');
+    const band = ROLE_KCAL_BAND.main;
+    ['lemon-herb-chicken-breast', 'turkey-cutlets-sage', 'white-bean-rosemary-mash'].forEach(function(id){
+      const r = RECIPES_DB[id];
+      assert(!!r && r.role === 'main', 'D2: "' + id + '" exists with role:"main"', JSON.stringify(r && r.role));
+      const slots = call(ctx, 'recipeSlotList', [r]);
+      assert(slots.indexOf('lunch') !== -1, 'D2: "' + id + '" is plannable at lunch', JSON.stringify(slots));
+      const kcal = call(ctx, 'recipeNutrition', [id, 1]).totals.kcal;
+      assert(kcal >= band[0] && kcal <= band[1],
+        'D2: "' + id + '" computed kcal ' + Math.round(kcal) + ' is within the main band ' + band.join('-'), kcal);
+    });
+  })();
+
+  // -------- (12) pool-count deltas: lunch role:'main' recipe count (overall, and within
+  // the thin 'balanced' style) must be >= the pre-D2 baseline captured via this same
+  // candidatesFor-style enumeration BEFORE this batch's recipes.js edits (README's B2
+  // entry: "lunch role:'main' pool is thin (2 in balanced style)"; re-measured directly
+  // against the pre-D2 tree at spawn time: 5 total lunch mains, 3 of them 'balanced'). --------
+  (function(){
+    const PRE_D2_LUNCH_MAIN_TOTAL = 5;
+    const PRE_D2_LUNCH_MAIN_BALANCED = 3;
+    const lunchMainIds = Object.keys(RECIPES_DB).filter(function(id){
+      const r = RECIPES_DB[id];
+      return !r.occasional && r.role === 'main' && call(ctx, 'recipeSlotList', [r]).indexOf('lunch') !== -1;
+    });
+    const lunchMainBalanced = lunchMainIds.filter(function(id){ return RECIPES_DB[id].styles.indexOf('balanced') !== -1; });
+    assert(lunchMainIds.length > PRE_D2_LUNCH_MAIN_TOTAL,
+      'D2: lunch role:"main" pool grew from the pre-D2 baseline (' + PRE_D2_LUNCH_MAIN_TOTAL + ')', lunchMainIds.length);
+    assert(lunchMainBalanced.length > PRE_D2_LUNCH_MAIN_BALANCED,
+      'D2: lunch role:"main" x style:"balanced" pool grew from the pre-D2 baseline (' + PRE_D2_LUNCH_MAIN_BALANCED + ')', lunchMainBalanced.length);
+  })();
+}
+
+/* ===================================================================
    main
    =================================================================== */
 
@@ -2499,6 +3146,8 @@ function main(){
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
+  runTest('recipe options/variants (task D1)', function(){ testRecipeOptions(ctx); });
+  runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });

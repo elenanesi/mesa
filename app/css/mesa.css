@@ -240,6 +240,12 @@ ul.ing li:last-child{border-bottom:0;}
 ol.steps{margin:6px 0 0;padding-left:20px;}
 ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-soft);}
 
+/* task D1: recipe-detail optionGroups chips — reuse .pill.ghost.chip-preset/.chipsel's
+   look (renderRecipeOptionsChips, render.js) but sized to the 44px tap-target minimum
+   (ground rule 4) since these sit in the main scroll flow, unlike the denser macro-split
+   preset row .pill.chip-preset otherwise ships at. */
+.recipe-opt-chip{min-height:44px;padding:0 14px;}
+
 /* servings / portion scaling */
 .serve-row{display:flex;gap:10px;margin-top:10px;}
 .serve-card{flex:1;background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 10px;text-align:center;transition:.2s;}
