@@ -1298,12 +1298,14 @@ function openLogSwap(slot, targetElId){
 let addMealCtx = null;
 let addMealFoodQuery = '';
 
-// (b)/(a) fix: the sheet is now three sections instead of one undifferentiated, slot-
-// filtered pile — "In this meal" (with a remove control per extra), "Sides", and "Full
-// recipes" (every non-side recipe from ANY slot, not just this one — owner complaint (a):
-// "I should always be able to add both sides specifically or full main course recipes").
-// `components` is the meal's CURRENT components (base + extras) so both pick lists exclude
-// what's already in — same resolution openAddMealRecipeSheet already had.
+// (b)/(a) fix: the sheet is now sections instead of one undifferentiated, slot-filtered
+// pile — "In this meal" (with a remove control per extra), "Sides", "Sauces" (task D2:
+// role:'sauce' recipes — condiments meant to be added to a meal, never planned standalone,
+// same delegated-row pattern as Sides), and "Full recipes" (every remaining recipe from ANY
+// slot, not just this one — owner complaint (a): "I should always be able to add both sides
+// specifically or full main course recipes"). `components` is the meal's CURRENT components
+// (base + extras) so all three pick lists exclude what's already in — same resolution
+// openAddMealRecipeSheet already had.
 function mealTitleSort(a, b){
   const aFav = recipePrefs[a] === 'favorite';
   const bFav = recipePrefs[b] === 'favorite';
@@ -1314,9 +1316,12 @@ function mealRecipeOptions(components){
   const used = {};
   (components || []).forEach(function(c){ if(c.recipeId) used[c.recipeId] = true; });
   const ids = Object.keys(RECIPES_DB).filter(function(id){ return !used[id]; });
+  const isSauce = function(id){ return RECIPES_DB[id].role === 'sauce'; };
+  const isSide = function(id){ return !isSauce(id) && recipeSlotList(RECIPES_DB[id]).indexOf('side') !== -1; };
   return {
-    sides: ids.filter(function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') !== -1; }).sort(mealTitleSort),
-    full: ids.filter(function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') === -1; }).sort(mealTitleSort)
+    sides: ids.filter(isSide).sort(mealTitleSort),
+    sauces: ids.filter(isSauce).sort(mealTitleSort),
+    full: ids.filter(function(id){ return !isSide(id) && !isSauce(id); }).sort(mealTitleSort)
   };
 }
 
@@ -1423,6 +1428,9 @@ function openAddMealSheetForContext(ctx){
 
   html += '<div class="shop-cat">Sides</div>';
   html += opts.sides.length ? opts.sides.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No side recipes available.</p>';
+
+  html += '<div class="shop-cat">Sauces</div>';
+  html += opts.sauces.length ? opts.sauces.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No sauces available.</p>';
 
   html += '<div class="shop-cat">Full recipes</div>';
   html += opts.full.length ? opts.full.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No other recipes available.</p>';

@@ -34,7 +34,12 @@ const VALID_SEASONS = ['evergreen', 'winter/autumn', 'spring/summer'];
 // with a side, 'side' accompaniments. Required + enum-checked (ERROR) so every recipe in
 // RECIPES_DB gets a deliberate tag; applyCustomRecipes() (js/library.js) normalizes legacy
 // custom recipes without a role to 'full' at read time so validateData() stays green.
-const VALID_ROLES = ['full', 'main', 'side'];
+// task D2: 'sauce' — a condiment/sauce meant to be added to another dish (planner.js's
+// candidatesFor/sidePoolFor never select it: it isn't a real meal slot, and sidePoolFor
+// filters on role==='side' specifically), offered instead in js/render.js's add-meal
+// sheet "Sauces" section. Convention: sauces carry slots ['side'] like other side dishes
+// (see the warning below).
+const VALID_ROLES = ['full', 'main', 'side', 'sauce'];
 
 // breakfast 300-650, lunch 400-750, dinner 400-800, snack 100-350 (PWA-MVP-plan.md B2 acceptance).
 // Applies only to role:'full' recipes — a composed main+side unit is what must land in the
@@ -46,12 +51,14 @@ const KCAL_BAND = {
   snack: [100, 350]
 };
 
-// task B2: plausibility-only (WARNING) bands for the two sub-full roles, computed per
-// serving via recipeMacros — a 'main' or 'side' is expected to be smaller than a full meal
-// on its own since it's meant to be combined with the other half of the composed unit.
+// task B2: plausibility-only (WARNING) bands for the sub-full roles, computed per serving
+// via recipeMacros — a 'main' or 'side' is expected to be smaller than a full meal on its
+// own since it's meant to be combined with the other half of the composed unit. task D2:
+// 'sauce' — a condiment portion, smaller still.
 const ROLE_KCAL_BAND = {
   main: [250, 650],
-  side: [60, 300]
+  side: [60, 300],
+  sauce: [40, 250]
 };
 
 // Elena's current avoid-list in the app (lactose, raw onion, very spicy — per the B2
@@ -321,9 +328,11 @@ function validateData() {
     // task B2: a role:'side' recipe whose slots don't include 'side' is likely a tagging
     // slip (a side should be plannable as a side) — soft warning, not an error, since a
     // recipe can legitimately be role:'side' shape-wise while only ever surfaced via a
-    // specific meal slot.
-    if (r.role === 'side' && recipeSlotList(r).indexOf('side') === -1) {
-      warnings.push(prefix + 'role is "side" but its slots ' + JSON.stringify(recipeSlotList(r)) + ' do not include "side" — possible tagging slip.');
+    // specific meal slot. task D2: 'sauce' follows the same slots-['side'] convention (the
+    // add-meal sheet's Sauces section reads the same recipeSlotList as Sides), so the
+    // check is extended to cover it identically.
+    if ((r.role === 'side' || r.role === 'sauce') && recipeSlotList(r).indexOf('side') === -1) {
+      warnings.push(prefix + 'role is "' + r.role + '" but its slots ' + JSON.stringify(recipeSlotList(r)) + ' do not include "side" — possible tagging slip.');
     }
 
     // kcal-band check — only once foods.js is loaded. The strict per-slot band

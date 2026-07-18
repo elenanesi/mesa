@@ -158,6 +158,9 @@ function foodHitsAvoid(foodId, avoidList){
   if(!avoidList || !avoidList.length) return false;
   const food = FOODS[foodId];
   if(!food) return false;
+  // Explicit allergen list for composite foods (e.g. pesto-elena: Pantry cat, but
+  // contains dairy + almonds) — checked before the category/id heuristics below.
+  if(Array.isArray(food.containsAvoid) && food.containsAvoid.some(function(k){ return avoidList.indexOf(k) !== -1; })) return true;
   if(avoidList.indexOf('lactose') !== -1 && food.cat === 'Dairy') return true;
   if(avoidList.indexOf('gluten') !== -1 && typeof GLUTEN_FOOD_IDS !== 'undefined' && GLUTEN_FOOD_IDS.indexOf(foodId) !== -1) return true;
   if(avoidList.indexOf('shellfish') !== -1 && foodId === 'prawns') return true;

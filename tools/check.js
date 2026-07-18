@@ -2472,17 +2472,21 @@ function testRecipeOptions(ctx){
   const FOODS = get(ctx, 'FOODS');
   const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
 
-  // -------- (0) options-less byte-identical: BEFORE any fixture is injected, confirm (a)
-  // zero RECIPES_DB entries carry optionGroups right now, and (b) two independent
-  // generateWeek() calls with identical inputs produce byte-identical JSON — the
-  // determinism guarantee every other test below leans on, pinned explicitly for a
-  // catalog with no optionGroups present anywhere (not just re-relying on
-  // testPlannerDeterminism's own coverage). --------
+  // -------- (0) real built-in optionGroups (task D2) + generateWeek() determinism against
+  // the REAL catalog: D2 wired optionGroups onto three real built-ins (baked-fish, pasta,
+  // french-toast-fruit-maple, per this file's header comment above) — confirm exactly those
+  // three carry optionGroups (a regression guard: catches an accidental optionGroups drop OR
+  // an accidental addition on some other id), then confirm two independent generateWeek()
+  // calls with identical inputs are still byte-identical JSON now that real rotation/avoid-
+  // filtering logic runs against real optionGroups data, not just the synthetic fixture used
+  // below (testPlannerDeterminism covers the options-less case separately). --------
   (function(){
-    const anyOptionGroups = Object.keys(RECIPES_DB).some(function(id){
+    const expectedOptionGroupIds = ['baked-fish', 'french-toast-fruit-maple', 'pasta'];
+    const actualOptionGroupIds = Object.keys(RECIPES_DB).filter(function(id){
       return Array.isArray(RECIPES_DB[id].optionGroups) && RECIPES_DB[id].optionGroups.length;
-    });
-    assert(anyOptionGroups === false, 'D1 test setup: no built-in RECIPES_DB recipe carries optionGroups yet (D2 adds them)', '');
+    }).sort();
+    assert(JSON.stringify(actualOptionGroupIds) === JSON.stringify(expectedOptionGroupIds),
+      'D2: exactly the expected built-in recipes carry optionGroups', JSON.stringify(actualOptionGroupIds));
 
     run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
     run(ctx, 'weekPlans = {}; weekPlan = null;');
@@ -2492,7 +2496,7 @@ function testRecipeOptions(ctx){
     const sigB = call(ctx, 'computePlanSignature', []);
     const genB = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sigB}]);
     assert(JSON.stringify(genA) === JSON.stringify(genB),
-      'D1: options-less generateWeek() output is byte-identical across two independent generations (no optionGroups present anywhere in RECIPES_DB)',
+      'D2: generateWeek() output is byte-identical across two independent generations against the REAL catalog (now containing real optionGroups recipes)',
       'lenA=' + JSON.stringify(genA).length + ' lenB=' + JSON.stringify(genB).length);
     run(ctx, 'weekPlans = {}; weekPlan = null;');
   })();
@@ -2828,6 +2832,281 @@ function testRecipeOptions(ctx){
 }
 
 /* ===================================================================
+   task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
+   (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
+   recipes, 2 role:'sauce' recipes), butter-chicken season fix.
+   =================================================================== */
+function testD2SauceRoleAndCatalog(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
+  const VALID_ROLES = get(ctx, 'VALID_ROLES');
+  const SAUCE_IDS = ['tomato-basil-sauce', 'yogurt-herb-sauce'];
+
+  // -------- (0) containsAvoid: composite foods declare allergens their category hides.
+  // The regression this guards: pesto-elena (cat 'Pantry', contains parmesan/pecorino/
+  // almonds) passed foodHitsAvoid for a lactose avoider, so the pasta recipe's
+  // "Pesto Elena" option could be rotated onto Elena's plan. --------
+  (function(){
+    const containsAvoid = FOODS['pesto-elena'] && FOODS['pesto-elena'].containsAvoid;
+    assert(Array.isArray(containsAvoid) && containsAvoid.indexOf('lactose') !== -1 && containsAvoid.indexOf('nuts') !== -1,
+      'pesto-elena declares containsAvoid lactose+nuts');
+    const VALID_AVOID = get(ctx, 'VALID_AVOID');
+    Object.keys(FOODS).forEach(function(id){
+      (FOODS[id].containsAvoid || []).forEach(function(k){
+        assert(VALID_AVOID.indexOf(k) !== -1, 'containsAvoid key "' + k + '" on ' + id + ' is a valid avoid key');
+      });
+    });
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['lactose']]) === true, 'foodHitsAvoid: pesto-elena hits lactose');
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['nuts']]) === true, 'foodHitsAvoid: pesto-elena hits nuts');
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['gluten']]) === false, 'foodHitsAvoid: pesto-elena clean for gluten');
+    // End-to-end: a lactose avoider's allowed choices for the pasta condiment group
+    // exclude BOTH dairy routes — Pesto Elena (containsAvoid) and courgette & ricotta
+    // (cat Dairy) — while tomato & basil stays allowed.
+    const pastaGroups = RECIPES_DB['pasta'] && RECIPES_DB['pasta'].optionGroups;
+    assert(pastaGroups && pastaGroups.length === 1, 'pasta has its condiment optionGroup');
+    const allowed = call(ctx, 'allowedChoicesForGroup', [pastaGroups[0], ['lactose']]).map(function(c){ return c.id; });
+    assert(allowed.indexOf('pesto-elena') === -1 && allowed.join(',').indexOf('pesto') === -1,
+      'lactose avoider: pesto choice excluded (got: ' + allowed.join(',') + ')');
+    assert(allowed.some(function(id){ return id.indexOf('tomato') !== -1; }),
+      'lactose avoider: tomato & basil choice still allowed');
+    // Custom-recipe derivation agrees: a recipe built on pesto-elena derives lactose+nuts.
+    const meta = call(ctx, 'deriveRecipeMeta', [[{foodId: 'pesto-elena', grams: 30}, {foodId: 'pasta', grams: 100}], call(ctx, 'recipeNutrition', ['pasta', 1]).totals, 15]);
+    assert(meta.avoid.indexOf('lactose') !== -1 && meta.avoid.indexOf('nuts') !== -1,
+      'deriveRecipeMeta: pesto-based custom recipe derives lactose+nuts');
+  })();
+
+  // -------- (1) new ingredient: sea-bass-fillet, real-source macros, 4/4/9 kcal policy
+  // (foods.js's own stated convention — see the file header), and wired into
+  // ANIMAL_FOOD_IDS (js/library.js) for the custom-recipe builder's auto-veggie-tag
+  // derivation, same as every other fish/meat/poultry id. --------
+  (function(){
+    const f = FOODS['sea-bass-fillet'];
+    assert(!!f, 'D2: sea-bass-fillet food exists', JSON.stringify(f));
+    if(!f) return;
+    assert(f.cat === 'Protein' && f.unit === 'g' && f.per === 100,
+      'D2: sea-bass-fillet is a per-100g Protein-category food', JSON.stringify(f));
+    assert(typeof f.src === 'string' && /FDC/.test(f.src),
+      'D2: sea-bass-fillet cites a real USDA FDC source (ground rule: no invented numbers)', f.src);
+    const expectedKcal = Math.round(4 * f.protein + 4 * f.carbs + 9 * f.fat);
+    assert(f.kcal === expectedKcal,
+      'D2: sea-bass-fillet.kcal follows foods.js\'s stated 4/4/9-from-sourced-macros policy',
+      'kcal=' + f.kcal + ' expected=' + expectedKcal);
+
+    const ANIMAL_FOOD_IDS = get(ctx, 'ANIMAL_FOOD_IDS');
+    assert(ANIMAL_FOOD_IDS.indexOf('sea-bass-fillet') !== -1,
+      'D2: sea-bass-fillet is registered in ANIMAL_FOOD_IDS (custom-recipe builder veggie-tag derivation)', JSON.stringify(ANIMAL_FOOD_IDS));
+  })();
+
+  // -------- (2) role 'sauce': VALID_ROLES + library role-picker label. --------
+  (function(){
+    assert(VALID_ROLES.indexOf('sauce') !== -1, 'D2: VALID_ROLES includes "sauce"', JSON.stringify(VALID_ROLES));
+    const label = call(ctx, 'recipeRoleLabel', ['sauce']);
+    assert(label === 'Sauce & condiment', 'D2: recipeRoleLabel("sauce") === "Sauce & condiment"', label);
+  })();
+
+  // -------- (3) the two new sauce recipes: role/slots convention + WARNING-band kcal. --------
+  (function(){
+    SAUCE_IDS.forEach(function(id){
+      const r = RECIPES_DB[id];
+      assert(!!r, 'D2: sauce recipe "' + id + '" exists', id);
+      if(!r) return;
+      assert(r.role === 'sauce', 'D2: "' + id + '".role === "sauce"', r.role);
+      const slots = call(ctx, 'recipeSlotList', [r]);
+      assert(slots.length === 1 && slots[0] === 'side',
+        'D2: "' + id + '" carries the sauce convention slots === [\'side\']', JSON.stringify(slots));
+      const kcal = call(ctx, 'recipeNutrition', [id, 1]).totals.kcal;
+      assert(kcal >= 40 && kcal <= 250,
+        'D2: "' + id + '" computed kcal ' + Math.round(kcal) + ' is within the sauce WARNING band 40-250', kcal);
+    });
+  })();
+
+  // -------- (4) sauce exclusion is structural, not a planner special-case: never a
+  // candidatesFor() result (real meal slots only) and never a sidePoolFor() result (that
+  // pool filters role==='side' specifically, and 'sauce' !== 'side'). --------
+  (function(){
+    const hits = [];
+    ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+      ['balanced', 'highprotein', 'lowcarb'].forEach(function(style){
+        const pool = call(ctx, 'candidatesFor', [slot, style, [], {includeThumbsDown: true}]);
+        SAUCE_IDS.forEach(function(id){ if(pool.indexOf(id) !== -1) hits.push(slot + '/' + style + '/' + id); });
+      });
+    });
+    assert(hits.length === 0, 'D2: candidatesFor() never returns a sauce id for any real meal slot', JSON.stringify(hits));
+
+    const sidePool = call(ctx, 'sidePoolFor', [[]]);
+    const sideHits = SAUCE_IDS.filter(function(id){ return sidePool.indexOf(id) !== -1; });
+    assert(sideHits.length === 0, 'D2: sidePoolFor() never returns a sauce id (filters role===\'side\', not \'sauce\')', JSON.stringify(sideHits));
+  })();
+
+  // -------- (5) add-meal sheet: mealRecipeOptions() puts both sauces in their own
+  // "Sauces" bucket, absent from both "Sides" and "Full recipes". --------
+  (function(){
+    const opts = call(ctx, 'mealRecipeOptions', [[]]);
+    assert(JSON.stringify(opts.sauces.slice().sort()) === JSON.stringify(SAUCE_IDS.slice().sort()),
+      'D2: mealRecipeOptions().sauces is exactly the two sauce recipes', JSON.stringify(opts.sauces));
+    const inSides = SAUCE_IDS.filter(function(id){ return opts.sides.indexOf(id) !== -1; });
+    const inFull = SAUCE_IDS.filter(function(id){ return opts.full.indexOf(id) !== -1; });
+    assert(inSides.length === 0 && inFull.length === 0,
+      'D2: sauce recipes never leak into the Sides or Full-recipes buckets', 'sides=' + JSON.stringify(inSides) + ' full=' + JSON.stringify(inFull));
+  })();
+
+  // -------- (6) end-to-end: a real two-week generated plan never contains a sauce id,
+  // neither as a standalone base meal nor as a composed side/extra. --------
+  (function(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const sig1 = call(ctx, 'computePlanSignature', []);
+    const week1 = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sig1}]);
+    const week2Start = call(ctx, 'addDaysISO', [FIXED_MONDAY, 7]);
+    const sig2 = call(ctx, 'computePlanSignature', []);
+    const week2 = call(ctx, 'generateWeek', [{weekStartDate: week2Start, signature: sig2}]);
+
+    function sauceHitsIn(week){
+      const hits = [];
+      (week.days || []).forEach(function(day){
+        Object.keys(day.meals || {}).forEach(function(slot){
+          ['elena', 'partner'].forEach(function(person){
+            const entry = day.meals[slot] && day.meals[slot][person];
+            if(!entry) return;
+            if(SAUCE_IDS.indexOf(entry.recipeId) !== -1) hits.push(day.date + '/' + slot + '/' + person + ' (base)');
+            (entry.extras || []).forEach(function(ex){
+              if(SAUCE_IDS.indexOf(ex.recipeId) !== -1) hits.push(day.date + '/' + slot + '/' + person + ' (extra)');
+            });
+          });
+        });
+      });
+      return hits;
+    }
+    const hits = sauceHitsIn(week1).concat(sauceHitsIn(week2));
+    assert(hits.length === 0, 'D2: a generated fortnight never contains a sauce id (standalone or composed)', JSON.stringify(hits));
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+  })();
+
+  // -------- (7) butter-chicken season fix + Vegetarian burrito title stays clean. --------
+  (function(){
+    assert(RECIPES_DB['butter-chicken'].season === 'winter/autumn',
+      'D2: butter-chicken.season === "winter/autumn"', RECIPES_DB['butter-chicken'].season);
+    const staleTitles = Object.keys(RECIPES_DB).filter(function(id){
+      return /burrito vegetariano/i.test(RECIPES_DB[id].title || '');
+    });
+    assert(staleTitles.length === 0, 'D2: no recipe title regresses to the stale Italian "Burrito vegetariano"', JSON.stringify(staleTitles));
+    assert(RECIPES_DB['burrito-vegetariano'].title === 'Vegetarian burrito',
+      'D2: burrito-vegetariano.title is the corrected English title', RECIPES_DB['burrito-vegetariano'].title);
+  })();
+
+  // -------- (8) baked-fish (role:'main'): default combo + every fish choice lands inside
+  // ROLE_KCAL_BAND.main [250,650] — the WARNING band data/validate.js checks. --------
+  (function(){
+    const ROLE_KCAL_BAND = get(ctx, 'ROLE_KCAL_BAND');
+    const band = ROLE_KCAL_BAND.main;
+    const r = RECIPES_DB['baked-fish'];
+    assert(!!r && r.role === 'main' && JSON.stringify(call(ctx, 'recipeSlotList', [r])) === JSON.stringify(['lunch', 'dinner']),
+      'D2: baked-fish is role:"main", slots ["lunch","dinner"]', JSON.stringify(r));
+    const fishGroup = r.optionGroups.filter(function(g){ return g.key === 'fish'; })[0];
+    assert(!!fishGroup && fishGroup.choices.length === 4, 'D2: baked-fish has a 4-choice "fish" optionGroup', JSON.stringify(fishGroup));
+    const defaultKcal = call(ctx, 'recipeNutrition', ['baked-fish', 1]).totals.kcal;
+    assert(defaultKcal >= band[0] && defaultKcal <= band[1],
+      'D2: baked-fish default combo (salmon) kcal ' + Math.round(defaultKcal) + ' is within the main band ' + band.join('-'), defaultKcal);
+    const outOfBand = fishGroup.choices.filter(function(choice){
+      const opts = {fish: choice.id};
+      const kcal = call(ctx, 'recipeNutrition', ['baked-fish', 1, opts]).totals.kcal;
+      return kcal < band[0] || kcal > band[1];
+    });
+    assert(outOfBand.length === 0, 'D2: every baked-fish fish choice lands inside the main band ' + band.join('-'), JSON.stringify(outOfBand));
+  })();
+
+  // -------- (9) pasta (role:'full', slot 'lunch'): default combo + every condiment choice
+  // lands inside KCAL_BAND.lunch [400,750] — the ERROR-level band for the default, WARNING
+  // for the other choices (data/validate.js). --------
+  (function(){
+    const KCAL_BAND = get(ctx, 'KCAL_BAND');
+    const band = KCAL_BAND.lunch;
+    const r = RECIPES_DB.pasta;
+    assert(!!r && r.role === 'full' && r.slot === 'lunch',
+      'D2: pasta is role:"full", primary slot "lunch"', JSON.stringify(r && {role: r.role, slot: r.slot}));
+    const condimentGroup = r.optionGroups.filter(function(g){ return g.key === 'condiment'; })[0];
+    assert(!!condimentGroup && condimentGroup.choices.length === 4, 'D2: pasta has a 4-choice "condiment" optionGroup', JSON.stringify(condimentGroup));
+    const defaultKcal = call(ctx, 'recipeNutrition', ['pasta', 1]).totals.kcal;
+    assert(defaultKcal >= band[0] && defaultKcal <= band[1],
+      'D2: pasta default combo (tomato & basil) kcal ' + Math.round(defaultKcal) + ' is within the lunch band ' + band.join('-'), defaultKcal);
+    const outOfBand = condimentGroup.choices.filter(function(choice){
+      const opts = {condiment: choice.id};
+      const kcal = call(ctx, 'recipeNutrition', ['pasta', 1, opts]).totals.kcal;
+      return kcal < band[0] || kcal > band[1];
+    });
+    assert(outOfBand.length === 0, 'D2: every pasta condiment choice lands inside the lunch band ' + band.join('-'), JSON.stringify(outOfBand));
+  })();
+
+  // -------- (10) french-toast-fruit-maple: the no-opts effective ingredient list must
+  // compute IDENTICAL nutrition to the recipe before this batch's edit (mixed-berries
+  // moved from the base array into optionGroups.fruit's default choice) — literals
+  // captured from `recipeNutrition('french-toast-fruit-maple', 1)` against the pre-D2
+  // ingredients array [['white-bread',70],['eggs',50],['milk',80],['mixed-berries',80],
+  // ['maple-syrup',15],['olive-oil',4]], BEFORE any D2 edit. --------
+  (function(){
+    const PRE_D2_TOTALS = {
+      kcal: 422.98499999999996, protein: 15.81, carbs: 57.389999999999986,
+      fat: 14.465000000000002, satFat: 4.632, fiber: 4.69,
+      sugars: 18.515, freeSugars: 9.075, goodFat: 9.833000000000002
+    };
+    const noOpts = call(ctx, 'recipeNutrition', ['french-toast-fruit-maple', 1]).totals;
+    Object.keys(PRE_D2_TOTALS).forEach(function(k){
+      assert(Math.abs(noOpts[k] - PRE_D2_TOTALS[k]) < 1e-6,
+        'D2: french-toast-fruit-maple no-opts nutrition unchanged from before the D2 edit (' + k + ')',
+        'got ' + noOpts[k] + ' expected ' + PRE_D2_TOTALS[k]);
+    });
+    const berriesChoice = call(ctx, 'recipeNutrition', ['french-toast-fruit-maple', 1, {fruit: 'berries'}]).totals;
+    Object.keys(PRE_D2_TOTALS).forEach(function(k){
+      assert(Math.abs(berriesChoice[k] - noOpts[k]) < 1e-6,
+        'D2: french-toast-fruit-maple explicit {fruit:"berries"} matches the no-opts default exactly (' + k + ')',
+        'got ' + berriesChoice[k] + ' expected ' + noOpts[k]);
+    });
+    // Banana/peach choices exist, resolve, and stay inside the breakfast plausibility band.
+    const KCAL_BAND = get(ctx, 'KCAL_BAND');
+    const band = KCAL_BAND.breakfast;
+    ['banana', 'peach'].forEach(function(choiceId){
+      const kcal = call(ctx, 'recipeNutrition', ['french-toast-fruit-maple', 1, {fruit: choiceId}]).totals.kcal;
+      assert(kcal >= band[0] && kcal <= band[1],
+        'D2: french-toast-fruit-maple {fruit:"' + choiceId + '"} kcal ' + Math.round(kcal) + ' is within the breakfast band ' + band.join('-'), kcal);
+    });
+  })();
+
+  // -------- (11) new role:'main' recipes exist with sane roles/slots (lemon-herb-chicken-
+  // breast, turkey-cutlets-sage, white-bean-rosemary-mash), each inside ROLE_KCAL_BAND.main. --------
+  (function(){
+    const ROLE_KCAL_BAND = get(ctx, 'ROLE_KCAL_BAND');
+    const band = ROLE_KCAL_BAND.main;
+    ['lemon-herb-chicken-breast', 'turkey-cutlets-sage', 'white-bean-rosemary-mash'].forEach(function(id){
+      const r = RECIPES_DB[id];
+      assert(!!r && r.role === 'main', 'D2: "' + id + '" exists with role:"main"', JSON.stringify(r && r.role));
+      const slots = call(ctx, 'recipeSlotList', [r]);
+      assert(slots.indexOf('lunch') !== -1, 'D2: "' + id + '" is plannable at lunch', JSON.stringify(slots));
+      const kcal = call(ctx, 'recipeNutrition', [id, 1]).totals.kcal;
+      assert(kcal >= band[0] && kcal <= band[1],
+        'D2: "' + id + '" computed kcal ' + Math.round(kcal) + ' is within the main band ' + band.join('-'), kcal);
+    });
+  })();
+
+  // -------- (12) pool-count deltas: lunch role:'main' recipe count (overall, and within
+  // the thin 'balanced' style) must be >= the pre-D2 baseline captured via this same
+  // candidatesFor-style enumeration BEFORE this batch's recipes.js edits (README's B2
+  // entry: "lunch role:'main' pool is thin (2 in balanced style)"; re-measured directly
+  // against the pre-D2 tree at spawn time: 5 total lunch mains, 3 of them 'balanced'). --------
+  (function(){
+    const PRE_D2_LUNCH_MAIN_TOTAL = 5;
+    const PRE_D2_LUNCH_MAIN_BALANCED = 3;
+    const lunchMainIds = Object.keys(RECIPES_DB).filter(function(id){
+      const r = RECIPES_DB[id];
+      return !r.occasional && r.role === 'main' && call(ctx, 'recipeSlotList', [r]).indexOf('lunch') !== -1;
+    });
+    const lunchMainBalanced = lunchMainIds.filter(function(id){ return RECIPES_DB[id].styles.indexOf('balanced') !== -1; });
+    assert(lunchMainIds.length > PRE_D2_LUNCH_MAIN_TOTAL,
+      'D2: lunch role:"main" pool grew from the pre-D2 baseline (' + PRE_D2_LUNCH_MAIN_TOTAL + ')', lunchMainIds.length);
+    assert(lunchMainBalanced.length > PRE_D2_LUNCH_MAIN_BALANCED,
+      'D2: lunch role:"main" x style:"balanced" pool grew from the pre-D2 baseline (' + PRE_D2_LUNCH_MAIN_BALANCED + ')', lunchMainBalanced.length);
+  })();
+}
+
+/* ===================================================================
    main
    =================================================================== */
 
@@ -2868,6 +3147,7 @@ function main(){
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
   runTest('recipe options/variants (task D1)', function(){ testRecipeOptions(ctx); });
+  runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
