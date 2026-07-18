@@ -1731,6 +1731,8 @@ function recipeToBuilder(id){
     editingId: id,
     name: r.title || '',
     emoji: r.emoji || '🍽️',
+    imageKey: safeRecipeImageKey(r.imageKey) || null,
+    imagePickerOpen: false,
     slots: recipeSlotList(r).length ? recipeSlotList(r) : [r.slot || 'dinner'],
     season: recipeSeason(r),
     role: normalizeRecipeRole(r.role),
@@ -1743,7 +1745,7 @@ function recipeToBuilder(id){
 }
 
 function openNewRecipeForm(){
-  recipeBuilder = {name: '', emoji: '🍽️', slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
+  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
   renderRecipeBuilderSheet();
 }
 
@@ -1754,7 +1756,10 @@ function openEditRecipeForm(id){
   renderRecipeBuilderSheet();
 }
 
-function renderRecipeBuilderSheet(){ setRecipesScreenHtml(buildRecipeBuilderSheet()); }
+function renderRecipeBuilderSheet(){
+  setRecipesScreenHtml(buildRecipeBuilderSheet());
+  attachRecipeImageGridHandler();
+}
 
 function computeBuilderTotals(){
   const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
@@ -1787,6 +1792,28 @@ function buildRecipeBuilderSheet(){
 
   html += '<div class="field"><label>Emoji</label>'
     + '<input class="inp" style="width:64px;box-sizing:border-box;border:1px solid var(--line);margin-top:6px;text-align:center;font-size:19px" type="text" maxlength="4" value="' + htmlAttr(rb.emoji) + '" oninput="recipeBuilder.emoji=this.value"></div>';
+
+  const currentImageKey = safeRecipeImageKey(rb.imageKey || '');
+  const previewRecipe = {
+    title: rb.name || '',
+    emoji: rb.emoji || '🍽️',
+    imageKey: currentImageKey || null,
+    slot: (rb.slots && rb.slots[0]) || 'dinner',
+    role: normalizeRecipeRole(rb.role),
+    tags: [],
+    ingredients: rb.ingredients.map(function(row){ return [row.foodId, row.grams]; })
+  };
+  const previewSrc = recipeImageAssetForRecipe(previewRecipe, rb.editingId || '');
+  const autoImageKey = previewSrc.indexOf('assets/recipes/') === 0
+    ? previewSrc.slice('assets/recipes/'.length).replace(/\.png$/, '')
+    : 'default-recipe';
+  html += '<div class="field"><label>Image</label><div class="row" style="gap:12px;align-items:center;margin-top:6px">'
+    + '<span class="recipe-image-preview">' + recipeHeroHtml(previewRecipe, rb.editingId || '') + '</span>'
+    + '<button class="pill ghost chip-preset" onclick="toggleRecipeImagePicker()">' + (rb.imagePickerOpen ? 'Hide images' : 'Choose image') + '</button>'
+    + '<span class="sub" style="margin:0">' + (currentImageKey ? escapeHtml(recipeImageLabel(currentImageKey)) : 'Auto · ' + escapeHtml(recipeImageLabel(autoImageKey))) + '</span>'
+    + '</div>'
+    + (rb.imagePickerOpen ? buildRecipeImageGrid(currentImageKey) : '')
+    + '</div>';
 
   html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
@@ -1851,6 +1878,42 @@ function buildRecipeBuilderSheet(){
   html += '<button class="cta" style="margin-top:16px" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
     + '<button class="cta ghostbtn" onclick="openMyRecipes()">Cancel</button>';
   return html;
+}
+
+function buildRecipeImageGrid(currentImageKey){
+  const keys = availableRecipeImageKeys();
+  let html = '<div class="icon-grid recipe-image-grid" data-role="recipe-image-grid" style="margin-top:10px">'
+    + '<button type="button" class="icon-tile' + (!currentImageKey ? ' sel' : '') + '" data-image-key="" aria-label="Automatic recipe image">'
+    + '<span class="recipe-image-tile-auto">Auto</span><span class="icon-tile-label">Auto</span></button>';
+  keys.forEach(function(key){
+    const src = 'assets/recipes/' + key + '.png';
+    html += '<button type="button" class="icon-tile' + (currentImageKey === key ? ' sel' : '') + '" data-image-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(recipeImageLabel(key)) + ' image">'
+      + '<img class="recipe-image-tile" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" onerror="this.onerror=null;this.src=\'assets/recipes/default-recipe.png\'">'
+      + '<span class="icon-tile-label">' + escapeHtml(recipeImageLabel(key)) + '</span></button>';
+  });
+  html += '</div>';
+  return html;
+}
+
+function toggleRecipeImagePicker(){
+  recipeBuilder.imagePickerOpen = !recipeBuilder.imagePickerOpen;
+  renderRecipeBuilderSheet();
+}
+
+function setRecipeImageKey(rawKey){
+  const key = safeRecipeImageKey(rawKey);
+  recipeBuilder.imageKey = key || null;
+  renderRecipeBuilderSheet();
+}
+
+function attachRecipeImageGridHandler(){
+  const el = document.querySelector('[data-role="recipe-image-grid"]');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('.icon-tile');
+    if(!btn || !el.contains(btn)) return;
+    setRecipeImageKey(btn.getAttribute('data-image-key') || '');
+  };
 }
 
 function toggleRecipeSlot(s){
@@ -2205,6 +2268,8 @@ function saveRecipeBuilder(){
     tags: meta.tags, avoid: meta.avoid,
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
+  const chosenImageKey = safeRecipeImageKey(rb.imageKey || '');
+  if(chosenImageKey) recipe.imageKey = chosenImageKey;
   if(deletedRecipes[id]) delete deletedRecipes[id]; // recreate-after-delete: this save's `u` beats the tombstone either way
   if(id.indexOf('cr-') === 0) customRecipes[id] = recipe;
   else recipeOverrides[id] = recipe;

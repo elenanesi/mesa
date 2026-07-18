@@ -103,10 +103,27 @@ function recipeDisplayPills(recipeId){
 }
 
 const DEFAULT_RECIPE_IMAGE_ASSET = 'assets/recipes/default-recipe.png';
+const RECIPE_IMAGE_KEYS = ['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl'];
+
+function recipeImageLabel(key){
+  const labels = {
+    'default-recipe': 'Default',
+    'salad': 'Salad',
+    'cooked-vegetables': 'Cooked veg',
+    'meat-main': 'Meat main',
+    'fish-main': 'Fish main',
+    'breakfast-bowl': 'Breakfast bowl'
+  };
+  return labels[key] || String(key || '').replace(/-/g, ' ');
+}
+
+function availableRecipeImageKeys(){
+  return RECIPE_IMAGE_KEYS.slice();
+}
 
 function safeRecipeImageKey(v){
   v = String(v || '').trim();
-  return /^[a-z0-9][a-z0-9-]*$/.test(v) ? v : '';
+  return (RECIPE_IMAGE_KEYS.indexOf(v) !== -1) ? v : '';
 }
 
 function safeRecipeImageAsset(v){

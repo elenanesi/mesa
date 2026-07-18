@@ -651,8 +651,12 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(call(ctx, 'safeRecipeImageKey', ['salmon-greens']) === 'salmon-greens',
-    'safeRecipeImageKey: accepts a kebab-case image key', '');
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl']),
+    'availableRecipeImageKeys: returns the curated recipe image set', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
+  assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
+    'safeRecipeImageKey: accepts an available recipe image key', '');
+  assert(call(ctx, 'safeRecipeImageKey', ['salmon-greens']) === '',
+    'safeRecipeImageKey: rejects unavailable recipe image keys even if kebab-case', '');
   assert(call(ctx, 'safeRecipeImageKey', ['../salmon']) === '',
     'safeRecipeImageKey: rejects path traversal / format-invalid keys', '');
   assert(call(ctx, 'safeRecipeImageAsset', ['assets/recipes/salmon-greens.png']) === 'assets/recipes/salmon-greens.png',
@@ -660,9 +664,9 @@ function testRecipeImageHelpers(ctx){
   assert(call(ctx, 'safeRecipeImageAsset', ['assets/ingredients/salmon-greens.png']) === '',
     'safeRecipeImageAsset: rejects non-recipe asset directories', '');
 
-  const recipe = {title: 'Hero test', emoji: '🍽️', imageKey: 'hero-test'};
-  assert(call(ctx, 'recipeImageAssetForRecipe', [recipe]) === 'assets/recipes/hero-test.png',
-    'recipeImageAssetForRecipe: maps imageKey to assets/recipes/<key>.png', '');
+  const recipe = {title: 'Hero test', emoji: '🍽️', imageKey: 'fish-main'};
+  assert(call(ctx, 'recipeImageAssetForRecipe', [recipe]) === 'assets/recipes/fish-main.png',
+    'recipeImageAssetForRecipe: maps imageKey to an available assets/recipes/<key>.png', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Breakfast bowl', emoji: '🥣', slot: 'breakfast', tags: [], ingredients: []}]) === 'assets/recipes/breakfast-bowl.png',
     'recipeImageAssetForRecipe: infers the breakfast-bowl image for breakfast recipes', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Big salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}]) === 'assets/recipes/salad.png',
@@ -675,7 +679,7 @@ function testRecipeImageHelpers(ctx){
     'recipeImageAssetForRecipe: custom recipes without imageKey use the default recipe image in this batch', '');
 
   const html = call(ctx, 'recipeHeroHtml', [recipe]);
-  assert(html.indexOf('<img ') === 0 && html.indexOf('class="recipe-image"') !== -1 && html.indexOf('src="assets/recipes/hero-test.png"') !== -1,
+  assert(html.indexOf('<img ') === 0 && html.indexOf('class="recipe-image"') !== -1 && html.indexOf('src="assets/recipes/fish-main.png"') !== -1,
     'recipeHeroHtml: renders an image for recipes with imageKey', html);
   assert(/onerror="this\.onerror=null;this\.replaceWith\(document\.createTextNode\(this\.getAttribute\('data-fallback'\)\|\|''\)\)"/.test(html),
     'recipeHeroHtml: rendered image wires a DOM-level fallback to the recipe emoji', html);
@@ -687,6 +691,47 @@ function testRecipeImageHelpers(ctx){
   const hostileHtml = call(ctx, 'recipeHeroHtml', [{title: 'Bad image', emoji: '🍽️', imageKey: '../evil'}]);
   assert(hostileHtml.indexOf('../evil') === -1 && hostileHtml.indexOf('src="assets/recipes/default-recipe.png"') !== -1,
     'recipeHeroHtml: format-invalid imageKey falls back without building a hostile image request', hostileHtml);
+}
+
+function testRecipeImagePicker(ctx){
+  run(ctx, "var __recipePickerStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){};");
+  call(ctx, 'openNewRecipeForm', []);
+  run(ctx, "recipeBuilder.name = 'Image picker recipe'; recipeBuilder.emoji = '🍽️'; recipeBuilder.ingredients = [{foodId:'eggs', grams:100}, {foodId:'spinach', grams:50}]; recipeBuilder.imagePickerOpen = true;");
+  let html = call(ctx, 'buildRecipeBuilderSheet', []);
+  assert(html.indexOf('data-role="recipe-image-grid"') !== -1,
+    'buildRecipeBuilderSheet: recipe image picker grid renders when open', html);
+  assert(html.indexOf('data-image-key="fish-main"') !== -1 && html.indexOf('assets/recipes/fish-main.png') !== -1,
+    'buildRecipeBuilderSheet: recipe image picker offers the available recipe images', html);
+
+  call(ctx, 'setRecipeImageKey', ['fish-main']);
+  assert(get(ctx, 'recipeBuilder').imageKey === 'fish-main',
+    'setRecipeImageKey: stores the selected recipe image key on the builder draft', get(ctx, 'recipeBuilder').imageKey);
+  call(ctx, 'saveRecipeBuilder', []);
+  const savedId = Object.keys(get(ctx, 'customRecipes')).find(function(id){ return get(ctx, 'customRecipes')[id].title === 'Image picker recipe'; });
+  assert(!!savedId, 'saveRecipeBuilder: the image-picker custom recipe was saved', savedId);
+  assert(get(ctx, 'customRecipes')[savedId].imageKey === 'fish-main',
+    'saveRecipeBuilder: custom recipes persist the chosen imageKey', JSON.stringify(get(ctx, 'customRecipes')[savedId]));
+
+  call(ctx, 'openEditRecipeForm', ['salmon']);
+  assert(get(ctx, 'recipeBuilder').imageKey === null,
+    'openEditRecipeForm: built-in recipes without explicit imageKey start in Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
+  call(ctx, 'setRecipeImageKey', ['salad']);
+  call(ctx, 'saveRecipeBuilder', []);
+  assert(get(ctx, 'recipeOverrides').salmon && get(ctx, 'recipeOverrides').salmon.imageKey === 'salad',
+    'saveRecipeBuilder: built-in recipe overrides persist a chosen imageKey', JSON.stringify(get(ctx, 'recipeOverrides').salmon));
+
+  call(ctx, 'openEditRecipeForm', ['salmon']);
+  assert(get(ctx, 'recipeBuilder').imageKey === 'salad',
+    'openEditRecipeForm: existing recipe imageKey seeds back into the builder draft', get(ctx, 'recipeBuilder').imageKey);
+  run(ctx, "recipeBuilder.imagePickerOpen = true;");
+  html = call(ctx, 'buildRecipeBuilderSheet', []);
+  assert(html.indexOf('class="icon-tile sel" data-image-key="salad"') !== -1,
+    'buildRecipeBuilderSheet: the selected recipe image tile is marked selected', html);
+  call(ctx, 'setRecipeImageKey', ['']);
+  assert(get(ctx, 'recipeBuilder').imageKey === null,
+    'setRecipeImageKey: empty key returns the recipe image picker to Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
+
+  run(ctx, "delete customRecipes['" + savedId + "']; delete recipeOverrides.salmon; applyCustomRecipes(); toast = __recipePickerStub.toast; openMyRecipes = __recipePickerStub.openMyRecipes; applyProf = __recipePickerStub.applyProf; renderFoodLibraryCount = __recipePickerStub.renderFoodLibraryCount; delete __recipePickerStub;");
 }
 
 function testLibraryRecipeRowsOpenDetail(){
@@ -2401,6 +2446,7 @@ function main(){
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
+  runTest('recipe image picker', function(){ testRecipeImagePicker(ctx); });
   runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
