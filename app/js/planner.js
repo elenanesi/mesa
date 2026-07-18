@@ -458,6 +458,129 @@ function isUnitPinned(plan, unit){
   return isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, person || mealPinPersonForMeal(meal, currentProf));
 }
 
+function routineOccurrencePerson(plan, dayIndex, slot, person){
+  const meal = plan && plan.days && plan.days[dayIndex] && plan.days[dayIndex].meals && plan.days[dayIndex].meals[slot];
+  return mealPinPersonForMeal(meal, person);
+}
+
+function routineOccurrencePinKey(weekStartDate, dayIndex, slot, person){
+  const plan = weekPlans[weekStartDate] || (weekPlan && weekPlan.weekStartDate === weekStartDate ? weekPlan : null);
+  const pinPerson = routineOccurrencePerson(plan, dayIndex, slot, person);
+  return mealPinKey(weekStartDate, dayIndex, slot, pinPerson);
+}
+
+function isRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person){
+  return !!mealPins[routineOccurrencePinKey(weekStartDate, dayIndex, slot, person)];
+}
+
+function setRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person, pinned){
+  const key = routineOccurrencePinKey(weekStartDate, dayIndex, slot, person);
+  if(pinned) mealPins[key] = true;
+  else delete mealPins[key];
+  return !!mealPins[key];
+}
+
+function toggleRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person){
+  return setRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person, !isRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person));
+}
+
+function routineOccurrencesForRule(rule){
+  const occurrences = [];
+  if(!rule) return occurrences;
+  Object.keys(weekPlans).sort().forEach(function(weekStartDate){
+    const plan = weekPlans[weekStartDate];
+    if(!plan || !Array.isArray(plan.days)) return;
+    plan.days.forEach(function(day, dayIndex){
+      if(mealRuleApplies(rule, day.date, dayIndex, rule.slot, rule.person)){
+        occurrences.push({
+          weekStartDate: weekStartDate,
+          date: day.date,
+          dayIndex: dayIndex,
+          slot: rule.slot,
+          person: routineOccurrencePerson(plan, dayIndex, rule.slot, rule.person),
+          pinKey: routineOccurrencePinKey(weekStartDate, dayIndex, rule.slot, rule.person),
+          pinned: isRoutineOccurrencePinned(weekStartDate, dayIndex, rule.slot, rule.person)
+        });
+      }
+    });
+  });
+  return occurrences;
+}
+
+function setRoutineOccurrencesPinned(rule, pinned){
+  const occurrences = routineOccurrencesForRule(rule);
+  occurrences.forEach(function(occ){
+    if(pinned) mealPins[occ.pinKey] = true;
+    else delete mealPins[occ.pinKey];
+    occ.pinned = !!pinned;
+  });
+  return occurrences;
+}
+
+function pinRoutineOccurrencesFrom(rule, fromDateISO){
+  if(!rule || typeof fromDateISO !== 'string') return [];
+  rule.pinFromDate = fromDateISO;
+  ensureWeekPlan(mondayOfWeek(todayISO()));
+  ensureWeekPlan(nextMondayISO());
+  const occurrences = routineOccurrencesForRule(rule).filter(function(occ){ return occ.date >= fromDateISO; });
+  occurrences.forEach(function(occ){
+    mealPins[occ.pinKey] = true;
+    occ.pinned = true;
+  });
+  return occurrences;
+}
+
+function unpinRoutineOccurrencesFrom(rule, fromDateISO){
+  if(!rule || typeof fromDateISO !== 'string') return [];
+  ensureWeekPlan(mondayOfWeek(todayISO()));
+  ensureWeekPlan(nextMondayISO());
+  const occurrences = routineOccurrencesForRule(rule).filter(function(occ){ return occ.date >= fromDateISO; });
+  occurrences.forEach(function(occ){
+    delete mealPins[occ.pinKey];
+    occ.pinned = false;
+  });
+  delete rule.pinFromDate;
+  return occurrences;
+}
+
+function canAutoMutateUnit(plan, unit){
+  if(!plan || !unit || !Array.isArray(plan.days) || !plan.days[unit.dayIndex]) return false;
+  const day = plan.days[unit.dayIndex];
+  const meal = day.meals && day.meals[unit.slot];
+  if(!meal) return false;
+  if(diffDaysISO(day.date, todayISO()) < 0) return false;
+  if(unit.shared || meal.shared){
+    return !loggedSlotLocked(day.date, 'elena', unit.slot)
+      && !loggedSlotLocked(day.date, 'partner', unit.slot)
+      && !isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, 'shared');
+  }
+  if(!unit.person) return false;
+  return !loggedSlotLocked(day.date, unit.person, unit.slot)
+    && !isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, unit.person);
+}
+
+function preservePinnedSlots(oldPlan, newPlan){
+  if(!oldPlan || !newPlan || !Array.isArray(oldPlan.days) || !Array.isArray(newPlan.days)) return;
+  for(let d = 0; d < newPlan.days.length; d++){
+    SLOT_ORDER.forEach(function(slot){
+      const oldMeal = oldPlan.days[d] && oldPlan.days[d].meals && oldPlan.days[d].meals[slot];
+      const newMeal = newPlan.days[d] && newPlan.days[d].meals && newPlan.days[d].meals[slot];
+      if(!oldMeal || !newMeal) return;
+      const pinShared = isMealPinned(newPlan.weekStartDate, d, slot, 'shared');
+      const pinE = isMealPinned(newPlan.weekStartDate, d, slot, 'elena');
+      const pinA = isMealPinned(newPlan.weekStartDate, d, slot, 'partner');
+      if(!pinShared && !pinE && !pinA) return;
+      if(pinShared || oldMeal.shared || newMeal.shared || (pinE && pinA)){
+        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        return;
+      }
+      if(pinE && oldMeal.elena) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
+      if(pinA && oldMeal.partner) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
+    });
+  }
+  refreshPlanNutrition(newPlan);
+}
+
 // Applies a real user-authored meal-routine rule to a stored plan cell. Stamped exactly
 // like applySwapToPlan (Date.now() for the real edit) so sync.js:mergePlansSection treats
 // a routine-set meal as a real edit instead of losing to any stamped remote change (the
@@ -1140,6 +1263,7 @@ function ensureWeekPlan(mondayISO){
       plan = generateWeek({weekStartDate: monday, signature: sig});
       applyMealRulesToPlan(plan);
       preserveLoggedSlots(previousPlan, plan);
+      preservePinnedSlots(previousPlan, plan);
       weekPlans[monday] = plan;
     } else if(plan.signature !== sig){
       plan.signature = sig;
@@ -2044,14 +2168,15 @@ function enumerateSwapUnits(plan){
   for(let d = 0; d < 7; d++){
     SLOT_ORDER.forEach(function(slot){
       const m = plan.days[d].meals[slot];
-      const dateISO = plan.days[d].date;
-      if(diffDaysISO(dateISO, todayISO()) < 0) return;
       if(m.shared){
-        if(!loggedSlotLocked(dateISO, 'elena', slot) && !loggedSlotLocked(dateISO, 'partner', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'shared')) units.push({dayIndex: d, slot: slot, shared: true});
+        const sharedUnit = {dayIndex: d, slot: slot, shared: true};
+        if(canAutoMutateUnit(plan, sharedUnit)) units.push(sharedUnit);
       }
       else {
-        if(!loggedSlotLocked(dateISO, 'elena', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'elena')) units.push({dayIndex: d, slot: slot, shared: false, person: 'elena'});
-        if(!loggedSlotLocked(dateISO, 'partner', slot) && !isMealPinned(plan.weekStartDate, d, slot, 'partner')) units.push({dayIndex: d, slot: slot, shared: false, person: 'partner'});
+        const elenaUnit = {dayIndex: d, slot: slot, shared: false, person: 'elena'};
+        const partnerUnit = {dayIndex: d, slot: slot, shared: false, person: 'partner'};
+        if(canAutoMutateUnit(plan, elenaUnit)) units.push(elenaUnit);
+        if(canAutoMutateUnit(plan, partnerUnit)) units.push(partnerUnit);
       }
     });
   }
@@ -2098,15 +2223,7 @@ function dailyBandState(plan){
 
 function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson){
   const m = plan.days[unit.dayIndex].meals[unit.slot];
-  const dateISO = plan.days[unit.dayIndex].date;
-  if(diffDaysISO(dateISO, todayISO()) < 0) return [];
-  if(unit.shared){
-    if(loggedSlotLocked(dateISO, 'elena', unit.slot) || loggedSlotLocked(dateISO, 'partner', unit.slot)) return [];
-    if(isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, 'shared')) return [];
-  } else {
-    if(loggedSlotLocked(dateISO, unit.person, unit.slot)) return [];
-    if(isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, unit.person)) return [];
-  }
+  if(!canAutoMutateUnit(plan, unit)) return [];
   const currentEntry = unit.shared ? m.elena : m[unit.person];
   const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
   const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);

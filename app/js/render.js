@@ -717,10 +717,72 @@ function openWeekSwap(weekStartDate, dayIndex, slot, person){
 
 function toggleMealPin(weekStartDate, dayIndex, slot, person){
   const key = mealPinKey(weekStartDate, dayIndex, slot, person);
-  if(mealPins[key]){ delete mealPins[key]; toast('Meal unpinned'); }
+  if(mealPins[key]){
+    const rule = routineRuleForPinnedOccurrence(weekStartDate, dayIndex, slot, person);
+    if(rule){ openRoutineUnpinSheet(weekStartDate, dayIndex, slot, person, rule); return; }
+    delete mealPins[key]; toast('Meal unpinned');
+  }
   else { mealPins[key] = true; toast('Pinned — re-balance will leave it alone'); }
   renderWeek();
   persist();
+}
+
+let routineUnpinCtx = null;
+
+function routineRuleForPinnedOccurrence(weekStartDate, dayIndex, slot, person){
+  const plan = ensureWeekPlan(weekStartDate);
+  const day = plan.days && plan.days[dayIndex];
+  const meal = day && day.meals && day.meals[slot];
+  if(!day || !meal) return null;
+  const rulePerson = mealPinPersonForMeal(meal, person);
+  const recipeId = meal.shared ? meal.recipeId : (meal[rulePerson] && meal[rulePerson].recipeId);
+  for(let i = mealRules.length - 1; i >= 0; i--){
+    const rule = mealRules[i];
+    if(!rule || !rule.pinFromDate || day.date < rule.pinFromDate) continue;
+    if(rule.recipeId !== recipeId) continue;
+    if(mealRuleApplies(rule, day.date, dayIndex, slot, rulePerson)) return rule;
+  }
+  return null;
+}
+
+function openRoutineUnpinSheet(weekStartDate, dayIndex, slot, person, rule){
+  const plan = ensureWeekPlan(weekStartDate);
+  const day = plan.days[dayIndex];
+  routineUnpinCtx = {weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: person, rule: rule, dateISO: day.date};
+  const meal = day.meals[slot];
+  const entry = meal.shared ? meal.elena : meal[person];
+  const view = planEntryView(entry, meal.shared);
+  document.getElementById('sheetBody').innerHTML =
+    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Unpin routine meal?</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub"><b>' + escapeHtml(mealTitleWithExtras(view)) + '</b> is part of a pinned routine. Choose whether to unlock only this meal or the following meals in this routine too.</p>'
+    + '<button class="cta" onclick="unpinOnlyThisMeal()">Unpin only this meal</button>'
+    + '<button class="cta ghostbtn" onclick="unpinThisAndFollowingRoutineMeals()">Unpin this and following routine meals</button>';
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function unpinOnlyThisMeal(){
+  if(!routineUnpinCtx) return;
+  const ctx = routineUnpinCtx;
+  delete mealPins[mealPinKey(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)];
+  routineUnpinCtx = null;
+  closeSheet();
+  renderWeek();
+  persist();
+  toast('Meal unpinned');
+}
+
+function unpinThisAndFollowingRoutineMeals(){
+  if(!routineUnpinCtx) return;
+  const ctx = routineUnpinCtx;
+  if(typeof unpinRoutineOccurrencesFrom === 'function') unpinRoutineOccurrencesFrom(ctx.rule, ctx.dateISO);
+  else delete mealPins[mealPinKey(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)];
+  routineUnpinCtx = null;
+  closeSheet();
+  renderWeek();
+  persist();
+  toast('Routine meals unpinned');
 }
 
 function routineLabel(rule){
@@ -749,10 +811,12 @@ function openMealRoutineSheet(weekStartDate, dayIndex, slot, person, recipeId){
   const r = RECIPES_DB[recipeId];
   const existing = findMealRule(slot, rulePerson);
   const weeklyLabel = 'Every ' + DAY_NAMES[dayIndex];
+  const pinChecked = existing && existing.pinFromDate ? ' checked' : '';
   document.getElementById('sheetBody').innerHTML =
     '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Meal routine</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub">Use <b>' + (r ? escapeHtml(r.title) : 'this meal') + '</b> as a default for ' + SLOT_LABEL[slot].toLowerCase() + '. It is a preference, not a pin: you or re-balance can still change it unless the meal is pinned.</p>'
+    + '<p class="sub">Use <b>' + (r ? escapeHtml(r.title) : 'this meal') + '</b> as a default for ' + SLOT_LABEL[slot].toLowerCase() + '. A routine is a preference; pinned routine meals are locked against re-balance.</p>'
     + '<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><b>Current</b><span class="pill ghost">' + routineLabel(existing) + '</span></div></div>'
+    + '<label class="card" style="padding:14px;margin-top:12px;display:flex;gap:12px;align-items:flex-start;cursor:pointer"><input id="routinePinRepeats" type="checkbox"' + pinChecked + ' style="margin-top:3px;min-width:18px;min-height:18px"><span><b>Pin repeated meals too</b><small style="display:block;color:var(--muted);margin-top:4px">Matching routine meals from this date onward stay unchanged unless you unpin them.</small></span></label>'
     + '<button class="cta ghostbtn" onclick="setMealRoutine(\'daily\')">Every day</button>'
     + '<button class="cta ghostbtn" onclick="setMealRoutine(\'alternate\')">Every other day</button>'
     + '<button class="cta ghostbtn" onclick="setMealRoutine(\'weekly\')">' + weeklyLabel + '</button>'
@@ -769,6 +833,10 @@ function replaceMealRule(rule){
 
 function refreshAfterMealRules(){
   applyMealRulesToStoredPlans();
+  refreshAfterMealRuleStateChange();
+}
+
+function refreshAfterMealRuleStateChange(){
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
@@ -780,17 +848,22 @@ function refreshAfterMealRules(){
 
 function setMealRoutine(cadence){
   if(!routineCtx) return;
-  replaceMealRule({
+  const pinRepeats = !!(document.getElementById('routinePinRepeats') && document.getElementById('routinePinRepeats').checked);
+  const rule = {
     recipeId: routineCtx.recipeId,
     slot: routineCtx.slot,
     cadence: cadence,
     person: routineCtx.person,
     anchorDate: addDaysISO(routineCtx.weekStartDate, routineCtx.dayIndex),
     dayIndex: routineCtx.dayIndex
-  });
+  };
+  if(pinRepeats) rule.pinFromDate = rule.anchorDate;
+  replaceMealRule(rule);
+  applyMealRulesToStoredPlans();
+  if(pinRepeats && typeof pinRoutineOccurrencesFrom === 'function') pinRoutineOccurrencesFrom(rule, rule.pinFromDate);
   closeSheet();
-  refreshAfterMealRules();
-  toast('Routine saved');
+  refreshAfterMealRuleStateChange();
+  toast(pinRepeats ? 'Routine saved and pinned' : 'Routine saved');
 }
 
 function clearMealRoutine(){
@@ -1610,6 +1683,7 @@ function rebalanceAcceptedPlan(prop){
   const resultPlan = JSON.parse(JSON.stringify(basePlan));
   prop.suggestions.forEach(function(s){
     if(s.accepted === false) return;
+    if(typeof canAutoMutateUnit === 'function' && !canAutoMutateUnit(resultPlan, s.unit)) return;
     if(s.kind === 'swap') applySwapToPlan(resultPlan, s.unit, s.toRecipeId);
     else addSideToPlan(resultPlan, s.unit, s.sideRecipeId);
   });

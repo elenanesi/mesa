@@ -188,7 +188,15 @@ function applyPlansSectionData(data){
       if(typeof rule.recipeId !== 'string' || typeof rule.slot !== 'string') return;
       if(['daily', 'alternate', 'weekly'].indexOf(rule.cadence) === -1) return;
       if(['shared', 'elena', 'partner'].indexOf(rule.person) === -1) return;
-      mealRules.push({recipeId: rule.recipeId, slot: rule.slot, cadence: rule.cadence, person: rule.person, anchorDate: rule.anchorDate || todayISO(), dayIndex: rule.dayIndex || 0});
+      mealRules.push({
+        recipeId: rule.recipeId,
+        slot: rule.slot,
+        cadence: rule.cadence,
+        person: rule.person,
+        anchorDate: typeof rule.anchorDate === 'string' ? rule.anchorDate : todayISO(),
+        dayIndex: typeof rule.dayIndex === 'number' ? Math.max(0, Math.min(6, rule.dayIndex)) : 0,
+        pinFromDate: (typeof rule.pinFromDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rule.pinFromDate)) ? rule.pinFromDate : undefined
+      });
     });
   }
   if(data.SHARED && typeof data.SHARED === 'object'){

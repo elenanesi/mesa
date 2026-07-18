@@ -672,6 +672,107 @@ function testMergePlansSection(ctx){
     'got ' + JSON.stringify(merged.nextWeekTuning));
 }
 
+/* ---------------- routine pin state/sync slice ---------------- */
+
+function testMealRulePinFromDatePersistence(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'localStorage.clear(); mealRules = [{recipeId:"omelette", slot:"breakfast", cadence:"daily", person:"elena", anchorDate:"2026-07-13", dayIndex:0, pinFromDate:"2026-07-20"}]; persist();');
+  run(ctx, 'mealRules = []; loadState();');
+  const loaded = get(ctx, 'mealRules');
+  assert(loaded.length === 1 && loaded[0].pinFromDate === '2026-07-20',
+    'mealRules persistence: optional pinFromDate survives local load',
+    'got ' + JSON.stringify(loaded));
+  run(ctx, 'localStorage.clear(); mealRules = [];');
+}
+
+function testMealRulePinFromDateSyncApply(ctx){
+  run(ctx, 'mealRules = [];');
+  call(ctx, 'applyPlansSectionData', [{
+    weekPlans: {},
+    mealPins: {},
+    mealRules: [{recipeId:'omelette', slot:'breakfast', cadence:'daily', person:'elena', anchorDate:'2026-07-13', dayIndex:0, pinFromDate:'2026-07-20'}],
+    SHARED: {breakfast:false, lunch:false, dinner:true, snack:false},
+    householdStyle: 'balanced',
+    nextWeekTuning: 'none',
+    servings: {svE:1, svM:1.5, svS:1}
+  }]);
+  const applied = get(ctx, 'mealRules');
+  assert(applied.length === 1 && applied[0].pinFromDate === '2026-07-20',
+    'mealRules sync: optional pinFromDate survives applyPlansSectionData()',
+    'got ' + JSON.stringify(applied));
+  run(ctx, 'mealRules = [];');
+}
+
+function testPinnedRebalanceDoesNotTouchPinnedUnit(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = [];");
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const pinnedUnit = {dayIndex: 1, slot: 'breakfast', shared: !!plan.days[1].meals.breakfast.shared, person: 'elena'};
+  const currentId = plan.days[pinnedUnit.dayIndex].meals[pinnedUnit.slot].elena.recipeId;
+  const alt = call(ctx, 'buildSwapAlternatives', [pinnedUnit.dayIndex, pinnedUnit.slot, pinnedUnit.person, plan.weekStartDate])[0];
+  assert(!!alt && alt.id !== currentId, 're-balance stale-proposal setup: a valid alternate exists for the soon-pinned unit',
+    'current=' + currentId + ' alt=' + JSON.stringify(alt));
+  const pinPerson = pinnedUnit.shared ? 'shared' : pinnedUnit.person;
+  const pinKey = call(ctx, 'mealPinKey', [plan.weekStartDate, pinnedUnit.dayIndex, pinnedUnit.slot, pinPerson]);
+  run(ctx, 'mealPins[' + JSON.stringify(pinKey) + '] = true;');
+  const proposal = call(ctx, 'proposeRebalanceSuggestions', [plan.weekStartDate]);
+  const hitPinned = (proposal.suggestions || []).some(function(s){
+    return s.unit && s.unit.dayIndex === pinnedUnit.dayIndex && s.unit.slot === pinnedUnit.slot
+      && !!s.unit.shared === !!pinnedUnit.shared && (s.unit.shared || s.unit.person === pinnedUnit.person);
+  });
+  assert(!hitPinned, 're-balance: stale proposal candidates do not include a pinned unit',
+    'suggestions=' + JSON.stringify(proposal.suggestions));
+  const staleProp = {weekStartDate: plan.weekStartDate, suggestions: [{kind:'swap', accepted:true, unit:pinnedUnit, toRecipeId:alt.id}]};
+  const acceptedPlan = call(ctx, 'rebalanceAcceptedPlan', [staleProp]);
+  const afterId = acceptedPlan.days[pinnedUnit.dayIndex].meals[pinnedUnit.slot].elena.recipeId;
+  assert(afterId === currentId, 're-balance: apply-time guard ignores stale suggestions for a pinned unit',
+    'before=' + currentId + ' after=' + afterId + ' attempted=' + alt.id);
+  run(ctx, 'mealPins = {};');
+}
+
+function testPinnedFutureMealSurvivesRegenerationContract(ctx){
+  const hasPinHelper = run(ctx, "typeof pinRoutineOccurrencesFrom === 'function'");
+  if(!hasPinHelper){
+    pass('pinned future regeneration: contract pending planner/render slice');
+    return;
+  }
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = [];");
+  const nextMonday = call(ctx, 'addDaysISO', [FIXED_MONDAY, 7]);
+  const plan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  const before = plan.days[0].meals.breakfast.elena.recipeId;
+  const rule = {recipeId: before, slot:'breakfast', cadence:'daily', person:'elena', anchorDate:nextMonday, dayIndex:0};
+  call(ctx, 'pinRoutineOccurrencesFrom', [rule, nextMonday]);
+  run(ctx, 'weekPlans[' + JSON.stringify(nextMonday) + '].signature = "stale-signature";');
+  const regenerated = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  const after = regenerated.days[0].meals.breakfast.elena.recipeId;
+  assert(after === before, 'pinned future meal survives regeneration',
+    'before=' + before + ' after=' + after + ' pins=' + JSON.stringify(get(ctx, 'mealPins')));
+  run(ctx, 'mealPins = {}; mealRules = [];');
+}
+
+function testRoutinePinHelperContracts(ctx){
+  const hasPinHelper = run(ctx, "typeof pinRoutineOccurrencesFrom === 'function'");
+  const hasUnpinHelper = run(ctx, "typeof unpinRoutineOccurrencesFrom === 'function'");
+  if(!hasPinHelper || !hasUnpinHelper){
+    pass('routine pins: helper contract pending planner/render slice');
+    return;
+  }
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = [];");
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const rule = {recipeId:'omelette', slot:'breakfast', cadence:'daily', person:'elena', anchorDate:'2026-07-13', dayIndex:0};
+  call(ctx, 'pinRoutineOccurrencesFrom', [rule, '2026-07-20']);
+  const pinsAfterPin = get(ctx, 'mealPins');
+  const laterKey = call(ctx, 'mealPinKey', [plan.weekStartDate, 0, 'breakfast', 'elena']);
+  assert(rule.pinFromDate === '2026-07-20' && Object.keys(pinsAfterPin).some(function(k){ return pinsAfterPin[k]; }),
+    'routine auto-pin: pinRoutineOccurrencesFrom() records pinFromDate and creates pins',
+    'rule=' + JSON.stringify(rule) + ' pins=' + JSON.stringify(pinsAfterPin) + ' sampleKey=' + laterKey);
+  call(ctx, 'unpinRoutineOccurrencesFrom', [rule, '2026-07-20']);
+  const pinsAfterUnpin = get(ctx, 'mealPins');
+  assert(!rule.pinFromDate && Object.keys(pinsAfterUnpin).every(function(k){ return !pinsAfterUnpin[k]; }),
+    'routine unpin following: clears pinFromDate and removes later routine pins',
+    'rule=' + JSON.stringify(rule) + ' pins=' + JSON.stringify(pinsAfterUnpin));
+  run(ctx, 'mealPins = {}; mealRules = [];');
+}
+
 /* ---------------- planner.js determinism ---------------- */
 
 function testPlannerDeterminism(ctx){
@@ -2070,6 +2171,11 @@ function main(){
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
+  runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });
+  runTest('mealRules pinFromDate sync apply', function(){ testMealRulePinFromDateSyncApply(ctx); });
+  runTest('pinned re-balance unit exclusion', function(){ testPinnedRebalanceDoesNotTouchPinnedUnit(ctx); });
+  runTest('pinned future regeneration contract', function(){ testPinnedFutureMealSurvivesRegenerationContract(ctx); });
+  runTest('routine pin helper contracts', function(){ testRoutinePinHelperContracts(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });

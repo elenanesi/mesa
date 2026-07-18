@@ -865,7 +865,8 @@ function loadState(){
         cadence: rule.cadence,
         person: rule.person,
         anchorDate: typeof rule.anchorDate === 'string' ? rule.anchorDate : todayISO(),
-        dayIndex: typeof rule.dayIndex === 'number' ? Math.max(0, Math.min(6, rule.dayIndex)) : 0
+        dayIndex: typeof rule.dayIndex === 'number' ? Math.max(0, Math.min(6, rule.dayIndex)) : 0,
+        pinFromDate: (typeof rule.pinFromDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(rule.pinFromDate)) ? rule.pinFromDate : undefined
       });
     });
   }
