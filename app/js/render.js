@@ -131,8 +131,22 @@ function safeRecipeImageAsset(v){
   return /^assets\/recipes\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
+const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish'];
+
+function recipeHasFishIngredient(recipe){
+  if(!recipe || !Array.isArray(recipe.ingredients)) return false;
+  return recipe.ingredients.some(function(ing){
+    const id = String((ing && ing[0]) || '');
+    if(FISH_RECIPE_INGREDIENT_IDS.indexOf(id) !== -1) return true;
+    const f = (typeof FOODS !== 'undefined') && FOODS[id];
+    const text = (id + ' ' + (f && f.name ? f.name : '')).toLowerCase();
+    return /salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(text);
+  });
+}
+
 function inferredRecipeImageKey(recipe, recipeId){
   if(!recipe) return 'default-recipe';
+  if(recipeHasFishIngredient(recipe)) return 'fish-main';
   if(recipe.slot === 'breakfast') return 'breakfast-bowl';
   if(recipe.slot === 'lunch') return 'salad';
   if(recipe.slot === 'dinner') return 'default-recipe';

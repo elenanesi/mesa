@@ -663,6 +663,10 @@ function testRecipeImageHelpers(ctx){
     'safeRecipeImageAsset: accepts assets/recipes/<key>.png paths', '');
   assert(call(ctx, 'safeRecipeImageAsset', ['assets/ingredients/salmon-greens.png']) === '',
     'safeRecipeImageAsset: rejects non-recipe asset directories', '');
+  assert(call(ctx, 'recipeHasFishIngredient', [{title: 'Cod test', ingredients: [['cod', 120]]}]) === true,
+    'recipeHasFishIngredient: detects fish ingredients from ingredient ids', '');
+  assert(call(ctx, 'recipeHasFishIngredient', [{title: 'Chicken test', ingredients: [['chicken-breast', 120]]}]) === false,
+    'recipeHasFishIngredient: does not classify non-fish protein as fish', '');
 
   const recipe = {title: 'Hero test', emoji: '🍽️', imageKey: 'fish-main'};
   assert(call(ctx, 'recipeImageAssetForRecipe', [recipe]) === 'assets/recipes/fish-main.png',
@@ -671,8 +675,10 @@ function testRecipeImageHelpers(ctx){
     'recipeImageAssetForRecipe: infers the breakfast-bowl image for breakfast recipes', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Big salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}]) === 'assets/recipes/salad.png',
     'recipeImageAssetForRecipe: uses the salad image for lunch recipes', '');
-  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Baked cod', emoji: '🐟', slot: 'dinner', tags: [], ingredients: [['cod', 120]]}]) === 'assets/recipes/default-recipe.png',
-    'recipeImageAssetForRecipe: keeps the default image for dinner recipes unless explicitly changed', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Tuna lunch', emoji: '🥗', slot: 'lunch', tags: [], ingredients: [['tuna-in-olive-oil', 100]]}]) === 'assets/recipes/fish-main.png',
+    'recipeImageAssetForRecipe: fish ingredients override the lunch salad default', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Baked cod', emoji: '🐟', slot: 'dinner', tags: [], ingredients: [['cod', 120]]}]) === 'assets/recipes/fish-main.png',
+    'recipeImageAssetForRecipe: fish ingredients use the fish-main image even for dinner recipes', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Roast chicken', emoji: '🍗', slot: 'dinner', tags: [], ingredients: [['chicken-breast', 120]]}]) === 'assets/recipes/default-recipe.png',
     'recipeImageAssetForRecipe: keeps the default image for meat dinners unless explicitly changed', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/salad.png',
