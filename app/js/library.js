@@ -127,7 +127,7 @@ const AUTO_STYLE_THRESHOLDS = {
 // fish/meat/poultry food later needs a one-line addition here.
 const ANIMAL_FOOD_IDS = [
   'salmon-fillet', 'turkey-breast', 'chicken-breast', 'tuna-in-olive-oil', 'tuna',
-  'sardines', 'cod', 'prawns', 'chicken-thigh', 'beef-mince-lean', 'pork-loin', 'bresaola'
+  'clams', 'cod', 'prawns', 'chicken-thigh', 'beef-mince-lean', 'pork-loin', 'bresaola'
 ];
 // Per the task brief's exact list.
 const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'oats'];
