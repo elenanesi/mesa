@@ -103,7 +103,7 @@ function recipeDisplayPills(recipeId){
 }
 
 const DEFAULT_RECIPE_IMAGE_ASSET = 'assets/recipes/default-recipe.png';
-const RECIPE_IMAGE_KEYS = ['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl'];
+const RECIPE_IMAGE_KEYS = ['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl', 'dessert-sweets', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu'];
 
 function recipeImageLabel(key){
   const labels = {
@@ -112,7 +112,12 @@ function recipeImageLabel(key){
     'cooked-vegetables': 'Cooked veg',
     'meat-main': 'Meat main',
     'fish-main': 'Fish main',
-    'breakfast-bowl': 'Breakfast bowl'
+    'breakfast-bowl': 'Breakfast bowl',
+    'dessert-sweets': 'Dessert',
+    'ramen': 'Ramen',
+    'butter-chicken': 'Butter chicken',
+    'chinese-dinner': 'Chinese dinner',
+    'fast-food-menu': 'Fast food'
   };
   return labels[key] || String(key || '').replace(/-/g, ' ');
 }
@@ -147,9 +152,6 @@ function recipeHasFishIngredient(recipe){
 function inferredRecipeImageKey(recipe, recipeId){
   if(!recipe) return 'default-recipe';
   if(recipeHasFishIngredient(recipe)) return 'fish-main';
-  if(recipe.slot === 'breakfast') return 'breakfast-bowl';
-  if(recipe.slot === 'lunch') return 'salad';
-  if(recipe.slot === 'dinner') return 'default-recipe';
   const title = String(recipe.title || '').toLowerCase();
   const emoji = String(recipe.emoji || '');
   const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
@@ -160,6 +162,14 @@ function inferredRecipeImageKey(recipe, recipeId){
   }).join(' ').toLowerCase();
   const haystack = title + ' ' + emoji + ' ' + tags.join(' ') + ' ' + foodText;
 
+  if(/ramen/.test(haystack)) return 'ramen';
+  if(/butter chicken|curry/.test(haystack)) return 'butter-chicken';
+  if(/chinese|spring roll|dumpling|ravioli|almond chicken/.test(haystack)) return 'chinese-dinner';
+  if(/mcdonald|burger king|fast food|burger|fries|cola/.test(haystack)) return 'fast-food-menu';
+  if(/brownie|dessert|sweet|sweets|gelato|ice cream|chocolate/.test(haystack)) return 'dessert-sweets';
+  if(recipe.slot === 'breakfast') return 'breakfast-bowl';
+  if(recipe.slot === 'lunch') return 'salad';
+  if(recipe.slot === 'dinner') return 'default-recipe';
   if(/breakfast|yogurt|skyr|oats|cereali|chia|pudding|bowl/.test(haystack)) return 'breakfast-bowl';
   if(/salad|insalata|cous cous/.test(haystack) || emoji === '🥗') return 'salad';
   if(/salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';

@@ -651,10 +651,12 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl']),
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl', 'dessert-sweets', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu']),
     'availableRecipeImageKeys: returns the curated recipe image set', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
   assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
     'safeRecipeImageKey: accepts an available recipe image key', '');
+  assert(call(ctx, 'safeRecipeImageKey', ['dessert-sweets']) === 'dessert-sweets',
+    'safeRecipeImageKey: accepts the sweets recipe image key', '');
   assert(call(ctx, 'safeRecipeImageKey', ['salmon-greens']) === '',
     'safeRecipeImageKey: rejects unavailable recipe image keys even if kebab-case', '');
   assert(call(ctx, 'safeRecipeImageKey', ['../salmon']) === '',
@@ -679,6 +681,12 @@ function testRecipeImageHelpers(ctx){
     'recipeImageAssetForRecipe: fish ingredients override the lunch salad default', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Baked cod', emoji: '🐟', slot: 'dinner', tags: [], ingredients: [['cod', 120]]}]) === 'assets/recipes/fish-main.png',
     'recipeImageAssetForRecipe: fish ingredients use the fish-main image even for dinner recipes', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Ramen', emoji: '🍜', slot: 'dinner', tags: [], ingredients: [['ramen-noodles', 70], ['eggs', 50]]}]) === 'assets/recipes/ramen.png',
+    'recipeImageAssetForRecipe: ramen recipes use the specific ramen image', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Brownie', emoji: '🍫', slot: 'snack', tags: [], ingredients: [['brownie', 80]]}]) === 'assets/recipes/dessert-sweets.png',
+    'recipeImageAssetForRecipe: sweets use the dessert image', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Burger and fries', emoji: '🍔', slot: 'dinner', tags: [], ingredients: [['fast-food-beef-burger', 180], ['cola', 400]]}]) === 'assets/recipes/fast-food-menu.png',
+    'recipeImageAssetForRecipe: fast-food menus use the fast-food image', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Roast chicken', emoji: '🍗', slot: 'dinner', tags: [], ingredients: [['chicken-breast', 120]]}]) === 'assets/recipes/default-recipe.png',
     'recipeImageAssetForRecipe: keeps the default image for meat dinners unless explicitly changed', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/salad.png',
@@ -697,6 +705,22 @@ function testRecipeImageHelpers(ctx){
   const hostileHtml = call(ctx, 'recipeHeroHtml', [{title: 'Bad image', emoji: '🍽️', imageKey: '../evil'}]);
   assert(hostileHtml.indexOf('../evil') === -1 && hostileHtml.indexOf('src="assets/recipes/default-recipe.png"') !== -1,
     'recipeHeroHtml: format-invalid imageKey falls back without building a hostile image request', hostileHtml);
+}
+
+function testRecipeCatalogCleanup(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  assert(!RECIPES_DB['white-bean-tuna-salad'],
+    'recipe catalog cleanup: removes the duplicate white-bean tuna salad', '');
+  assert(RECIPES_DB['tuna-white-bean-salad'] && RECIPES_DB['tuna-white-bean-salad'].title === 'Tuna & white bean salad',
+    'recipe catalog cleanup: keeps the canonical tuna & white bean salad', JSON.stringify(RECIPES_DB['tuna-white-bean-salad']));
+  assert(RECIPES_DB['yogurt-cereali-frutta'].title === 'Yogurt, cereal & fruit',
+    'recipe catalog cleanup: default wishlist breakfast title is English', RECIPES_DB['yogurt-cereali-frutta'].title);
+  assert(RECIPES_DB['cena-cinese'].title === 'Chinese-style dinner' && RECIPES_DB['cena-cinese'].imageKey === 'chinese-dinner',
+    'recipe catalog cleanup: Chinese dinner title/imageKey are explicit', JSON.stringify(RECIPES_DB['cena-cinese']));
+  assert(RECIPES_DB.ramen.imageKey === 'ramen' && RECIPES_DB['butter-chicken'].imageKey === 'butter-chicken',
+    'recipe catalog cleanup: specific requested recipes carry specific image keys', JSON.stringify({ramen: RECIPES_DB.ramen.imageKey, butterChicken: RECIPES_DB['butter-chicken'].imageKey}));
+  assert(RECIPES_DB['brownie-dessert'].imageKey === 'dessert-sweets',
+    'recipe catalog cleanup: brownie uses the sweets image key', JSON.stringify(RECIPES_DB['brownie-dessert']));
 }
 
 function testRecipeImagePicker(ctx){
@@ -2452,6 +2476,7 @@ function main(){
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
+  runTest('recipe catalog cleanup', function(){ testRecipeCatalogCleanup(ctx); });
   runTest('recipe image picker', function(){ testRecipeImagePicker(ctx); });
   runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
