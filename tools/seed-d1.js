@@ -3,7 +3,8 @@
 
 /* ===================================================================
    tools/seed-d1.js — generates the SQL that seeds/refreshes the D1
-   library catalog's GLOBAL (builtin) rows from the current data files.
+   library catalog's GLOBAL (builtin) rows from the current data files,
+   and tombstones stale builtin rows that no longer exist locally.
 
    WHY: built-in food/recipe field changes (roles, icons, flags…) ship
    as code, but existing D1 rows only refresh when a logged-in client
@@ -100,5 +101,24 @@ payload.recipes.forEach(function(row){
   );
 });
 
-process.stderr.write('seed-d1: ' + payload.foods.length + ' foods, ' + payload.recipes.length + ' recipes -> ' + lines.length + ' upserts\n');
+function idList(rows){
+  return rows.filter(function(row){ return row.source === 'builtin'; }).map(function(row){ return sq(row.id); }).join(',');
+}
+
+const foodIdList = idList(payload.foods);
+const recipeIdList = idList(payload.recipes);
+if(foodIdList){
+  lines.push(
+    "UPDATE foods SET deleted_at=COALESCE(deleted_at, CAST(strftime('%s','now') AS INTEGER)*1000) " +
+    "WHERE scope='global' AND source='builtin' AND id NOT IN (" + foodIdList + ');'
+  );
+}
+if(recipeIdList){
+  lines.push(
+    "UPDATE recipes SET deleted_at=COALESCE(deleted_at, CAST(strftime('%s','now') AS INTEGER)*1000) " +
+    "WHERE scope='global' AND source='builtin' AND id NOT IN (" + recipeIdList + ');'
+  );
+}
+
+process.stderr.write('seed-d1: ' + payload.foods.length + ' foods, ' + payload.recipes.length + ' recipes -> ' + lines.length + ' statements\n');
 process.stdout.write(lines.join('\n') + '\n');
