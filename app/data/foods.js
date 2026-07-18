@@ -265,11 +265,6 @@ const FOODS = {
     kcal: 112, protein: 26.2, carbs: 0, fat: 0.8, satFat: 0.2, fiber: 0,
     flags: ['selenium', 'omega3'], cat: 'Protein', src: 'USDA FDC 175160-style (tuna, canned in water, drained)'
   },
-  'sardines': {
-    name: 'Sardines, canned in olive oil, drained', per: 100, unit: 'g',
-    kcal: 202, protein: 24.6, carbs: 0, fat: 11.5, satFat: 1.5, fiber: 0,
-    flags: ['omega3', 'selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC 175139 (sardines, canned in oil, drained)'
-  },
   'cod': {
     name: 'Cod / white fish, raw', per: 100, unit: 'g',
     kcal: 78, protein: 17.8, carbs: 0, fat: 0.7, satFat: 0.1, fiber: 0,
@@ -279,6 +274,11 @@ const FOODS = {
     name: 'Prawns / shrimp, raw', per: 100, unit: 'g',
     kcal: 100, protein: 24.0, carbs: 0.2, fat: 0.3, satFat: 0.1, fiber: 0,
     flags: ['selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC 171998 (shrimp, raw)'
+  },
+  'clams': {
+    name: 'Clams, cooked', per: 100, unit: 'g',
+    kcal: 144, protein: 25.5, carbs: 5.1, fat: 2.0, satFat: 0.2, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'clams', src: 'USDA FDC-style (clams, cooked, moist heat); kcal per 4/4/9'
   },
   'chicken-thigh': {
     name: 'Chicken thigh, skinless, raw', per: 100, unit: 'g',
@@ -331,52 +331,52 @@ const FOODS = {
   'greek-yogurt': {
     name: 'Greek yogurt, plain (2%)', per: 100, unit: 'g',
     kcal: 72, protein: 9.9, carbs: 3.9, fat: 1.9, satFat: 1.2, fiber: 0, sugars: 3.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI', 'fermented'], cat: 'Dairy', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', iconKey: 'greek-yogurt', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
   },
   'skyr': {
     name: 'Skyr, plain', per: 100, unit: 'g',
     kcal: 62, protein: 11.0, carbs: 4.0, fat: 0.2, satFat: 0.1, fiber: 0, sugars: 4.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI', 'fermented'], cat: 'Dairy', src: 'Icelandic dairy standard table (skyr, plain)'
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', iconKey: 'skyr', src: 'Icelandic dairy standard table (skyr, plain)'
   },
   'feta-cheese': {
     name: 'Feta cheese', per: 100, unit: 'g',
     kcal: 265, protein: 14.2, carbs: 4.1, fat: 21.3, satFat: 14.9, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173417 (cheese, feta)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'feta-cheese', src: 'USDA FDC 173417 (cheese, feta)'
   },
   'parmesan': {
     name: 'Parmesan, grated', per: 100, unit: 'g',
     kcal: 388, protein: 35.8, carbs: 3.2, fat: 25.8, satFat: 16.4, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173419-style (cheese, parmesan, grated)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'parmesan', src: 'USDA FDC 173419-style (cheese, parmesan, grated)'
   },
   'pecorino': {
     name: 'Pecorino romano, grated', per: 100, unit: 'g',
     kcal: 371, protein: 28.6, carbs: 3.6, fat: 26.9, satFat: 17.1, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC-style (cheese, pecorino romano); kcal per 4/4/9'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'pecorino', src: 'USDA FDC-style (cheese, pecorino romano); kcal per 4/4/9'
   },
   'mozzarella': {
     name: 'Mozzarella, fresh (whole milk)', per: 100, unit: 'g',
     kcal: 283, protein: 18.1, carbs: 2.2, fat: 22.4, satFat: 13.2, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 173441-style (cheese, mozzarella, whole milk)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'mozzarella', src: 'USDA FDC 173441-style (cheese, mozzarella, whole milk)'
   },
   'robiola': {
     name: 'Robiola cheese', per: 100, unit: 'g',
     kcal: 326, protein: 8.8, carbs: 2.0, fat: 31.4, satFat: 20.0, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'CREA-style Italian food table / manufacturer label average (robiola)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'robiola', src: 'CREA-style Italian food table / manufacturer label average (robiola)'
   },
   'provola': {
     name: 'Provola cheese', per: 100, unit: 'g',
     kcal: 351, protein: 25.0, carbs: 2.0, fat: 27.0, satFat: 17.0, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'CREA-style Italian food table / manufacturer label average (provola)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'provola', src: 'CREA-style Italian food table / manufacturer label average (provola)'
   },
   'scamorza': {
     name: 'Scamorza cheese', per: 100, unit: 'g',
     kcal: 333, protein: 25.0, carbs: 2.0, fat: 25.0, satFat: 16.0, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'CREA-style Italian food table / manufacturer label average (scamorza)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'scamorza', src: 'CREA-style Italian food table / manufacturer label average (scamorza)'
   },
   'ricotta': {
     name: 'Ricotta, whole milk', per: 100, unit: 'g',
     kcal: 166, protein: 8.8, carbs: 3.5, fat: 13.0, satFat: 8.3, fiber: 0,
-    flags: [], cat: 'Dairy', src: 'USDA FDC 173439 (cheese, ricotta, whole milk)'
+    flags: [], cat: 'Dairy', iconKey: 'ricotta', src: 'USDA FDC 173439 (cheese, ricotta, whole milk)'
   },
   'butter': {
     name: 'Butter, salted', per: 100, unit: 'g',
@@ -386,7 +386,7 @@ const FOODS = {
   'gorgonzola': {
     name: 'Gorgonzola / blue cheese', per: 100, unit: 'g',
     kcal: 351, protein: 21.4, carbs: 2.3, fat: 28.7, satFat: 18.7, fiber: 0,
-    flags: ['fermented'], cat: 'Dairy', src: 'USDA FDC 170895-style (blue cheese); kcal per 4/4/9'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'gorgonzola', src: 'USDA FDC 170895-style (blue cheese); kcal per 4/4/9'
   },
   'milk': {
     name: 'Milk, whole (3.5% fat)', per: 100, unit: 'ml',
@@ -453,6 +453,11 @@ const FOODS = {
     name: 'Maple syrup', per: 100, unit: 'ml',
     kcal: 276, protein: 0.0, carbs: 67.0, fat: 0.1, satFat: 0.0, fiber: 0, sugars: 60.5, freeSugars: 60.5, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', src: 'USDA FDC 169661-style (maple syrup); kcal per 4/4/9'
+  },
+  'fruit-jam': {
+    name: 'Fruit jam', per: 100, unit: 'g',
+    kcal: 250, protein: 0.4, carbs: 65.0, fat: 0.1, satFat: 0.0, fiber: 1.0, sugars: 48.0, freeSugars: 42.0, sugarQuality: 'mixed',
+    flags: [], cat: 'Pantry', iconKey: 'fruit-jam', src: 'Generic fruit jam label average; kcal per 4/4/9'
   },
   'chia-seeds': {
     name: 'Chia seeds', per: 100, unit: 'g',
@@ -549,6 +554,11 @@ const FOODS = {
     kcal: 57, protein: 8.1, carbs: 4.9, fat: 0.1, satFat: 0.0, fiber: 0.8,
     flags: [], cat: 'Pantry', src: 'USDA FDC 174277-style (soy sauce); kcal per 4/4/9'
   },
+  'mayonnaise': {
+    name: 'Mayonnaise', per: 100, unit: 'g',
+    kcal: 684, protein: 1.0, carbs: 0.6, fat: 75.0, satFat: 11.0, fiber: 0, sugars: 0.6, freeSugars: 0.6, sugarQuality: 'added/free',
+    flags: [], cat: 'Pantry', iconKey: 'mayonnaise', src: 'USDA FDC-style regular mayonnaise; kcal per 4/4/9'
+  },
   'ginger': {
     name: 'Ginger, fresh', per: 100, unit: 'g',
     kcal: 84, protein: 1.8, carbs: 17.8, fat: 0.8, satFat: 0.2, fiber: 2.0,
@@ -565,9 +575,9 @@ const FOODS = {
     flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 170272-style (chocolate, dark, 85% cacao)'
   },
   'chocolate-hazelnut-spread': {
-    name: 'Chocolate hazelnut spread', per: 100, unit: 'g',
+    name: 'Nutella', per: 100, unit: 'g',
     kcal: 533, protein: 6.3, carbs: 57.5, fat: 30.9, satFat: 10.6, fiber: 3.4, sugars: 56.0, freeSugars: 50.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Pantry', src: 'Generic Nutella-style chocolate hazelnut spread label average; kcal per 4/4/9'
+    flags: [], cat: 'Pantry', iconKey: 'nutella', src: 'Nutella-style chocolate hazelnut spread label average; kcal per 4/4/9'
   },
   'whey-protein-powder': {
     name: 'Protein powder, whey', per: 100, unit: 'g',

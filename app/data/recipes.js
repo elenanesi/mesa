@@ -208,13 +208,13 @@ const RECIPES_DB = {
     tags: ['muscle', 'lowGI'],
     avoid: ['shellfish']
   },
-  'sardine-white-bean-salad': {
-    title: 'Sardine & white bean salad', emoji: '🐟', slot: 'lunch', role: 'full',
+  'tuna-white-bean-salad': {
+    title: 'Tuna & white bean salad', emoji: '🐟', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 10,
-    ingredients: [['sardines', 120], ['cannellini-beans', 100], ['rocket-arugula', 30], ['cherry-tomatoes', 60], ['olive-oil', 5]],
+    ingredients: [['tuna-in-olive-oil', 120], ['cannellini-beans', 100], ['rocket-arugula', 30], ['cherry-tomatoes', 60], ['olive-oil', 5]],
     toTaste: ['lemon'],
-    steps: ['Drain and rinse the white beans.', 'Toss beans with rocket and tomatoes.', 'Flake the sardines over the top.', 'Dress with olive oil and lemon.'],
+    steps: ['Drain and rinse the white beans.', 'Toss beans with rocket and tomatoes.', 'Flake the tuna over the top.', 'Dress with olive oil and lemon.'],
     tags: ['thyroid', 'omega3', 'heart', 'highFiber'],
     avoid: []
   },
@@ -376,7 +376,7 @@ const RECIPES_DB = {
     styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['oats', 40], ['whey-protein-powder', 30], ['eggs', 50], ['milk', 90], ['chocolate-hazelnut-spread', 12], ['bananas', 70], ['mixed-berries', 50], ['olive-oil', 3]],
     toTaste: ['cinnamon'],
-    steps: ['Blend oat flour, protein powder, egg and milk into a smooth batter.', 'Cook small pancakes in a lightly oiled pan until golden on both sides.', 'Spread a thin veil of chocolate hazelnut cream on top.', 'Finish with sliced banana and blueberries or mixed berries.'],
+    steps: ['Blend oat flour, protein powder, egg and milk into a smooth batter.', 'Cook small pancakes in a lightly oiled pan until golden on both sides.', 'Spread a thin veil of Nutella on top.', 'Finish with sliced banana and blueberries or mixed berries.'],
     tags: ['muscle'],
     avoid: ['gluten', 'lactose', 'nuts']
   },
