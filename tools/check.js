@@ -1931,6 +1931,79 @@ function testNextWeekTuning(ctx){
   run(ctx, "nextWeekTuning = 'none'; weekPlans = {}; weekPlan = null;");
 }
 
+/* ---------------- persist() storage-failure reporting (Fix 3) ----------------
+   persist() (state.js) must degrade to in-memory-only, never throw, when
+   localStorage.setItem throws (iOS PWA quota exhausted, Safari private mode,
+   storage disabled, …) — but it must also STOP failing silently: it tracks the
+   healthy/unhealthy transition (module-level lastPersistOk in state.js) and
+   fires the optional onMesaPersistFailed(err) hook only when a write fails
+   right after a healthy one, not on every write while storage stays broken
+   (that would mean a toast on every keystroke for a user with a permanently
+   full disk), and fires it again if storage recovers and then fails anew.
+
+   Same stub-then-restore bracketing pattern testRecipeOptionsBuilder uses for
+   toast/openMyRecipes/etc: swap out localStorage.setItem and the real
+   onMesaPersistFailed (defined in js/render.js, which this harness loads) for
+   a counting stub, for the duration of this test only, then restore both —
+   in a `finally` so a mid-test assertion failure can't leak either override
+   into later tests — and end with one real successful persist() so STORE_KEY
+   holds a normal, current snapshot afterward. */
+function testPersistFailureHook(ctx){
+  run(ctx, "var __persistFailStub = {setItem: localStorage.setItem, onMesaPersistFailed: onMesaPersistFailed}; " +
+    "var __persistFailCalls = 0; onMesaPersistFailed = function(){ __persistFailCalls++; };");
+  try{
+    // (1) storage throws -> persist() must not throw, and the hook fires exactly once
+    // (first failure = the healthy->unhealthy transition).
+    run(ctx, "localStorage.setItem = function(){ throw new Error('QuotaExceededError (test)'); };");
+    let threw = false;
+    try{ run(ctx, "persist();"); } catch(e){ threw = true; }
+    assert(!threw, 'persist(): does not throw when localStorage.setItem throws (degrades to in-memory)');
+    assert(get(ctx, '__persistFailCalls') === 1, 'onMesaPersistFailed: fires on the first storage failure',
+      'calls=' + get(ctx, '__persistFailCalls'));
+
+    // (2) storage still broken -> a second consecutive failure must NOT re-fire the hook.
+    run(ctx, "persist();");
+    assert(get(ctx, '__persistFailCalls') === 1, 'onMesaPersistFailed: does not re-fire on a second consecutive failure',
+      'calls=' + get(ctx, '__persistFailCalls'));
+
+    // (3) storage recovers -> a successful persist() must not fire the hook, and must
+    // clear the unhealthy flag so a later failure is treated as a fresh transition.
+    run(ctx, "localStorage.setItem = __persistFailStub.setItem; persist();");
+    assert(get(ctx, '__persistFailCalls') === 1, 'onMesaPersistFailed: does not fire on a successful persist',
+      'calls=' + get(ctx, '__persistFailCalls'));
+
+    // (4) a NEW failure after that healthy write must fire the hook again.
+    run(ctx, "localStorage.setItem = function(){ throw new Error('QuotaExceededError (test)'); };");
+    run(ctx, "persist();");
+    assert(get(ctx, '__persistFailCalls') === 2, 'onMesaPersistFailed: fires again after an intervening successful persist',
+      'calls=' + get(ctx, '__persistFailCalls'));
+
+    // (5) A THROWING hook must not escalate a degraded save into a crash. render.js's real
+    // implementation calls toast(), which dereferences #toast with no null guard — so if
+    // storage fails before the DOM is parsed, the hook throws from inside persist()'s catch
+    // block and would propagate out, breaking the "degrade to in-memory rather than crashing
+    // the app" contract. It must also still flip the unhealthy flag, or every subsequent
+    // persist() re-enters the branch and re-throws.
+    run(ctx, "localStorage.setItem = __persistFailStub.setItem; persist();"); // back to healthy
+    run(ctx, "localStorage.setItem = function(){ throw new Error('QuotaExceededError (test)'); };");
+    run(ctx, "__persistFailCalls = 0; onMesaPersistFailed = function(){ __persistFailCalls++; throw new Error('hook exploded (test)'); };");
+    let hookThrewOut = false;
+    try{ run(ctx, "persist();"); } catch(e){ hookThrewOut = true; }
+    assert(!hookThrewOut, 'persist(): a throwing onMesaPersistFailed hook does not propagate out of persist()');
+    assert(get(ctx, '__persistFailCalls') === 1, 'onMesaPersistFailed: a throwing hook still marks storage unhealthy (fired once)',
+      'calls=' + get(ctx, '__persistFailCalls'));
+    run(ctx, "persist();");
+    assert(get(ctx, '__persistFailCalls') === 1, 'onMesaPersistFailed: a throwing hook is not re-entered on the next failed persist',
+      'calls=' + get(ctx, '__persistFailCalls'));
+  } finally {
+    // Restore both real bindings BEFORE the closing real persist() below, so that write
+    // (and every test after this one) goes through the real localStorage/hook again
+    // regardless of which assertion above failed.
+    run(ctx, "localStorage.setItem = __persistFailStub.setItem; onMesaPersistFailed = __persistFailStub.onMesaPersistFailed; delete __persistFailStub; delete __persistFailCalls;");
+    run(ctx, "persist();"); // leave STORE_KEY holding a normal, current, successfully-written snapshot
+  }
+}
+
 /* ---------------- task B2 part 2: composed lunch/dinner + breakfast-pairing algorithm ----------------
    Part 1 (already merged, covered above by testRecipeRolesAndBreakfastPair) tagged every
    recipe with role:'full'|'main'|'side' and flagged 9 foods breakfastPair:true. This suite
@@ -4306,6 +4379,7 @@ function main(){
   runTest('preserveLoggedSlots/preservePinnedSlots one-sided dangling recipe (2026-07-19)', function(){ testPreserveSlotsOneSidedDangling(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
+  runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });

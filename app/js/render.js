@@ -15,6 +15,15 @@ function toast(msg){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
 }
 
+// Implements the optional onMesaPersistFailed(err) hook state.js calls (see persist() in
+// state.js) on the healthy->unhealthy transition of a localStorage write — i.e. once when
+// storage first fails, not again on every subsequent failed write while it stays broken.
+// The user can't see console.error on a phone, so this is the only signal they get that
+// their data stopped saving.
+function onMesaPersistFailed(err){
+  toast('Could not save — device storage is full, recent changes may be lost');
+}
+
 /* ---------------- FIX 2 (feedback): typeable numeric fields ----------------
    Every field that used to be stepper-only (+/- only) now also accepts direct
    typing, with BOTH comma and dot as the decimal separator ("7,4" -> 7.4, the

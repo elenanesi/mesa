@@ -470,6 +470,10 @@ const PROF = {
 const STORE_KEY = 'mesa.v1';
 const LEGACY_ONBOARD_KEY = 'mesaOnboarded';
 let hadStoredStateOnBoot = false;
+// Tracks whether the last persist() write succeeded, so a FAILED write only fires
+// onMesaPersistFailed on the healthy->unhealthy transition (see persist() below) —
+// not on every subsequent failed write while storage stays full/unavailable.
+let lastPersistOk = true;
 // Task F2 (export/import): the schema version buildSnapshot() writes and loadState() /
 // the import validator (render.js:validateBackupStructure) accept. Bump alongside any
 // future schema change (same version this store's `v` field already carried since D1).
@@ -664,24 +668,44 @@ function buildSnapshot(){
 // days (task D1) and past week-plans (two-week horizon) first so the store never grows
 // unbounded.
 //
-// Two optional hooks (task S1, couple sync — both defined in js/sync.js when that file is
-// loaded, no-ops otherwise so state.js has zero hard dependency on sync.js):
+// Three optional hooks (both S1's couple-sync pair defined in js/sync.js, and
+// onMesaPersistFailed typically defined in js/render.js — all no-ops when their defining
+// file isn't loaded, so state.js has zero hard dependency on either):
 //   onMesaBeforePersist() runs first so any per-section rev bump it makes (because it
 //     noticed live content differs from what it last saw) is captured in THIS SAME write —
 //     bumping revs after the localStorage write would risk losing the bump entirely if the
 //     app closes before the next persist() ever fires.
 //   onMesaAfterPersist() runs last, once state is safely on disk, to schedule a debounced
 //     sync push.
+//   onMesaPersistFailed(err) fires when localStorage.setItem throws (quota exhausted,
+//     private mode, storage disabled, …) — but only on the healthy->unhealthy transition
+//     (tracked via lastPersistOk above), not on every failed write while storage stays
+//     broken. That keeps a user with a persistently full disk from getting a toast on
+//     every keystroke-triggered persist, while still re-warning them if storage frees up
+//     and later fills again.
 function persist(){
   pruneLogHistory();
   pruneOldWeekPlans();
   if(typeof onMesaBeforePersist === 'function') onMesaBeforePersist();
   try{
     localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot()));
+    lastPersistOk = true;
   }catch(e){
     // Storage unavailable or full (iOS PWA localStorage quota, private mode, etc.) —
     // degrade to in-memory only rather than crashing the app.
-    console.warn('Mesa: could not persist state to localStorage', e);
+    console.error('Mesa: could not persist state to localStorage', e);
+    const shouldWarn = lastPersistOk;
+    // Flip the flag BEFORE notifying: if the hook throws, we must not re-enter this branch
+    // and re-throw on every subsequent persist().
+    lastPersistOk = false;
+    // The hook is last-resort UI on an already-failing path, so it must never escalate a
+    // degraded save into a crash — render.js's toast() dereferences #toast without a null
+    // guard, which throws if storage fails before the DOM is parsed. Swallowing here keeps
+    // persist()'s "degrade to in-memory rather than crashing the app" contract intact.
+    if(shouldWarn && typeof onMesaPersistFailed === 'function'){
+      try{ onMesaPersistFailed(e); }
+      catch(hookErr){ console.error('Mesa: onMesaPersistFailed hook threw', hookErr); }
+    }
   }
   if(typeof onMesaAfterPersist === 'function') onMesaAfterPersist();
 }
