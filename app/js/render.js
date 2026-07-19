@@ -1970,12 +1970,6 @@ function buildShopSheet(){
 let rebalanceProposal = null;
 let todayRebalanceProposal = null;
 
-function rebalanceValueAfter(prop){
-  // The worst metric's value on the proposed plan, formatted like the chips.
-  const gaps = coverageGaps(prop.after);
-  return coverageValueText(gaps[prop.metricKey]);
-}
-
 function rebalanceProposalLabel(){
   return rebalanceProposal && rebalanceProposal.weekStartDate === nextMondayISO() ? 'next week' : 'this week';
 }

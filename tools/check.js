@@ -336,6 +336,23 @@ function testNutritionDeterminism(ctx){
   assert(a === b, 'nutrition: recipeNutrition() returns identical JSON on repeat calls (purity)', 'first=' + a + ' second=' + b);
 }
 
+// engine.js:recipeNutrition — perServing must divide only numeric totals fields.
+// totals.sugarQuality is a string ('unknown'); dividing it by servings used to
+// silently produce NaN instead of carrying the string through unchanged.
+function testNutritionPerServingNonNumericFields(ctx){
+  const sampleId = Object.keys(get(ctx, 'RECIPES_DB'))[0];
+  const n = call(ctx, 'recipeNutrition', [sampleId, 3]);
+  assert(n.perServing.sugarQuality === 'unknown',
+    "nutrition: perServing.sugarQuality stays the string 'unknown' (not divided into NaN) at servings > 1",
+    'got ' + JSON.stringify(n.perServing.sugarQuality));
+  assert(typeof n.perServing.kcal === 'number' && Math.abs(n.perServing.kcal * 3 - n.totals.kcal) < 1e-6,
+    'nutrition: perServing.kcal is still a correctly-divided number at servings > 1',
+    'got ' + n.perServing.kcal);
+  assert(typeof n.perServing.goodFat === 'number' && Math.abs(n.perServing.goodFat * 3 - n.totals.goodFat) < 1e-6,
+    'nutrition: perServing.goodFat is still a correctly-divided number at servings > 1 (goodFat is numeric but not in NUTRIENT_KEYS, so a whitelist would miss it)',
+    'got ' + n.perServing.goodFat);
+}
+
 // engine.js:foodMacros — linear in grams for both per-100g and unit:'piece' foods.
 function testFoodMacrosLinearity(ctx){
   const FOODS = get(ctx, 'FOODS');
@@ -4347,6 +4364,7 @@ function main(){
   runTest('recipe roles + breakfastPair whitelist (task B2)', function(){ testRecipeRolesAndBreakfastPair(ctx); });
   runTest('goal toggles (task B1)', function(){ testGoalToggles(ctx); });
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
+  runTest('nutrition perServing non-numeric fields', function(){ testNutritionPerServingNonNumericFields(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });

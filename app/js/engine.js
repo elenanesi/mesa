@@ -223,7 +223,12 @@ function recipeNutrition(recipeId, servings, opts){
   totals.goodFat = totals.fat - totals.satFat;
   totals.sugarQuality = 'unknown';
   const perServing = {};
-  Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / servings; });
+  // totals carries sugarQuality (a string, e.g. 'unknown') alongside the numeric
+  // nutrients (goodFat included, hence a typeof guard rather than a NUTRIENT_KEYS
+  // whitelist, which omits goodFat) — dividing it would silently produce NaN.
+  Object.keys(totals).forEach(function(k){
+    perServing[k] = (typeof totals[k] === 'number') ? totals[k] / servings : totals[k];
+  });
   return {totals: totals, perServing: perServing};
 }
 

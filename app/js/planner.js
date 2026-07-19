@@ -557,12 +557,6 @@ function isMealPinned(weekStartDate, dayIndex, slot, person){
   return !!mealPins[mealPinKey(weekStartDate, dayIndex, slot, person)];
 }
 
-function isUnitPinned(plan, unit){
-  const meal = plan.days[unit.dayIndex].meals[unit.slot];
-  const person = unit.shared ? 'shared' : unit.person;
-  return isMealPinned(plan.weekStartDate, unit.dayIndex, unit.slot, person || mealPinPersonForMeal(meal, currentProf));
-}
-
 function routineOccurrencePerson(plan, dayIndex, slot, person){
   const meal = plan && plan.days && plan.days[dayIndex] && plan.days[dayIndex].meals && plan.days[dayIndex].meals[slot];
   return mealPinPersonForMeal(meal, person);
@@ -585,10 +579,6 @@ function setRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person, pinne
   return !!mealPins[key];
 }
 
-function toggleRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person){
-  return setRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person, !isRoutineOccurrencePinned(weekStartDate, dayIndex, slot, person));
-}
-
 function routineOccurrencesForRule(rule){
   const occurrences = [];
   if(!rule) return occurrences;
@@ -608,16 +598,6 @@ function routineOccurrencesForRule(rule){
         });
       }
     });
-  });
-  return occurrences;
-}
-
-function setRoutineOccurrencesPinned(rule, pinned){
-  const occurrences = routineOccurrencesForRule(rule);
-  occurrences.forEach(function(occ){
-    if(pinned) mealPins[occ.pinKey] = true;
-    else delete mealPins[occ.pinKey];
-    occ.pinned = !!pinned;
   });
   return occurrences;
 }
@@ -2477,10 +2457,6 @@ function todayRebalancePersonScore(totals, personKey){
     const weight = k === 'kcal' ? 1.2 : 1;
     return sum + weight * Math.abs((totals[personKey][k] || 0) - target[k]) / denom;
   }, 0);
-}
-
-function todayRebalanceScore(plan, dateISO, personKey){
-  return todayRebalancePersonScore(todayRebalanceTotals(plan, dateISO), personKey);
 }
 
 function todayRebalancePeopleForUnit(unit, personKey){
