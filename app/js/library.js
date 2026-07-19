@@ -1729,6 +1729,37 @@ function deleteRecipe(id){
 const RECIPE_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack', 'side'];
 let recipeBuilder = null;
 
+// task D3: the builder's own draft shape for one optionGroups group/choice — deliberately
+// carries NO key/id while being edited (unlike RECIPES_DB's shape). Group keys and choice
+// ids are USER-CONTROLLED text once labels are editable, so they're derived from the
+// current label text (slugify + a locally-unique suffix, mirroring the app's existing
+// slugify/uniqueSlug convention for cf-/cr- ids) only once, at SAVE time
+// (buildRecipeOptionGroupsForSave below) — every other builder interaction (add/remove
+// group or choice, "make default", editing an ingredient row) addresses a group/choice by
+// its ARRAY INDEX, exactly like the base ingredients list already does (removeRecipeIngredient(i)
+// etc.). One consequence, called out here rather than hidden: re-saving an EXISTING
+// optionGroups recipe with an unchanged label can still shift its derived id if the
+// original built-in id wasn't itself slugify(label) (e.g. french-toast-fruit-maple's
+// "Mixed berries" choice ships as id 'berries', not 'mixed-berries') — this is the exact
+// "edited/removed choice" case D3's plan calls out: existing plan/log entries referencing
+// the old id simply re-normalize to the group's new default via engine.js:
+// normalizeRecipeOpts, never a crash or a stuck stale id.
+function recipeOptionGroupsToBuilder(r){
+  return (Array.isArray(r.optionGroups) ? r.optionGroups : []).map(function(g){
+    return {
+      label: (g && g.label) || '',
+      choices: (g && Array.isArray(g.choices) ? g.choices : []).map(function(c){
+        return {
+          label: (c && c.label) || '',
+          ingredients: (c && Array.isArray(c.ingredients) ? c.ingredients : []).map(function(ing){
+            return {foodId: ing[0], grams: ing[1]};
+          })
+        };
+      })
+    };
+  });
+}
+
 function recipeToBuilder(id){
   const r = RECIPES_DB[id];
   if(!r) return null;
@@ -1744,13 +1775,14 @@ function recipeToBuilder(id){
     time: r.time || 20,
     servings: r.servings || 1,
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
+    optionGroups: recipeOptionGroupsToBuilder(r),
     stepsText: (r.steps || []).join('\n'),
     pickerQuery: ''
   };
 }
 
 function openNewRecipeForm(){
-  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], stepsText: '', pickerQuery: ''};
+  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: ''};
   renderRecipeBuilderSheet();
 }
 
@@ -1774,9 +1806,47 @@ function renderRecipeBuilderSheet(){
   attachRecipeImageGridHandler();
 }
 
+// task D3: base `ingredients` rows PLUS, for every draft option group, its DEFAULT choice's
+// (index 0 — same "first choice = default" rule as engine.js:normalizeRecipeOpts) ingredient
+// rows — the builder's own mirror of engine.js:recipeEffectiveIngredients(recipe, null) for
+// a draft that hasn't been saved to RECIPES_DB yet. A draft with no option groups returns
+// `ingredients` unchanged, so every pre-D3 recipe (none of which could author optionGroups)
+// computes byte-identical totals/meta to before this task.
+function builderEffectiveIngredientRows(){
+  const rb = recipeBuilder;
+  const rows = (rb && rb.ingredients ? rb.ingredients : []).slice();
+  (rb && rb.optionGroups ? rb.optionGroups : []).forEach(function(group){
+    const def = group && group.choices && group.choices[0];
+    if(def && Array.isArray(def.ingredients)) rows.push.apply(rows, def.ingredients);
+  });
+  return rows;
+}
+
+// Per-serving totals for base + ONE SPECIFIC choice (every other group left out — this is
+// deliberately not the full default combo, matching D3's "computed on base + that choice"
+// advisory kcal-band note, one choice at a time, mirroring data/validate.js's own per-choice
+// check).
+function computeRecipeOptionChoiceTotals(gi, ci){
+  const rb = recipeBuilder;
+  const group = rb && rb.optionGroups && rb.optionGroups[gi];
+  const choice = group && group.choices && group.choices[ci];
+  const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
+  const rows = (rb && rb.ingredients ? rb.ingredients : []).concat(choice && Array.isArray(choice.ingredients) ? choice.ingredients : []);
+  rows.forEach(function(row){
+    const m = foodMacros(row.foodId, row.grams);
+    totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
+    totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
+  });
+  totals.kcal = 4 * totals.protein + 4 * totals.carbs + 9 * totals.fat;
+  const yieldN = (rb && rb.servings) || 1;
+  const perServing = {};
+  Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / yieldN; });
+  return perServing;
+}
+
 function computeBuilderTotals(){
   const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
-  (recipeBuilder ? recipeBuilder.ingredients : []).forEach(function(row){
+  builderEffectiveIngredientRows().forEach(function(row){
     const m = foodMacros(row.foodId, row.grams);
     totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
     totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
@@ -1792,7 +1862,10 @@ function buildRecipeBuilderSheet(){
   // per serving (batch / rb.servings) — same convention as engine.js:recipeNutrition().
   const perServing = {};
   Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / (rb.servings || 1); });
-  const perServingIngredients = rb.ingredients.map(function(row){
+  // task D3: meta (tags/styles/avoid) derives from base + DEFAULT choice of every option
+  // group (builderEffectiveIngredientRows), not the bare base list — a recipe whose default
+  // fish choice is salmon should get omega3 the same way the saved built-in would.
+  const perServingIngredients = builderEffectiveIngredientRows().map(function(row){
     return {foodId: row.foodId, grams: row.grams / (rb.servings || 1)};
   });
   const meta = deriveRecipeMeta(perServingIngredients, perServing, rb.time);
@@ -1867,6 +1940,8 @@ function buildRecipeBuilderSheet(){
   });
   html += '<button class="cta ghostbtn" style="margin-top:2px" onclick="openAddIngredientToRecipe()">＋ Add ingredient</button>';
 
+  html += buildRecipeOptionsSection(rb);
+
   html += '<div class="field" style="margin-top:16px"><label>Steps (one per line, optional)</label>'
     + '<textarea class="inp" style="width:100%;box-sizing:border-box;min-height:90px;border:1px solid var(--line);margin-top:6px;display:block;resize:vertical;font:inherit" oninput="recipeBuilder.stepsText=this.value" placeholder="Combine and enjoy.">' + escapeHtml(rb.stepsText) + '</textarea></div>';
 
@@ -1890,7 +1965,164 @@ function buildRecipeBuilderSheet(){
 
   html += '<button class="cta" style="margin-top:16px" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
     + '<button class="cta ghostbtn" onclick="openMyRecipes()">Cancel</button>';
+  // task D3: a built-in recipe with a saved household override (recipeOverrides[id] —
+  // "edited" badge in the Recipes list) can be reset back to its shipped defaults,
+  // optionGroups included, mirroring the ingredient library's existing resetFoodOverride
+  // action (Ingredients list's ↺ button) which this feature otherwise had no recipe-side
+  // equivalent for.
+  if(editing && BUILTIN_RECIPES_DB[rb.editingId] && recipeOverrides[rb.editingId]){
+    html += '<button class="cta ghostbtn" onclick="resetRecipeBuilderOverride()">↺ Reset to default</button>';
+  }
   return html;
+}
+
+/* ===================================================================
+   task D3 — builder "Options" section (recipe variants, e.g. "Fish: salmon /
+   sea bass / sole / cod"). Every group/choice is addressed by ARRAY INDEX
+   while editing (gi = group index, ci = choice index, ii = ingredient-row
+   index within a choice) — same convention the base ingredients list already
+   uses (removeRecipeIngredient(i) etc.) — never by key/id/label, so these
+   onclick handlers are always plain integers, never user text (see the
+   security note on recipeOptionGroupsToBuilder above). Reuses the existing
+   .field/.card/.sv-stepper/.lib-del/.pill.chip-preset builder visual language
+   and the SAME ingredient-picker sheet the base ingredients list uses
+   (openAddIngredientToRecipe/addIngredientToRecipe below, generalized with an
+   optional target) — no new picker UI, per the plan's scope cut.
+   =================================================================== */
+function buildRecipeOptionsSection(rb){
+  const groups = rb.optionGroups || [];
+  let html = '<h2 style="margin-top:18px">Options <span class="sub" style="font-weight:400;font-size:12px">(variant groups, optional)</span></h2>'
+    + '<p class="sub" style="margin-top:2px">Give this recipe swappable choices — e.g. a "Fish" group with salmon, sea bass and cod. The first choice in a group is its default.</p>';
+
+  groups.forEach(function(group, gi){
+    html += '<div class="card recipe-option-group" style="padding:14px;margin-top:12px">'
+      + '<div class="row between"><b style="font-size:13px">Group ' + (gi + 1) + '</b>'
+      + '<button class="lib-del" aria-label="Remove option group" onclick="removeRecipeOptionGroup(' + gi + ')">✕</button></div>';
+
+    html += '<div class="field" style="margin-top:8px"><label>Group label</label>'
+      + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(group.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].label=this.value" placeholder="e.g. Fish" autocomplete="off"></div>';
+
+    const choices = group.choices || [];
+    choices.forEach(function(choice, ci){
+      const choiceTotals = computeRecipeOptionChoiceTotals(gi, ci);
+      const warn = kcalBandWarning(rb.slots[0] || 'dinner', choiceTotals.kcal);
+      html += '<div class="card recipe-option-choice" style="padding:12px;margin-top:10px;background:rgba(255,255,255,.5)">'
+        + '<div class="row between"><b style="font-size:12.5px">' + (ci === 0 ? 'Default choice' : 'Choice ' + (ci + 1)) + '</b>'
+        + '<div class="row" style="gap:6px">'
+        + (ci !== 0 ? '<button class="pill ghost chip-preset" style="min-height:44px;padding:0 12px" onclick="makeRecipeOptionChoiceDefault(' + gi + ',' + ci + ')">Make default</button>' : '')
+        + '<button class="lib-del" aria-label="Remove choice" onclick="removeRecipeOptionChoice(' + gi + ',' + ci + ')">✕</button>'
+        + '</div></div>';
+
+      html += '<div class="field" style="margin-top:8px"><label>Choice label</label>'
+        + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(choice.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].choices[' + ci + '].label=this.value" placeholder="e.g. Salmon" autocomplete="off"></div>';
+
+      (choice.ingredients || []).forEach(function(row, ii){
+        const food = FOODS[row.foodId];
+        if(!food) return;
+        const pieceHint = food.unit === 'piece' ? ' (≈' + (+(row.grams / food.avgG).toFixed(1)) + ' piece)' : '';
+        html += '<div class="field"><div class="inp"><span>' + escapeHtml(food.name) + '</span>'
+          + '<span class="sv-stepper" style="margin:0">'
+          + '<button onclick="stepRecipeOptionIngredientGrams(' + gi + ',' + ci + ',' + ii + ',-10)" aria-label="Decrease grams">–</button>'
+          + '<input class="sv-val" type="text" inputmode="decimal" value="' + row.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitRecipeOptionIngredientGrams(' + gi + ',' + ci + ',' + ii + ',this.value)" aria-label="Grams of ' + htmlAttr(food.name) + '">'
+          + '<span class="sv-unit">g' + pieceHint + '</span>'
+          + '<button onclick="stepRecipeOptionIngredientGrams(' + gi + ',' + ci + ',' + ii + ',10)" aria-label="Increase grams">+</button>'
+          + '<button class="lib-del" style="margin-left:4px" aria-label="Remove ' + htmlAttr(food.name) + '" onclick="removeRecipeOptionIngredient(' + gi + ',' + ci + ',' + ii + ')">✕</button>'
+          + '</span></div></div>';
+      });
+      html += '<button class="cta ghostbtn" style="margin-top:2px" onclick="openAddIngredientToRecipe({groupIndex:' + gi + ',choiceIndex:' + ci + '})">＋ Add ingredient</button>';
+      if(warn) html += '<div class="cap-note" style="color:#b25e35;margin-top:6px">' + warn + '</div>';
+      html += '</div>'; // .recipe-option-choice
+    });
+
+    html += '<button class="cta ghostbtn" style="margin-top:8px" onclick="addRecipeOptionChoice(' + gi + ')">＋ Add choice</button>';
+    html += '</div>'; // .recipe-option-group
+  });
+
+  html += '<button class="cta ghostbtn" style="margin-top:8px" onclick="addRecipeOptionGroup()">＋ Add option group</button>';
+  return html;
+}
+
+function addRecipeOptionGroup(){
+  if(!recipeBuilder.optionGroups) recipeBuilder.optionGroups = [];
+  // Starts with 2 blank choices — the minimum the save-time validation requires — so the
+  // very next thing to do is label them, not remember to add a second one.
+  recipeBuilder.optionGroups.push({label: '', choices: [{label: '', ingredients: []}, {label: '', ingredients: []}]});
+  renderRecipeBuilderSheet();
+}
+function removeRecipeOptionGroup(gi){
+  if(!recipeBuilder.optionGroups) return;
+  recipeBuilder.optionGroups.splice(gi, 1);
+  renderRecipeBuilderSheet();
+}
+function addRecipeOptionChoice(gi){
+  const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
+  if(!group) return;
+  group.choices.push({label: '', ingredients: []});
+  renderRecipeBuilderSheet();
+}
+function removeRecipeOptionChoice(gi, ci){
+  const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
+  if(!group || !group.choices) return;
+  group.choices.splice(ci, 1);
+  renderRecipeBuilderSheet();
+}
+// "make default" — moves a choice to position 0 (engine.js's default rule stays "first
+// choice"; no drag/drop, per the plan's scope cut).
+function makeRecipeOptionChoiceDefault(gi, ci){
+  const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
+  if(!group || !group.choices || ci <= 0 || ci >= group.choices.length) return;
+  const chosen = group.choices.splice(ci, 1)[0];
+  group.choices.unshift(chosen);
+  renderRecipeBuilderSheet();
+}
+function stepRecipeOptionIngredientGrams(gi, ci, ii, delta){
+  const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
+  const choice = group && group.choices && group.choices[ci];
+  const row = choice && choice.ingredients && choice.ingredients[ii];
+  if(!row) return;
+  row.grams = Math.max(1, Math.min(2000, row.grams + delta));
+  renderRecipeBuilderSheet();
+}
+function commitRecipeOptionIngredientGrams(gi, ci, ii, raw){
+  const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
+  const choice = group && group.choices && group.choices[ci];
+  const row = choice && choice.ingredients && choice.ingredients[ii];
+  if(!row) return;
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter grams, e.g. 125'); renderRecipeBuilderSheet(); return; }
+  row.grams = Math.max(1, Math.min(2000, Math.round(n)));
+  renderRecipeBuilderSheet();
+}
+function removeRecipeOptionIngredient(gi, ci, ii){
+  const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
+  const choice = group && group.choices && group.choices[ci];
+  if(!choice || !choice.ingredients) return;
+  choice.ingredients.splice(ii, 1);
+  renderRecipeBuilderSheet();
+}
+
+// task D3: an edited built-in recipe (recipeOverrides[id] set) can be reset back to its
+// shipped defaults — the recipe-side counterpart to resetFoodOverride() above. Unlike
+// deleteRecipe() (which tombstones the id entirely, hiding it from RECIPES_DB), this only
+// drops the household override so applyCustomRecipes() falls back to BUILTIN_RECIPES_DB[id]
+// again — that fallback already deep-clones the WHOLE built-in record (JSON.parse(JSON.
+// stringify(...))), optionGroups included, so no extra field-by-field restore logic is
+// needed here.
+function resetRecipeOverride(id){
+  if(!recipeOverrides[id]) return;
+  const name = (BUILTIN_RECIPES_DB[id] && BUILTIN_RECIPES_DB[id].title) || recipeOverrides[id].title || 'recipe';
+  delete recipeOverrides[id];
+  customRev++;
+  applyCustomRecipes();
+  applyProf(currentProf);
+  toast('✓ Reset ' + name);
+  renderFoodLibraryCount();
+}
+function resetRecipeBuilderOverride(){
+  const id = recipeBuilder && recipeBuilder.editingId;
+  if(!id) return;
+  resetRecipeOverride(id);
+  openEditRecipeForm(id); // re-opens on the now-restored built-in, options included
 }
 
 function buildRecipeImageGrid(currentImageKey){
@@ -1967,8 +2199,17 @@ function removeRecipeIngredient(i){
 }
 
 /* ---------------- add-ingredient picker (reuses render.js:searchFoods) ---------------- */
-function openAddIngredientToRecipe(){
+// task D3: `target` (optional {groupIndex, choiceIndex}, both plain integers from the
+// Options section's own loop counters — see buildRecipeOptionsSection) redirects the SAME
+// picker sheet/search/result-row flow that already builds the base ingredients list toward
+// one option choice's own ingredients instead — no new picker UI. Omitted/invalid ->
+// base ingredients (recipeOptionPickerTarget stays null), exactly like every pre-D3 call
+// site (openAddIngredientToRecipe() with no args, from the base Ingredients section).
+let recipeOptionPickerTarget = null;
+function openAddIngredientToRecipe(target){
   recipeBuilder.pickerQuery = '';
+  recipeOptionPickerTarget = (target && typeof target.groupIndex === 'number' && typeof target.choiceIndex === 'number')
+    ? {groupIndex: target.groupIndex, choiceIndex: target.choiceIndex} : null;
   setRecipesScreenHtml(buildRecipeIngredientPickerSheet());
   // Delegated click for the result rows (data-food-id — ids can be user-authored 'cf-'
   // slugs, so no inline-onclick interpolation). #recIngResults keeps only its children
@@ -2011,7 +2252,15 @@ function addIngredientToRecipe(foodId){
   const food = FOODS[foodId];
   if(!food) return;
   const defaultGrams = food.unit === 'piece' ? food.avgG : 100;
-  recipeBuilder.ingredients.push({foodId: foodId, grams: defaultGrams});
+  const target = recipeOptionPickerTarget;
+  recipeOptionPickerTarget = null;
+  if(target){
+    const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[target.groupIndex];
+    const choice = group && group.choices && group.choices[target.choiceIndex];
+    if(choice) choice.ingredients.push({foodId: foodId, grams: defaultGrams});
+  } else {
+    recipeBuilder.ingredients.push({foodId: foodId, grams: defaultGrams});
+  }
   renderRecipeBuilderSheet();
 }
 
@@ -2250,6 +2499,69 @@ function mergeImportedLibrary(parsed){
   return {addedFoods: addedFoods, addedRecipes: addedRecipes, changedRecipes: changedRecipeControls, changedPrefs: changedPrefs};
 }
 
+// task D3: save-time validation mirroring data/validate.js's optionGroups structural
+// ERROR rules (unique keys/ids handled separately by buildRecipeOptionGroupsForSave's
+// slug-uniqueness, so this only re-checks what a human can get wrong through the form:
+// every group needs a label and >=2 choices, every choice needs a label and >=1
+// ingredient whose food id still resolves against FOODS). Returns a message string for
+// the FIRST problem found (the builder's existing inline-error pattern is one toast per
+// save attempt, not a full error list), or null when the draft's option groups are clean.
+function validateRecipeBuilderOptionGroups(rb){
+  const groups = rb.optionGroups || [];
+  for(let gi = 0; gi < groups.length; gi++){
+    const group = groups[gi];
+    const gLabel = (group.label || '').trim();
+    const gName = gLabel || ('Option group ' + (gi + 1));
+    if(!gLabel) return 'Give ' + gName.toLowerCase() + ' a label';
+    const choices = group.choices || [];
+    if(choices.length < 2) return '“' + gLabel + '” needs at least 2 choices';
+    for(let ci = 0; ci < choices.length; ci++){
+      const choice = choices[ci];
+      const cLabel = (choice.label || '').trim();
+      const cName = cLabel || ('choice ' + (ci + 1));
+      if(!cLabel) return 'Give every choice in “' + gLabel + '” a label';
+      const ingredients = choice.ingredients || [];
+      if(!ingredients.length) return '“' + cName + '” in “' + gLabel + '” needs at least 1 ingredient';
+      for(let ii = 0; ii < ingredients.length; ii++){
+        if(!FOODS[ingredients[ii].foodId]) return '“' + cName + '” in “' + gLabel + '” has an ingredient that no longer exists';
+      }
+    }
+  }
+  return null;
+}
+
+// task D3: turns the builder's draft optionGroups (label-only, index-addressed — see
+// recipeOptionGroupsToBuilder's doc comment) into RECIPES_DB's shape, deriving unique
+// group keys / choice ids from the CURRENT label text via the app's existing slugify() +
+// uniqueSlug() helpers. uniqueSlug() normally dedupes against a global dict keyed
+// 'prefix'+slug (FOODS/RECIPES_DB elsewhere in this file); reused here with prefix ''
+// against a throwaway per-recipe "seen" object, so uniqueness is enforced only among this
+// recipe's OWN sibling group keys / sibling choice ids, matching data/validate.js's
+// duplicate-key/id structural checks. Returns undefined (not []) when the draft has no
+// option groups, so the saved recipe omits the `optionGroups` field entirely — the same
+// "field only present when it means something" convention every other optional recipe
+// field (imageKey, season, servings) already follows.
+function buildRecipeOptionGroupsForSave(rb){
+  const groups = rb.optionGroups || [];
+  if(!groups.length) return undefined;
+  const groupKeysSeen = {};
+  return groups.map(function(group){
+    const key = uniqueSlug(slugify(group.label), groupKeysSeen, '');
+    groupKeysSeen[key] = true;
+    const choiceIdsSeen = {};
+    const choices = (group.choices || []).map(function(choice){
+      const id = uniqueSlug(slugify(choice.label), choiceIdsSeen, '');
+      choiceIdsSeen[id] = true;
+      return {
+        id: id,
+        label: choice.label.trim(),
+        ingredients: (choice.ingredients || []).map(function(r){ return [r.foodId, r.grams]; })
+      };
+    });
+    return {key: key, label: group.label.trim(), choices: choices};
+  });
+}
+
 function saveRecipeBuilder(){
   const rb = recipeBuilder;
   const name = (rb.name || '').trim();
@@ -2258,14 +2570,19 @@ function saveRecipeBuilder(){
   const dup = Object.keys(RECIPES_DB).some(function(id){ return id !== rb.editingId && RECIPES_DB[id].title.toLowerCase() === lower; });
   if(dup){ toast('“' + name + '” already exists — try a different name'); return; }
   if(rb.ingredients.length < 2){ toast('Add at least 2 ingredients'); return; }
+  const optionsError = validateRecipeBuilderOptionGroups(rb);
+  if(optionsError){ toast(optionsError); return; }
 
-  const totals = computeBuilderTotals();
+  const totals = computeBuilderTotals(); // base + DEFAULT choice of every group (builderEffectiveIngredientRows)
   // Tags/styles/kcal thresholds are per-serving quantities — derive from batch/servings.
   const yieldN = rb.servings || 1;
   const perServing = {};
   Object.keys(totals).forEach(function(k){ perServing[k] = totals[k] / yieldN; });
+  // task D3: derived meta (tags/styles/avoid) computes from base + DEFAULT choice of every
+  // group, same single source (builderEffectiveIngredientRows) the live preview card above
+  // already reads — never diverges from what the builder showed right before Save.
   const meta = deriveRecipeMeta(
-    rb.ingredients.map(function(r){ return {foodId: r.foodId, grams: r.grams / yieldN}; }),
+    builderEffectiveIngredientRows().map(function(r){ return {foodId: r.foodId, grams: r.grams / yieldN}; }),
     perServing, rb.time);
   const stepsArr = (rb.stepsText || '').split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return !!s; });
 
@@ -2281,6 +2598,8 @@ function saveRecipeBuilder(){
     tags: meta.tags, avoid: meta.avoid,
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
+  const optionGroupsForSave = buildRecipeOptionGroupsForSave(rb);
+  if(optionGroupsForSave) recipe.optionGroups = optionGroupsForSave;
   const chosenImageKey = safeRecipeImageKey(rb.imageKey || '');
   if(chosenImageKey) recipe.imageKey = chosenImageKey;
   if(deletedRecipes[id]) delete deletedRecipes[id]; // recreate-after-delete: this save's `u` beats the tombstone either way

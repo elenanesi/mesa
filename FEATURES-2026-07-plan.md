@@ -467,3 +467,36 @@ Verify (browser, from the WORKTREE copy): fresh plans show rotated variants in t
 recipe screen chips switch fish/condiment and update numbers live; confirm freezes the
 chosen variant; shopping shows the chosen fish; sauces appear in add-extra under Sauces
 and never as planned meals; butter chicken filtered out of summer plans.
+
+## D3 — User-editable recipe options (added 2026-07-19; supersedes D1's builder scope cut)
+
+The recipe builder (new AND edit — custom recipes and built-ins alike, the latter saving
+through the existing synced `recipeOverrides` path) gains an **"Options"** section:
+- Lists the recipe's optionGroups; per group: a label field, its choices; per choice: a
+  label field + its own small ingredient list (reusing the builder's existing
+  ingredient-picker/grams-row components — no new picker UI).
+- Actions: add group, remove group, add choice, remove choice, "make default" (moves a
+  choice to position 0 — the engine's default rule stays "first choice"; no drag/drop).
+- Save-time validation mirroring validate.js's structural rules client-side: a group
+  needs a label and ≥2 choices; every choice needs a label and ≥1 resolvable ingredient;
+  group keys/choice ids are slugified from labels (uniqueness enforced, existing
+  slugify/uniqueSlug helpers); advisory (non-blocking) kcal-band note per choice via the
+  existing kcalBandWarning pattern, computed on base + that choice.
+- Derived meta (tags/styles/avoid) for saved recipes computes from base + DEFAULT choice
+  (documented); per-choice avoid stays dynamic via the planner's choiceHitsAvoid.
+- Labels are now USER-CONTROLLED text flowing into titles/chips — every render site must
+  keep the canonical escaping discipline (recipeDisplayTitle consumers, chips, builder
+  rows); add hostile-label tests.
+- Existing plans/logs referencing an edited/removed choice: plan entries re-normalize to
+  the default (D1's normalizeRecipeOpts — verify, don't rebuild); frozen log entries keep
+  their frozen macros (already guaranteed).
+- Resetting a built-in override (existing reset flow) restores the built-in's original
+  optionGroups — verify the reset path covers the new field (it clones whole records, so
+  it should; test it).
+- Scope cut for D3: no per-choice imageKey, no nested groups, planner untouched.
+
+Tests: builder round-trip (new custom recipe with 1 group/3 choices → RECIPES_DB shape
+matches schema → reopen in builder → identical); built-in override adds a choice to
+french toast → planner rotation includes it → reset restores original; hostile labels
+escaped in title/chips output; slug collision handling; derived-meta-from-default rule;
+choices with unresolvable ingredients rejected at save.

@@ -3138,6 +3138,471 @@ function testD2SauceRoleAndCatalog(ctx){
 }
 
 /* ===================================================================
+   task D3 — recipe builder "Options" section (user-editable optionGroups).
+   Same stub-then-restore bracketing pattern testRecipeImagePicker uses: the builder's
+   save/reset paths call toast()/openMyRecipes()/applyProf()/renderFoodLibraryCount(),
+   all DOM/render side effects irrelevant to the logic under test, so they're stubbed to
+   no-ops for the whole function and restored at the very end. Every subsection cleans up
+   after itself (deletes any customRecipes/recipeOverrides entry it created) so later tests
+   — and the final consistency check at the bottom of this function — see a pristine DB.
+   =================================================================== */
+function testRecipeOptionsBuilder(ctx){
+  run(ctx, "var __d3BuilderStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){};");
+
+  // -------- (1) validateRecipeBuilderOptionGroups: direct unit coverage of every
+  // structural rule, mirroring data/validate.js's own optionGroups ERROR checks. --------
+  (function(){
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: []}]) === null,
+      'validateRecipeBuilderOptionGroups: a draft with no option groups is valid (the feature is optional)', '');
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: [
+      {label: '', choices: [{label: 'A', ingredients: [{foodId: 'olive-oil', grams: 5}]}, {label: 'B', ingredients: [{foodId: 'olive-oil', grams: 5}]}]}
+    ]}]) !== null, 'validateRecipeBuilderOptionGroups: rejects a group with an empty label', '');
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: [
+      {label: 'G', choices: [{label: 'A', ingredients: [{foodId: 'olive-oil', grams: 5}]}]}
+    ]}]) !== null, 'validateRecipeBuilderOptionGroups: rejects a group with fewer than 2 choices', '');
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: [
+      {label: 'G', choices: [{label: '', ingredients: [{foodId: 'olive-oil', grams: 5}]}, {label: 'B', ingredients: [{foodId: 'olive-oil', grams: 5}]}]}
+    ]}]) !== null, 'validateRecipeBuilderOptionGroups: rejects a choice with an empty label', '');
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: [
+      {label: 'G', choices: [{label: 'A', ingredients: []}, {label: 'B', ingredients: [{foodId: 'olive-oil', grams: 5}]}]}
+    ]}]) !== null, 'validateRecipeBuilderOptionGroups: rejects a choice with zero ingredients', '');
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: [
+      {label: 'G', choices: [{label: 'A', ingredients: [{foodId: 'not-a-real-food-id', grams: 5}]}, {label: 'B', ingredients: [{foodId: 'olive-oil', grams: 5}]}]}
+    ]}]) !== null, 'validateRecipeBuilderOptionGroups: rejects a choice ingredient whose food id does not resolve', '');
+    assert(call(ctx, 'validateRecipeBuilderOptionGroups', [{optionGroups: [
+      {label: 'G', choices: [{label: 'A', ingredients: [{foodId: 'olive-oil', grams: 5}]}, {label: 'B', ingredients: [{foodId: 'olive-oil', grams: 5}]}]}
+    ]}]) === null, 'validateRecipeBuilderOptionGroups: accepts a well-formed group (>=2 labeled choices, each with a resolvable ingredient)', '');
+  })();
+
+  // -------- (2) builder round-trip: a NEW custom recipe with 1 group/3 choices saves in
+  // RECIPES_DB's real shape (slugified key/ids, authored order = default), validateData()
+  // stays ok:true, and reopening the SAME recipe in the builder repopulates identically. --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    rb.name = 'D3 Test Variant Bowl';
+    rb.emoji = '🥗';
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = 'Protein';
+    rb.optionGroups[0].choices[0].label = 'Salmon';
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'salmon-fillet', grams: 150}];
+    rb.optionGroups[0].choices[1].label = 'Cod';
+    rb.optionGroups[0].choices[1].ingredients = [{foodId: 'cod', grams: 150}];
+    call(ctx, 'addRecipeOptionChoice', [0]);
+    rb.optionGroups[0].choices[2].label = 'Sole';
+    rb.optionGroups[0].choices[2].ingredients = [{foodId: 'sole-fish', grams: 150}];
+
+    call(ctx, 'saveRecipeBuilder', []);
+    const RECIPES_DB = get(ctx, 'RECIPES_DB');
+    const customRecipes = get(ctx, 'customRecipes');
+    const savedId = Object.keys(customRecipes).find(function(id){ return customRecipes[id].title === 'D3 Test Variant Bowl'; });
+    assert(!!savedId, 'builder round-trip: new recipe with 1 option group/3 choices was saved', savedId);
+    const saved = RECIPES_DB[savedId];
+
+    assert(Array.isArray(saved.optionGroups) && saved.optionGroups.length === 1,
+      'builder round-trip: saved recipe carries exactly 1 optionGroups entry', JSON.stringify(saved.optionGroups));
+    const group = saved.optionGroups[0];
+    assert(group.key === 'protein' && group.label === 'Protein',
+      'builder round-trip: group key is slugified from the label; label preserved verbatim', JSON.stringify(group));
+    const ids = group.choices.map(function(c){ return c.id; });
+    assert(JSON.stringify(ids) === JSON.stringify(['salmon', 'cod', 'sole']),
+      'builder round-trip: choice ids slugified from labels, authored order preserved (choices[0] = default)', JSON.stringify(ids));
+    assert(JSON.stringify(group.choices[0].ingredients) === JSON.stringify([['salmon-fillet', 150]]),
+      'builder round-trip: choice ingredients saved as [foodId,grams] tuples', JSON.stringify(group.choices[0].ingredients));
+
+    const validation = call(ctx, 'validateData', []);
+    assert(validation.ok === true, 'builder round-trip: validateData() stays ok:true after saving a new optionGroups custom recipe', JSON.stringify(validation.errors));
+
+    call(ctx, 'openEditRecipeForm', [savedId]);
+    const reopened = get(ctx, 'recipeBuilder');
+    assert(reopened.optionGroups.length === 1 && reopened.optionGroups[0].label === 'Protein',
+      'builder round-trip: reopening the saved recipe repopulates the group label', JSON.stringify(reopened.optionGroups));
+    assert(JSON.stringify(reopened.optionGroups[0].choices.map(function(c){ return c.label; })) === JSON.stringify(['Salmon', 'Cod', 'Sole']),
+      'builder round-trip: reopening repopulates choice labels in authored order', JSON.stringify(reopened.optionGroups[0].choices.map(function(c){ return c.label; })));
+    assert(JSON.stringify(reopened.optionGroups[0].choices.map(function(c){ return c.ingredients; }))
+      === JSON.stringify([[{foodId: 'salmon-fillet', grams: 150}], [{foodId: 'cod', grams: 150}], [{foodId: 'sole-fish', grams: 150}]]),
+      'builder round-trip: reopening repopulates each choice\'s ingredient rows identically', JSON.stringify(reopened.optionGroups[0].choices));
+
+    run(ctx, "delete customRecipes['" + savedId + "']; applyCustomRecipes(); recipeBuilder = null;");
+  })();
+
+  // -------- (3) built-in override: adding a 4th choice to french-toast-fruit-maple's
+  // fruit group through the builder -> chosenOptsForRecipe rotation can select it -> a
+  // STALE opts value from before the edit re-normalizes to the (possibly re-slugified)
+  // default rather than throwing -> reset restores exactly the original 3 choices and the
+  // recipeOverrides entry disappears. --------
+  (function(){
+    const originalIds = get(ctx, 'RECIPES_DB')['french-toast-fruit-maple'].optionGroups[0].choices.map(function(c){ return c.id; });
+    assert(JSON.stringify(originalIds) === JSON.stringify(['berries', 'banana', 'peach']),
+      'french-toast override: original built-in choice ids, pre-edit (test setup sanity)', JSON.stringify(originalIds));
+
+    call(ctx, 'openEditRecipeForm', ['french-toast-fruit-maple']);
+    const rb = get(ctx, 'recipeBuilder');
+    assert(rb.optionGroups.length === 1 && rb.optionGroups[0].choices.length === 3,
+      'french-toast override: builder opens with the original 3-choice fruit group', JSON.stringify(rb.optionGroups));
+
+    call(ctx, 'addRecipeOptionChoice', [0]);
+    rb.optionGroups[0].choices[3].label = 'Oranges';
+    rb.optionGroups[0].choices[3].ingredients = [{foodId: 'oranges', grams: 80}];
+    call(ctx, 'saveRecipeBuilder', []);
+
+    const recipeOverrides = get(ctx, 'recipeOverrides');
+    assert(!!recipeOverrides['french-toast-fruit-maple'],
+      'french-toast override: saving a built-in edit through the builder creates a recipeOverrides entry', '');
+    const updated = get(ctx, 'RECIPES_DB')['french-toast-fruit-maple'];
+    assert(updated.optionGroups[0].choices.length === 4, 'french-toast override: 4th fruit choice saved', updated.optionGroups[0].choices.length);
+    const newChoiceId = updated.optionGroups[0].choices[3].id;
+    assert(newChoiceId === 'oranges', 'french-toast override: new choice gets a slugified id', newChoiceId);
+
+    const validation = call(ctx, 'validateData', []);
+    assert(validation.ok === true, 'french-toast override: validateData() stays ok:true with the added 4th choice', JSON.stringify(validation.errors));
+
+    let found = false;
+    for(let d = 0; d < 4; d++){
+      for(let si = 0; si < 4; si++){
+        const opts = call(ctx, 'chosenOptsForRecipe', [updated, 0, d, si, []]);
+        if(opts && opts.fruit === newChoiceId) found = true;
+      }
+    }
+    assert(found, 'french-toast override: chosenOptsForRecipe rotation can select the newly-added 4th choice across a dayIndex/slotIndex sweep', '');
+
+    // D3 plan: an edited/removed choice's stale opts re-normalize to the default rather
+    // than crash. The "Mixed berries" label was left untouched, but D3 always re-derives
+    // ids from the CURRENT label at save time (buildRecipeOptionGroupsForSave's doc
+    // comment), so its id drifted from the original 'berries' to 'mixed-berries' — a real,
+    // expected instance of exactly the case this normalization exists for.
+    const staleNormalized = call(ctx, 'normalizeRecipeOpts', [updated, {fruit: 'berries'}]);
+    assert(staleNormalized.fruit === updated.optionGroups[0].choices[0].id,
+      'french-toast override: a stale opts value from before the edit falls back to the current default choice, never throws', JSON.stringify(staleNormalized));
+
+    call(ctx, 'resetRecipeOverride', ['french-toast-fruit-maple']);
+    assert(!get(ctx, 'recipeOverrides')['french-toast-fruit-maple'],
+      'french-toast override: reset removes the recipeOverrides entry entirely', '');
+    const restored = get(ctx, 'RECIPES_DB')['french-toast-fruit-maple'];
+    const restoredIds = restored.optionGroups[0].choices.map(function(c){ return c.id; });
+    assert(JSON.stringify(restoredIds) === JSON.stringify(['berries', 'banana', 'peach']),
+      'french-toast override: reset restores exactly the original 3 choices (ids included)', JSON.stringify(restoredIds));
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (4) hostile labels: group/choice labels are now USER-CONTROLLED text, so they
+  // must render inert everywhere — the builder's own markup, recipeDisplayTitle's real
+  // escapeHtml()-wrapped render sites, and the recipe-detail chip builder (D1 already
+  // escaped this correctly for app-authored copy; this proves the SAME code path holds for
+  // hostile user text now that it's reachable). --------
+  (function(){
+    const PAYLOAD_TAG = '"><img src=x onerror=window.__xssA=1>';
+    const PAYLOAD_JS = "'); evil(); ('";
+
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    rb.name = 'D3 hostile label recipe';
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = PAYLOAD_TAG;
+    rb.optionGroups[0].choices[0].label = PAYLOAD_TAG; // DEFAULT choice — this is the one recipeDisplayTitle surfaces
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'salmon-fillet', grams: 100}];
+    rb.optionGroups[0].choices[1].label = PAYLOAD_JS; // non-default — exercises the chips builder's onclick-safety check
+    rb.optionGroups[0].choices[1].ingredients = [{foodId: 'cod', grams: 100}];
+
+    const builderHtml = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(builderHtml.indexOf('<img src=x onerror') === -1,
+      'builder markup: a hostile group label does not inject a raw <img> tag while editing', '');
+    assert(builderHtml.indexOf('&lt;img src=x onerror') !== -1,
+      'builder markup: the hostile group label appears HTML-entity-escaped in its value="" attribute (proves escaping ran, not silent drop)', '');
+
+    call(ctx, 'saveRecipeBuilder', []);
+    const RECIPES_DB = get(ctx, 'RECIPES_DB');
+    const customRecipes = get(ctx, 'customRecipes');
+    const savedId = Object.keys(customRecipes).find(function(id){ return customRecipes[id].title === 'D3 hostile label recipe'; });
+    assert(!!savedId, 'hostile labels: a recipe with hostile group/choice labels still saves (labels are just text, not markup)', '');
+    const saved = RECIPES_DB[savedId];
+    assert(saved.optionGroups[0].label === PAYLOAD_TAG && saved.optionGroups[0].choices[0].label === PAYLOAD_TAG && saved.optionGroups[0].choices[1].label === PAYLOAD_JS,
+      'hostile labels: the hostile text is stored verbatim (escaping is a RENDER-time concern, not a storage-time one)', JSON.stringify(saved.optionGroups[0]));
+
+    // recipeDisplayTitle's real consumers either use .textContent (auto-escaping) or wrap
+    // the return value in escapeHtml() before innerHTML — simulate that audited pattern.
+    const title = call(ctx, 'recipeDisplayTitle', [savedId, {}]);
+    assert(title.indexOf(PAYLOAD_TAG) !== -1, 'hostile labels: recipeDisplayTitle carries the raw label (escaping happens at the render site, not inside the helper)', title);
+    const escapedTitle = call(ctx, 'escapeHtml', [title]);
+    assert(!/[<>]/.test(escapedTitle), 'hostile labels: escapeHtml(recipeDisplayTitle(...)) — the real innerHTML render-site pattern — contains no raw < or >', escapedTitle);
+
+    const normalized = call(ctx, 'normalizeRecipeOpts', [saved, {}]);
+    const chipsHtml = call(ctx, 'buildRecipeOptionsChipsHtml', [saved, normalized]);
+    assert(chipsHtml.indexOf('<img src=x onerror') === -1,
+      'chips builder (buildRecipeOptionsChipsHtml): a hostile group label does not inject a raw <img> tag', chipsHtml);
+    assert(chipsHtml.indexOf('&lt;img src=x onerror') !== -1,
+      'chips builder: the hostile group label appears HTML-entity-escaped in the chip row (proves escaping ran, not silent drop)', chipsHtml);
+    assert(!/onclick="[^"]*evil\(\)/.test(chipsHtml),
+      'chips builder: the hostile choice label never reaches a JS-string/onclick context (group key/choice id in data-* are slugs, not the raw label)', chipsHtml);
+    assert(chipsHtml.indexOf(PAYLOAD_JS) !== -1,
+      'chips builder: the hostile choice label still renders as inert visible text (not silently dropped) — escapeHtml leaves quotes/parens untouched in text-node context', chipsHtml);
+
+    assert(typeof get(ctx, 'window').__xssA === 'undefined',
+      'hostile labels: no code path evaluated the onerror payload (window.__xssA never set)', '');
+
+    run(ctx, "delete customRecipes['" + savedId + "']; applyCustomRecipes(); recipeBuilder = null;");
+  })();
+
+  // -------- (5) slug collisions get unique ids/keys, both across sibling choices within
+  // one group and across sibling groups within one recipe. --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    rb.name = 'D3 slug collision recipe';
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    call(ctx, 'addRecipeOptionGroup', []);
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = 'Fish';
+    rb.optionGroups[0].choices[0].label = 'Salmon';
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'salmon-fillet', grams: 150}];
+    rb.optionGroups[0].choices[1].label = 'Salmon!!'; // slugifies to the same base as 'Salmon'
+    rb.optionGroups[0].choices[1].ingredients = [{foodId: 'salmon-fillet', grams: 120}];
+    rb.optionGroups[1].label = 'Fish '; // slugifies to the same base as group 0's 'Fish'
+    rb.optionGroups[1].choices[0].label = 'Cod';
+    rb.optionGroups[1].choices[0].ingredients = [{foodId: 'cod', grams: 150}];
+    rb.optionGroups[1].choices[1].label = 'Sole';
+    rb.optionGroups[1].choices[1].ingredients = [{foodId: 'sole-fish', grams: 150}];
+
+    call(ctx, 'saveRecipeBuilder', []);
+    const customRecipes = get(ctx, 'customRecipes');
+    const savedId = Object.keys(customRecipes).find(function(id){ return customRecipes[id].title === 'D3 slug collision recipe'; });
+    assert(!!savedId, 'slug collisions: recipe with colliding group/choice labels still saves', '');
+    const saved = get(ctx, 'RECIPES_DB')[savedId];
+
+    const groupKeys = saved.optionGroups.map(function(g){ return g.key; });
+    assert(JSON.stringify(groupKeys) === JSON.stringify(['fish', 'fish-2']),
+      'slug collisions: two groups slugifying to the same base get unique keys (fish, fish-2)', JSON.stringify(groupKeys));
+    const choiceIds = saved.optionGroups[0].choices.map(function(c){ return c.id; });
+    assert(JSON.stringify(choiceIds) === JSON.stringify(['salmon', 'salmon-2']),
+      'slug collisions: two choices slugifying to the same base within one group get unique ids (salmon, salmon-2)', JSON.stringify(choiceIds));
+
+    const validation = call(ctx, 'validateData', []);
+    assert(validation.ok === true, 'slug collisions: validateData() stays ok:true (no duplicate key/id structural errors)', JSON.stringify(validation.errors));
+
+    run(ctx, "delete customRecipes['" + savedId + "']; applyCustomRecipes(); recipeBuilder = null;");
+  })();
+
+  // -------- (6) derived-meta-from-default rule: tags/styles/avoid compute from base +
+  // the DEFAULT choice of every group — a dairy ingredient in the default choice shows up
+  // in the saved recipe's avoid list; the SAME dairy ingredient sitting in a non-default
+  // choice does not (per-choice avoid stays dynamic via planner.js:choiceHitsAvoid instead,
+  // covered by testD2SauceRoleAndCatalog/testRecipeOptions already). --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    let rb = get(ctx, 'recipeBuilder');
+    rb.name = 'D3 dairy-default meta recipe';
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = 'Topping';
+    rb.optionGroups[0].choices[0].label = 'Ricotta'; // DEFAULT — cat 'Dairy'
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'ricotta', grams: 100}];
+    rb.optionGroups[0].choices[1].label = 'Oranges'; // non-default, no dairy
+    rb.optionGroups[0].choices[1].ingredients = [{foodId: 'oranges', grams: 100}];
+    call(ctx, 'saveRecipeBuilder', []);
+    let customRecipes = get(ctx, 'customRecipes');
+    let savedId = Object.keys(customRecipes).find(function(id){ return customRecipes[id].title === 'D3 dairy-default meta recipe'; });
+    let saved = get(ctx, 'RECIPES_DB')[savedId];
+    assert(saved.avoid.indexOf('lactose') !== -1,
+      'derived meta: a group whose DEFAULT choice contains a dairy ingredient makes the saved recipe avoid include lactose', JSON.stringify(saved.avoid));
+    run(ctx, "delete customRecipes['" + savedId + "']; applyCustomRecipes();");
+
+    call(ctx, 'openNewRecipeForm', []);
+    rb = get(ctx, 'recipeBuilder');
+    rb.name = 'D3 dairy-nondefault meta recipe';
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = 'Topping';
+    rb.optionGroups[0].choices[0].label = 'Oranges'; // DEFAULT, no dairy
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'oranges', grams: 100}];
+    rb.optionGroups[0].choices[1].label = 'Ricotta'; // non-default — cat 'Dairy'
+    rb.optionGroups[0].choices[1].ingredients = [{foodId: 'ricotta', grams: 100}];
+    call(ctx, 'saveRecipeBuilder', []);
+    customRecipes = get(ctx, 'customRecipes');
+    savedId = Object.keys(customRecipes).find(function(id){ return customRecipes[id].title === 'D3 dairy-nondefault meta recipe'; });
+    saved = get(ctx, 'RECIPES_DB')[savedId];
+    assert(saved.avoid.indexOf('lactose') === -1,
+      'derived meta: the SAME dairy ingredient sitting in a NON-default choice does not add lactose to the saved recipe avoid', JSON.stringify(saved.avoid));
+    run(ctx, "delete customRecipes['" + savedId + "']; applyCustomRecipes(); recipeBuilder = null;");
+  })();
+
+  // -------- (7) unresolvable-ingredient choice rejected at save (defensive — never
+  // reachable through the real picker UI, which only ever offers real FOODS ids, but the
+  // save path must still refuse a corrupted/hand-crafted draft rather than writing a
+  // structurally-broken recipe). --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    rb.name = 'D3 unresolvable ingredient recipe';
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = 'Protein';
+    rb.optionGroups[0].choices[0].label = 'Salmon';
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'salmon-fillet', grams: 150}];
+    rb.optionGroups[0].choices[1].label = 'Ghost';
+    rb.optionGroups[0].choices[1].ingredients = [{foodId: 'not-a-real-food-id', grams: 100}];
+
+    const before = Object.keys(get(ctx, 'customRecipes')).length;
+    call(ctx, 'saveRecipeBuilder', []);
+    const after = Object.keys(get(ctx, 'customRecipes')).length;
+    assert(after === before,
+      'unresolvable ingredient: save is rejected (no new customRecipes entry) when a choice references a food id that does not resolve', 'before=' + before + ' after=' + after);
+    const stillEditing = get(ctx, 'recipeBuilder');
+    assert(!!stillEditing && stillEditing.name === 'D3 unresolvable ingredient recipe',
+      'unresolvable ingredient: the builder draft survives the rejected save (recipeBuilder not nulled out, nothing lost)', '');
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (8) group/choice mutators: add/remove group, add/remove choice, "make
+  // default" (moves a choice to position 0 — no drag/drop). --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    call(ctx, 'addRecipeOptionGroup', []);
+    assert(rb.optionGroups.length === 1 && rb.optionGroups[0].choices.length === 2,
+      'addRecipeOptionGroup: starts a new group with 2 blank choices (the save-time minimum)', JSON.stringify(rb.optionGroups));
+    call(ctx, 'addRecipeOptionChoice', [0]);
+    assert(rb.optionGroups[0].choices.length === 3, 'addRecipeOptionChoice: appends a blank choice to the target group', rb.optionGroups[0].choices.length);
+    rb.optionGroups[0].choices[0].label = 'A';
+    rb.optionGroups[0].choices[1].label = 'B';
+    rb.optionGroups[0].choices[2].label = 'C';
+    call(ctx, 'makeRecipeOptionChoiceDefault', [0, 2]);
+    assert(JSON.stringify(rb.optionGroups[0].choices.map(function(c){ return c.label; })) === JSON.stringify(['C', 'A', 'B']),
+      'makeRecipeOptionChoiceDefault: moves the chosen choice to position 0, keeping the others\' relative order', JSON.stringify(rb.optionGroups[0].choices.map(function(c){ return c.label; })));
+    call(ctx, 'removeRecipeOptionChoice', [0, 1]);
+    assert(JSON.stringify(rb.optionGroups[0].choices.map(function(c){ return c.label; })) === JSON.stringify(['C', 'B']),
+      'removeRecipeOptionChoice: removes exactly the targeted choice by index', JSON.stringify(rb.optionGroups[0].choices.map(function(c){ return c.label; })));
+    call(ctx, 'addRecipeOptionGroup', []);
+    assert(rb.optionGroups.length === 2, 'addRecipeOptionGroup: a second group can be added independently', rb.optionGroups.length);
+    call(ctx, 'removeRecipeOptionGroup', [0]);
+    assert(rb.optionGroups.length === 1, 'removeRecipeOptionGroup: removes exactly the targeted group by index', rb.optionGroups.length);
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (9) ingredient-row mutators + the add-ingredient picker's option-choice
+  // target (openAddIngredientToRecipe/addIngredientToRecipe generalized, no new picker
+  // UI). --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].label = 'Fish';
+    rb.optionGroups[0].choices[0].label = 'Salmon';
+    rb.optionGroups[0].choices[1].label = 'Cod';
+
+    call(ctx, 'openAddIngredientToRecipe', [{groupIndex: 0, choiceIndex: 1}]);
+    call(ctx, 'addIngredientToRecipe', ['cod']);
+    assert(rb.optionGroups[0].choices[1].ingredients.length === 1 && rb.optionGroups[0].choices[1].ingredients[0].foodId === 'cod',
+      'openAddIngredientToRecipe/addIngredientToRecipe: an option-choice target adds the ingredient into that choice, not the base list', JSON.stringify(rb.optionGroups[0].choices[1].ingredients));
+    assert(rb.ingredients.length === 0,
+      'addIngredientToRecipe: the base ingredients list stays untouched when the target is an option choice', rb.ingredients.length);
+
+    call(ctx, 'openAddIngredientToRecipe', []); // no target -> base list, exactly like every pre-D3 call site
+    call(ctx, 'addIngredientToRecipe', ['olive-oil']);
+    assert(rb.ingredients.length === 1 && rb.ingredients[0].foodId === 'olive-oil',
+      'openAddIngredientToRecipe with no target: still adds to the base ingredients list, unchanged from before D3', JSON.stringify(rb.ingredients));
+
+    call(ctx, 'stepRecipeOptionIngredientGrams', [0, 1, 0, 10]);
+    assert(rb.optionGroups[0].choices[1].ingredients[0].grams === 110,
+      'stepRecipeOptionIngredientGrams: adjusts grams on the targeted choice ingredient row', rb.optionGroups[0].choices[1].ingredients[0].grams);
+    call(ctx, 'commitRecipeOptionIngredientGrams', [0, 1, 0, '75']);
+    assert(rb.optionGroups[0].choices[1].ingredients[0].grams === 75,
+      'commitRecipeOptionIngredientGrams: sets a typed gram value on the targeted choice ingredient row', rb.optionGroups[0].choices[1].ingredients[0].grams);
+    call(ctx, 'removeRecipeOptionIngredient', [0, 1, 0]);
+    assert(rb.optionGroups[0].choices[1].ingredients.length === 0,
+      'removeRecipeOptionIngredient: removes the targeted ingredient row from the choice', rb.optionGroups[0].choices[1].ingredients.length);
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (10) computeRecipeOptionChoiceTotals: per-serving base+choice totals,
+  // cross-checked against an independently-summed foodMacros() total (never a re-typed
+  // literal) — and builderEffectiveIngredientRows: a draft with no option groups returns
+  // the base ingredients unchanged (pre-D3 recipes stay byte-identical). --------
+  (function(){
+    call(ctx, 'openNewRecipeForm', []);
+    const rb = get(ctx, 'recipeBuilder');
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}];
+    rb.servings = 2;
+    call(ctx, 'addRecipeOptionGroup', []);
+    rb.optionGroups[0].choices[0].ingredients = [{foodId: 'salmon-fillet', grams: 200}];
+    const totals = call(ctx, 'computeRecipeOptionChoiceTotals', [0, 0]);
+    const expectedProtein = (call(ctx, 'foodMacros', ['olive-oil', 10]).protein + call(ctx, 'foodMacros', ['salmon-fillet', 200]).protein) / 2;
+    assert(Math.abs(totals.protein - expectedProtein) < 1e-6,
+      'computeRecipeOptionChoiceTotals: per-serving protein = (base + this choice) / servings, cross-checked against foodMacros', 'got=' + totals.protein + ' expected=' + expectedProtein);
+
+    const rows = call(ctx, 'builderEffectiveIngredientRows', []);
+    // rb still has the 1 option group set above; clear it to test the no-optionGroups case.
+    rb.optionGroups = [];
+    const rowsNoOptions = call(ctx, 'builderEffectiveIngredientRows', []);
+    assert(JSON.stringify(rowsNoOptions) === JSON.stringify(rb.ingredients),
+      'builderEffectiveIngredientRows: a draft with no option groups returns the base ingredients unchanged', JSON.stringify(rowsNoOptions));
+    assert(rows.length === rb.ingredients.length + 1,
+      'builderEffectiveIngredientRows: with one option group, returns base ingredients + the DEFAULT choice\'s ingredients', rows.length);
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (11) recipe-detail discoverability: the existing "Change image" edit entry
+  // point (openRecipeImageForm, wired from the recipe detail hero) already opens the SAME
+  // full builder sheet — verifying it now naturally reaches the Options section, showing a
+  // real built-in's existing optionGroups, without any detail-screen redesign. --------
+  (function(){
+    call(ctx, 'openRecipeImageForm', ['baked-fish']);
+    const html = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(html.indexOf('Options <span') !== -1,
+      'recipe detail discoverability: the existing "Change image" edit entry point (openRecipeImageForm) reaches a builder sheet including the Options section', '');
+    assert(html.indexOf('recipe-option-group') !== -1 && html.indexOf('Group 1') !== -1,
+      'recipe detail discoverability: baked-fish\'s existing Fish optionGroup renders inside the builder\'s Options section', '');
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (12) "Reset to default" button gating + the reset flow end-to-end against a
+  // real built-in (baked-fish): hidden for an unedited built-in and for a brand-new custom
+  // recipe, shown once a household override exists, and clears the override on tap. --------
+  (function(){
+    call(ctx, 'openEditRecipeForm', ['baked-fish']);
+    let html = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(html.indexOf('Reset to default') === -1, 'Reset to default: hidden for a built-in recipe with no household override', '');
+
+    const rb = get(ctx, 'recipeBuilder');
+    rb.time = rb.time + 2; // trivial edit so saveRecipeBuilder creates a recipeOverrides entry
+    call(ctx, 'saveRecipeBuilder', []);
+    const validation = call(ctx, 'validateData', []);
+    assert(validation.ok === true, 'Reset to default setup: validateData() stays ok:true after a trivial built-in edit', JSON.stringify(validation.errors));
+
+    call(ctx, 'openEditRecipeForm', ['baked-fish']);
+    html = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(html.indexOf('Reset to default') !== -1, 'Reset to default: shown once a built-in recipe has a household override', '');
+
+    call(ctx, 'resetRecipeBuilderOverride', []);
+    assert(!get(ctx, 'recipeOverrides')['baked-fish'], 'resetRecipeBuilderOverride: clears the override and reopens the builder on the restored built-in', '');
+    html = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(html.indexOf('Reset to default') === -1, 'Reset to default: hidden again once the override is cleared', '');
+
+    call(ctx, 'openNewRecipeForm', []);
+    html = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(html.indexOf('Reset to default') === -1, 'Reset to default: never shown for a brand-new custom recipe (no editingId)', '');
+    run(ctx, "recipeBuilder = null;");
+  })();
+
+  // -------- (13) final consistency: the whole D3 test suite leaves validateData() green
+  // and every touched built-in recipe byte-identical to its pristine BUILTIN_RECIPES_DB
+  // snapshot — proving every subsection above actually cleaned up after itself. --------
+  (function(){
+    const validation = call(ctx, 'validateData', []);
+    assert(validation.ok === true, 'D3 cleanup: validateData() stays ok:true at the end of the builder test suite', JSON.stringify(validation.errors));
+    const BUILTIN_RECIPES_DB = get(ctx, 'BUILTIN_RECIPES_DB');
+    const RECIPES_DB = get(ctx, 'RECIPES_DB');
+    ['baked-fish', 'french-toast-fruit-maple', 'pasta'].forEach(function(id){
+      assert(JSON.stringify(RECIPES_DB[id]) === JSON.stringify(BUILTIN_RECIPES_DB[id]),
+        'D3 cleanup: "' + id + '" is back to its pristine built-in shape (no leftover recipeOverrides) after the builder test suite', '');
+    });
+  })();
+
+  run(ctx, "toast = __d3BuilderStub.toast; openMyRecipes = __d3BuilderStub.openMyRecipes; applyProf = __d3BuilderStub.applyProf; renderFoodLibraryCount = __d3BuilderStub.renderFoodLibraryCount; delete __d3BuilderStub;");
+}
+
+/* ===================================================================
    main
    =================================================================== */
 
@@ -3179,6 +3644,7 @@ function main(){
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
   runTest('recipe options/variants (task D1)', function(){ testRecipeOptions(ctx); });
   runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
+  runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
