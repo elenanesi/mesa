@@ -58,9 +58,11 @@
 /* ---------------- config ---------------- */
 const SYNC_URL = 'https://mesa-sync.elenanesi55.workers.dev';
 
-const SYNC_SECTIONS = ['library', 'plans', 'shopping', 'profile:elena', 'profile:partner', 'log:elena', 'log:partner'];
+const SYNC_SECTIONS = ['library', 'plans', 'shopping', 'pantry', 'profile:elena', 'profile:partner', 'log:elena', 'log:partner'];
 const SYNC_DEBOUNCE_MS = 2000;
-const MERGE_SECTIONS = {library: true, shopping: true, 'log:elena': true, 'log:partner': true}; // everything else is LWW
+// pantry (PANTRY-plan.md P1) is here, NOT LWW: a concurrent edit on the other phone (Elena
+// decreasing milk while Andrea adds bread) would otherwise silently lose one side's change.
+const MERGE_SECTIONS = {library: true, shopping: true, pantry: true, 'log:elena': true, 'log:partner': true}; // everything else is LWW
 
 /* ---------------- household code ---------------- */
 // Crockford-ish alphabet: 32 symbols, excludes 0/O/1/I/L (easy to misread when a partner
@@ -151,6 +153,10 @@ function expandCheckedByWeek(byWeekArrays){
   return out;
 }
 function shoppingSectionData(){ return {checkedByWeek: cloneCheckedByWeek()}; }
+
+// pantry (PANTRY-plan.md P1) — see state.js's pantry doc block for the entry shape
+// ({qty, setAt, u}) and why a delete is a qty:0 entry rather than a separate tombstone map.
+function pantrySectionData(){ return {pantry: clone(pantry)}; }
 
 // Reuses PERSIST_PROFILE_FIELDS (state.js) — the exact fields that already round-trip
 // through localStorage — so this section's shape never drifts from what's actually
@@ -248,6 +254,7 @@ function sectionData(sec){
   if(sec === 'library') return librarySectionData();
   if(sec === 'plans') return plansSectionData();
   if(sec === 'shopping') return shoppingSectionData();
+  if(sec === 'pantry') return pantrySectionData();
   if(sec === 'profile:elena') return profileSectionData('elena');
   if(sec === 'profile:partner') return profileSectionData('partner');
   if(sec === 'log:elena') return logSectionData('elena');
@@ -700,8 +707,25 @@ function mergeLibrarySection(local, remote){
   };
 }
 
-// After a merge (library/shopping/log:*) produces content that's a strict superset of
-// what the server had, bump our rev past remote's so the NEXT sync tick's push outranks
+// pantry (PANTRY-plan.md P1) section merge — `local`/`remote` are the wire shapes
+// pantrySectionData() produces ({pantry: {foodId: {qty, setAt, u}}}).
+//
+// Unlike library, pantry needs no separate tombstone map (deletedFoods-style): removing an
+// item writes a qty:0 entry with a fresh `u` IN THE SAME map (state.js's pantry doc block),
+// and mergeEntryMap's per-id newer-wins-on-`u` already treats that qty:0 entry as just
+// another entry competing on its stamp — the newer write always wins outright, whether it's
+// a real quantity or a qty:0 delete. Nothing here does a union-of-both-sides-present that
+// could resurrect a stale pre-delete quantity the way the OLD whole-blob library merge did
+// before mergeLibrarySection existed (see that function's doc block above and the 2026-07
+// "Frittata di pasta (imported)(imported)…" duplication-ratchet incident writeup a little
+// further up this file) — reusing mergeEntryMap here is exactly the fix that incident
+// produced, applied to a second per-id map instead of re-deriving a parallel mechanism.
+function mergePantrySection(local, remote){
+  return {pantry: mergeEntryMap((local && local.pantry) || {}, (remote && remote.pantry) || {})};
+}
+
+// After a merge (library/shopping/pantry/log:*) produces content that's a strict superset
+// of what the server had, bump our rev past remote's so the NEXT sync tick's push outranks
 // it and the merged result actually propagates — otherwise it'd sit forever as "ours,
 // unsynced" every tick without ever winning the server's rev comparison.
 function applyMergedRevBookkeeping(sec, mergedData, remote){
@@ -764,6 +788,10 @@ function applySyncResponse(sent, remoteSections){
     } else if(sec === 'shopping'){
       const merged = mergeShoppingSection(sentEntry.data, remote.data);
       checkedShopByWeek = expandCheckedByWeek(merged.checkedByWeek);
+      applyMergedRevBookkeeping(sec, merged, remote);
+    } else if(sec === 'pantry'){
+      const merged = mergePantrySection(sentEntry.data, remote.data);
+      pantry = merged.pantry;
       applyMergedRevBookkeeping(sec, merged, remote);
     } else if(sec === 'log:elena' || sec === 'log:partner'){
       const personKey = sec === 'log:elena' ? 'elena' : 'partner';

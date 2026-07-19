@@ -1021,6 +1021,96 @@ function testMergeLibraryRatchetRegression(ctx){
     'entry counts over rounds: ' + counts.join(', '));
 }
 
+/* ---------------- PANTRY-plan.md P1: mergePantrySection ---------------- */
+function emptyPantrySection(){ return {pantry: {}}; }
+
+// (a) same foodId edited on both sides with different `u` — newer wins regardless of
+// which side is passed as `local` (mirrors testMergeLibraryNewerWins).
+function testMergePantrySectionNewerWins(ctx){
+  const local = emptyPantrySection();
+  local.pantry['eggs'] = {qty: 6, setAt: 1000, u: 1000};
+  const remote = emptyPantrySection();
+  remote.pantry['eggs'] = {qty: 2, setAt: 2000, u: 2000};
+  const mergedLR = call(ctx, 'mergePantrySection', [cloneJSON(local), cloneJSON(remote)]);
+  const mergedRL = call(ctx, 'mergePantrySection', [cloneJSON(remote), cloneJSON(local)]);
+  assert(!!mergedLR.pantry['eggs'] && mergedLR.pantry['eggs'].qty === 2,
+    'mergePantrySection: newer `u` wins (local, remote)', JSON.stringify(mergedLR.pantry['eggs']));
+  assert(!!mergedRL.pantry['eggs'] && mergedRL.pantry['eggs'].qty === 2,
+    'mergePantrySection: newer `u` wins regardless of argument order (remote, local)', JSON.stringify(mergedRL.pantry['eggs']));
+}
+
+// (b) a delete (qty:0 + fresh u) beats an older non-zero edit, survives alternating
+// merges without resurrection (the bug class the "×200 (imported)" incident produced —
+// see mergeLibrarySection's doc block), and the converged result is idempotent.
+function testMergePantrySectionDeleteNotResurrected(ctx){
+  const editedLocal = emptyPantrySection();
+  editedLocal.pantry['milk'] = {qty: 500, setAt: 1000, u: 1000};
+  const deletedRemote = emptyPantrySection();
+  deletedRemote.pantry['milk'] = {qty: 0, setAt: 2000, u: 2000}; // newer than the edit — a delete
+
+  const merged1 = call(ctx, 'mergePantrySection', [cloneJSON(editedLocal), cloneJSON(deletedRemote)]);
+  assert(!!merged1.pantry['milk'] && merged1.pantry['milk'].qty === 0,
+    'mergePantrySection: a newer qty:0 delete beats an older non-zero edit', JSON.stringify(merged1.pantry['milk']));
+
+  // Repeated alternating merges (A->B, B->A, A->B) must not resurrect the deleted qty.
+  let m = call(ctx, 'mergePantrySection', [cloneJSON(editedLocal), cloneJSON(deletedRemote)]);
+  m = call(ctx, 'mergePantrySection', [cloneJSON(m), cloneJSON(editedLocal)]);
+  m = call(ctx, 'mergePantrySection', [cloneJSON(m), cloneJSON(deletedRemote)]);
+  assert(m.pantry['milk'].qty === 0,
+    'mergePantrySection: alternating merges (A->B->A->B) never resurrect a deleted (qty:0) entry', JSON.stringify(m.pantry['milk']));
+
+  // Idempotence: merging the converged result with either original input again is a no-op.
+  const again1 = call(ctx, 'mergePantrySection', [cloneJSON(m), cloneJSON(editedLocal)]);
+  const again2 = call(ctx, 'mergePantrySection', [cloneJSON(m), cloneJSON(deletedRemote)]);
+  assert(JSON.stringify(again1) === JSON.stringify(m),
+    'mergePantrySection: merging the converged result with the local input again is a no-op', 'converged=' + JSON.stringify(m) + ' after=' + JSON.stringify(again1));
+  assert(JSON.stringify(again2) === JSON.stringify(m),
+    'mergePantrySection: merging the converged result with the remote input again is a no-op', 'converged=' + JSON.stringify(m) + ' after=' + JSON.stringify(again2));
+}
+
+// (c) order-independence across a mix of only-local, only-remote, and conflicting
+// foodIds — merge(A,B) must equal merge(B,A) content-wise.
+function testMergePantrySectionOrderIndependence(ctx){
+  const a = emptyPantrySection();
+  a.pantry['eggs'] = {qty: 6, setAt: 1000, u: 1000};   // only in A
+  a.pantry['milk'] = {qty: 200, setAt: 1000, u: 1000}; // conflicts with B — A newer
+  const b = emptyPantrySection();
+  b.pantry['bread'] = {qty: 1, setAt: 1000, u: 1000};  // only in B
+  b.pantry['milk'] = {qty: 500, setAt: 500, u: 500};   // conflicts with A — B older
+
+  const ab = call(ctx, 'mergePantrySection', [cloneJSON(a), cloneJSON(b)]);
+  const ba = call(ctx, 'mergePantrySection', [cloneJSON(b), cloneJSON(a)]);
+  // deepEqualJSON (library.js), not JSON.stringify string equality: mergeEntryMap builds its
+  // output by iterating Object.keys(local) then Object.keys(remote), so ab/ba are the same
+  // CONTENT with different key INSERTION order depending on argument order — a real
+  // structural-equality check (same reasoning deepEqualJSON's own doc comment gives for why
+  // it isn't just JSON.stringify(a)===JSON.stringify(b)) is what "order-independent" means.
+  assert(call(ctx, 'deepEqualJSON', [ab, ba]) === true,
+    'mergePantrySection: merge(A,B) content equals merge(B,A) (order-independent)', 'AB=' + JSON.stringify(ab) + ' BA=' + JSON.stringify(ba));
+  assert(ab.pantry['eggs'].qty === 6 && ab.pantry['bread'].qty === 1 && ab.pantry['milk'].qty === 200,
+    'mergePantrySection: unions only-local and only-remote foodIds, and picks the newer `u` on a real conflict', JSON.stringify(ab.pantry));
+}
+
+// (d) an exact-tie `u` with different content (the historically dangerous case —
+// mergeLibrarySection's doc block / the duplication-ratchet incident) still converges
+// deterministically instead of growing, mirroring testMergeLibraryRatchetRegression.
+function testMergePantrySectionTieBreakConverges(ctx){
+  const sideA = emptyPantrySection();
+  sideA.pantry['flour'] = {qty: 500, setAt: 5000, u: 5000};
+  const sideB = emptyPantrySection();
+  sideB.pantry['flour'] = {qty: 750, setAt: 5000, u: 5000}; // exact-tie u, different qty
+
+  let merged = call(ctx, 'mergePantrySection', [cloneJSON(sideA), cloneJSON(sideB)]);
+  const counts = [Object.keys(merged.pantry).length];
+  for(let i = 0; i < 6; i++){
+    merged = call(ctx, 'mergePantrySection', [cloneJSON(merged), cloneJSON(sideA)]);
+    merged = call(ctx, 'mergePantrySection', [cloneJSON(merged), cloneJSON(sideB)]);
+    counts.push(Object.keys(merged.pantry).length);
+  }
+  assert(counts.every(function(c){ return c === 1; }),
+    'mergePantrySection: repeated round-trips never grow the entry count on an exact-tie `u` conflict (ratchet regression)', 'counts=' + counts.join(', '));
+}
+
 // mergeLogSection: dedupe by identity, tombstone exclusion, plan:<slot> newer-wins,
 // and a re-confirm surviving a same-slot skip tombstone (the v55 fix this guards).
 function testMergeLogSection(ctx){
@@ -3613,6 +3703,252 @@ function testRecipeOptions(ctx){
 }
 
 /* ===================================================================
+   PANTRY-plan.md P1: foodQuantitiesForComponents() — the meal->food decomposition
+   extracted out of computeShoppingList's old addRecipe/addFood (planner.js). Covers batch
+   yield, the piece-vs-gram unit split, optionGroups variants, and meal extras flowing
+   through, per the plan's P1 test list.
+   =================================================================== */
+function testFoodQuantitiesForComponents(ctx){
+  // fixture: servings:2 (batch yield) so the /r.servings division is exercised; one
+  // gram/ml ingredient (olive-oil), one unit:'piece' ingredient (eggs, avgG:50) so both
+  // unit branches run through the SAME recipe; one optionGroups group (carb: rice
+  // default / potato) so the chosen-variant path is exercised too.
+  const FIXTURE_ID = '__pantry_p1_fixture_recipe__';
+  const fixtureRecipe = {
+    title: 'Pantry P1 fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+    styles: ['balanced'], time: 5, servings: 2,
+    ingredients: [['olive-oil', 100], ['eggs', 150]],
+    toTaste: ['salt'], steps: ['Combine.'], tags: [], avoid: [],
+    optionGroups: [
+      {key: 'carb', label: 'Carb', choices: [
+        {id: 'rice', label: 'Rice', ingredients: [['rice', 100]]},
+        {id: 'potato', label: 'Potato', ingredients: [['potatoes', 200]]}
+      ]}
+    ]
+  };
+  run(ctx, "RECIPES_DB['" + FIXTURE_ID + "'] = " + JSON.stringify(fixtureRecipe) + ';');
+  try{
+    // (a) batch yield + gram/ml unit + default optionGroups choice, portion 1.
+    const out1 = call(ctx, 'foodQuantitiesForComponents', [[{recipeId: FIXTURE_ID, portion: 1}]]);
+    assert(Math.abs(out1['olive-oil'] - 50) < 1e-9,
+      'foodQuantitiesForComponents: batch-yield divides a gram/ml ingredient by r.servings (100/2*1=50)', 'got ' + out1['olive-oil']);
+    assert(Math.abs(out1['rice'] - 50) < 1e-9,
+      'foodQuantitiesForComponents: default optionGroups choice (choices[0]) is used when opts is omitted', 'got ' + out1['rice']);
+    assert(out1['potatoes'] === undefined,
+      'foodQuantitiesForComponents: the non-chosen optionGroups choice contributes nothing', JSON.stringify(Object.keys(out1)));
+
+    // (b) unit:'piece' conversion — same recipe, same call, proving both unit branches run
+    // off ONE shared ingredient loop (eggs: raw batch grams 150, avgG:50).
+    assert(Math.abs(out1['eggs'] - 1.5) < 1e-9,
+      'foodQuantitiesForComponents: unit:"piece" foods convert via food.avgG into pieces, not grams (150/2/50=1.5)', 'got ' + out1['eggs']);
+
+    // (c) portion scales linearly.
+    const out2 = call(ctx, 'foodQuantitiesForComponents', [[{recipeId: FIXTURE_ID, portion: 2}]]);
+    assert(Math.abs(out2['olive-oil'] - 100) < 1e-9, 'foodQuantitiesForComponents: portion scales linearly (100/2*2=100)', 'got ' + out2['olive-oil']);
+
+    // (d) optionGroups variant flows through: opts selects potato instead of rice.
+    const out3 = call(ctx, 'foodQuantitiesForComponents', [[{recipeId: FIXTURE_ID, portion: 1, opts: {carb: 'potato'}}]]);
+    assert(out3['rice'] === undefined, 'foodQuantitiesForComponents: choosing the potato variant drops rice entirely', JSON.stringify(Object.keys(out3)));
+    assert(Math.abs(out3['potatoes'] - 100) < 1e-9,
+      'foodQuantitiesForComponents: the CHOSEN optionGroups variant\'s ingredient is bought, not the default (200/2*1=100g potatoes)', 'got ' + out3['potatoes']);
+
+    // (e) meal extras flowing through: a base recipe component plus a standalone
+    // {foodId, grams} extra (planEntryComponents()'s extras shape) both contribute, and an
+    // extra targeting the SAME food the base recipe already touched accumulates onto it.
+    const out4 = call(ctx, 'foodQuantitiesForComponents', [[
+      {recipeId: FIXTURE_ID, portion: 1},
+      {foodId: 'olive-oil', grams: 10}
+    ]]);
+    assert(Math.abs(out4['olive-oil'] - 60) < 1e-9,
+      'foodQuantitiesForComponents: a meal extra (foodId component) accumulates onto the same food the base recipe already contributed (50+10=60)', 'got ' + out4['olive-oil']);
+    assert(Math.abs(out4['eggs'] - 1.5) < 1e-9,
+      'foodQuantitiesForComponents: the base recipe\'s own contribution is unaffected by an unrelated extra', 'got ' + out4['eggs']);
+
+    // (f) a standalone piece-unit extra converts the same way a recipe ingredient does.
+    const out5 = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'eggs', grams: 100}]]);
+    assert(Math.abs(out5['eggs'] - 2) < 1e-9,
+      'foodQuantitiesForComponents: a standalone piece-unit food component converts via avgG same as a recipe ingredient (100/50=2)', 'got ' + out5['eggs']);
+
+    // (g) guards: unknown recipeId, non-positive portion, unknown foodId, non-positive
+    // grams all contribute nothing (mirrors the pre-refactor addRecipe/addFood guards).
+    const out6 = call(ctx, 'foodQuantitiesForComponents', [[
+      {recipeId: 'not-a-real-recipe-id', portion: 1},
+      {recipeId: FIXTURE_ID, portion: 0},
+      {foodId: 'not-a-real-food-id', grams: 100},
+      {foodId: 'olive-oil', grams: 0}
+    ]]);
+    assert(Object.keys(out6).length === 0,
+      'foodQuantitiesForComponents: unknown recipe/food ids and non-positive portion/grams contribute nothing', JSON.stringify(out6));
+
+    // (h) empty/null components never throw.
+    assert(JSON.stringify(call(ctx, 'foodQuantitiesForComponents', [[]])) === '{}', 'foodQuantitiesForComponents: empty components array -> {}');
+    assert(JSON.stringify(call(ctx, 'foodQuantitiesForComponents', [null])) === '{}', 'foodQuantitiesForComponents: null components -> {} (does not throw)');
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + FIXTURE_ID + "'];");
+  }
+}
+
+// decomposition parity (PANTRY-plan.md P1): computeShoppingList()'s totals must equal an
+// INDEPENDENTLY rebuilt foodQuantitiesForComponents() pass over the exact same week's
+// components (both people, every day/slot, planEntryComponents' shape), grouped by
+// food.name — the invariant the P1 refactor exists to guarantee. Runs entirely inside the
+// vm context (a single run() call) so no cross-realm object needs to cross the ctx
+// boundary; only the final JSON comes back.
+function testShoppingListDecompositionParity(ctx){
+  // weekPlans/weekPlan are named explicitly (alongside pantry) as globals later tests
+  // depend on — snapshot and restore even on failure rather than relying on the trailing
+  // reset alone.
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    const plan = call(ctx, 'ensureWeekPlan', []);
+    const wk = plan.weekStartDate;
+    const list = call(ctx, 'computeShoppingList', [wk]);
+
+    const rebuilt = JSON.parse(run(ctx, [
+      '(function(){',
+      '  var p = weekPlans[' + JSON.stringify(wk) + '];',
+      '  var allComponents = [];',
+      '  p.days.forEach(function(day){',
+      '    SLOT_ORDER.forEach(function(slot){',
+      '      var m = day.meals[slot];',
+      '      planEntryComponents(m.elena).forEach(function(c){ allComponents.push(c); });',
+      '      planEntryComponents(m.partner).forEach(function(c){ allComponents.push(c); });',
+      '    });',
+      '  });',
+      '  var qtyByFood = foodQuantitiesForComponents(allComponents);',
+      '  var rebuilt = {};',
+      '  Object.keys(qtyByFood).forEach(function(foodId){',
+      '    var food = FOODS[foodId];',
+      '    if(!food) return;',
+      '    var name = food.name;',
+      '    if(!rebuilt[name]) rebuilt[name] = {qty: 0, unit: food.unit === "piece" ? "" : food.unit, foodIds: []};',
+      '    rebuilt[name].qty += qtyByFood[foodId];',
+      '    if(rebuilt[name].foodIds.indexOf(foodId) === -1) rebuilt[name].foodIds.push(foodId);',
+      '  });',
+      '  return JSON.stringify(rebuilt);',
+      '})()'
+    ].join('\n')));
+
+    assert(Object.keys(list.totals).length > 0, 'decomposition parity: the generated week actually produced a non-empty shopping list (sanity floor for the assertion below)', 'keys=' + Object.keys(list.totals).length);
+    assert(JSON.stringify(list.totals) === JSON.stringify(rebuilt),
+      'computeShoppingList: totals equal an independently rebuilt foodQuantitiesForComponents(week components) grouped by name (decomposition parity)',
+      'computeShoppingList keys=' + Object.keys(list.totals).length + ' rebuilt keys=' + Object.keys(rebuilt).length);
+  } finally {
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+  }
+}
+
+/* ===================================================================
+   PANTRY-plan.md P1: state.js pantry — module state, buildSnapshot()/loadState() round
+   trip, the reset path, and isValidPantryEntry()'s load-time validation.
+   =================================================================== */
+function testPantryLoadValidation(ctx){
+  // isValidPantryEntry() unit-level: exercises branches a realistic localStorage JSON
+  // round-trip can't reach on its own (JSON.parse can never itself produce NaN, and a
+  // non-object entry only arises from hand-authored/corrupt data).
+  (function(){
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', {qty: 6, setAt: 1, u: 1}]) === true,
+      'isValidPantryEntry: a well-formed entry for a real foodId is valid');
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', {qty: 0, setAt: 1, u: 1}]) === true,
+      'isValidPantryEntry: qty:0 (a delete/tombstone, PANTRY-plan.md) is valid — the guard is >= 0, not > 0');
+    assert(call(ctx, 'isValidPantryEntry', ['not-a-real-food-id', {qty: 6}]) === false,
+      'isValidPantryEntry: an unknown foodId is invalid');
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', {qty: -1}]) === false,
+      'isValidPantryEntry: a negative qty is invalid');
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', {qty: NaN}]) === false,
+      'isValidPantryEntry: a NaN qty is invalid');
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', {qty: '6'}]) === false,
+      'isValidPantryEntry: a string qty is invalid (must be typeof number)');
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', null]) === false,
+      'isValidPantryEntry: a null entry is invalid');
+    assert(call(ctx, 'isValidPantryEntry', ['eggs', {}]) === false,
+      'isValidPantryEntry: an entry with no qty at all is invalid');
+  })();
+
+  const savedPantry = get(ctx, 'pantry');
+  ctx.__savedPantry__ = savedPantry;
+  try{
+    // End-to-end round trip through localStorage/loadState() (not just the predicate above)
+    // — proves the actual wiring: module state, buildSnapshot(), and the reset+validate
+    // block in loadState(). Object.assign(buildSnapshot(), {pantry: ...}) keeps every OTHER
+    // field exactly as the live app currently has it (same convention testGoalToggles/
+    // testNextWeekTuning use), so this can't disturb any other global's semantic content.
+    const goodPantry = {
+      eggs: {qty: 6, setAt: 1000, u: 1000},
+      'olive-oil': {qty: 0, setAt: 2000, u: 2000} // qty:0 tombstone — must survive
+    };
+    run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign({}, buildSnapshot(), {pantry: " + JSON.stringify(goodPantry) + "})));");
+    run(ctx, 'pantry = {};'); // scramble in-memory before reload
+    run(ctx, 'loadState();');
+    assert(JSON.stringify(get(ctx, 'pantry')) === JSON.stringify(goodPantry),
+      'loadState(): a well-formed pantry (including a qty:0 tombstone) round-trips exactly',
+      'got ' + JSON.stringify(get(ctx, 'pantry')));
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
+
+    // A payload with one good entry alongside every kind of bad one — built from a REAL
+    // buildSnapshot() so every other field stays valid, then hand-edited as raw JSON TEXT
+    // (not a JS object round-tripped through JSON.stringify, which would silently turn a
+    // JS Infinity into `null` before loadState() ever saw it) so it can carry a literal
+    // `1e999` token — the one way a real JSON string parses to Infinity.
+    const base = call(ctx, 'buildSnapshot', []);
+    base.pantry = {
+      eggs: {qty: 3, setAt: 1000, u: 1000},                  // kept
+      'not-a-real-food-id': {qty: 5, setAt: 1000, u: 1000},  // dropped: foodId not in FOODS
+      rice: {qty: -1, setAt: 1000, u: 1000},                 // dropped: qty < 0
+      potatoes: {qty: '5', setAt: 1000, u: 1000},            // dropped: qty not typeof number
+      cod: {qty: '__INF_PLACEHOLDER__', setAt: 1000, u: 1000}, // dropped: qty not finite (see replace() below)
+      prawns: {qty: 0, setAt: 3000, u: 3000}                 // kept: qty:0 tombstone
+    };
+    const raw = JSON.stringify(base).replace('"__INF_PLACEHOLDER__"', '1e999');
+    run(ctx, 'localStorage.setItem(STORE_KEY, ' + JSON.stringify(raw) + ');');
+    run(ctx, 'pantry = {};');
+    run(ctx, 'loadState();');
+    const loadedBad = get(ctx, 'pantry');
+    assert(JSON.stringify(Object.keys(loadedBad).sort()) === JSON.stringify(['eggs', 'prawns']),
+      'loadState(): drops an unknown foodId, a negative qty, a non-numeric qty, and a non-finite (Infinity) qty, keeping only the valid entries (incl. a qty:0 tombstone)',
+      'got keys=' + JSON.stringify(Object.keys(loadedBad)));
+    assert(loadedBad.eggs.qty === 3 && loadedBad.prawns.qty === 0,
+      'loadState(): the surviving entries keep their exact qty', JSON.stringify(loadedBad));
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
+
+    // The reset path: a pre-pantry backup (no `pantry` key in the saved object at all, the
+    // shape every store predating this feature has) must reset pantry to {} rather than
+    // carry over whatever was in memory before loadState() ran.
+    const base2 = call(ctx, 'buildSnapshot', []);
+    delete base2.pantry;
+    run(ctx, 'localStorage.setItem(STORE_KEY, ' + JSON.stringify(JSON.stringify(base2)) + ');');
+    run(ctx, 'pantry = {eggs: {qty: 1, setAt: 1, u: 1}};'); // scramble with a NONEMPTY value first
+    run(ctx, 'loadState();');
+    assert(JSON.stringify(get(ctx, 'pantry')) === '{}',
+      'loadState(): a pre-pantry backup (no pantry key at all) resets pantry to {} rather than keeping stale in-memory data',
+      'got ' + JSON.stringify(get(ctx, 'pantry')));
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
+  } finally {
+    ctx.__savedPantry__ = savedPantry;
+    run(ctx, 'pantry = __savedPantry__; delete __savedPantry__;');
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+  }
+}
+
+// validateBackupStructure() (render.js) — the shallow backup-file structural gate. pantry
+// is additive/optional like every other post-v4 field it doesn't enumerate.
+function testValidateBackupStructurePantry(ctx){
+  const base = call(ctx, 'buildSnapshot', []);
+  delete base.pantry;
+  assert(call(ctx, 'validateBackupStructure', [base]) === true,
+    'validateBackupStructure: a pre-pantry backup (no pantry key) is still valid');
+  const withPantry = Object.assign({}, base, {pantry: {eggs: {qty: 1, setAt: 1, u: 1}}});
+  assert(call(ctx, 'validateBackupStructure', [withPantry]) === true,
+    'validateBackupStructure: a backup with a well-formed pantry object is valid');
+  const badPantry = Object.assign({}, base, {pantry: 'not-an-object'});
+  assert(call(ctx, 'validateBackupStructure', [badPantry]) === false,
+    'validateBackupStructure: a non-object pantry field is rejected');
+}
+
+/* ===================================================================
    task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
    (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
    recipes, 2 role:'sauce' recipes), butter-chicken season fix.
@@ -4378,6 +4714,12 @@ function main(){
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
+  runTest('mergePantrySection: newer-wins (PANTRY-plan.md P1)', function(){ testMergePantrySectionNewerWins(ctx); });
+  runTest('mergePantrySection: delete not resurrected (PANTRY-plan.md P1)', function(){ testMergePantrySectionDeleteNotResurrected(ctx); });
+  runTest('mergePantrySection: order-independence (PANTRY-plan.md P1)', function(){ testMergePantrySectionOrderIndependence(ctx); });
+  runTest('mergePantrySection: tie-break converges (PANTRY-plan.md P1)', function(){ testMergePantrySectionTieBreakConverges(ctx); });
+  runTest('pantry load-validation (PANTRY-plan.md P1)', function(){ testPantryLoadValidation(ctx); });
+  runTest('validateBackupStructure: pantry field (PANTRY-plan.md P1)', function(){ testValidateBackupStructurePantry(ctx); });
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });
@@ -4400,6 +4742,8 @@ function main(){
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
   runTest('recipe options/variants (task D1)', function(){ testRecipeOptions(ctx); });
+  runTest('foodQuantitiesForComponents decomposition (PANTRY-plan.md P1)', function(){ testFoodQuantitiesForComponents(ctx); });
+  runTest('computeShoppingList decomposition parity (PANTRY-plan.md P1)', function(){ testShoppingListDecompositionParity(ctx); });
   runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });

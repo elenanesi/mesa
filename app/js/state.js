@@ -570,6 +570,40 @@ function normalizeFood(food){
   return out;
 }
 
+/* ---------------- pantry (PANTRY-plan.md P1) ----------------
+   Household-level, like SHARED/householdStyle above (NOT per person) — one shared
+   pantry, not "Elena's pantry" and "Andrea's pantry". Persists only a BASELINE per food
+   ("as of setAt, I have qty of this"); P2's pantryRemaining()/pantryConsumedSince()
+   (planner.js) derive what's left FROM logHistory rather than mutating this on every log
+   — see the plan's "derive, don't mutate" section for why a mutating pantry breaks couple
+   sync, undo, and backdated logging.
+
+   pantry: foodId -> {qty, setAt, u}
+     - foodId, not display name (computeShoppingList's totals[name] keying is a legacy
+       wart documented there — pantry keys by the stable id instead of propagating it).
+     - qty is in the food's own unit basis, matching planner.js:foodQuantitiesForComponents/
+       computeShoppingList's convention exactly: pieces for unit:'piece' foods, grams/ml
+       otherwise — so subtraction (P3) is direct, no conversion layer.
+     - setAt is epoch-ms: both the depletion origin for pantryRemaining() and (P2) the age
+       hint. Every manual edit re-baselines it (P2) — not touched here in P1.
+     - u is the per-entry sync stamp, same convention as customFoods/customRecipes entries
+       (js/sync.js:mergeEntryMap) — per-foodId newer-wins, NOT a whole-section LWW.
+   A REMOVED item is stored as a qty:0 entry with a fresh `u`, not deleted from the map —
+   that qty:0 entry IS the tombstone (js/sync.js:mergePantrySection), simpler than a
+   separate tombstone map since (unlike library) there's no "recreate under a new id"
+   case to distinguish a delete from. */
+let pantry = {};
+
+// Drops entries that can't be trusted: a foodId no longer in FOODS (deleted custom food,
+// or corrupt data), or a qty that isn't a finite number >= 0 (>= so a qty:0 tombstone,
+// see the doc block above, survives loadState() — rejecting it here would silently drop
+// deletes on their own originating phone before they ever get a chance to sync out).
+function isValidPantryEntry(foodId, entry){
+  return typeof foodId === 'string' && !!FOODS[foodId]
+    && !!entry && typeof entry === 'object'
+    && typeof entry.qty === 'number' && isFinite(entry.qty) && entry.qty >= 0;
+}
+
 /* ---------------- couple sync (Phase 2, task S1) ----------------
    Client-side sync bookkeeping — the household code plus, per SECTION name
    (see js/sync.js: SYNC_SECTIONS — 'library'/'plans'/'shopping'/
@@ -640,6 +674,9 @@ function buildSnapshot(){
     mealPins: mealPins,
     mealRules: mealRules,
     customRev: customRev,
+    // pantry (PANTRY-plan.md P1): foodId -> {qty, setAt, u} — see the block above for the
+    // shape. Plain JSON data, stored verbatim; loadState() re-validates every entry on read.
+    pantry: pantry,
     // logHistory (task D1): plain JSON data (no functions) — stored verbatim, capped at
     // LOG_HISTORY_RETENTION_DAYS by pruneLogHistory() (called from persist() below) before
     // every write.
@@ -867,6 +904,24 @@ function loadState(){
     Object.keys(saved.recipePrefs).forEach(function(id){
       const v = saved.recipePrefs[id];
       if(typeof id === 'string' && (v === 'favorite' || v === 'down')) recipePrefs[id] = v;
+    });
+  }
+  // pantry (PANTRY-plan.md P1) — reset path: structurally-wrong entries are dropped
+  // rather than trusted (same defensive posture as customFoods/deletedFoods above), so a
+  // corrupt store can't crash rendering. isValidPantryEntry() requires qty >= 0 (not > 0)
+  // so a qty:0 tombstone (a deliberate, meaningful entry — see the pantry doc block above)
+  // survives a reload instead of being silently dropped before it ever gets a chance to
+  // sync its delete out to the other phone.
+  pantry = {};
+  if(saved.pantry && typeof saved.pantry === 'object'){
+    Object.keys(saved.pantry).forEach(function(foodId){
+      const entry = saved.pantry[foodId];
+      if(!isValidPantryEntry(foodId, entry)) return;
+      pantry[foodId] = {
+        qty: entry.qty,
+        setAt: (typeof entry.setAt === 'number' && isFinite(entry.setAt)) ? entry.setAt : 0,
+        u: (typeof entry.u === 'number' && isFinite(entry.u)) ? entry.u : 0
+      };
     });
   }
   mealPins = {};

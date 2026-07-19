@@ -1629,6 +1629,58 @@ function foodCategoryForName(name){
   return SHOP_CAT_ORDER.indexOf(cat) !== -1 ? cat : 'Pantry';
 }
 
+// PANTRY-plan.md P1 step 1: the shared meal->food decomposition, extracted out of
+// computeShoppingList's old addRecipe/addFood inner functions so pantry consumption (P2)
+// can run the IDENTICAL operation over logHistory entries instead of the plan — "the
+// leanness win" the plan calls out. `components` is planEntryComponents()'s shape:
+// [{recipeId, portion, opts?} | {foodId, grams}]. Returns {foodId: qty}, qty in pieces for
+// unit:'piece' foods and grams/ml otherwise — the exact basis computeShoppingList has
+// always emitted and the pantry (state.js) stores, so subtraction later needs no
+// conversion layer.
+//
+// This is a PURE REFACTOR of the old addRecipe/addFood bodies (tools/check.js's
+// decomposition-parity test is the contract) — preserves batch-yield (r.servings),
+// optionGroups resolution via recipeEffectiveIngredients(r, opts), and the exact
+// piece-vs-gram arithmetic AND guard behaviour of both original inner functions,
+// including the pre-existing asymmetry between them: the recipe-ingredient path only ever
+// guarded on `!food` (never on the ingredient's own grams sign), while the direct-food
+// path (addFood) always required `grams > 0`. Two small internal accumulators mirror that
+// asymmetry exactly rather than unifying it, so behaviour cannot drift even in a
+// (currently nonexistent, data/validate.js-enforced-positive) zero/negative-qty edge case.
+function foodQuantitiesForComponents(components){
+  const out = {}; // foodId -> qty, in the SAME accumulation order the old inline totals
+                   // object used, so the running per-food sums stay float-bit-identical
+                   // when callers feed one ordered, whole-traversal components list.
+  function addFromIngredient(foodId, grams){ // mirrors old addRecipe's inner guard/branch
+    const food = FOODS[foodId];
+    if(!food) return;
+    out[foodId] = (food.unit === 'piece') ? (out[foodId] || 0) + grams / food.avgG : (out[foodId] || 0) + grams;
+  }
+  function addFromFoodComponent(foodId, grams){ // mirrors old addFood exactly
+    const food = FOODS[foodId];
+    if(!food || !(grams > 0)) return;
+    out[foodId] = (food.unit === 'piece') ? (out[foodId] || 0) + grams / food.avgG : (out[foodId] || 0) + grams;
+  }
+  (components || []).forEach(function(c){
+    if(c && c.recipeId){
+      const r = RECIPES_DB[c.recipeId];
+      if(!r || !(c.portion > 0)) return;
+      // `c.portion` is servings eaten; ingredients are the whole batch, which makes
+      // r.servings servings — buy batch/servings per serving eaten.
+      const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
+      // task D1: recipeEffectiveIngredients (engine.js) resolves the CHOSEN variant's
+      // ingredients (base + the opts-selected choice per group) — buys what was actually
+      // planned/eaten, not always the default combo.
+      recipeEffectiveIngredients(r, c.opts).forEach(function(ing){
+        addFromIngredient(ing[0], (ing[1] / batchYield) * c.portion);
+      });
+    } else if(c && c.foodId){
+      addFromFoodComponent(c.foodId, c.grams);
+    }
+  });
+  return out;
+}
+
 // Walks the full 7-day plan for BOTH people and aggregates identical ingredient (food)
 // names. Shared slots: one recipe cooked at (Elena's portion + Andrea's portion)
 // combined — cooked once, counted once, same convention as before. Solo slots: each
@@ -1641,51 +1693,49 @@ function foodCategoryForName(name){
 // aggregates NEXT week's plan instead, over the exact same RECIPES_DB/FOODS logic.
 function computeShoppingList(weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
-  const totals = {};  // food display name -> {qty, unit}
+  const totals = {};  // food display name -> {qty, unit, foodIds}
   const staples = {}; // food display name -> true (toTaste garnish, unquantified)
-  function addRecipe(recipeId, factor, opts){
-    const r = RECIPES_DB[recipeId];
-    if(!r || !(factor > 0)) return;
-    // `factor` is servings eaten; ingredients are the whole batch, which makes
-    // r.servings servings — buy batch/servings per serving eaten.
-    const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
-    // task D1: recipeEffectiveIngredients (engine.js) resolves the CHOSEN variant's
-    // ingredients (base + the opts-selected choice per group) — the shopping list buys
-    // what was actually planned/eaten, not always the default combo.
-    recipeEffectiveIngredients(r, opts).forEach(function(ing){
-      const foodId = ing[0], grams = ing[1] / batchYield;
-      const food = FOODS[foodId];
-      if(!food) return;
-      const name = food.name;
-      if(food.unit === 'piece'){
-        if(!totals[name]) totals[name] = {qty: 0, unit: ''};
-        totals[name].qty += (grams * factor) / food.avgG;
-      } else {
-        if(!totals[name]) totals[name] = {qty: 0, unit: food.unit};
-        totals[name].qty += grams * factor;
-      }
-    });
-    (r.toTaste || []).forEach(function(t){ staples[capitalizeFirst(t)] = true; });
-  }
-  function addFood(foodId, grams){
-    const food = FOODS[foodId];
-    if(!food || !(grams > 0)) return;
-    const name = food.name;
-    if(food.unit === 'piece'){
-      if(!totals[name]) totals[name] = {qty: 0, unit: ''};
-      totals[name].qty += grams / food.avgG;
-    } else {
-      if(!totals[name]) totals[name] = {qty: 0, unit: food.unit};
-      totals[name].qty += grams;
-    }
-  }
+
+  // ONE flat, ORDER-PRESERVING list of every component across the whole week (both
+  // people), in the exact day -> slot -> elena -> partner traversal the pre-refactor
+  // addRecipe/addFood calls used — feeding this as a single sequence into
+  // foodQuantitiesForComponents keeps its per-ingredient accumulation order (and so the
+  // exact summed float bits) identical to the pre-refactor code, which byte-identical
+  // parity depends on.
+  const allComponents = [];
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      planEntryComponents(m.elena).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion, c.opts); else addFood(c.foodId, c.grams); });
-      planEntryComponents(m.partner).forEach(function(c){ if(c.recipeId) addRecipe(c.recipeId, c.portion, c.opts); else addFood(c.foodId, c.grams); });
+      planEntryComponents(m.elena).forEach(function(c){ allComponents.push(c); });
+      planEntryComponents(m.partner).forEach(function(c){ allComponents.push(c); });
     });
   });
+
+  // Staples (toTaste) are gathered per recipe component, independent of quantity — same
+  // guard (`r` exists, `portion > 0`) the old inline addRecipe used before touching staples.
+  allComponents.forEach(function(c){
+    if(!c || !c.recipeId) return;
+    const r = RECIPES_DB[c.recipeId];
+    if(!r || !(c.portion > 0)) return;
+    (r.toTaste || []).forEach(function(t){ staples[capitalizeFirst(t)] = true; });
+  });
+
+  // PANTRY-plan.md P1 step 2: each row also carries the foodId(s) that contributed to it,
+  // so P3 can subtract the pantry by stable id without touching the name-keyed
+  // checkedShopByWeek (no migration, no risk to existing checked state). foodId -> name is
+  // 1:1 in practice (FOODS has no duplicate display names) so this is normally a
+  // one-element array; built as an array rather than a single id purely as a defensive
+  // hedge against that legacy name-keying wart, never assumed elsewhere.
+  const qtyByFood = foodQuantitiesForComponents(allComponents);
+  Object.keys(qtyByFood).forEach(function(foodId){
+    const food = FOODS[foodId];
+    if(!food) return;
+    const name = food.name;
+    if(!totals[name]) totals[name] = {qty: 0, unit: food.unit === 'piece' ? '' : food.unit, foodIds: []};
+    totals[name].qty += qtyByFood[foodId];
+    if(totals[name].foodIds.indexOf(foodId) === -1) totals[name].foodIds.push(foodId);
+  });
+
   return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate};
 }
 

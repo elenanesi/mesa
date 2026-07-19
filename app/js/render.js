@@ -3719,6 +3719,12 @@ function validateBackupStructure(obj){
   if(!obj.profiles || typeof obj.profiles !== 'object') return false;
   if(!obj.profiles.elena || typeof obj.profiles.elena !== 'object') return false;
   if(!obj.profiles.partner || typeof obj.profiles.partner !== 'object') return false;
+  // pantry (PANTRY-plan.md P1): additive/optional like every other post-v4 field this
+  // function doesn't otherwise enumerate — absent entirely on any pre-pantry backup. Only
+  // checked shallowly (must be an object when present); loadState()'s isValidPantryEntry()
+  // per-entry check (state.js) is the real guard against a malformed entry, same
+  // shallow-here/deep-there split this function's doc above already describes.
+  if(obj.pantry !== undefined && (obj.pantry === null || typeof obj.pantry !== 'object')) return false;
   return true;
 }
 
