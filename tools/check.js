@@ -108,12 +108,6 @@ function createMesaContext(){
   sandbox.self = sandbox;
   sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  // js/library.js runs ensureDefaultFoodIconCached() at load (a top-level call,
-  // not inside a function the tests choose to invoke). It only calls fetch()
-  // when the icon isn't already cached — pre-seed the cache key it checks
-  // (DEFAULT_FOOD_ICON_STORAGE_KEY) so simply LOADING the app can't cost a
-  // network attempt on its own.
-  sandbox.localStorage.setItem('mesa.defaultFoodIcon.v1', 'data:image/png;base64,AA==');
   return sandbox;
 }
 

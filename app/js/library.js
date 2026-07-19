@@ -360,8 +360,6 @@ let libFoodFiltersOpen = false;
 const FOOD_FILTER_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree', 'highFiber', 'fermented'];
 
 const DEFAULT_FOOD_ICON_ASSET = 'assets/ingredients/default-food.png';
-const DEFAULT_FOOD_ICON_STORAGE_KEY = 'mesa.defaultFoodIcon.v1';
-let defaultFoodIconCacheStarted = false;
 
 function safeIngredientIconKey(v){
   v = String(v || '').trim();
@@ -373,39 +371,21 @@ function safeIngredientIconAsset(v){
   return /^assets\/ingredients\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
-function ensureDefaultFoodIconCached(){
-  if(defaultFoodIconCacheStarted) return;
-  defaultFoodIconCacheStarted = true;
-  try{
-    const existing = localStorage.getItem(DEFAULT_FOOD_ICON_STORAGE_KEY);
-    if(existing && existing.indexOf('data:image/') === 0) return;
-  }catch(e){ return; }
-  if(typeof fetch !== 'function' || typeof FileReader === 'undefined') return;
-  fetch(DEFAULT_FOOD_ICON_ASSET)
-    .then(function(res){ return res.ok ? res.blob() : null; })
-    .then(function(blob){
-      if(!blob) return;
-      const reader = new FileReader();
-      reader.onload = function(){
-        try{
-          if(typeof reader.result === 'string' && reader.result.indexOf('data:image/') === 0){
-            localStorage.setItem(DEFAULT_FOOD_ICON_STORAGE_KEY, reader.result);
-          }
-        }catch(e){}
-      };
-      reader.readAsDataURL(blob);
-    })
-    .catch(function(){});
-}
-
 function defaultFoodIconSrc(){
-  try{
-    const cached = localStorage.getItem(DEFAULT_FOOD_ICON_STORAGE_KEY);
-    if(cached && cached.indexOf('data:image/') === 0) return cached;
-  }catch(e){}
-  ensureDefaultFoodIconCached();
   return DEFAULT_FOOD_ICON_ASSET;
 }
+
+// One-shot reclaim for installs that ran the old base64-in-localStorage icon cache
+// (key 'mesa.defaultFoodIcon.v1', removed 2026-07-19). The service worker already
+// precaches assets/ingredients/default-food.png via SHELL_FILES, so that copy was pure
+// duplication — but deleting the WRITER alone would strand the blob on existing phones
+// forever, still occupying the same scarce iOS-PWA quota persist() needs for real user
+// data. removeItem on a missing key is a no-op, so this costs nothing once drained and
+// needs no "already cleaned" flag of its own.
+function dropLegacyDefaultFoodIconCache(){
+  try{ localStorage.removeItem('mesa.defaultFoodIcon.v1'); }catch(e){}
+}
+dropLegacyDefaultFoodIconCache();
 
 function ingredientIconAssetForFood(food){
   if(!food) return '';
@@ -438,8 +418,6 @@ function availableIngredientIconKeys(){
   });
   return Object.keys(seen).sort();
 }
-
-ensureDefaultFoodIconCached();
 
 function renderLibraryHub(){
   const el = document.getElementById('libraryHubBody');

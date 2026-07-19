@@ -68,9 +68,6 @@ function createContext(){
   };
   sandbox.window = sandbox; sandbox.self = sandbox; sandbox.globalThis = sandbox;
   vm.createContext(sandbox);
-  // Same pre-seed as tools/check.js: library.js's top-level icon-cache check
-  // must not attempt a fetch just because the app loaded.
-  sandbox.localStorage.setItem('mesa.defaultFoodIcon.v1', 'data:image/png;base64,AA==');
   return sandbox;
 }
 
