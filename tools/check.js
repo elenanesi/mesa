@@ -728,6 +728,8 @@ function testRecipeImagePicker(ctx){
   call(ctx, 'openNewRecipeForm', []);
   run(ctx, "recipeBuilder.name = 'Image picker recipe'; recipeBuilder.emoji = '🍽️'; recipeBuilder.ingredients = [{foodId:'eggs', grams:100}, {foodId:'spinach', grams:50}]; recipeBuilder.imagePickerOpen = true;");
   let html = call(ctx, 'buildRecipeBuilderSheet', []);
+  assert(html.indexOf('Lead image') !== -1,
+    'buildRecipeBuilderSheet: labels the recipe image control as Lead image', html);
   assert(html.indexOf('data-role="recipe-image-grid"') !== -1,
     'buildRecipeBuilderSheet: recipe image picker grid renders when open', html);
   assert(html.indexOf('data-image-key="fish-main"') !== -1 && html.indexOf('assets/recipes/fish-main.png') !== -1,
@@ -745,6 +747,15 @@ function testRecipeImagePicker(ctx){
   call(ctx, 'openEditRecipeForm', ['salmon']);
   assert(get(ctx, 'recipeBuilder').imageKey === null,
     'openEditRecipeForm: built-in recipes without explicit imageKey start in Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
+  assert(get(ctx, 'recipeBuilder').imagePickerOpen === false,
+    'openEditRecipeForm: normal recipe edit does not force-open the image picker', String(get(ctx, 'recipeBuilder').imagePickerOpen));
+  html = call(ctx, 'buildRecipeBuilderSheet', []);
+  assert(html.indexOf('Lead image') !== -1 && html.indexOf('Choose lead image') !== -1,
+    'buildRecipeBuilderSheet: normal recipe edit exposes the Choose lead image action', html);
+  call(ctx, 'openRecipeImageForm', ['salmon']);
+  html = call(ctx, 'buildRecipeBuilderSheet', []);
+  assert(get(ctx, 'recipeBuilder').imagePickerOpen === true && html.indexOf('data-role="recipe-image-grid"') !== -1,
+    'openRecipeImageForm: opens edit recipe with the lead image picker expanded', html);
   call(ctx, 'setRecipeImageKey', ['salad']);
   call(ctx, 'saveRecipeBuilder', []);
   assert(get(ctx, 'recipeOverrides').salmon && get(ctx, 'recipeOverrides').salmon.imageKey === 'salad',

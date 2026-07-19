@@ -1761,6 +1761,14 @@ function openEditRecipeForm(id){
   renderRecipeBuilderSheet();
 }
 
+function openRecipeImageForm(id){
+  const draft = recipeToBuilder(id);
+  if(!draft){ toast('Recipe not found'); return; }
+  draft.imagePickerOpen = true;
+  recipeBuilder = draft;
+  renderRecipeBuilderSheet();
+}
+
 function renderRecipeBuilderSheet(){
   setRecipesScreenHtml(buildRecipeBuilderSheet());
   attachRecipeImageGridHandler();
@@ -1812,9 +1820,9 @@ function buildRecipeBuilderSheet(){
   const autoImageKey = previewSrc.indexOf('assets/recipes/') === 0
     ? previewSrc.slice('assets/recipes/'.length).replace(/\.png$/, '')
     : 'default-recipe';
-  html += '<div class="field"><label>Image</label><div class="row" style="gap:12px;align-items:center;margin-top:6px">'
-    + '<span class="recipe-image-preview">' + recipeHeroHtml(previewRecipe, rb.editingId || '') + '</span>'
-    + '<button class="pill ghost chip-preset" onclick="toggleRecipeImagePicker()">' + (rb.imagePickerOpen ? 'Hide images' : 'Choose image') + '</button>'
+  html += '<div class="field recipe-lead-image-field"><label>Lead image</label><div class="row recipe-lead-image-row">'
+    + '<span class="recipe-image-preview recipe-image-preview-lg">' + recipeHeroHtml(previewRecipe, rb.editingId || '') + '</span>'
+    + '<button class="pill ghost chip-preset" onclick="toggleRecipeImagePicker()">' + (rb.imagePickerOpen ? 'Hide images' : 'Choose lead image') + '</button>'
     + '<span class="sub" style="margin:0">' + (currentImageKey ? escapeHtml(recipeImageLabel(currentImageKey)) : 'Auto · ' + escapeHtml(recipeImageLabel(autoImageKey))) + '</span>'
     + '</div>'
     + (rb.imagePickerOpen ? buildRecipeImageGrid(currentImageKey) : '')
