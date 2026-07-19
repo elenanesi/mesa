@@ -1063,6 +1063,175 @@ function testPinnedRebalanceDoesNotTouchPinnedUnit(ctx){
   run(ctx, 'mealPins = {};');
 }
 
+/* ---------------- Today Re-balance regressions ----------------
+   Today Re-balance is allowed to repair only TODAY's still-open slots. Confirmed and
+   skipped slots are frozen, including shared slots when either person has logged/skipped
+   their half. These checks deliberately avoid exact recipe assertions: the planner's
+   catalog/ranking can evolve, but locks, stale guards, frozen nutrition, score direction,
+   and date boundaries must not. */
+function testTodayRebalance(ctx){
+  const TODAY = FIXED_MONDAY;
+  const TOMORROW = call(ctx, 'addDaysISO', [TODAY, 1]);
+  const YESTERDAY = call(ctx, 'addDaysISO', [TODAY, -1]);
+  const slotOrder = get(ctx, 'SLOT_ORDER');
+
+  function reset(){
+    run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = []; logHistory = {};");
+    return call(ctx, 'ensureWeekPlan', []);
+  }
+  function mealFor(plan, unit){
+    return plan.days[unit.dayIndex].meals[unit.slot];
+  }
+  function entryFor(plan, unit, person){
+    const meal = mealFor(plan, unit);
+    return unit.shared || meal.shared ? meal[person || 'elena'] : meal[unit.person || person || 'elena'];
+  }
+  function slotSignature(plan, unit){
+    return JSON.stringify(mealFor(plan, unit));
+  }
+  function unitMatches(a, b){
+    return !!a && !!b && a.dayIndex === b.dayIndex && a.slot === b.slot
+      && !!a.shared === !!b.shared && (a.shared || a.person === b.person);
+  }
+  function suggestionUnit(s){ return s && s.unit; }
+  function acceptedOnly(prop, keepFn){
+    const copy = cloneJSON(prop);
+    copy.suggestions = (copy.suggestions || []).map(function(s){
+      s.accepted = keepFn(s) === true;
+      return s;
+    });
+    return copy;
+  }
+  function proposalScore(prop){
+    if(!prop) return null;
+    if(typeof prop.afterScore === 'number') return prop.afterScore;
+    if(prop.after && typeof prop.after.score === 'number') return prop.after.score;
+    if(typeof prop.scoreAfter === 'number') return prop.scoreAfter;
+    if(typeof prop.improvement === 'number' && typeof prop.beforeScore === 'number') return prop.beforeScore + prop.improvement;
+    if(Array.isArray(prop.suggestions)){
+      return prop.suggestions.reduce(function(sum, s){ return sum + (typeof s.improvement === 'number' ? s.improvement : 0); }, 0);
+    }
+    return null;
+  }
+  function confirmUnit(dateISO, plan, unit, person){
+    const p = person || unit.person || 'elena';
+    const entry = entryFor(plan, unit, p);
+    call(ctx, 'logPlanEntry', [dateISO, p, unit.slot, entry.recipeId, entry.portion, call(ctx, 'planEntryComponents', [entry])]);
+  }
+  function loggedEntry(dateISO, person, slot){
+    return get(ctx, "logHistory['" + dateISO + "'] && logHistory['" + dateISO + "']['" + person + "']").filter(function(e){
+      return e.kind === 'plan' && e.slot === slot;
+    })[0];
+  }
+
+  // (a) confirmed and skipped slots are excluded up front and rejected by the apply-time
+  // unit guard.
+  {
+    const plan = reset();
+    call(ctx, 'logPlanEntry', [TODAY, 'elena', 'breakfast', plan.days[0].meals.breakfast.elena.recipeId, plan.days[0].meals.breakfast.elena.portion, call(ctx, 'planEntryComponents', [plan.days[0].meals.breakfast.elena])]);
+    call(ctx, 'markSlotSkipped', [TODAY, 'elena', 'snack']);
+    const prop = call(ctx, 'proposeTodayRebalanceSuggestions', [TODAY, 'elena']);
+    const units = (prop.suggestions || []).map(suggestionUnit);
+    assert(units.every(function(u){ return !(u.dayIndex === 0 && u.slot === 'breakfast' && (!u.shared ? u.person === 'elena' : true)); }),
+      'today re-balance: confirmed slots are excluded from suggestions', JSON.stringify(prop.suggestions));
+    assert(units.every(function(u){ return !(u.dayIndex === 0 && u.slot === 'snack' && (!u.shared ? u.person === 'elena' : true)); }),
+      'today re-balance: skipped slots are excluded from suggestions', JSON.stringify(prop.suggestions));
+    assert(call(ctx, 'canApplyTodayRebalanceUnit', [plan, {dayIndex:0, slot:'breakfast', shared:!!plan.days[0].meals.breakfast.shared, person:'elena'}, TODAY]) === false,
+      'today re-balance: canApplyTodayRebalanceUnit rejects a confirmed slot', '');
+    assert(call(ctx, 'canApplyTodayRebalanceUnit', [plan, {dayIndex:0, slot:'snack', shared:!!plan.days[0].meals.snack.shared, person:'elena'}, TODAY]) === false,
+      'today re-balance: canApplyTodayRebalanceUnit rejects a skipped slot', '');
+  }
+
+  // (b) a stale proposal cannot mutate a slot after that slot becomes logged/skipped.
+  {
+    const plan = reset();
+    const prop = call(ctx, 'proposeTodayRebalanceSuggestions', [TODAY, 'elena']);
+    const target = (prop.suggestions || []).filter(function(s){ return !!s.unit; })[0];
+    assert(!!target, 'today re-balance stale-guard setup: a suggestion exists for an open slot', JSON.stringify(prop));
+    if(target){
+      const beforeSig = slotSignature(plan, target.unit);
+      confirmUnit(TODAY, plan, target.unit, target.unit.person || 'elena');
+      assert(call(ctx, 'canApplyTodayRebalanceUnit', [plan, target.unit, TODAY]) === false,
+        'today re-balance: stale proposal guard rejects a unit after it becomes confirmed', JSON.stringify(target.unit));
+      const afterPlan = call(ctx, 'todayRebalanceAcceptedPlan', [acceptedOnly(prop, function(s){ return s === target; })]);
+      assert(slotSignature(afterPlan, target.unit) === beforeSig,
+        'today re-balance: accepted stale suggestion does not mutate the now-confirmed slot',
+        'before=' + beforeSig + ' after=' + slotSignature(afterPlan, target.unit));
+    }
+  }
+
+  // (c) shared slots lock as a single household unit when either person has confirmed or
+  // skipped their half.
+  {
+    const plan = reset();
+    const sharedSlot = slotOrder.filter(function(slot){ return !!plan.days[0].meals[slot].shared; })[0];
+    assert(!!sharedSlot, 'today re-balance shared-lock setup: today has at least one shared slot', JSON.stringify(plan.days[0].meals));
+    if(sharedSlot){
+      const unit = {dayIndex:0, slot:sharedSlot, shared:true};
+      confirmUnit(TODAY, plan, unit, 'partner');
+      assert(call(ctx, 'canApplyTodayRebalanceUnit', [plan, unit, TODAY]) === false,
+        'today re-balance: shared slot is locked when either person has logged it', sharedSlot);
+      run(ctx, 'logHistory = {};');
+      call(ctx, 'markSlotSkipped', [TODAY, 'elena', sharedSlot]);
+      assert(call(ctx, 'canApplyTodayRebalanceUnit', [plan, unit, TODAY]) === false,
+        'today re-balance: shared slot is locked when either person has skipped it', sharedSlot);
+      const prop = call(ctx, 'proposeTodayRebalanceSuggestions', [TODAY, 'partner']);
+      assert((prop.suggestions || []).every(function(s){ return !unitMatches(s.unit, unit); }),
+        'today re-balance: shared logged/skipped slot is excluded from suggestions for the other person', JSON.stringify(prop.suggestions));
+    }
+  }
+
+  // (d) applying changes to other open slots never rewrites a frozen logged entry's
+  // nutrition snapshot.
+  {
+    const plan = reset();
+    confirmUnit(TODAY, plan, {dayIndex:0, slot:'breakfast', shared:!!plan.days[0].meals.breakfast.shared, person:'elena'}, 'elena');
+    const before = cloneJSON(loggedEntry(TODAY, 'elena', 'breakfast'));
+    const prop = call(ctx, 'proposeTodayRebalanceSuggestions', [TODAY, 'elena']);
+    call(ctx, 'todayRebalanceAcceptedPlan', [acceptedOnly(prop, function(s){
+      return !!s.unit && !(s.unit.dayIndex === 0 && s.unit.slot === 'breakfast');
+    })]);
+    const after = loggedEntry(TODAY, 'elena', 'breakfast');
+    assert(JSON.stringify(after) === JSON.stringify(before),
+      'today re-balance: logged nutrition snapshot is unchanged after other slots change',
+      'before=' + JSON.stringify(before) + ' after=' + JSON.stringify(after));
+  }
+
+  // (e) after a quick-add deviation, accepting today's proposal improves the planner's
+  // score/objective signal.
+  {
+    const plan = reset();
+    call(ctx, 'logFoodEntry', [TODAY, 'elena', 'olive-oil', 50]);
+    const prop = call(ctx, 'proposeTodayRebalanceSuggestions', [TODAY, 'elena']);
+    const accepted = acceptedOnly(prop, function(){ return true; });
+    const afterPlan = call(ctx, 'todayRebalanceAcceptedPlan', [accepted]);
+    const afterProp = call(ctx, 'proposeTodayRebalanceSuggestions', [TODAY, 'elena']);
+    const beforeScore = proposalScore(prop);
+    const afterScore = proposalScore(afterProp);
+    assert((prop.suggestions || []).length > 0, 'today re-balance: quick-add deviation produces at least one suggested repair', JSON.stringify(prop));
+    assert(call(ctx, 'todayRebalanceChangedSuggestionCount', [plan, afterPlan, accepted.suggestions]) > 0,
+      'today re-balance: accepting quick-add repair suggestions changes at least one open meal cell',
+      'suggestions=' + JSON.stringify(prop.suggestions));
+    assert(afterPlan && afterPlan.days && beforeScore !== null && afterScore !== null && afterScore >= beforeScore - 1e-9,
+      'today re-balance: score/objective does not regress after accepting quick-add repair suggestions',
+      'beforeScore=' + beforeScore + ' afterScore=' + afterScore + ' suggestions=' + JSON.stringify(prop.suggestions));
+  }
+
+  // (f) Today Re-balance is date-boundary strict: yesterday/tomorrow do not produce
+  // applicable units against the fixed TODAY.
+  {
+    const plan = reset();
+    const yesterdayProp = call(ctx, 'proposeTodayRebalanceSuggestions', [YESTERDAY, 'elena']);
+    const tomorrowProp = call(ctx, 'proposeTodayRebalanceSuggestions', [TOMORROW, 'elena']);
+    assert((yesterdayProp.suggestions || []).length === 0, 'today re-balance: yesterday produces no suggestions', JSON.stringify(yesterdayProp));
+    assert((tomorrowProp.suggestions || []).length === 0, 'today re-balance: tomorrow produces no suggestions', JSON.stringify(tomorrowProp));
+    assert(call(ctx, 'canApplyTodayRebalanceUnit', [plan, {dayIndex:1, slot:'lunch', shared:!!plan.days[1].meals.lunch.shared, person:'elena'}, TOMORROW]) === false,
+      'today re-balance: canApplyTodayRebalanceUnit rejects tomorrow units', '');
+  }
+
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+}
+
 function testPinnedFutureMealSurvivesRegenerationContract(ctx){
   const hasPinHelper = run(ctx, "typeof pinRoutineOccurrencesFrom === 'function'");
   if(!hasPinHelper){
@@ -1105,6 +1274,179 @@ function testRoutinePinHelperContracts(ctx){
     'routine unpin following: clears pinFromDate and removes later routine pins',
     'rule=' + JSON.stringify(rule) + ' pins=' + JSON.stringify(pinsAfterUnpin));
   run(ctx, 'mealPins = {}; mealRules = [];');
+}
+
+/* ---------------- pinned-meal re-balance immutability (2026-07-19 bug report) ----------------
+   Elena's report: "when NEXT week is re-balanced, the pinned meals stay pinned — but
+   change". Contract (README v26): a pin makes AUTO mutation (re-balance, regeneration)
+   leave that meal byte-identical, while explicit USER actions (manual swap, routine set,
+   extras edit — v56) stay allowed. These tests pin NEXT week's meals through the exact
+   key-derivation chain the Week UI uses (render.js renderWeek: mealPinPersonForMeal →
+   mealPinKey → toggleMealPin writes mealPins[key]) — never by hand-writing key strings —
+   so any future drift between the UI's write key and canAutoMutateUnit's read key fails
+   here. The applyRebalance simulation mirrors render.js applyRebalance's exact mutation
+   sequence (rebalanceAcceptedPlan → preserveLoggedSlots → preservePinnedSlots →
+   markWeekPlanEdited); a source guard below keeps that mirror honest. */
+function uiDerivedPinKey(ctx, weekStartDate, dayIndex, slot, viewerPerson){
+  // Exactly renderWeek's derivation at 📍-render time: the meal's CURRENT shared/solo
+  // state picks 'shared' vs the viewing profile.
+  const meal = call(ctx, 'ensureWeekPlan', [weekStartDate]).days[dayIndex].meals[slot];
+  const pinPerson = call(ctx, 'mealPinPersonForMeal', [meal, viewerPerson]);
+  return call(ctx, 'mealPinKey', [weekStartDate, dayIndex, slot, pinPerson]);
+}
+
+function testPinnedMealsRebalanceImmutability(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = []; logHistory = {};");
+  const nextMonday = call(ctx, 'addDaysISO', [FIXED_MONDAY, 7]);
+  let plan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+
+  // Locate one of each pin form on next week's plan.
+  function findDay(slot, wantShared){
+    for(let d = 0; d < 7; d++){
+      const m = plan.days[d].meals[slot];
+      if(m && !!m.shared === wantShared) return d;
+    }
+    return -1;
+  }
+  const sharedDinnerDay = findDay('dinner', true);
+  const soloLunchDay = findDay('lunch', false);
+  assert(sharedDinnerDay !== -1 && soloLunchDay !== -1,
+    'pin immutability setup: next week has a shared dinner and a solo lunch',
+    'sharedDinnerDay=' + sharedDinnerDay + ' soloLunchDay=' + soloLunchDay);
+  if(sharedDinnerDay === -1 || soloLunchDay === -1) return;
+
+  // Pin all four UI-producible key forms:
+  // (1) shared dinner pinned by Elena → key '...|shared'
+  // (2) solo lunch pinned by Elena for herself → '...|elena'
+  // (3) same solo lunch pinned by Andrea for himself → '...|partner'
+  // (4) a pinned daily routine (pinRoutineOccurrencesFrom) → routineOccurrencePinKey keys
+  const keyShared = uiDerivedPinKey(ctx, nextMonday, sharedDinnerDay, 'dinner', 'elena');
+  const keyElena = uiDerivedPinKey(ctx, nextMonday, soloLunchDay, 'lunch', 'elena');
+  const keyPartner = uiDerivedPinKey(ctx, nextMonday, soloLunchDay, 'lunch', 'partner');
+  [keyShared, keyElena, keyPartner].forEach(function(k){ run(ctx, 'mealPins[' + JSON.stringify(k) + '] = true;'); });
+  assert(keyShared.split('|')[3] === 'shared' && keyElena.split('|')[3] === 'elena' && keyPartner.split('|')[3] === 'partner',
+    'pin immutability: UI key derivation yields shared/elena/partner person segments',
+    JSON.stringify([keyShared, keyElena, keyPartner]));
+
+  const routineDay = plan.days.findIndex(function(day, d){ return d !== sharedDinnerDay && !plan.days[d].meals.breakfast.shared; });
+  const routineRecipeId = plan.days[Math.max(0, routineDay)].meals.breakfast.elena.recipeId;
+  run(ctx, 'mealRules = [{recipeId: ' + JSON.stringify(routineRecipeId) + ", slot: 'breakfast', cadence: 'daily', person: 'elena', anchorDate: " + JSON.stringify(nextMonday) + ', dayIndex: 0}];');
+  call(ctx, 'pinRoutineOccurrencesFrom', [get(ctx, 'mealRules[0]'), nextMonday]);
+  plan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+
+  // Manual swap ON the pinned solo lunch — v56: explicit user corrections remain allowed
+  // even on a pinned meal, and the pin key must survive the swap.
+  const preSwapId = plan.days[soloLunchDay].meals.lunch.elena.recipeId;
+  const alt = call(ctx, 'buildSwapAlternatives', [soloLunchDay, 'lunch', 'elena', nextMonday])[0];
+  assert(!!alt && alt.id !== preSwapId, 'pin immutability setup: a swap alternative exists for the pinned solo lunch', JSON.stringify(alt));
+  call(ctx, 'applySwap', [soloLunchDay, 'lunch', 'elena', alt.id, nextMonday]);
+  plan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  assert(plan.days[soloLunchDay].meals.lunch.elena.recipeId === alt.id,
+    'pins do not block explicit user actions: manual swap on a pinned meal still applies',
+    'wanted=' + alt.id + ' got=' + plan.days[soloLunchDay].meals.lunch.elena.recipeId);
+  assert(get(ctx, 'mealPins')[keyElena] === true,
+    'pins survive an explicit manual swap: the pin key is still set afterwards',
+    JSON.stringify(get(ctx, 'mealPins')));
+
+  // Snapshot every pinned cell — the user-CHOSEN state (post-swap), not the generated one.
+  const snapSharedDinner = cloneJSON(plan.days[sharedDinnerDay].meals.dinner);
+  const snapSoloLunch = cloneJSON(plan.days[soloLunchDay].meals.lunch);
+  const routineDays = plan.days.map(function(day, d){ return d; }).filter(function(d){
+    return get(ctx, 'mealPins')[uiDerivedPinKey(ctx, nextMonday, d, 'breakfast', 'elena')];
+  });
+  const snapRoutine = routineDays.map(function(d){ return cloneJSON(plan.days[d].meals.breakfast); });
+
+  // (A) Enumeration: no suggestion may target any pinned unit.
+  const proposal = call(ctx, 'proposeRebalanceSuggestions', [nextMonday]);
+  function hits(s, dayIndex, slot, shared, person){
+    if(!s.unit || s.unit.dayIndex !== dayIndex || s.unit.slot !== slot) return false;
+    if(!!s.unit.shared !== !!shared) return false;
+    return shared || s.unit.person === person;
+  }
+  const badTargets = (proposal.suggestions || []).filter(function(s){
+    return hits(s, sharedDinnerDay, 'dinner', true, null)
+      || hits(s, soloLunchDay, 'lunch', false, 'elena')
+      || hits(s, soloLunchDay, 'lunch', false, 'partner')
+      || routineDays.some(function(d){ return hits(s, d, 'breakfast', !!plan.days[d].meals.breakfast.shared, 'elena'); });
+  });
+  assert(badTargets.length === 0,
+    're-balance suggestions never target a pinned unit (all four UI pin-key forms)',
+    JSON.stringify(badTargets));
+
+  // (B) The fix must not make re-balance a no-op: unpinned meals still get suggestions
+  // on this fixture, and applying them still changes at least one unpinned cell.
+  assert((proposal.suggestions || []).length > 0,
+    're-balance still proposes changes for unpinned meals with pins present',
+    JSON.stringify(proposal));
+
+  // (C) Full applyRebalance-equivalent mutation (mirrors render.js applyRebalance):
+  const basePlan = call(ctx, 'ensureWeekPlan', [nextMonday]);
+  const baseJson = JSON.stringify(basePlan);
+  const resultPlan = call(ctx, 'rebalanceAcceptedPlan', [proposal]);
+  call(ctx, 'preserveLoggedSlots', [basePlan, resultPlan]);
+  call(ctx, 'preservePinnedSlots', [basePlan, resultPlan]);
+  call(ctx, 'markWeekPlanEdited', [resultPlan]);
+  assert(JSON.stringify(resultPlan.days[sharedDinnerDay].meals.dinner) === JSON.stringify(snapSharedDinner),
+    'applyRebalance-equivalent: pinned shared dinner cell is byte-identical',
+    'before=' + JSON.stringify(snapSharedDinner) + ' after=' + JSON.stringify(resultPlan.days[sharedDinnerDay].meals.dinner));
+  assert(JSON.stringify(resultPlan.days[soloLunchDay].meals.lunch) === JSON.stringify(snapSoloLunch),
+    'applyRebalance-equivalent: pinned solo lunch cell (user-swapped, both people pinned) is byte-identical',
+    'before=' + JSON.stringify(snapSoloLunch) + ' after=' + JSON.stringify(resultPlan.days[soloLunchDay].meals.lunch));
+  routineDays.forEach(function(d, i){
+    assert(JSON.stringify(resultPlan.days[d].meals.breakfast) === JSON.stringify(snapRoutine[i]),
+      'applyRebalance-equivalent: pinned routine-occurrence breakfast (day ' + d + ') is byte-identical',
+      'before=' + JSON.stringify(snapRoutine[i]) + ' after=' + JSON.stringify(resultPlan.days[d].meals.breakfast));
+  });
+  const changedCells = [];
+  resultPlan.days.forEach(function(day, d){
+    Object.keys(day.meals).forEach(function(slot){
+      if(JSON.stringify(day.meals[slot]) !== JSON.stringify(basePlan.days[d].meals[slot])) changedCells.push(d + '|' + slot);
+    });
+  });
+  assert(changedCells.length > 0 && changedCells.every(function(c){
+      return c !== sharedDinnerDay + '|dinner' && c !== soloLunchDay + '|lunch' && routineDays.every(function(d){ return c !== d + '|breakfast'; });
+    }),
+    'applyRebalance-equivalent: at least one UNpinned cell changed and no pinned cell did',
+    'changed=' + JSON.stringify(changedCells));
+  assert(JSON.stringify(basePlan) === baseJson,
+    'applyRebalance-equivalent: the base plan itself was not mutated by the simulation', '');
+
+  // (D) Belt-and-braces: even a stale/hostile proposal whose suggestions DO target pinned
+  // units cannot change them — apply-time canAutoMutateUnit guard + preservePinnedSlots.
+  const staleAlt = call(ctx, 'buildSwapAlternatives', [sharedDinnerDay, 'dinner', 'elena', nextMonday])[0];
+  const staleProp = {weekStartDate: nextMonday, suggestions: [
+    {kind: 'swap', accepted: true, unit: {dayIndex: sharedDinnerDay, slot: 'dinner', shared: true}, toRecipeId: staleAlt.id},
+    {kind: 'swap', accepted: true, unit: {dayIndex: soloLunchDay, slot: 'lunch', shared: false, person: 'elena'}, toRecipeId: preSwapId},
+    {kind: 'addSide', accepted: true, unit: {dayIndex: soloLunchDay, slot: 'lunch', shared: false, person: 'partner'}, sideRecipeId: 'asparagi-fagiolini-broccoli'}
+  ]};
+  const stalePlan = call(ctx, 'rebalanceAcceptedPlan', [staleProp]);
+  call(ctx, 'preserveLoggedSlots', [basePlan, stalePlan]);
+  call(ctx, 'preservePinnedSlots', [basePlan, stalePlan]);
+  assert(JSON.stringify(stalePlan.days[sharedDinnerDay].meals.dinner) === JSON.stringify(snapSharedDinner)
+    && JSON.stringify(stalePlan.days[soloLunchDay].meals.lunch) === JSON.stringify(snapSoloLunch),
+    'applyRebalance-equivalent: stale suggestions aimed straight at pinned units still leave them byte-identical',
+    'dinner=' + JSON.stringify(stalePlan.days[sharedDinnerDay].meals.dinner) + ' lunch=' + JSON.stringify(stalePlan.days[soloLunchDay].meals.lunch));
+
+  run(ctx, "weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = []; logHistory = {};");
+}
+
+// Source guard: the simulation above mirrors render.js's applyRebalance/applyTodayRebalance.
+// Keep the mirror honest — both appliers must call preservePinnedSlots AFTER
+// preserveLoggedSlots and BEFORE markWeekPlanEdited (the 2026-07-19 belt-and-braces fix;
+// regeneration in planner.js ensureWeekPlan already had the same final guard from abe920f).
+function testRebalanceAppliersCarryPinGuard(){
+  const src = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  ['applyRebalance', 'applyTodayRebalance'].forEach(function(fnName){
+    const start = src.indexOf('function ' + fnName + '(');
+    const end = src.indexOf('\nfunction ', start + 1);
+    const body = start === -1 ? '' : src.slice(start, end === -1 ? src.length : end);
+    const iLogged = body.indexOf('preserveLoggedSlots(');
+    const iPinned = body.indexOf('preservePinnedSlots(');
+    const iEdited = body.indexOf('markWeekPlanEdited(');
+    assert(iLogged !== -1 && iPinned !== -1 && iEdited !== -1 && iLogged < iPinned && iPinned < iEdited,
+      'render.js ' + fnName + '(): preservePinnedSlots runs after preserveLoggedSlots and before markWeekPlanEdited',
+      'indexes logged=' + iLogged + ' pinned=' + iPinned + ' edited=' + iEdited);
+  });
 }
 
 /* ---------------- planner.js determinism ---------------- */
@@ -3631,8 +3973,11 @@ function main(){
   runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });
   runTest('mealRules pinFromDate sync apply', function(){ testMealRulePinFromDateSyncApply(ctx); });
   runTest('pinned re-balance unit exclusion', function(){ testPinnedRebalanceDoesNotTouchPinnedUnit(ctx); });
+  runTest('today re-balance regressions', function(){ testTodayRebalance(ctx); });
   runTest('pinned future regeneration contract', function(){ testPinnedFutureMealSurvivesRegenerationContract(ctx); });
   runTest('routine pin helper contracts', function(){ testRoutinePinHelperContracts(ctx); });
+  runTest('pinned meals re-balance immutability (2026-07-19)', function(){ testPinnedMealsRebalanceImmutability(ctx); });
+  runTest('re-balance appliers carry the pin guard', function(){ testRebalanceAppliersCarryPinGuard(); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });

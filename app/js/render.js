@@ -1953,6 +1953,7 @@ function buildShopSheet(){
 // applyRebalance() commits only the accepted suggestions, persists, and re-renders
 // every surface that shows the plan (chips included).
 let rebalanceProposal = null;
+let todayRebalanceProposal = null;
 
 function rebalanceValueAfter(prop){
   // The worst metric's value on the proposed plan, formatted like the chips.
@@ -2053,6 +2054,14 @@ function applyRebalance(){
   const resultPlan = rebalanceAcceptedPlan(rebalanceProposal);
   const afterText = coverageValueText(coverageGaps(computeWeeklyCoverage(resultPlan))[rebalanceProposal.metricKey]);
   preserveLoggedSlots(basePlan, resultPlan);
+  // Belt-and-braces pin guard (2026-07-19 pin-leak report): every suggestion is already
+  // filtered per-unit by canAutoMutateUnit (enumeration AND apply time), but regeneration
+  // (ensureWeekPlan) already gets a preservePinnedSlots final pass, and this apply path is
+  // the same kind of AUTO mutation — so any pinned cell is restored from basePlan
+  // wholesale here regardless of what the accepted suggestions did. Explicit user
+  // corrections (manual swap, routine set, extras edit) never route through this
+  // function, so v56's "explicit user corrections remain allowed" is untouched.
+  preservePinnedSlots(basePlan, resultPlan);
   markWeekPlanEdited(resultPlan);
   weekPlans[rebalanceProposal.weekStartDate] = resultPlan;
   if(rebalanceProposal.weekStartDate === mondayOfWeek(todayISO())) weekPlan = resultPlan;
@@ -2066,6 +2075,166 @@ function applyRebalance(){
   persist();
   closeSheet();
   toast('✓ Week re-balanced — ' + g.label + ' now ' + afterText);
+}
+
+/* ---------------- re-balance today (UI slice) ---------------- */
+function todayRebalanceProposalDate(){
+  return (todayRebalanceProposal && todayRebalanceProposal.dateISO) || todayISO();
+}
+
+function todayRebalanceSuggestionLabel(s){
+  const unit = s.unit || {};
+  const slot = unit.slot || s.slot || '';
+  const label = SLOT_LABEL[slot] || slot || 'Meal';
+  if(s.kind === 'swap'){
+    const to = RECIPES_DB[s.toRecipeId] || {};
+    return label + ' → ' + escapeHtml(to.title || 'suggested meal');
+  }
+  const side = RECIPES_DB[s.sideRecipeId] || {};
+  return label + ' + side ' + escapeHtml(side.title || 'suggested side');
+}
+
+function todayRebalanceSuggestionIcon(s){
+  if(s.kind === 'swap'){
+    const to = RECIPES_DB[s.toRecipeId] || {};
+    return to.emoji || '↔';
+  }
+  const side = RECIPES_DB[s.sideRecipeId] || {};
+  return side.emoji || '+';
+}
+
+function todayRebalanceChangedSuggestions(beforePlan, afterPlan, suggestions){
+  if(!beforePlan || !afterPlan || !Array.isArray(suggestions)) return [];
+  return suggestions.filter(function(s){
+    return s && s.accepted !== false && s.unit
+      && todayRebalanceUnitSnapshot(beforePlan, s.unit) !== todayRebalanceUnitSnapshot(afterPlan, s.unit);
+  });
+}
+
+function todayRebalanceAcceptedCount(prop){
+  return prop && prop.suggestions ? prop.suggestions.filter(function(s){ return s.accepted !== false && todayRebalanceUnitCanApply(prop, s); }).length : 0;
+}
+
+function todayRebalanceUnitCanApply(prop, s){
+  if(typeof canApplyTodayRebalanceUnit !== 'function') return true;
+  const dateISO = (prop && prop.dateISO) || todayISO();
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  return canApplyTodayRebalanceUnit(plan, (s && s.unit) || {}, dateISO);
+}
+
+function setTodayRebalanceSuggestionChoice(index, accepted){
+  if(!todayRebalanceProposal || !todayRebalanceProposal.suggestions || !todayRebalanceProposal.suggestions[index]) return;
+  todayRebalanceProposal.suggestions[index].accepted = !!accepted;
+  document.getElementById('sheetBody').innerHTML = renderTodayRebalanceSheet();
+}
+
+function buildTodayRebalanceSheet(){
+  const dateISO = todayISO();
+  todayRebalanceProposal = proposeTodayRebalanceSuggestions(dateISO, currentProf);
+  if(todayRebalanceProposal){
+    todayRebalanceProposal.dateISO = todayRebalanceProposal.dateISO || dateISO;
+    todayRebalanceProposal.personKey = todayRebalanceProposal.personKey || currentProf;
+  }
+  return renderTodayRebalanceSheet();
+}
+
+function renderTodayRebalanceSheet(){
+  if(!todayRebalanceProposal) return '';
+  const suggestions = todayRebalanceProposal.suggestions || [];
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance today</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  if(!suggestions.length){
+    html += '<p class="sub">Nothing to fix for today. Your current menu already fits the remaining day as well as Mesa can nudge it.</p>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+    return html;
+  }
+
+  html += '<p class="sub">Keeps fixed: logged or skipped slots, pinned meals, foods you avoid, and the rest of the week. Accept the swaps you want, then apply them to today only.</p>'
+    + '<div class="card" style="padding:14px">'
+    + '<b style="font-size:13px">Suggestions</b>';
+  suggestions.forEach(function(s, i){
+    const accepted = s.accepted !== false;
+    const canApply = todayRebalanceUnitCanApply(todayRebalanceProposal, s);
+    const disabled = canApply ? '' : ' disabled';
+    const last = i === suggestions.length - 1;
+    const kind = s.kind === 'swap' ? 'Swap' : 'Add side';
+    const lockedNote = canApply ? '' : ' · Locked';
+    html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + todayRebalanceSuggestionIcon(s) + '</div>'
+      + '<div class="li-t">' + todayRebalanceSuggestionLabel(s)
+      + '<small>' + kind + lockedNote + '</small></div>'
+      + '<div class="row" style="gap:8px">'
+      + '<button class="backbtn' + (accepted && canApply ? ' on' : '') + '"' + disabled + ' onclick="setTodayRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
+      + '<button class="backbtn' + (!accepted || !canApply ? ' on' : '') + '" onclick="setTodayRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'
+      + '</div></div>';
+  });
+  html += '</div>'
+    + '<p class="sub">Accepted suggestions: <b>' + todayRebalanceAcceptedCount(todayRebalanceProposal) + '</b>.</p>'
+    + '<button class="cta" onclick="applyTodayRebalance()">Apply ' + todayRebalanceAcceptedCount(todayRebalanceProposal) + ' ' + (todayRebalanceAcceptedCount(todayRebalanceProposal) === 1 ? 'change' : 'changes') + '</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+  return html;
+}
+
+function renderTodayRebalanceAppliedSheet(changedSuggestions){
+  const changed = Array.isArray(changedSuggestions) ? changedSuggestions : [];
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Applied changes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub">Today was updated. Logged and skipped meals stayed fixed.</p>';
+  html += '<div class="card" style="padding:14px"><b style="font-size:13px">Changed today</b>';
+  changed.forEach(function(s, i){
+    html += '<div class="logitem"' + (i === changed.length - 1 ? ' style="border-bottom:0"' : '') + '>'
+      + '<div class="li-i" style="background:var(--sage-tint)">' + todayRebalanceSuggestionIcon(s) + '</div>'
+      + '<div class="li-t">' + todayRebalanceSuggestionLabel(s)
+      + '<small>Updated in Today, Log, Week, and saved offline</small></div></div>';
+  });
+  html += '</div><button class="cta" onclick="closeSheet()">Done</button>';
+  return html;
+}
+
+function openTodayRebalanceSheet(){
+  document.getElementById('sheetBody').innerHTML = buildTodayRebalanceSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function applyTodayRebalance(){
+  if(!todayRebalanceProposal || !todayRebalanceProposal.suggestions || !todayRebalanceProposal.suggestions.length){ closeSheet(); return; }
+  todayRebalanceProposal.suggestions.forEach(function(s){
+    if(!todayRebalanceUnitCanApply(todayRebalanceProposal, s)) s.accepted = false;
+  });
+  const accepted = todayRebalanceProposal.suggestions.filter(function(s){ return s.accepted !== false; });
+  if(!accepted.length){ closeSheet(); return; }
+  const basePlan = ensureWeekPlan(mondayOfWeek(todayRebalanceProposalDate()));
+  const resultPlan = todayRebalanceAcceptedPlan(todayRebalanceProposal);
+  if(!resultPlan){ closeSheet(); return; }
+  const changedSuggestions = todayRebalanceChangedSuggestions(basePlan, resultPlan, accepted);
+  if(!changedSuggestions.length){
+    document.getElementById('sheetBody').innerHTML =
+      '<div class="row between" style="margin-top:6px"><h2 style="margin:0">No open meals changed</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+      + '<p class="sub">Those suggestions are no longer applicable. A meal may have been logged, skipped, pinned, or updated since the sheet opened.</p>'
+      + '<button class="cta" onclick="document.getElementById(\'sheetBody\').innerHTML=buildTodayRebalanceSheet()">Refresh suggestions</button>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+    toast('No open meals changed — re-open re-balance for fresh suggestions');
+    return;
+  }
+  const weekStartDate = resultPlan.weekStartDate || mondayOfWeek(todayRebalanceProposalDate());
+  preserveLoggedSlots(basePlan, resultPlan);
+  // Same belt-and-braces pin guard as applyRebalance above: today-rebalance is AUTO
+  // mutation too, so pinned cells are restored from basePlan after the logged-slot pass.
+  preservePinnedSlots(basePlan, resultPlan);
+  markWeekPlanEdited(resultPlan);
+  weekPlans[weekStartDate] = resultPlan;
+  if(weekStartDate === mondayOfWeek(todayISO())) weekPlan = resultPlan;
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  todayRebalanceProposal = null;
+  document.getElementById('sheetBody').innerHTML = renderTodayRebalanceAppliedSheet(changedSuggestions);
+  document.getElementById('sheet').classList.add('show');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  toast('✓ Today re-balanced — ' + changedSuggestions.length + (changedSuggestions.length === 1 ? ' change' : ' changes'));
 }
 
 /* ---------------- log / plan-first confirm (task D1: writes real LogEntrys) ---------------- */

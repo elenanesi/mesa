@@ -2356,6 +2356,247 @@ function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson
   return results;
 }
 
+function todayRebalanceDayIndex(plan, dateISO){
+  if(!plan || !Array.isArray(plan.days)) return -1;
+  for(let i = 0; i < plan.days.length; i++){
+    if(plan.days[i] && plan.days[i].date === dateISO) return i;
+  }
+  return -1;
+}
+
+function canApplyTodayRebalanceUnit(plan, unit, dateISO){
+  if(dateISO !== todayISO()) return false;
+  const dayIndex = todayRebalanceDayIndex(plan, dateISO);
+  if(dayIndex === -1 || !unit || unit.dayIndex !== dayIndex) return false;
+  const day = plan.days[dayIndex];
+  const meal = day.meals && day.meals[unit.slot];
+  if(!meal) return false;
+  if(unit.shared || meal.shared){
+    return !!meal.shared
+      && !loggedSlotLocked(dateISO, 'elena', unit.slot)
+      && !loggedSlotLocked(dateISO, 'partner', unit.slot)
+      && !isMealPinned(plan.weekStartDate, dayIndex, unit.slot, 'shared');
+  }
+  if(!unit.person || meal.shared) return false;
+  return !loggedSlotLocked(dateISO, unit.person, unit.slot)
+    && !isMealPinned(plan.weekStartDate, dayIndex, unit.slot, unit.person);
+}
+
+function enumerateTodayRebalanceUnits(plan, dateISO, personKey){
+  const dayIndex = todayRebalanceDayIndex(plan, dateISO);
+  if(dayIndex === -1) return [];
+  const units = [];
+  SLOT_ORDER.forEach(function(slot){
+    const meal = plan.days[dayIndex].meals[slot];
+    if(!meal) return;
+    if(meal.shared){
+      const sharedUnit = {dayIndex: dayIndex, slot: slot, shared: true};
+      if(canApplyTodayRebalanceUnit(plan, sharedUnit, dateISO)) units.push(sharedUnit);
+    } else {
+      const unit = {dayIndex: dayIndex, slot: slot, shared: false, person: personKey};
+      if(canApplyTodayRebalanceUnit(plan, unit, dateISO)) units.push(unit);
+    }
+  });
+  return units;
+}
+
+function emptyTodayRebalanceTotals(){
+  return {
+    elena: {kcal: 0, protein: 0, carbs: 0, fat: 0},
+    partner: {kcal: 0, protein: 0, carbs: 0, fat: 0}
+  };
+}
+
+function addNutritionTotals(a, b){
+  ['kcal', 'protein', 'carbs', 'fat'].forEach(function(k){ a[k] += (b && typeof b[k] === 'number') ? b[k] : 0; });
+  return a;
+}
+
+function todayRebalanceTotals(plan, dateISO){
+  const dayIndex = todayRebalanceDayIndex(plan, dateISO);
+  const totals = emptyTodayRebalanceTotals();
+  ['elena', 'partner'].forEach(function(person){
+    const entries = getDayLog(dateISO)[person] || [];
+    entries.forEach(function(e){ addNutritionTotals(totals[person], e); });
+  });
+  if(dayIndex === -1) return totals;
+  SLOT_ORDER.forEach(function(slot){
+    ['elena', 'partner'].forEach(function(person){
+      if(slotLogStatus(dateISO, person, slot)) return;
+      const meal = plan.days[dayIndex].meals[slot];
+      if(meal && meal[person]) addNutritionTotals(totals[person], planEntryNutrition(meal[person]));
+    });
+  });
+  return totals;
+}
+
+function todayMacroTargets(personKey){
+  const p = PROF[personKey] || {};
+  return {kcal: p.calGoalNum || 0, protein: p.targetP || 0, carbs: p.targetC || 0, fat: p.targetF || 0};
+}
+
+function todayRebalancePersonScore(totals, personKey){
+  const target = todayMacroTargets(personKey);
+  return ['kcal', 'protein', 'carbs', 'fat'].reduce(function(sum, k){
+    const denom = Math.max(1, target[k] || 0);
+    const weight = k === 'kcal' ? 1.2 : 1;
+    return sum + weight * Math.abs((totals[personKey][k] || 0) - target[k]) / denom;
+  }, 0);
+}
+
+function todayRebalanceScore(plan, dateISO, personKey){
+  return todayRebalancePersonScore(todayRebalanceTotals(plan, dateISO), personKey);
+}
+
+function todayRebalancePeopleForUnit(unit, personKey){
+  return unit && unit.shared ? ['elena', 'partner'] : [personKey];
+}
+
+function todayRebalanceCombinedScore(totals, people){
+  return people.reduce(function(sum, person){ return sum + todayRebalancePersonScore(totals, person); }, 0);
+}
+
+function todayRebalancePersonMeaningfullyWorse(beforeTotals, afterTotals, personKey){
+  const before = todayRebalancePersonScore(beforeTotals, personKey);
+  const after = todayRebalancePersonScore(afterTotals, personKey);
+  return after > before + 0.025;
+}
+
+function todayRebalancePeopleProtected(beforeTotals, afterTotals, people){
+  return people.every(function(person){ return !todayRebalancePersonMeaningfullyWorse(beforeTotals, afterTotals, person); });
+}
+
+function todayRebalanceCurrentRecipeId(plan, unit){
+  const meal = plan.days[unit.dayIndex].meals[unit.slot];
+  return unit.shared ? meal.recipeId : (meal[unit.person] && meal[unit.person].recipeId);
+}
+
+function todayRebalanceUnitSnapshot(plan, unit){
+  if(!plan || !unit || !Array.isArray(plan.days) || !plan.days[unit.dayIndex]) return '';
+  const meal = plan.days[unit.dayIndex].meals && plan.days[unit.dayIndex].meals[unit.slot];
+  if(!meal) return '';
+  if(unit.shared || meal.shared){
+    return JSON.stringify({
+      shared: !!meal.shared,
+      recipeId: meal.recipeId || null,
+      elena: meal.elena || null,
+      partner: meal.partner || null
+    });
+  }
+  return JSON.stringify({
+    shared: false,
+    person: unit.person || null,
+    entry: unit.person ? (meal[unit.person] || null) : null
+  });
+}
+
+function todayRebalanceChangedSuggestionCount(beforePlan, afterPlan, suggestions){
+  if(!beforePlan || !afterPlan || !Array.isArray(suggestions)) return 0;
+  return suggestions.reduce(function(count, s){
+    if(!s || s.accepted === false || !s.unit) return count;
+    return count + (todayRebalanceUnitSnapshot(beforePlan, s.unit) !== todayRebalanceUnitSnapshot(afterPlan, s.unit) ? 1 : 0);
+  }, 0);
+}
+
+function todayRebalanceCandidateIds(plan, unit, dateISO){
+  const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
+  const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+  const currentId = todayRebalanceCurrentRecipeId(plan, unit);
+  const plannedToday = {};
+  const day = plan.days[unit.dayIndex];
+  SLOT_ORDER.forEach(function(slot){
+    if(slot === unit.slot) return;
+    const meal = day.meals[slot];
+    if(!meal) return;
+    const people = unit.shared ? ['elena', 'partner'] : [unit.person];
+    people.forEach(function(person){
+      if(slotLogStatus(dateISO, person, slot)) return;
+      const id = meal.shared ? meal.recipeId : (meal[person] && meal[person].recipeId);
+      if(id) plannedToday[id] = true;
+    });
+  });
+  let pool = candidatesFor(unit.slot, styleKey, avoidL).filter(function(id){ return id !== currentId && !plannedToday[id]; });
+  if(!pool.length) pool = candidatesFor(unit.slot, styleKey, avoidL).filter(function(id){ return id !== currentId; });
+  return pool;
+}
+
+function todayRebalanceSideCandidateIds(plan, unit){
+  const meal = plan.days[unit.dayIndex].meals[unit.slot];
+  const currentEntry = unit.shared ? meal.elena : meal[unit.person];
+  const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
+  const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+  return sidePoolFor(avoidL).filter(function(sideId){
+    return sideId !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== sideId; });
+  });
+}
+
+function proposeTodayRebalanceSuggestions(dateISO, personKey){
+  dateISO = dateISO || todayISO();
+  personKey = personKey || currentProf;
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  const dayIndex = todayRebalanceDayIndex(plan, dateISO);
+  if(dateISO !== todayISO() || dayIndex === -1 || ['elena', 'partner'].indexOf(personKey) === -1){
+    const emptyTotals = emptyTodayRebalanceTotals();
+    return {dateISO: dateISO, personKey: personKey, suggestions: [], before: emptyTotals, after: emptyTotals, resultPlan: plan};
+  }
+  const beforeTotals = todayRebalanceTotals(plan, dateISO);
+  let planCopy = JSON.parse(JSON.stringify(plan));
+  const applied = [];
+  for(let round = 0; round < 2; round++){
+    const baseTotals = todayRebalanceTotals(planCopy, dateISO);
+    const candidates = [];
+    enumerateTodayRebalanceUnits(planCopy, dateISO, personKey).forEach(function(unit){
+      const people = todayRebalancePeopleForUnit(unit, personKey);
+      const baseScore = todayRebalanceCombinedScore(baseTotals, people);
+      todayRebalanceCandidateIds(planCopy, unit, dateISO).forEach(function(candId){
+        const trial = JSON.parse(JSON.stringify(planCopy));
+        applySwapToPlan(trial, unit, candId);
+        const trialTotals = todayRebalanceTotals(trial, dateISO);
+        if(!todayRebalancePeopleProtected(baseTotals, trialTotals, people)) return;
+        const score = todayRebalanceCombinedScore(trialTotals, people);
+        const improvement = baseScore - score;
+        if(improvement <= 1e-9) return;
+        candidates.push({kind: 'swap', unit: unit, candId: candId, fromRecipeId: todayRebalanceCurrentRecipeId(planCopy, unit), improvement: improvement, trial: trial});
+      });
+      todayRebalanceSideCandidateIds(planCopy, unit).forEach(function(sideId){
+        const trial = JSON.parse(JSON.stringify(planCopy));
+        addSideToPlan(trial, unit, sideId);
+        const trialTotals = todayRebalanceTotals(trial, dateISO);
+        if(!todayRebalancePeopleProtected(baseTotals, trialTotals, people)) return;
+        const score = todayRebalanceCombinedScore(trialTotals, people);
+        const improvement = baseScore - score;
+        if(improvement <= 1e-9) return;
+        candidates.push({kind: 'addSide', unit: unit, sideRecipeId: sideId, improvement: improvement, trial: trial});
+      });
+    });
+    let best = null;
+    candidates.forEach(function(c){
+      const cKey = c.kind === 'swap' ? unitKey(c.unit) + ':' + c.candId : unitKey(c.unit) + ':side:' + c.sideRecipeId;
+      const bKey = best ? (best.kind === 'swap' ? unitKey(best.unit) + ':' + best.candId : unitKey(best.unit) + ':side:' + best.sideRecipeId) : '';
+      const better = !best || c.improvement > best.improvement + 1e-9 || (Math.abs(c.improvement - best.improvement) <= 1e-9 && cKey < bKey);
+      if(better) best = c;
+    });
+    if(!best) break;
+    planCopy = best.trial;
+    if(best.kind === 'swap') applied.push({kind: 'swap', unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement});
+    else applied.push({kind: 'addSide', unit: best.unit, sideRecipeId: best.sideRecipeId, improvement: best.improvement});
+  }
+  return {dateISO: dateISO, personKey: personKey, suggestions: applied, before: beforeTotals, after: todayRebalanceTotals(planCopy, dateISO), resultPlan: planCopy};
+}
+
+function todayRebalanceAcceptedPlan(prop){
+  if(!prop) return null;
+  const plan = ensureWeekPlan(mondayOfWeek(prop.dateISO || todayISO()));
+  const resultPlan = JSON.parse(JSON.stringify(plan));
+  (prop.suggestions || []).forEach(function(s){
+    if(s.accepted === false) return;
+    if(!canApplyTodayRebalanceUnit(resultPlan, s.unit, prop.dateISO)) return;
+    if(s.kind === 'swap') applySwapToPlan(resultPlan, s.unit, s.toRecipeId);
+    else if(s.kind === 'addSide') addSideToPlan(resultPlan, s.unit, s.sideRecipeId);
+  });
+  return resultPlan;
+}
+
 function proposeRebalanceSuggestions(weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
   const cov0 = computeWeeklyCoverage(plan);
