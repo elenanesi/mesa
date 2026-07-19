@@ -2512,7 +2512,7 @@ function testRecipeOptions(ctx){
   // filtering logic runs against real optionGroups data, not just the synthetic fixture used
   // below (testPlannerDeterminism covers the options-less case separately). --------
   (function(){
-    const expectedOptionGroupIds = ['baked-fish', 'french-toast-fruit-maple', 'pasta'];
+    const expectedOptionGroupIds = ['baked-fish', 'french-toast-fruit-maple', 'pasta', 'pizza'];
     const actualOptionGroupIds = Object.keys(RECIPES_DB).filter(function(id){
       return Array.isArray(RECIPES_DB[id].optionGroups) && RECIPES_DB[id].optionGroups.length;
     }).sort();
