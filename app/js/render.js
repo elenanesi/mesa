@@ -2830,6 +2830,13 @@ function renderTogetherPills(){
 
 // Renders all four Today cards from the active menu — today's row of weekPlan for the
 // current person (task C2). Kcal shown are the person's portion-scaled computed values.
+// Belt-and-suspenders fallback for a slot whose planned/logged recipeId doesn't resolve
+// in RECIPES_DB (a dangling reference should already be caught upstream by
+// planner.js:planReferencesMissingRecipe + the mealRecipesValid guards in
+// preserveLoggedSlots/preservePinnedSlots, but this keeps one bad slot from blanking the
+// whole Today screen — renderWeek() already has the equivalent `if(!r) return ''` guard).
+const MISSING_RECIPE_FALLBACK = {emoji: '❓', title: 'Meal unavailable'};
+
 function renderTodayMeals(){
   activeMenu = computeActiveMenu();
 
@@ -2839,30 +2846,30 @@ function renderTodayMeals(){
     return html;
   }
 
-  const bfv = todaySlotView('breakfast'), bf = bfv.recipe;
+  const bfv = todaySlotView('breakfast'), bf = bfv.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('bfEmoji').textContent = bf.emoji;
-  document.getElementById('bfTitle').textContent = mealTitleWithExtras(bfv);
+  document.getElementById('bfTitle').textContent = bfv.recipe ? mealTitleWithExtras(bfv) : bf.title;
   document.getElementById('bfKcal').textContent = bfv.kcal;
   document.getElementById('bfDesc').textContent = 'Breakfast · ' + macroSummaryFromTotals(bfv);
   document.getElementById('bfTags').innerHTML = tagsHtml(bfv.recipeId, 'breakfast', 'pillBreakfast');
 
-  const luv = todaySlotView('lunch'), lu = luv.recipe;
+  const luv = todaySlotView('lunch'), lu = luv.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('lunchThumb').textContent = lu.emoji;
-  document.getElementById('lunchTitle').textContent = mealTitleWithExtras(luv);
+  document.getElementById('lunchTitle').textContent = luv.recipe ? mealTitleWithExtras(luv) : lu.title;
   document.getElementById('lunchKcal').textContent = luv.kcal;
   document.getElementById('lunchDesc').textContent = 'Lunch · ' + macroSummaryFromTotals(luv);
   document.getElementById('lunchTags').innerHTML = tagsHtml(luv.recipeId, 'lunch', 'pillLunch');
 
-  const div_ = todaySlotView('dinner'), di = div_.recipe;
+  const div_ = todaySlotView('dinner'), di = div_.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('dinnerThumb').textContent = di.emoji;
-  document.getElementById('dinnerTitle').textContent = mealTitleWithExtras(div_);
+  document.getElementById('dinnerTitle').textContent = div_.recipe ? mealTitleWithExtras(div_) : di.title;
   document.getElementById('dinnerKcal').textContent = div_.kcal;
   document.getElementById('dinnerDesc').textContent = 'Dinner · ' + macroSummaryFromTotals(div_);
   document.getElementById('dinnerTags').innerHTML = tagsHtml(div_.recipeId, 'dinner', 'pillDinner');
 
-  const snv = todaySlotView('snack'), sn = snv.recipe;
+  const snv = todaySlotView('snack'), sn = snv.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('snackThumbEl').textContent = sn.emoji;
-  document.getElementById('snackTitleEl').textContent = mealTitleWithExtras(snv);
+  document.getElementById('snackTitleEl').textContent = snv.recipe ? mealTitleWithExtras(snv) : sn.title;
   document.getElementById('snackKcalEl').textContent = snv.kcal;
   document.getElementById('snackDescEl').textContent = 'Snack · ' + macroSummaryFromTotals(snv);
   document.getElementById('snackTags').innerHTML = tagsHtml(snv.recipeId, 'snack', 'pillSnack');

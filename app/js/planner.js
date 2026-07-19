@@ -385,6 +385,21 @@ function loggedSlotLocked(dateISO, person, slot){
   return typeof slotLogStatus === 'function' && !!slotLogStatus(dateISO, person, slot);
 }
 
+// Guards preserveLoggedSlots/preservePinnedSlots against resurrecting a recipe that no
+// longer exists in RECIPES_DB (e.g. tombstoned from the catalog): a log/pin restore must
+// never re-introduce exactly the dangling reference ensureWeekPlan's
+// planReferencesMissingRecipe() check just regenerated the plan to fix, or every future
+// ensureWeekPlan() call stays permanently stale (regenerate, restore-back, regenerate...)
+// and every renderer that assumes RECIPES_DB[recipeId] exists (renderTodayMeals) crashes.
+function planEntryRecipeValid(entry){
+  return !!(entry && entry.recipeId && RECIPES_DB[entry.recipeId]);
+}
+function mealRecipesValid(meal){
+  if(!meal) return false;
+  if(meal.shared) return !!(meal.recipeId && RECIPES_DB[meal.recipeId]);
+  return planEntryRecipeValid(meal.elena) && planEntryRecipeValid(meal.partner);
+}
+
 function preserveLoggedSlots(oldPlan, newPlan){
   if(!oldPlan || !newPlan || !Array.isArray(oldPlan.days) || !Array.isArray(newPlan.days)) return;
   for(let d = 0; d < newPlan.days.length; d++){
@@ -397,11 +412,12 @@ function preserveLoggedSlots(oldPlan, newPlan){
       const lockA = loggedSlotLocked(dateISO, 'partner', slot);
       if(!lockE && !lockA) return;
       if(oldMeal.shared || newMeal.shared || (lockE && lockA)){
+        if(!mealRecipesValid(oldMeal)) return;
         newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
         return;
       }
-      if(lockE && oldMeal.elena) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
-      if(lockA && oldMeal.partner) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
+      if(lockE && oldMeal.elena && planEntryRecipeValid(oldMeal.elena)) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
+      if(lockA && oldMeal.partner && planEntryRecipeValid(oldMeal.partner)) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
     });
   }
   refreshPlanNutrition(newPlan);
@@ -651,11 +667,12 @@ function preservePinnedSlots(oldPlan, newPlan){
       const pinA = isMealPinned(newPlan.weekStartDate, d, slot, 'partner');
       if(!pinShared && !pinE && !pinA) return;
       if(pinShared || oldMeal.shared || newMeal.shared || (pinE && pinA)){
+        if(!mealRecipesValid(oldMeal)) return;
         newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
         return;
       }
-      if(pinE && oldMeal.elena) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
-      if(pinA && oldMeal.partner) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
+      if(pinE && oldMeal.elena && planEntryRecipeValid(oldMeal.elena)) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
+      if(pinA && oldMeal.partner && planEntryRecipeValid(oldMeal.partner)) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
     });
   }
   refreshPlanNutrition(newPlan);

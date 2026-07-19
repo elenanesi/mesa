@@ -350,6 +350,13 @@ function catalogScopeForRow(row, fallbackCode){
   if(source === 'builtin') return 'global';
   return fallbackCode;
 }
+// The 'global' scope is admin-seeded only, via `node tools/seed-d1.js | wrangler d1
+// execute` (direct SQL against D1, never touches this Worker). HTTP callers to
+// /library/:code are unauthenticated (the household code is a shared secret, not a
+// credential that proves admin identity), so the HTTP path must never be able to write
+// scope='global' — otherwise anyone who guesses/observes any household code could POST a
+// 'builtin'-sourced row and overwrite the authoritative catalog for every household.
+function isHttpWritableScope(scope){ return scope !== 'global'; }
 
 async function upsertFoodRow(env, code, row){
   if(!row || !isPlainObject(row)) return;
@@ -358,7 +365,7 @@ async function upsertFoodRow(env, code, row){
   const data = isPlainObject(row.data) ? row.data : null;
   if(!id || !source || !data) return;
   const scope = catalogScopeForRow(row, code);
-  if(!validCatalogScope(scope)) return;
+  if(!validCatalogScope(scope) || !isHttpWritableScope(scope)) return;
   const name = String(row.name || data.name || id).slice(0, 240);
   const category = row.category || data.cat || null;
   const season = normalizeSeason(row.season || data.season);
@@ -376,7 +383,7 @@ async function upsertRecipeRow(env, code, row){
   const data = isPlainObject(row.data) ? row.data : null;
   if(!id || !source || !data) return;
   const scope = catalogScopeForRow(row, code);
-  if(!validCatalogScope(scope)) return;
+  if(!validCatalogScope(scope) || !isHttpWritableScope(scope)) return;
   const title = String(row.title || data.title || id).slice(0, 240);
   const primarySlot = row.primarySlot || data.slot || null;
   const season = normalizeSeason(row.season || data.season);

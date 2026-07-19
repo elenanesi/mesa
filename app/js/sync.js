@@ -511,7 +511,19 @@ function catalogPayloadSignature(payload){
 
 function mirrorLibraryCatalogToD1(){
   if(!syncState.code) return;
-  const payload = buildLibraryCatalogPayload();
+  const fullPayload = buildLibraryCatalogPayload();
+  // The global (builtin) catalog is admin-seeded via tools/seed-d1.js direct SQL, not
+  // through this HTTP path — and the worker now rejects scope='global' writes from
+  // /library/:code regardless. Mirror only this household's own data (custom/override
+  // rows); sending builtin rows would just be rejected server-side, so strip them here
+  // and sign/POST the same filtered payload to keep the "unchanged" short-circuit correct.
+  const payload = {
+    foods: fullPayload.foods.filter(function(f){ return f.source !== 'builtin'; }),
+    recipes: fullPayload.recipes.filter(function(r){ return r.source !== 'builtin'; }),
+    recipePrefs: fullPayload.recipePrefs,
+    deletedFoods: fullPayload.deletedFoods,
+    deletedRecipes: fullPayload.deletedRecipes
+  };
   const sig = catalogPayloadSignature(payload);
   if(sig === lastMirroredCatalogSignature) return;
   lastMirroredCatalogSignature = sig;
