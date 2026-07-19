@@ -71,6 +71,32 @@ function normalizeRecipeRoleField(recipe){
   return recipe;
 }
 
+function replaceBuiltinRecipesFromCatalogRows(rows){
+  if(!Array.isArray(rows)) return false;
+  const nextRecipes = {};
+  const nextSlots = {};
+  rows.forEach(function(row){
+    if(!row || row.deleted_at || row.deletedAt) return;
+    if(row.scope !== 'global' || row.source !== 'builtin') return;
+    const id = String(row.id || '').trim();
+    const data = row.data;
+    if(!id || !data || typeof data !== 'object' || Array.isArray(data)) return;
+    const recipe = normalizeRecipeRoleField(JSON.parse(JSON.stringify(data)));
+    if(!recipe.title || !recipe.slot) return;
+    nextRecipes[id] = recipe;
+    nextSlots[id] = recipe.slot;
+  });
+  if(!Object.keys(nextRecipes).length) return false;
+
+  Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){ delete BUILTIN_RECIPES_DB[id]; });
+  Object.keys(BUILTIN_RECIPE_SLOT_DB).forEach(function(id){ delete BUILTIN_RECIPE_SLOT_DB[id]; });
+  Object.keys(nextRecipes).forEach(function(id){
+    BUILTIN_RECIPES_DB[id] = nextRecipes[id];
+    BUILTIN_RECIPE_SLOT_DB[id] = nextSlots[id];
+  });
+  return true;
+}
+
 function applyCustomRecipes(){
   Object.keys(RECIPES_DB).forEach(function(id){ delete RECIPES_DB[id]; });
   Object.keys(RECIPE_SLOT_DB).forEach(function(id){ delete RECIPE_SLOT_DB[id]; });

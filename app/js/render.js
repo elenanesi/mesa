@@ -109,7 +109,7 @@ function recipeDisplayIngredients(recipeId, opts){
 // paint — moved verbatim from the old buildLegacyRecipesCompat() compat view.
 function recipeDisplayPills(recipeId){
   const src = RECIPES_DB[recipeId];
-  if(!src) return [];
+  if(!src || !Array.isArray(src.tags)) return [];
   return src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; });
 }
 
@@ -140,10 +140,14 @@ const RECIPE_IMAGE_KEYS = [
   'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream',
   'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri',
   'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito',
-  'citrus-roast-turkey', 'club-sandwich', 'shakshuka'
+  'citrus-roast-turkey', 'club-sandwich', 'shakshuka',
+  'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure',
+  'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast',
+  'carrots-over-hummus', 'spring-rolls', 'pizza'
 ];
 
 function recipeImageLabel(key){
+  if(typeof RECIPES_DB !== 'undefined' && RECIPES_DB[key] && RECIPES_DB[key].title) return RECIPES_DB[key].title;
   const labels = {
     'default-recipe': 'Default',
     'breakfast-bowl': 'Breakfast bowl',
@@ -239,6 +243,8 @@ function inferredRecipeImageKey(recipe, recipeId){
 
 function recipeImageAssetForRecipe(recipe, recipeId){
   if(!recipe) return '';
+  const imageUri = safeRecipeImageAsset(recipe.imageUri);
+  if(imageUri) return imageUri;
   const imageKey = safeRecipeImageKey(recipe.imageKey) || inferredRecipeImageKey(recipe, recipeId);
   const src = safeRecipeImageAsset('assets/recipes/' + imageKey + '.png');
   return src || DEFAULT_RECIPE_IMAGE_ASSET;

@@ -502,7 +502,7 @@ function buildLibraryCatalogPayload(){
 function catalogPayloadSignature(payload){
   return JSON.stringify({
     foods: payload.foods.map(function(f){ return [f.id, f.source, f.updatedAt, f.season, f.data && f.data.name, f.data && f.data.iconKey, f.data && f.data.iconAsset]; }),
-    recipes: payload.recipes.map(function(r){ return [r.id, r.source, r.updatedAt, r.season, r.data && r.data.title, r.data && r.data.imageKey]; }),
+    recipes: payload.recipes.map(function(r){ return [r.id, r.source, r.updatedAt, r.season, r.data && r.data.title, r.data && r.data.imageKey, r.data && r.data.imageUri]; }),
     recipePrefs: payload.recipePrefs,
     deletedFoods: payload.deletedFoods,
     deletedRecipes: payload.deletedRecipes
@@ -522,6 +522,31 @@ function mirrorLibraryCatalogToD1(){
   }).catch(function(err){
     lastMirroredCatalogSignature = null;
     console.warn('Mesa sync: D1 library mirror failed, will retry later', err);
+  });
+}
+
+function fetchBuiltinRecipeCatalogFromD1(){
+  if(typeof fetch !== 'function') return Promise.resolve(false);
+  const controller = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  const timer = controller ? setTimeout(function(){ controller.abort(); }, 4500) : null;
+  return fetch(SYNC_URL + '/library/GLOBAL', {
+    method: 'GET',
+    headers: {'Accept': 'application/json'},
+    cache: 'no-store',
+    signal: controller ? controller.signal : undefined
+  }).then(function(res){
+    if(!res.ok) throw new Error('catalog http ' + res.status);
+    return res.json();
+  }).then(function(payload){
+    if(!payload || !Array.isArray(payload.recipes)) return false;
+    if(typeof replaceBuiltinRecipesFromCatalogRows !== 'function') return false;
+    return replaceBuiltinRecipesFromCatalogRows(payload.recipes);
+  }).catch(function(err){
+    console.warn('Mesa catalog: using bundled recipes fallback', err);
+    return false;
+  }).then(function(ok){
+    if(timer) clearTimeout(timer);
+    return ok;
   });
 }
 

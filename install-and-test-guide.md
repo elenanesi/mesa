@@ -2,16 +2,16 @@
 
 ## ⭐ Install Mesa on your iPhone (the real app)
 
-Mesa is live as a free PWA — no App Store, no accounts, works offline:
+Mesa is live as a free PWA — no App Store, protected by Cloudflare Access for Elena and Andrea, and works offline after install:
 
-1. On your iPhone, open Safari and go to **https://elenanesi.github.io/mesa/**
+1. On your iPhone, open Safari and go to **https://mesa-9y5.pages.dev/app/**
 2. Tap the **Share** button (square with up-arrow) → **Add to Home Screen** → **Add**.
 3. Open the Mesa icon on your home screen. It runs full-screen, remembers everything, and works with no connection.
 
 Andrea does the exact same on his phone. A few things to know:
 
 - **Updates are automatic**: when the app changes, you get the new version on the next open (occasionally it takes one extra open — the offline cache refreshes in the background).
-- **Move your data between phones**: Profile → **Your data** → *Export my data* (share the file via AirDrop) → on the other phone, *Import data*. You'll be asked to choose: **Replace everything** (the old behavior — overwrites the whole phone with the backup) or **Merge food library only** — to share just your recipes with each other, use *Merge food library only*: it only adds the backup's custom ingredients & recipes to what's already there, no other data is touched. That's how you two stay in sync until the real couple-sync arrives in Phase 2.
+- **Your shared data syncs through Cloudflare** once Couple sync is connected in Profile. Export/import is still useful as a manual backup path: Profile → **Your data** → *Export my data* (share the file via AirDrop) → on the other phone, *Import data*. Choose **Replace everything** for a full restore or **Merge food library only** to bring across custom ingredients and recipes without touching the rest of the phone's data.
 - **First on-device pass — worth an eye check** (things that can't be tested outside a real iPhone): the Add-to-Home-Screen flow itself, the home-screen icon look, the status bar in standalone mode, and that Export opens the share sheet.
 
 The sections below are the older mockup-testing paths, kept for reference.
@@ -100,7 +100,7 @@ You don't need Route 2 to make real progress. Build everything in Expo Go first;
 ### Rough order of building (once layout is locked)
 1. Scaffold the Expo app, recreate the six screens from the mockup.
 2. Wire the deterministic engine — Mifflin-St Jeor targets + nutrition = sum of foods.
-3. Seed a small, hand-checked food & recipe database (the meals you two actually eat).
+3. Seed a small, hand-checked food & recipe database in Cloudflare D1, with bundled app data kept as the offline fallback.
 4. Add Apple Health (needs Route 2 / a dev build).
 5. Add the AI suggestion endpoint last, behind your own backend so the API key stays secret.
 

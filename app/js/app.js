@@ -168,26 +168,37 @@ function renderTodayHeader(){
 // applyProf() -> ensureWeekPlan() (planner.js) either keeps the persisted weekPlan (same
 // signature + same week) or regenerates it deterministically, then persists; it also
 // runs renderLogPlan(), which replays today's persisted confirms via restoreTodayLog().
-loadState();
-applyCustomFoods();     // js/library.js — merge customFoods into FOODS before recipes need them
-applyCustomRecipes();   // js/library.js — merge customRecipes into RECIPES_DB + RECIPE_SLOT_DB
-                         // (built-in and custom alike — every renderer reads RECIPES_DB directly)
-// One-shot cleanup migration (js/library.js) for the pre-`u`-stamp couple-sync duplication
-// ratchet (see its doc block) — must run AFTER customRecipes is populated and BEFORE the
-// first render, so a just-cleaned-up library is what the user sees on open, not the ~200
-// duplicate rows for one frame. Idempotent and a no-op (toast-free) on an already-clean
-// library, so it's safe to leave running on every boot.
-if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
-renderTodayHeader();
-applyProf(currentProf);
-renderRecipe('salmon');
-recipeOrigin = 'today';
-maybeShowOnboarding();
+function bootMesaApp(){
+  loadState();
+  applyCustomFoods();     // js/library.js — merge customFoods into FOODS before recipes need them
 
-// Task S1 (couple sync): a no-op wherever js/sync.js isn't loaded or a household was
-// never configured (syncState.code stays null — see state.js) — no network calls happen
-// in that case, per the ground rule that sync is an enhancement, never a dependency.
-if(typeof initSync === 'function') initSync();
+  const catalogPromise = (typeof fetchBuiltinRecipeCatalogFromD1 === 'function')
+    ? fetchBuiltinRecipeCatalogFromD1()
+    : Promise.resolve(false);
+
+  catalogPromise.then(function(){
+    applyCustomRecipes(); // merges D1-backed built-ins or bundled fallback + user recipes
+                           // (built-in and custom alike — every renderer reads RECIPES_DB directly)
+    // One-shot cleanup migration (js/library.js) for the pre-`u`-stamp couple-sync duplication
+    // ratchet (see its doc block) — must run AFTER customRecipes is populated and BEFORE the
+    // first render, so a just-cleaned-up library is what the user sees on open, not the ~200
+    // duplicate rows for one frame. Idempotent and a no-op (toast-free) on an already-clean
+    // library, so it's safe to leave running on every boot.
+    if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
+    renderTodayHeader();
+    applyProf(currentProf);
+    renderRecipe('salmon');
+    recipeOrigin = 'today';
+    maybeShowOnboarding();
+
+    // Task S1 (couple sync): a no-op wherever js/sync.js isn't loaded or a household was
+    // never configured (syncState.code stays null — see state.js) — no network calls happen
+    // in that case, per the ground rule that sync is an enhancement, never a dependency.
+    if(typeof initSync === 'function') initSync();
+  }).catch(function(err){ console.error('Mesa boot failed', err); });
+}
+
+bootMesaApp();
 
 /* ---------------- service worker registration (task E1) ---------------- */
 // Offline shell + installability. Guarded so it's a silent no-op wherever it

@@ -293,16 +293,6 @@ const RECIPES_DB = {
     tags: ['muscle', 'heart'],
     avoid: []
   },
-  'beef-courgette-ragu': {
-    title: 'Lean beef & courgette ragu', emoji: '🥩', slot: 'dinner', role: 'main',
-    slots: ['dinner', 'lunch'],
-    styles: ['lowcarb', 'highprotein', 'balanced'], time: 25,
-    ingredients: [['beef-mince-lean', 180], ['tomatoes', 200], ['courgette', 200], ['olive-oil', 10]],
-    toTaste: ['garlic', 'herbs'],
-    steps: ['Brown the beef mince in olive oil with garlic.', 'Add the chopped tomatoes and simmer 12-15 min.', 'Saute the courgette until just tender.', 'Serve the ragu over the courgette.'],
-    tags: ['muscle', 'heart'],
-    avoid: []
-  },
   'turkey-roasted-veg': {
     title: 'Turkey & roasted veg', emoji: '🍗', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch'],
@@ -332,16 +322,6 @@ const RECIPES_DB = {
     steps: ['Rub cod with olive oil, lemon and garlic; bake at 200C for 12-15 min.', 'Steam the broccoli.', 'Wilt the spinach in a warm pan.', 'Plate the greens with the cod on top, finished with lemon.'],
     tags: ['thyroid', 'muscle', 'lowGI'],
     avoid: []
-  },
-  'prawn-courgette-tomato': {
-    title: 'Prawn, courgette & tomato saute', emoji: '🦐', slot: 'dinner', role: 'main',
-    slots: ['dinner', 'lunch', 'side'],
-    styles: ['lowcarb', 'highprotein', 'balanced'], time: 20,
-    ingredients: [['prawns', 220], ['courgette', 200], ['cherry-tomatoes', 150], ['olive-oil', 15]],
-    toTaste: ['garlic', 'parsley'],
-    steps: ['Saute courgette in olive oil until lightly golden.', 'Add tomatoes and garlic, cook 3-4 min until they soften.', 'Add prawns and cook until pink, 2-3 min.', 'Finish with parsley and serve.'],
-    tags: ['omega3', 'lowGI'],
-    avoid: ['shellfish']
   },
   'pork-loin-farro-veg': {
     title: 'Pork loin, farro & greens', emoji: '🍖', slot: 'dinner', role: 'full',
@@ -431,6 +411,7 @@ const RECIPES_DB = {
   },
   'uova-avocado-toast': {
     title: 'Egg & avocado toast', emoji: '🥑', slot: 'breakfast', role: 'full',
+    imageKey: 'uova-avocado-toast',
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['wholewheat-bread', 70], ['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60]],
     toTaste: ['lemon', 'black pepper'],
@@ -440,6 +421,7 @@ const RECIPES_DB = {
   },
   'ricotta-pere-noci-toast': {
     title: 'Ricotta, pear & walnut toast', emoji: '🍐', slot: 'breakfast', role: 'full',
+    imageKey: 'ricotta-pere-noci-toast',
     styles: ['balanced'], time: 8,
     ingredients: [['wholewheat-bread', 70], ['ricotta', 80], ['pears', 90], ['walnuts', 15], ['honey', 6]],
     toTaste: ['black pepper'],
@@ -543,6 +525,7 @@ const RECIPES_DB = {
   },
   'pomodori-al-riso': {
     title: 'Rice-stuffed tomatoes', emoji: '🍅', slot: 'lunch', role: 'full',
+    imageKey: 'pomodori-al-riso',
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 55,
@@ -603,15 +586,6 @@ const RECIPES_DB = {
     tags: ['muscle'],
     avoid: ['lactose']
   },
-  'chicken-tacos-gyros': {
-    title: 'Chicken tacos / gyros', emoji: '🌮', slot: 'dinner', role: 'full',
-    styles: ['balanced', 'highprotein'], time: 25,
-    ingredients: [['chicken-breast', 160], ['white-bread', 80], ['greek-yogurt', 60], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 6]],
-    toTaste: ['lemon', 'oregano', 'paprika'],
-    steps: ['Season and cook chicken strips.', 'Warm bread as a wrap.', 'Fill with chicken, yogurt sauce, cucumber and tomatoes.'],
-    tags: ['muscle'],
-    avoid: ['gluten', 'lactose']
-  },
   'tacchino-arrosto-agrumi': {
     title: 'Citrus roast turkey', emoji: '🦃', slot: 'dinner', role: 'full',
     imageKey: 'citrus-roast-turkey',
@@ -663,17 +637,6 @@ const RECIPES_DB = {
     tags: ['veggie', 'highFiber'],
     avoid: ['gluten']
   },
-  'polpette-melanzane': {
-    title: 'Aubergine fritters with tomato sauce', emoji: '🧆', slot: 'dinner', role: 'full',
-    season: 'spring/summer',
-    slots: ['dinner', 'lunch'],
-    styles: ['balanced'], time: 35,
-    ingredients: [['aubergine', 220], ['eggs', 50], ['parmesan', 25], ['wholewheat-bread', 45], ['tomatoes', 150], ['olive-oil', 10]],
-    toTaste: ['basil', 'garlic'],
-    steps: ['Cook aubergine until soft and chop finely.', 'Mix with egg, parmesan and bread crumbs.', 'Bake or pan-cook the polpette and serve with tomato sauce.'],
-    tags: ['veggie'],
-    avoid: ['gluten', 'lactose']
-  },
   ramen: {
     title: 'Ramen', emoji: '🍜', slot: 'dinner', role: 'full',
     imageKey: 'ramen',
@@ -698,6 +661,7 @@ const RECIPES_DB = {
   },
   'polpette-tacchino-yogurt-menta': {
     title: 'Turkey meatballs with yogurt & mint', emoji: '🦃', slot: 'dinner', role: 'full',
+    imageKey: 'polpette-tacchino-yogurt-menta',
     styles: ['balanced', 'highprotein'], time: 28,
     ingredients: [['turkey-breast', 180], ['eggs', 50], ['wholewheat-bread', 35], ['greek-yogurt', 80], ['cucumber', 80], ['olive-oil', 8]],
     toTaste: ['mint', 'lemon'],
@@ -726,6 +690,7 @@ const RECIPES_DB = {
   },
   'feta-filo-miele-noodles-verdure': {
     title: 'Honey filo feta with noodles & grilled vegetables', emoji: '🧀', slot: 'dinner', role: 'full',
+    imageKey: 'feta-filo-miele-noodles-verdure',
     season: 'spring/summer',
     styles: ['balanced'], time: 30,
     ingredients: [['feta-cheese', 80], ['pasta-filo', 45], ['honey', 10], ['egg-noodles', 45], ['courgette', 100], ['bell-pepper', 100], ['olive-oil', 10]],
@@ -739,6 +704,7 @@ const RECIPES_DB = {
 
   'carrots-over-hummus': {
     title: 'Carrots over hummus', emoji: '🥕', slot: 'side', role: 'side',
+    imageKey: 'carrots-over-hummus',
     slots: ['side', 'snack', 'lunch'],
     styles: ['balanced'], time: 22,
     ingredients: [['carrots', 180], ['chickpeas', 45], ['olive-oil', 12], ['lemon-juice', 8], ['garlic', 2], ['maple-syrup', 5]],
@@ -829,6 +795,7 @@ const RECIPES_DB = {
   },
   'spring-rolls': {
     title: 'Chinese spring rolls', emoji: '🥢', slot: 'side', role: 'side',
+    imageKey: 'spring-rolls',
     slots: ['side', 'snack', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 25,
@@ -921,6 +888,8 @@ const RECIPES_DB = {
   },
   pizza: {
     title: 'Pizza', emoji: '🍕', slot: 'dinner', role: 'full',
+    imageKey: 'pizza',
+    imageUri: 'assets/recipes/pizza.png',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 35,
     ingredients: [['00-flour', 110], ['olive-oil', 6]],
