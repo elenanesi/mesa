@@ -411,8 +411,17 @@ function preserveLoggedSlots(oldPlan, newPlan){
       const lockE = loggedSlotLocked(dateISO, 'elena', slot);
       const lockA = loggedSlotLocked(dateISO, 'partner', slot);
       if(!lockE && !lockA) return;
-      if(oldMeal.shared || newMeal.shared || (lockE && lockA)){
+      if(oldMeal.shared || newMeal.shared){
         if(!mealRecipesValid(oldMeal)) return;
+        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        return;
+      }
+      // Both solo + both locked: whole-cell replace carries cell-level fields the
+      // per-person path below doesn't, so prefer it — but only when BOTH sides are
+      // still valid. If just one side is dangling (its recipe got tombstoned while the
+      // other person's logged meal is still fine), don't drop the whole cell for that;
+      // fall through to the per-person restore so the valid person keeps their log.
+      if(lockE && lockA && mealRecipesValid(oldMeal)){
         newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
         return;
       }
@@ -666,8 +675,17 @@ function preservePinnedSlots(oldPlan, newPlan){
       const pinE = isMealPinned(newPlan.weekStartDate, d, slot, 'elena');
       const pinA = isMealPinned(newPlan.weekStartDate, d, slot, 'partner');
       if(!pinShared && !pinE && !pinA) return;
-      if(pinShared || oldMeal.shared || newMeal.shared || (pinE && pinA)){
+      if(pinShared || oldMeal.shared || newMeal.shared){
         if(!mealRecipesValid(oldMeal)) return;
+        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        return;
+      }
+      // Both solo + both pinned: whole-cell replace carries cell-level fields the
+      // per-person path below doesn't, so prefer it — but only when BOTH sides are
+      // still valid. If just one side is dangling (its recipe got tombstoned while the
+      // other person's pinned meal is still fine), don't drop the whole cell for that;
+      // fall through to the per-person restore so the valid person keeps their pin.
+      if(pinE && pinA && mealRecipesValid(oldMeal)){
         newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
         return;
       }

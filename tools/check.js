@@ -1455,6 +1455,223 @@ function testRebalanceAppliersCarryPinGuard(){
   });
 }
 
+/* ---------------- preserveLoggedSlots/preservePinnedSlots: one-sided dangling recipe
+   (2026-07-19 fix) ----------------
+   planEntryRecipeValid()/mealRecipesValid() (~line 394) guard these two restorers against
+   resurrecting a recipeId tombstoned out of RECIPES_DB. The original guard was too coarse
+   for a SOLO meal with BOTH people locked (logged or pinned): mealRecipesValid() requires
+   elena AND partner to both resolve, so if only one side's recipeId went dangling the
+   whole cell was dropped — silently discarding the OTHER person's still-valid logged/pinned
+   meal. Covers, for both restorers: (1) one-sided dangling on a solo meal -> only the
+   dangling side is replaced by the freshly-regenerated entry, the valid side survives;
+   (2) both sides valid on a solo meal -> the whole-cell replace still runs (proven via a
+   synthetic marker field on the cell that only a whole-object copy would carry over — the
+   per-person path only ever touches .elena/.partner); (3) a genuinely SHARED meal with a
+   dangling recipeId is still dropped wholesale, never partially restored (mealRecipesValid
+   checks the shared cell's OWN top-level recipeId, not its elena/partner sub-entries). */
+function testPreserveSlotsOneSidedDangling(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {};");
+  const basePlan = call(ctx, 'ensureWeekPlan', []);
+  const wk = basePlan.weekStartDate;
+  const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const realIds = Object.keys(RECIPES_DB);
+  assert(realIds.length >= 4, 'one-sided-dangling test setup: RECIPES_DB has enough real recipes for alt-id substitution', 'count=' + realIds.length);
+
+  function findSlot(wantShared){
+    for(let d = 0; d < basePlan.days.length; d++){
+      for(let i = 0; i < SLOT_ORDER.length; i++){
+        const slot = SLOT_ORDER[i];
+        const m = basePlan.days[d].meals[slot];
+        if(m && !!m.shared === wantShared && m.elena && m.elena.recipeId && m.partner && m.partner.recipeId) return {d: d, slot: slot};
+      }
+    }
+    return null;
+  }
+  const solo = findSlot(false);
+  const sharedLoc = findSlot(true);
+  assert(!!solo && !!sharedLoc,
+    'one-sided-dangling test setup: the generated week has both a solo and a shared slot to test against',
+    'solo=' + JSON.stringify(solo) + ' shared=' + JSON.stringify(sharedLoc));
+  if(!solo || !sharedLoc) return;
+
+  // Picks a real RECIPES_DB id not in `exclude` — stands in for "what regeneration
+  // proposed", always a real id (unlike the fixture's fabricated dangling ids).
+  function altIdFor(exclude){
+    return realIds.filter(function(id){ return exclude.indexOf(id) === -1; })[0];
+  }
+  function lockBothSolo(dateISO, slot, meal){
+    call(ctx, 'logPlanEntry', [dateISO, 'elena', slot, meal.elena.recipeId, 1, [{recipeId: meal.elena.recipeId, portion: 1}], undefined]);
+    call(ctx, 'logPlanEntry', [dateISO, 'partner', slot, meal.partner.recipeId, 1, [{recipeId: meal.partner.recipeId, portion: 1}], undefined]);
+  }
+  function pinBothSolo(d, slot){
+    run(ctx, 'mealPins[' + JSON.stringify(call(ctx, 'mealPinKey', [wk, d, slot, 'elena'])) + '] = true;');
+    run(ctx, 'mealPins[' + JSON.stringify(call(ctx, 'mealPinKey', [wk, d, slot, 'partner'])) + '] = true;');
+  }
+
+  /* ========================= preserveLoggedSlots ========================= */
+
+  // (1) one-sided dangling, both solo + both logged: the valid person's logged meal
+  // survives; the dangling person's takes the freshly-regenerated entry.
+  (function(){
+    run(ctx, 'logHistory = {};');
+    const dateISO = basePlan.days[solo.d].date;
+    lockBothSolo(dateISO, solo.slot, basePlan.days[solo.d].meals[solo.slot]);
+
+    const oldPlan = cloneJSON(basePlan);
+    const validPartnerId = oldPlan.days[solo.d].meals[solo.slot].partner.recipeId;
+    oldPlan.days[solo.d].meals[solo.slot].elena.recipeId = 'ghost-recipe-tombstoned-log-1sided';
+
+    const newPlan = cloneJSON(oldPlan);
+    const freshElena = altIdFor(['ghost-recipe-tombstoned-log-1sided', validPartnerId]);
+    const freshPartner = altIdFor(['ghost-recipe-tombstoned-log-1sided', validPartnerId, freshElena]);
+    newPlan.days[solo.d].meals[solo.slot].elena.recipeId = freshElena;
+    newPlan.days[solo.d].meals[solo.slot].partner.recipeId = freshPartner;
+
+    call(ctx, 'preserveLoggedSlots', [oldPlan, newPlan]);
+    const result = newPlan.days[solo.d].meals[solo.slot];
+    assert(result.elena.recipeId === freshElena,
+      'preserveLoggedSlots: one-sided dangling (elena) keeps the freshly-regenerated recipe on the dangling side',
+      'got ' + result.elena.recipeId + ', expected ' + freshElena);
+    assert(result.partner.recipeId === validPartnerId,
+      'preserveLoggedSlots: one-sided dangling (elena) still restores the OTHER (valid) person\'s logged meal',
+      'got ' + result.partner.recipeId + ', expected ' + validPartnerId);
+  })();
+
+  // (2) both sides valid, both solo + both logged: whole-cell replace still runs
+  // unchanged (the synthetic marker field only survives a whole-object copy).
+  (function(){
+    run(ctx, 'logHistory = {};');
+    const dateISO = basePlan.days[solo.d].date;
+    lockBothSolo(dateISO, solo.slot, basePlan.days[solo.d].meals[solo.slot]);
+
+    const oldPlan = cloneJSON(basePlan);
+    oldPlan.days[solo.d].meals[solo.slot].__wholeCellMarker = 'from-old-plan';
+    const origElenaId = oldPlan.days[solo.d].meals[solo.slot].elena.recipeId;
+    const origPartnerId = oldPlan.days[solo.d].meals[solo.slot].partner.recipeId;
+
+    const newPlan = cloneJSON(oldPlan);
+    delete newPlan.days[solo.d].meals[solo.slot].__wholeCellMarker;
+    newPlan.days[solo.d].meals[solo.slot].elena.recipeId = altIdFor([origElenaId, origPartnerId]);
+
+    call(ctx, 'preserveLoggedSlots', [oldPlan, newPlan]);
+    const result = newPlan.days[solo.d].meals[solo.slot];
+    assert(result.__wholeCellMarker === 'from-old-plan',
+      'preserveLoggedSlots: both sides valid still does the whole-cell replace (cell-level marker field survives)',
+      'got marker=' + JSON.stringify(result.__wholeCellMarker));
+    assert(result.elena.recipeId === origElenaId,
+      'preserveLoggedSlots: both sides valid restores the ORIGINAL logged recipe, not the freshly-regenerated one',
+      'got ' + result.elena.recipeId + ', expected ' + origElenaId);
+  })();
+
+  // (3) a genuinely SHARED meal with a dangling top-level recipeId: still dropped
+  // wholesale, not partially restored — even though the sub-entries still point at the
+  // still-real, still-valid original id.
+  (function(){
+    run(ctx, 'logHistory = {};');
+    const dateISO = basePlan.days[sharedLoc.d].date;
+    const mealBefore = basePlan.days[sharedLoc.d].meals[sharedLoc.slot];
+    call(ctx, 'logPlanEntry', [dateISO, 'elena', sharedLoc.slot, mealBefore.recipeId, 1, [{recipeId: mealBefore.recipeId, portion: 1}], undefined]);
+    call(ctx, 'logPlanEntry', [dateISO, 'partner', sharedLoc.slot, mealBefore.recipeId, 1, [{recipeId: mealBefore.recipeId, portion: 1}], undefined]);
+
+    const oldPlan = cloneJSON(basePlan);
+    const origSharedId = oldPlan.days[sharedLoc.d].meals[sharedLoc.slot].recipeId;
+    oldPlan.days[sharedLoc.d].meals[sharedLoc.slot].recipeId = 'ghost-recipe-tombstoned-log-shared';
+    // elena/partner sub-entries deliberately left pointing at the still-real id — proves
+    // the shared branch checks the CELL's recipeId, not the sub-entries.
+
+    const newPlan = cloneJSON(oldPlan);
+    const freshShared = altIdFor([origSharedId, 'ghost-recipe-tombstoned-log-shared']);
+    newPlan.days[sharedLoc.d].meals[sharedLoc.slot].recipeId = freshShared;
+    newPlan.days[sharedLoc.d].meals[sharedLoc.slot].elena.recipeId = freshShared;
+    newPlan.days[sharedLoc.d].meals[sharedLoc.slot].partner.recipeId = freshShared;
+
+    call(ctx, 'preserveLoggedSlots', [oldPlan, newPlan]);
+    const result = newPlan.days[sharedLoc.d].meals[sharedLoc.slot];
+    assert(result.recipeId === freshShared && result.elena.recipeId === freshShared && result.partner.recipeId === freshShared,
+      'preserveLoggedSlots: a genuinely shared meal with a dangling recipeId is dropped wholesale, not partially restored',
+      'got ' + JSON.stringify(result));
+  })();
+
+  /* ========================= preservePinnedSlots ========================= */
+
+  // (1) one-sided dangling, both solo + both pinned: the valid person's pinned meal
+  // survives; the dangling person's takes the freshly-regenerated entry.
+  (function(){
+    run(ctx, 'mealPins = {};');
+    pinBothSolo(solo.d, solo.slot);
+
+    const oldPlan = cloneJSON(basePlan);
+    const validPartnerId = oldPlan.days[solo.d].meals[solo.slot].partner.recipeId;
+    oldPlan.days[solo.d].meals[solo.slot].elena.recipeId = 'ghost-recipe-tombstoned-pin-1sided';
+
+    const newPlan = cloneJSON(oldPlan);
+    const freshElena = altIdFor(['ghost-recipe-tombstoned-pin-1sided', validPartnerId]);
+    const freshPartner = altIdFor(['ghost-recipe-tombstoned-pin-1sided', validPartnerId, freshElena]);
+    newPlan.days[solo.d].meals[solo.slot].elena.recipeId = freshElena;
+    newPlan.days[solo.d].meals[solo.slot].partner.recipeId = freshPartner;
+
+    call(ctx, 'preservePinnedSlots', [oldPlan, newPlan]);
+    const result = newPlan.days[solo.d].meals[solo.slot];
+    assert(result.elena.recipeId === freshElena,
+      'preservePinnedSlots: one-sided dangling (elena) keeps the freshly-regenerated recipe on the dangling side',
+      'got ' + result.elena.recipeId + ', expected ' + freshElena);
+    assert(result.partner.recipeId === validPartnerId,
+      'preservePinnedSlots: one-sided dangling (elena) still restores the OTHER (valid) person\'s pinned meal',
+      'got ' + result.partner.recipeId + ', expected ' + validPartnerId);
+  })();
+
+  // (2) both sides valid, both solo + both pinned: whole-cell replace still runs
+  // unchanged (the synthetic marker field only survives a whole-object copy).
+  (function(){
+    run(ctx, 'mealPins = {};');
+    pinBothSolo(solo.d, solo.slot);
+
+    const oldPlan = cloneJSON(basePlan);
+    oldPlan.days[solo.d].meals[solo.slot].__wholeCellMarker = 'from-old-plan-pin';
+    const origElenaId = oldPlan.days[solo.d].meals[solo.slot].elena.recipeId;
+    const origPartnerId = oldPlan.days[solo.d].meals[solo.slot].partner.recipeId;
+
+    const newPlan = cloneJSON(oldPlan);
+    delete newPlan.days[solo.d].meals[solo.slot].__wholeCellMarker;
+    newPlan.days[solo.d].meals[solo.slot].elena.recipeId = altIdFor([origElenaId, origPartnerId]);
+
+    call(ctx, 'preservePinnedSlots', [oldPlan, newPlan]);
+    const result = newPlan.days[solo.d].meals[solo.slot];
+    assert(result.__wholeCellMarker === 'from-old-plan-pin',
+      'preservePinnedSlots: both sides valid still does the whole-cell replace (cell-level marker field survives)',
+      'got marker=' + JSON.stringify(result.__wholeCellMarker));
+    assert(result.elena.recipeId === origElenaId,
+      'preservePinnedSlots: both sides valid restores the ORIGINAL pinned recipe, not the freshly-regenerated one',
+      'got ' + result.elena.recipeId + ', expected ' + origElenaId);
+  })();
+
+  // (3) a genuinely SHARED meal with a dangling top-level recipeId: still dropped
+  // wholesale, not partially restored.
+  (function(){
+    run(ctx, 'mealPins = {};');
+    run(ctx, 'mealPins[' + JSON.stringify(call(ctx, 'mealPinKey', [wk, sharedLoc.d, sharedLoc.slot, 'shared'])) + '] = true;');
+
+    const oldPlan = cloneJSON(basePlan);
+    const origSharedId = oldPlan.days[sharedLoc.d].meals[sharedLoc.slot].recipeId;
+    oldPlan.days[sharedLoc.d].meals[sharedLoc.slot].recipeId = 'ghost-recipe-tombstoned-pin-shared';
+
+    const newPlan = cloneJSON(oldPlan);
+    const freshShared = altIdFor([origSharedId, 'ghost-recipe-tombstoned-pin-shared']);
+    newPlan.days[sharedLoc.d].meals[sharedLoc.slot].recipeId = freshShared;
+    newPlan.days[sharedLoc.d].meals[sharedLoc.slot].elena.recipeId = freshShared;
+    newPlan.days[sharedLoc.d].meals[sharedLoc.slot].partner.recipeId = freshShared;
+
+    call(ctx, 'preservePinnedSlots', [oldPlan, newPlan]);
+    const result = newPlan.days[sharedLoc.d].meals[sharedLoc.slot];
+    assert(result.recipeId === freshShared && result.elena.recipeId === freshShared && result.partner.recipeId === freshShared,
+      'preservePinnedSlots: a genuinely shared meal with a dangling recipeId is dropped wholesale, not partially restored',
+      'got ' + JSON.stringify(result));
+  })();
+
+  run(ctx, "weekPlans = {}; weekPlan = null; mealPins = {}; logHistory = {};");
+}
+
 /* ---------------- planner.js determinism ---------------- */
 
 function testPlannerDeterminism(ctx){
@@ -3984,6 +4201,7 @@ function main(){
   runTest('routine pin helper contracts', function(){ testRoutinePinHelperContracts(ctx); });
   runTest('pinned meals re-balance immutability (2026-07-19)', function(){ testPinnedMealsRebalanceImmutability(ctx); });
   runTest('re-balance appliers carry the pin guard', function(){ testRebalanceAppliersCarryPinGuard(); });
+  runTest('preserveLoggedSlots/preservePinnedSlots one-sided dangling recipe (2026-07-19)', function(){ testPreserveSlotsOneSidedDangling(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
