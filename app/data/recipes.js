@@ -919,6 +919,26 @@ const RECIPES_DB = {
       }
     ]
   },
+  pizza: {
+    title: 'Pizza', emoji: '🍕', slot: 'dinner', role: 'full',
+    slots: ['dinner', 'lunch'],
+    styles: ['balanced'], time: 35,
+    ingredients: [['00-flour', 110], ['olive-oil', 6]],
+    toTaste: ['water', 'yeast', 'salt'],
+    steps: ['Mix flour, water, yeast and a pinch of salt into a dough; knead until smooth.', 'Cover and let rise until doubled, about 1-2 hours.', 'Stretch the dough into a round on a floured surface.', 'Top with the chosen topping and olive oil.', 'Bake on a hot stone or tray at the highest oven setting until the crust is blistered and the cheese is bubbling, 8-12 min.'],
+    tags: [],
+    avoid: ['gluten'],
+    optionGroups: [
+      {
+        key: 'topping', label: 'Topping',
+        choices: [
+          {id: 'margherita', label: 'Margherita', ingredients: [['tomato-puree', 70], ['mozzarella', 70], ['basil', 5]]},
+          {id: 'boscaiola', label: 'Boscaiola', ingredients: [['tomato-puree', 50], ['mozzarella', 50], ['mushrooms', 80], ['pork-sausage', 45]]},
+          {id: 'funghi', label: 'Mushroom', ingredients: [['tomato-puree', 70], ['mozzarella', 60], ['mushrooms', 100]]}
+        ]
+      }
+    ]
+  },
   'lemon-herb-chicken-breast': {
     title: 'Lemon-herb chicken breast', emoji: '🍗', slot: 'lunch', role: 'main',
     slots: ['lunch', 'dinner'],
