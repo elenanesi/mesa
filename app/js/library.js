@@ -71,10 +71,21 @@ function normalizeRecipeRoleField(recipe){
   return recipe;
 }
 
+// Fraction of BUILTIN_RECIPE_COUNT (the bundled catalog's size, captured once above at
+// script-parse time — never ratchets down even if this function runs more than once) that an
+// incoming D1 payload's ACCEPTED rows must clear before replaceBuiltinRecipesFromCatalogRows()
+// will install it. Legitimate catalog edits add/remove a handful of recipes at a time (a
+// recent commit removed 4) — 0.5 is far below any real edit but still catches a truncated or
+// partially-seeded D1 response, which would otherwise silently shrink the planner's candidate
+// pool with no visible cause (README "The defect").
+const CATALOG_REPLACE_MIN_FRACTION = 0.5;
+
 function replaceBuiltinRecipesFromCatalogRows(rows){
   if(!Array.isArray(rows)) return false;
   const nextRecipes = {};
   const nextSlots = {};
+  let rejectedCount = 0;
+  const rejectedIds = [];
   rows.forEach(function(row){
     if(!row || row.deleted_at || row.deletedAt) return;
     if(row.scope !== 'global' || row.source !== 'builtin') return;
@@ -82,11 +93,34 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
     const data = row.data;
     if(!id || !data || typeof data !== 'object' || Array.isArray(data)) return;
     const recipe = normalizeRecipeRoleField(JSON.parse(JSON.stringify(data)));
-    if(!recipe.title || !recipe.slot) return;
+    const titleValid = typeof recipe.title === 'string' && !!recipe.title;
+    const slotValid = typeof recipe.slot === 'string' && VALID_SLOTS.indexOf(recipe.slot) !== -1;
+    const ingredientsValid = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0;
+    if(!titleValid || !slotValid || !ingredientsValid){
+      rejectedCount++;
+      if(rejectedIds.length < 10) rejectedIds.push(id);
+      return;
+    }
     nextRecipes[id] = recipe;
     nextSlots[id] = recipe.slot;
   });
-  if(!Object.keys(nextRecipes).length) return false;
+  const acceptedCount = Object.keys(nextRecipes).length;
+  if(!acceptedCount) return false;
+
+  // Sanity floor — reject the WHOLE payload (bundled BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB
+  // left completely untouched) rather than installing a thin catalog silently.
+  const minAccepted = BUILTIN_RECIPE_COUNT * CATALOG_REPLACE_MIN_FRACTION;
+  if(acceptedCount < minAccepted){
+    console.error('replaceBuiltinRecipesFromCatalogRows: rejected D1 catalog payload — only ' +
+      acceptedCount + ' of ' + BUILTIN_RECIPE_COUNT + ' bundled recipes were accepted (floor is ' +
+      minAccepted + ', ' + (CATALOG_REPLACE_MIN_FRACTION * 100) + '% of bundled count). Keeping bundled fallback.');
+    return false;
+  }
+
+  if(rejectedCount){
+    console.warn('replaceBuiltinRecipesFromCatalogRows: dropped ' + rejectedCount +
+      ' row(s) that failed validation: ' + rejectedIds.join(', ') + (rejectedCount > rejectedIds.length ? ', ...' : ''));
+  }
 
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){ delete BUILTIN_RECIPES_DB[id]; });
   Object.keys(BUILTIN_RECIPE_SLOT_DB).forEach(function(id){ delete BUILTIN_RECIPE_SLOT_DB[id]; });

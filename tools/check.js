@@ -749,6 +749,107 @@ function testRecipeCatalogCleanup(ctx){
     'recipe catalog cleanup: pizza exists and points to its recipe image URI', JSON.stringify(RECIPES_DB.pizza));
 }
 
+// replaceBuiltinRecipesFromCatalogRows() (js/library.js) installs whatever the D1 catalog
+// mirror returned as the new BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB, guarded by a sanity
+// floor (CATALOG_REPLACE_MIN_FRACTION of BUILTIN_RECIPE_COUNT) so a truncated/partially-seeded
+// D1 response can't silently shrink the live catalog with no signal. CRITICAL: this function
+// mutates the module-level BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB globals that every later
+// test in this shared vm context reads (applyCustomRecipes(), the D3 cleanup test's byte-
+// identical check, ...) — snapshot both before touching them and restore afterwards, even if
+// an assertion throws, so a failure here can never corrupt tests that run after it.
+function testReplaceBuiltinRecipesFromCatalogRows(ctx){
+  const recipesSnapshot = cloneJSON(get(ctx, 'BUILTIN_RECIPES_DB'));
+  const slotsSnapshot = cloneJSON(get(ctx, 'BUILTIN_RECIPE_SLOT_DB'));
+  function restore(){
+    ctx.__restoreRecipes__ = recipesSnapshot;
+    ctx.__restoreSlots__ = slotsSnapshot;
+    run(ctx,
+      "Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){ delete BUILTIN_RECIPES_DB[id]; });" +
+      "Object.keys(__restoreRecipes__).forEach(function(id){ BUILTIN_RECIPES_DB[id] = __restoreRecipes__[id]; });" +
+      "Object.keys(BUILTIN_RECIPE_SLOT_DB).forEach(function(id){ delete BUILTIN_RECIPE_SLOT_DB[id]; });" +
+      "Object.keys(__restoreSlots__).forEach(function(id){ BUILTIN_RECIPE_SLOT_DB[id] = __restoreSlots__[id]; });" +
+      "delete __restoreRecipes__; delete __restoreSlots__;");
+  }
+
+  try {
+    const bundled = recipesSnapshot; // pristine bundled catalog (~96 recipes), taken before this test touches anything
+    const bundledIds = Object.keys(bundled);
+    function rowFor(id, data){ return {id: id, scope: 'global', source: 'builtin', data: data || bundled[id]}; }
+
+    // -------- (1) a full valid payload, built FROM the bundled catalog itself -> true, catalog replaced --------
+    const fullRows = bundledIds.map(function(id){ return rowFor(id); });
+    let result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [fullRows]);
+    assert(result === true,
+      'replaceBuiltinRecipesFromCatalogRows: a full valid payload (built from the bundled catalog) returns true', String(result));
+    let db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(Object.keys(db).length === bundledIds.length,
+      'replaceBuiltinRecipesFromCatalogRows: a full payload replaces BUILTIN_RECIPES_DB with the same recipe count as the bundled catalog',
+      Object.keys(db).length + ' vs ' + bundledIds.length);
+    assert(JSON.stringify(db[bundledIds[0]]) === JSON.stringify(bundled[bundledIds[0]]),
+      'replaceBuiltinRecipesFromCatalogRows: a full payload round-trips a bundled recipe unchanged', '');
+
+    // -------- (2) a truncated payload (3 rows, far under the 50% floor) -> false, BUILTIN_RECIPES_DB
+    // still holds the FULL bundled catalog (not the 96-row set replaceBuiltinRecipesFromCatalogRows()
+    // itself just installed in scenario 1 — restore() first so "still full" actually proves rejection). --------
+    restore();
+    const truncatedRows = bundledIds.slice(0, 3).map(function(id){ return rowFor(id); });
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [truncatedRows]);
+    assert(result === false,
+      'replaceBuiltinRecipesFromCatalogRows: a truncated payload (3 rows) returns false', String(result));
+    db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(Object.keys(db).length === bundledIds.length,
+      'replaceBuiltinRecipesFromCatalogRows: a rejected truncated payload leaves BUILTIN_RECIPES_DB holding the full bundled catalog',
+      Object.keys(db).length + ' vs ' + bundledIds.length);
+
+    // -------- (3) a payload above the floor containing some invalid rows (bad slot, missing
+    // ingredients, empty title) -> true, the invalid rows are absent from the result, valid ones present --------
+    restore();
+    const aboveFloorIds = bundledIds.slice(0, Math.ceil(bundledIds.length * 0.6)); // well above the 50% floor
+    const badSlotId = aboveFloorIds[0], badIngredientsId = aboveFloorIds[1], emptyTitleId = aboveFloorIds[2];
+    const mixedRows = aboveFloorIds.map(function(id){
+      if(id === badSlotId) return rowFor(id, Object.assign({}, bundled[id], {slot: 'not-a-real-slot'}));
+      if(id === badIngredientsId) return rowFor(id, Object.assign({}, bundled[id], {ingredients: []}));
+      if(id === emptyTitleId) return rowFor(id, Object.assign({}, bundled[id], {title: ''}));
+      return rowFor(id);
+    });
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [mixedRows]);
+    assert(result === true,
+      'replaceBuiltinRecipesFromCatalogRows: a payload above the floor with a few invalid rows still returns true', String(result));
+    db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(!db[badSlotId] && !db[badIngredientsId] && !db[emptyTitleId],
+      'replaceBuiltinRecipesFromCatalogRows: rows with a bad slot / empty ingredients / empty title are dropped, not installed',
+      JSON.stringify({badSlotPresent: !!db[badSlotId], badIngredientsPresent: !!db[badIngredientsId], emptyTitlePresent: !!db[emptyTitleId]}));
+    const survivingIds = aboveFloorIds.filter(function(id){ return id !== badSlotId && id !== badIngredientsId && id !== emptyTitleId; });
+    assert(survivingIds.every(function(id){ return !!db[id]; }) && Object.keys(db).length === survivingIds.length,
+      'replaceBuiltinRecipesFromCatalogRows: exactly the valid rows of a mixed payload are installed, nothing extra left over',
+      Object.keys(db).length + ' vs ' + survivingIds.length);
+
+    // -------- (4a) a non-array argument -> false, catalog untouched --------
+    restore();
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [{not: 'an array'}]);
+    assert(result === false,
+      'replaceBuiltinRecipesFromCatalogRows: a non-array argument returns false', String(result));
+    db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(Object.keys(db).length === bundledIds.length,
+      'replaceBuiltinRecipesFromCatalogRows: a non-array argument leaves BUILTIN_RECIPES_DB untouched',
+      Object.keys(db).length + ' vs ' + bundledIds.length);
+
+    // -------- (4b) an all-invalid payload -> false, catalog untouched --------
+    const allInvalidRows = bundledIds.map(function(id){
+      return rowFor(id, {title: '', slot: 'nope', ingredients: []});
+    });
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [allInvalidRows]);
+    assert(result === false,
+      'replaceBuiltinRecipesFromCatalogRows: an all-invalid payload returns false', String(result));
+    db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(Object.keys(db).length === bundledIds.length,
+      'replaceBuiltinRecipesFromCatalogRows: an all-invalid payload leaves BUILTIN_RECIPES_DB untouched',
+      Object.keys(db).length + ' vs ' + bundledIds.length);
+  } finally {
+    restore();
+  }
+}
+
 function testRecipeImagePicker(ctx){
   run(ctx, "var __recipePickerStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){};");
   call(ctx, 'openNewRecipeForm', []);
@@ -4185,6 +4286,7 @@ function main(){
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
   runTest('recipe catalog cleanup', function(){ testRecipeCatalogCleanup(ctx); });
+  runTest('replaceBuiltinRecipesFromCatalogRows: D1 catalog sanity floor + validation', function(){ testReplaceBuiltinRecipesFromCatalogRows(ctx); });
   runTest('recipe image picker', function(){ testRecipeImagePicker(ctx); });
   runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
