@@ -133,6 +133,7 @@ const RECIPES_DB = {
   },
   shakshuka: {
     title: 'Shakshuka', emoji: '🍳', slot: 'breakfast', role: 'main',
+    imageKey: 'shakshuka',
     styles: ['balanced', 'lowcarb'], time: 20,
     ingredients: [['eggs', 150], ['tomatoes', 150], ['bell-pepper', 80], ['red-onion', 40], ['olive-oil', 10]],
     toTaste: ['garlic', 'paprika', 'herbs'],
@@ -357,6 +358,7 @@ const RECIPES_DB = {
 
   'french-toast-fruit-maple': {
     title: 'French toast with fruit & maple syrup', emoji: '🍞', slot: 'breakfast', role: 'full',
+    imageKey: 'french-toast',
     styles: ['balanced'], time: 15,
     // task D2: mixed-berries moved out of the base list into optionGroups.fruit's default
     // choice (choices[0] = 'berries') so the base stays common to every fruit choice; the
@@ -391,6 +393,7 @@ const RECIPES_DB = {
   },
   pancakes: {
     title: 'Pancakes', emoji: '🥞', slot: 'breakfast', role: 'full',
+    imageKey: 'pancakes',
     styles: ['balanced'], time: 18,
     ingredients: [['oats', 45], ['eggs', 50], ['milk', 100], ['bananas', 60], ['maple-syrup', 15], ['olive-oil', 4]],
     toTaste: ['cinnamon'],
@@ -400,6 +403,7 @@ const RECIPES_DB = {
   },
   'pancakes-proteici': {
     title: 'Protein pancakes', emoji: '🥞', slot: 'breakfast', role: 'full',
+    imageKey: 'pancakes',
     styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['oats', 40], ['whey-protein-powder', 30], ['eggs', 50], ['milk', 90], ['chocolate-hazelnut-spread', 12], ['bananas', 70], ['mixed-berries', 50], ['olive-oil', 3]],
     toTaste: ['cinnamon'],
@@ -486,19 +490,9 @@ const RECIPES_DB = {
     tags: ['quick', 'muscle'],
     avoid: ['gluten', 'lactose']
   },
-  'pasta-pomodorini-funghi-broccoli': {
-    title: 'Cherry tomato, mushroom & broccoli pasta', emoji: '🍝', slot: 'lunch', role: 'full',
-    season: 'spring/summer',
-    slots: ['lunch', 'dinner'],
-    styles: ['balanced'], time: 22,
-    ingredients: [['pasta', 75], ['cherry-tomatoes', 120], ['mushrooms', 90], ['broccoli', 120], ['parmesan', 12], ['olive-oil', 10]],
-    toTaste: ['garlic', 'black pepper'],
-    steps: ['Boil pasta and broccoli together in salted water.', 'Saute mushrooms and cherry tomatoes with oil and garlic.', 'Toss pasta with the vegetables and parmesan.'],
-    tags: ['veggie', 'highFiber'],
-    avoid: ['gluten', 'lactose']
-  },
   'club-sandwich': {
     title: 'Club sandwich', emoji: '🥪', slot: 'lunch', role: 'full',
+    imageKey: 'club-sandwich',
     styles: ['balanced', 'highprotein'], time: 15,
     ingredients: [['white-bread', 90], ['chicken-breast', 100], ['bacon', 25], ['lettuce', 30], ['cherry-tomatoes', 50]],
     toTaste: ['mustard'],
@@ -563,6 +557,7 @@ const RECIPES_DB = {
 
   'pollo-bollito-brodo': {
     title: 'Boiled chicken in broth', emoji: '🍗', slot: 'dinner', role: 'main',
+    imageKey: 'boiled-chicken-broth',
     styles: ['highprotein', 'lowcarb'], time: 45,
     ingredients: [['chicken-breast', 190], ['carrots', 120], ['escarole', 100], ['olive-oil', 8]],
     toTaste: ['celery', 'onion', 'parsley'],
@@ -619,6 +614,7 @@ const RECIPES_DB = {
   },
   'tacchino-arrosto-agrumi': {
     title: 'Citrus roast turkey', emoji: '🦃', slot: 'dinner', role: 'full',
+    imageKey: 'citrus-roast-turkey',
     season: 'winter/autumn',
     styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['turkey-breast', 190], ['oranges', 80], ['sweet-potato', 180], ['green-beans', 140], ['olive-oil', 10]],
@@ -657,6 +653,7 @@ const RECIPES_DB = {
   },
   'pasta-zucca-fagioli-funghi': {
     title: 'Pumpkin, bean & mushroom pasta', emoji: '🍝', slot: 'dinner', role: 'full',
+    imageKey: 'pasta',
     season: 'winter/autumn',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 28,
@@ -689,6 +686,7 @@ const RECIPES_DB = {
   },
   'zuppa-broccolo-nero-lenticchie': {
     title: 'Black kale & lentil soup', emoji: '🍲', slot: 'dinner', role: 'full',
+    imageKey: 'soup',
     season: 'winter/autumn',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 30,
@@ -709,6 +707,7 @@ const RECIPES_DB = {
   },
   'burrito-vegetariano': {
     title: 'Vegetarian burrito', emoji: '🌯', slot: 'dinner', role: 'full',
+    imageKey: 'burrito',
     styles: ['balanced'], time: 22,
     ingredients: [['white-bread', 80], ['cannellini-beans', 130], ['rice', 55], ['avocado', 60], ['cherry-tomatoes', 80], ['feta-cheese', 25]],
     toTaste: ['lime', 'cumin'],
@@ -878,6 +877,7 @@ const RECIPES_DB = {
 
   'baked-fish': {
     title: 'Baked fish', emoji: '🐟', slot: 'lunch', role: 'main',
+    imageKey: 'fish-main',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 20,
     ingredients: [['olive-oil', 10], ['lemon-juice', 20]],
@@ -899,6 +899,7 @@ const RECIPES_DB = {
   },
   pasta: {
     title: 'Pasta', emoji: '🍝', slot: 'lunch', role: 'full',
+    imageKey: 'pasta',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 20,
     ingredients: [['pasta', 100], ['olive-oil', 8]],
@@ -1039,7 +1040,7 @@ const RECIPES_DB = {
   },
   'gelato-cioccolato': {
     title: 'Chocolate ice cream', emoji: '🍨', slot: 'snack', role: 'full',
-    imageKey: 'dessert-sweets',
+    imageKey: 'ice-cream',
     occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [['milk', 90], ['greek-yogurt', 50], ['honey', 18], ['dark-chocolate-85', 24]],
@@ -1050,7 +1051,7 @@ const RECIPES_DB = {
   },
   'gelato-stracciatella': {
     title: 'Stracciatella ice cream', emoji: '🍨', slot: 'snack', role: 'full',
-    imageKey: 'dessert-sweets',
+    imageKey: 'ice-cream',
     occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [['milk', 110], ['greek-yogurt', 40], ['honey', 18], ['dark-chocolate-85', 12], ['vanilla', 2]],
@@ -1061,7 +1062,7 @@ const RECIPES_DB = {
   },
   'gelato-yogurt': {
     title: 'Yogurt ice cream', emoji: '🍦', slot: 'snack', role: 'full',
-    imageKey: 'dessert-sweets',
+    imageKey: 'ice-cream',
     occasional: true,
     styles: ['balanced'], time: 2,
     ingredients: [['greek-yogurt', 120], ['milk', 40], ['honey', 18], ['strawberries', 30]],
@@ -1072,7 +1073,7 @@ const RECIPES_DB = {
   },
   'gelato-crema': {
     title: 'Vanilla custard ice cream', emoji: '🍨', slot: 'snack', role: 'full',
-    imageKey: 'dessert-sweets',
+    imageKey: 'ice-cream',
     occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [['milk', 120], ['eggs', 25], ['honey', 18], ['vanilla', 2], ['cinnamon', 1]],

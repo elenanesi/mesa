@@ -135,21 +135,38 @@ function recipeDisplayTitle(id, opts){
 }
 
 const DEFAULT_RECIPE_IMAGE_ASSET = 'assets/recipes/default-recipe.png';
-const RECIPE_IMAGE_KEYS = ['default-recipe', 'salad', 'cooked-vegetables', 'meat-main', 'fish-main', 'breakfast-bowl', 'dessert-sweets', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu'];
+const RECIPE_IMAGE_KEYS = [
+  'default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta',
+  'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream',
+  'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri',
+  'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito',
+  'citrus-roast-turkey', 'club-sandwich', 'shakshuka'
+];
 
 function recipeImageLabel(key){
   const labels = {
     'default-recipe': 'Default',
+    'breakfast-bowl': 'Breakfast bowl',
     'salad': 'Salad',
+    'soup': 'Soup',
+    'pasta': 'Pasta',
     'cooked-vegetables': 'Cooked veg',
     'meat-main': 'Meat main',
     'fish-main': 'Fish main',
-    'breakfast-bowl': 'Breakfast bowl',
     'dessert-sweets': 'Dessert',
+    'ice-cream': 'Ice cream',
     'ramen': 'Ramen',
     'butter-chicken': 'Butter chicken',
     'chinese-dinner': 'Chinese dinner',
-    'fast-food-menu': 'Fast food'
+    'fast-food-menu': 'Fast food',
+    'onigiri': 'Onigiri',
+    'french-toast': 'French toast',
+    'pancakes': 'Pancakes',
+    'boiled-chicken-broth': 'Chicken broth',
+    'burrito': 'Burrito',
+    'citrus-roast-turkey': 'Citrus turkey',
+    'club-sandwich': 'Club sandwich',
+    'shakshuka': 'Shakshuka'
   };
   return labels[key] || String(key || '').replace(/-/g, ' ');
 }
@@ -183,7 +200,6 @@ function recipeHasFishIngredient(recipe){
 
 function inferredRecipeImageKey(recipe, recipeId){
   if(!recipe) return 'default-recipe';
-  if(recipeHasFishIngredient(recipe)) return 'fish-main';
   const title = String(recipe.title || '').toLowerCase();
   const emoji = String(recipe.emoji || '');
   const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
@@ -198,13 +214,24 @@ function inferredRecipeImageKey(recipe, recipeId){
   if(/butter chicken|curry/.test(haystack)) return 'butter-chicken';
   if(/chinese|spring roll|dumpling|ravioli|almond chicken/.test(haystack)) return 'chinese-dinner';
   if(/mcdonald|burger king|fast food|burger|fries|cola/.test(haystack)) return 'fast-food-menu';
-  if(/brownie|dessert|sweet|sweets|gelato|ice cream|chocolate/.test(haystack)) return 'dessert-sweets';
+  if(/onigiri|rice ball/.test(haystack)) return 'onigiri';
+  if(/french toast/.test(haystack)) return 'french-toast';
+  if(/pancake/.test(haystack)) return 'pancakes';
+  if(/boiled chicken|chicken in broth|pollo bollito/.test(haystack)) return 'boiled-chicken-broth';
+  if(/burrito/.test(haystack)) return 'burrito';
+  if(/citrus roast turkey|orange.*turkey|turkey.*orange/.test(haystack)) return 'citrus-roast-turkey';
+  if(/club sandwich/.test(haystack)) return 'club-sandwich';
+  if(/shakshuka/.test(haystack)) return 'shakshuka';
+  if(/gelato|ice cream/.test(haystack)) return 'ice-cream';
+  if(/brownie|dessert|sweet|sweets|chocolate/.test(haystack)) return 'dessert-sweets';
+  if(/soup|zuppa|broth|minestrone|stew/.test(haystack)) return 'soup';
+  if(/pasta|spaghetti|lasagna|tagliatelle|penne|fusilli/.test(haystack)) return 'pasta';
+  if(/salad|insalata|cous cous/.test(haystack) || emoji === '🥗') return 'salad';
+  if(recipeHasFishIngredient(recipe) || /salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';
   if(recipe.slot === 'breakfast') return 'breakfast-bowl';
   if(recipe.slot === 'lunch') return 'salad';
   if(recipe.slot === 'dinner') return 'default-recipe';
   if(/breakfast|yogurt|skyr|oats|cereali|chia|pudding|bowl/.test(haystack)) return 'breakfast-bowl';
-  if(/salad|insalata|cous cous/.test(haystack) || emoji === '🥗') return 'salad';
-  if(/salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';
   if(/chicken|pollo|turkey|tacchino|beef|manzo|pork|maiale|bacon|prosciutto|speck|sausage|meat|burger/.test(haystack)) return 'meat-main';
   if(recipe.role === 'side' || tags.indexOf('veggie') !== -1 || /verdure|vegetable|veg|broccoli|cavolfiore|asparagi|pak choy|scarola|carrots|carote/.test(haystack)) return 'cooked-vegetables';
   return 'default-recipe';
@@ -265,6 +292,31 @@ function renderRecipe(key){
    .recipe-opt-chip in mesa.css); nothing renders for a recipe without optionGroups. */
 let recipeOptsCtx = null;
 
+// task D3: pure HTML-string builder, split out of renderRecipeOptionsChips() below in the
+// same buildXxx()/renderXxx() pattern js/library.js's builder sheets already use, so it's
+// testable headlessly (tools/check.js's hostile-label coverage — group/choice labels are
+// now USER-CONTROLLED text via the recipe builder's Options section, not just D1's
+// app-authored built-in copy). `resolvedOpts` must already be normalizeRecipeOpts() output
+// (every group has an entry) — callers normalize first, same contract this logic upheld
+// inline before the split. Choice ids/group keys still ride data-* attributes with a
+// delegated handler (attachRecipeOptionsHandler) rather than inline onclick — group keys/
+// choice ids are user-derived slugs now, never safe to interpolate into a JS-string
+// context — and labels go through escapeHtml (text-node context) / htmlAttr (attribute
+// context) like every other dynamic string in this file.
+function buildRecipeOptionsChipsHtml(recipe, resolvedOpts){
+  if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return '';
+  return recipe.optionGroups.map(function(group){
+    const chips = (group.choices || []).map(function(choice){
+      const on = resolvedOpts[group.key] === choice.id;
+      return '<button type="button" class="pill ghost chip-preset recipe-opt-chip' + (on ? ' chipsel' : '') + '"'
+        + ' data-opt-group="' + htmlAttr(group.key) + '" data-opt-choice="' + htmlAttr(choice.id) + '">'
+        + escapeHtml(choice.label) + '</button>';
+    }).join('');
+    return '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">'
+      + '<span class="sub" style="margin:0 2px 0 0">' + escapeHtml(group.label) + '</span>' + chips + '</div>';
+  }).join('');
+}
+
 function renderRecipeOptionsChips(){
   const wrap = document.getElementById('recipeOptionsWrap');
   if(!wrap) return;
@@ -276,19 +328,7 @@ function renderRecipeOptionsChips(){
   }
   recipeOptsCtx = normalizeRecipeOpts(r, recipeOptsCtx);
   wrap.style.display = 'block';
-  // Choice ids are app-authored constants (built-in RECIPES_DB only, per D1's scope cut),
-  // but still ride data-* attributes with a delegated handler rather than inline onclick —
-  // same escaping discipline the rest of the app applies to every dynamic row.
-  wrap.innerHTML = r.optionGroups.map(function(group){
-    const chips = (group.choices || []).map(function(choice){
-      const on = recipeOptsCtx[group.key] === choice.id;
-      return '<button type="button" class="pill ghost chip-preset recipe-opt-chip' + (on ? ' chipsel' : '') + '"'
-        + ' data-opt-group="' + htmlAttr(group.key) + '" data-opt-choice="' + htmlAttr(choice.id) + '">'
-        + escapeHtml(choice.label) + '</button>';
-    }).join('');
-    return '<div class="row" style="gap:6px;flex-wrap:wrap;margin-top:8px;align-items:center">'
-      + '<span class="sub" style="margin:0 2px 0 0">' + escapeHtml(group.label) + '</span>' + chips + '</div>';
-  }).join('');
+  wrap.innerHTML = buildRecipeOptionsChipsHtml(r, recipeOptsCtx);
   attachRecipeOptionsHandler();
 }
 
