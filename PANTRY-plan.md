@@ -1,6 +1,6 @@
 # Pantry / Fridge — build plan
 
-**Status:** proposed, awaiting build. Decisions Q1–Q3 recorded below (approved 2026-07-19).
+**Status:** BUILT and deployed 2026-07-20 (P1 139a1c0, P2 d69f155, P3 48d7f09; sw CACHE mesa-81cbf75682dd). Decisions Q1–Q3 recorded below (approved 2026-07-19). Kept as the design record — see README STATUS for what shipped, including two corrections made during the build: `isValidPantryEntry` accepts `qty >= 0` (not `> 0`, so `qty:0` tombstones survive `loadState`), and consumption filters on when the food was EATEN (entry date + `t`), never on the entry's `u` sync stamp.
 
 **Goal.** Elena and Andrea can tell Mesa what food they already have at home. As meals are
 logged, what's left at home follows automatically. The shopping list then shows only what
