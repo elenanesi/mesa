@@ -2233,6 +2233,107 @@ function testPersistFailureHook(ctx){
    covers the ALGORITHM that composes main+side/food units inside generateWeek
    (pickSharedMeal/pickSoloMeal via planner.js's sidePoolFor/breakfastPairFoodIds/
    topKSideIds/foodHitsAvoid/applyLightConsecutiveFilter). */
+/* ---------------- VARIETY-plan.md P1: day-wide variety ----------------
+   The per-slot gap rule (lastUsedGap reads history[person][slot]) could never see a repeat
+   in a DIFFERENT slot the same day — 16 recipes are legal at both lunch and dinner, and a
+   lunch pick reads as gap=Infinity when dinner is scored. Sides had the same hole from the
+   other side: applyLightConsecutiveFilter only looked at yesterday. Measured before the
+   fix: 'Snack: Hummus & veg sticks' 6x in one week, twice on one day (as a lunch side, a
+   dinner side AND the standalone snack). */
+function testDayWideVariety(ctx){
+  const savedWeekPlans = get(ctx, 'weekPlans');
+  const savedWeekPlan = get(ctx, 'weekPlan');
+  const savedAvoidE = cloneJSON(get(ctx, 'PROF.elena.avoid'));
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+    const RECIPES_DB = get(ctx, 'RECIPES_DB');
+    const w1 = call(ctx, 'ensureWeekPlan', [call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])])]);
+    const w2 = call(ctx, 'ensureWeekPlan', [call(ctx, 'nextMondayISO', [])]);
+
+    // Every recipe id a person eats on one day: the main dish AND every composed extra.
+    function idsForDay(day, person){
+      const ids = [];
+      SLOT_ORDER.forEach(function(slot){
+        const m = day.meals[slot];
+        const e = m.shared ? m.elena : m[person];
+        if(!e || !e.recipeId) return;
+        ids.push(e.recipeId);
+        (e.extras || []).forEach(function(x){ if(x.recipeId) ids.push(x.recipeId); });
+      });
+      return ids;
+    }
+
+    // (1) The core P1 guarantee, across a full fortnight and both people.
+    const offenders = [];
+    [w1, w2].forEach(function(plan){
+      plan.days.forEach(function(day, d){
+        ['elena', 'partner'].forEach(function(person){
+          const counts = {};
+          idsForDay(day, person).forEach(function(id){ counts[id] = (counts[id] || 0) + 1; });
+          Object.keys(counts).forEach(function(id){
+            if(counts[id] > 1) offenders.push(plan.weekStartDate + ' d' + d + ' ' + person + ' ' + id + ' x' + counts[id]);
+          });
+        });
+      });
+    });
+    assert(offenders.length === 0,
+      'day-wide variety: no recipe appears twice in the same day (mains AND composed extras, both people, both weeks)',
+      offenders.join(' | '));
+
+    // (2) The exact reported case. hummus-veg-sticks is role:'side' with
+    // slots:['snack','side'], so it is in BOTH the side pool and the snack pool — it could
+    // be the lunch side, the dinner side and the snack all on one day.
+    assert(!!RECIPES_DB['hummus-veg-sticks'] && RECIPES_DB['hummus-veg-sticks'].role === 'side',
+      'setup: hummus-veg-sticks is still the side/snack dual-pool recipe this guards');
+    let worstHummus = 0;
+    [w1, w2].forEach(function(plan){
+      plan.days.forEach(function(day){
+        ['elena', 'partner'].forEach(function(person){
+          const n = idsForDay(day, person).filter(function(id){ return id === 'hummus-veg-sticks'; }).length;
+          if(n > worstHummus) worstHummus = n;
+        });
+      });
+    });
+    assert(worstHummus <= 1,
+      'day-wide variety: hummus-veg-sticks is never the lunch side AND dinner side AND snack on one day',
+      'worst same-day count was ' + worstHummus);
+
+    // (3) Determinism is the planner's contract: the output changes with this fix, but the
+    // same inputs must still produce byte-identical plans.
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const again = call(ctx, 'ensureWeekPlan', [call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])])]);
+    assert(JSON.stringify(again) === JSON.stringify(w1),
+      'day-wide variety: generation stays deterministic (same inputs -> byte-identical plan)');
+
+    // (4) Never empty a pool. Every new exclusion must degrade rather than return nothing —
+    // otherwise pickSharedMeal/pickSoloMeal fall into their console.error path and emit a
+    // null-recipe meal, which the user sees as a blank day. A heavy avoid-list is the
+    // realistic way a pool gets thin.
+    run(ctx, "PROF.elena.avoid = ['meat', 'fish', 'gluten', 'dairy', 'nuts', 'eggs']; weekPlans = {}; weekPlan = null;");
+    const thin = call(ctx, 'ensureWeekPlan', [call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])])]);
+    let nulls = 0, slotsSeen = 0;
+    thin.days.forEach(function(day){
+      SLOT_ORDER.forEach(function(slot){
+        const m = day.meals[slot];
+        ['elena', 'partner'].forEach(function(p){
+          const e = m.shared ? m[p] : m[p];
+          if(!e) return;
+          slotsSeen++;
+          if(!e.recipeId) nulls++;
+        });
+      });
+    });
+    assert(thin.days.length === 7 && slotsSeen > 0 && nulls === 0,
+      'day-wide variety: a heavily-restricted pool still fills all 7 days with real recipes (exclusions relax, never empty the pool)',
+      'days=' + thin.days.length + ' slots=' + slotsSeen + ' nullRecipeIds=' + nulls);
+  } finally {
+    run(ctx, "PROF.elena.avoid = " + JSON.stringify(savedAvoidE) + ";");
+    ctx.weekPlans = savedWeekPlans; ctx.weekPlan = savedWeekPlan;
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+  }
+}
+
 function testComposedMeals(ctx){
   const RECIPES_DB = get(ctx, 'RECIPES_DB');
   const KCAL_BAND = get(ctx, 'KCAL_BAND');
@@ -3694,6 +3795,11 @@ function testRecipeOptions(ctx){
       const h = {};
       SLOT_ORDER.forEach(function(s){ h[s] = []; });
       h.sideUse = {}; h.bfPairUse = {};
+      // VARIETY-plan.md P1: day-wide usage logs (planner.js generateWeek() now seeds these
+      // alongside sideUse/bfPairUse) — applyVarietyFilter reads dayUseRecipe unconditionally,
+      // so a hand-built history fixture calling pickSoloMeal/pickSharedMeal directly (as
+      // below) needs them too, or it throws instead of exercising the real code path.
+      h.dayUseRecipe = {}; h.dayUseFood = {};
       return h;
     }
     const history = {elena: freshHistory(), partner: freshHistory()};
@@ -5327,6 +5433,7 @@ function main(){
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
+  runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });

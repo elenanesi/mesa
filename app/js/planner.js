@@ -263,25 +263,66 @@ function topKSideIds(mainBaseKcal, sidePool, desiredKcal, k){
 }
 
 // Light variety rule for sides/breakfast-pair foods (B2 plan section 5): drops any id used
-// on the day right before dayIndex (window = 1 day) by any of the given persons — but,
-// per the tagging handoff, SKIPS the rule (falls back to the unfiltered pool) rather than
-// ever emptying an already-tiny pool.
-function applyLightConsecutiveFilter(pool, prevDayUsedArrays){
-  const usedYesterday = {};
-  (prevDayUsedArrays || []).forEach(function(arr){ (arr || []).forEach(function(id){ usedYesterday[id] = true; }); });
-  const filtered = pool.filter(function(id){ return !usedYesterday[id]; });
-  return filtered.length ? filtered : pool;
+// on the day right before dayIndex (window = 1 day, `prevDayUsedArrays`) OR already placed
+// earlier TODAY (`todayUsedArrays` — VARIETY-plan.md P1, e.g. history.<person>.dayUseRecipe
+// / .dayUseFood for dayIndex; this is what stops the same side landing at both lunch and
+// dinner) by any of the given persons — both exclusions are merged into one set and applied
+// together so there's a single relax step: per the tagging handoff, SKIPS the rule (falls
+// back to the fully unfiltered pool) rather than ever emptying an already-tiny pool.
+// `todayUsedArrays` is optional so existing callers that only ever cared about yesterday
+// keep working unchanged.
+function applyLightConsecutiveFilter(pool, prevDayUsedArrays, todayUsedArrays){
+  const yesterday = {}, today = {};
+  (prevDayUsedArrays || []).forEach(function(arr){ (arr || []).forEach(function(id){ yesterday[id] = true; }); });
+  (todayUsedArrays || []).forEach(function(arr){ (arr || []).forEach(function(id){ today[id] = true; }); });
+  const strict = pool.filter(function(id){ return !yesterday[id] && !today[id]; });
+  if(strict.length) return strict;
+  // Relax in STAGES, dropping the YESTERDAY rule before the TODAY one. Collapsing both into
+  // a single relax step (the first version of this fix) meant a thin pool — 6 in-season
+  // sides feeding ~14 composed slots a week — fell straight back to the fully unfiltered
+  // pool and re-allowed the side already served earlier today, which is exactly the repeat
+  // P1 exists to stop. A day-apart repeat is barely noticeable; the same side at lunch and
+  // dinner is the thing the user actually sees, so today's exclusion is the last to go.
+  const todayOnly = pool.filter(function(id){ return !today[id]; });
+  if(todayOnly.length) return todayOnly;
+  return pool;
 }
 
 // Records which side/food id a composed pick used that day, for the light consecutive-day
 // rule above (history.<person>.sideUse / .bfPairUse, parallel to the existing per-slot
 // history arrays). A no-op when the entry has no extras (full-recipe or standalone picks).
+// Legacy/narrow (extras[0] only, yesterday-only consumer) — kept as-is; see recordDayUsage
+// below for the day-wide log that also covers the main dish and every extra.
 function recordCompositionUsage(history, entry, person, slot, dayIndex){
   if(!entry || !Array.isArray(entry.extras) || !entry.extras.length) return;
   const extra = entry.extras[0];
   const bucket = slot === 'breakfast' ? 'bfPairUse' : 'sideUse';
   if(!history[person][bucket][dayIndex]) history[person][bucket][dayIndex] = [];
   history[person][bucket][dayIndex].push(extra.recipeId || extra.foodId);
+}
+
+// VARIETY-plan.md P1 ("day-wide variety"): per-person, per-day usage log of EVERY id placed
+// that day — the main dish AND every composed extra (planEntryComponents(), not just
+// extras[0] the way the legacy recordCompositionUsage above does) — so a repeat can be
+// caught across slots within the same day (e.g. the same main at both lunch and dinner, or
+// a side reused as the standalone snack), not just within one slot's own history.
+//
+// Recipe ids and FOODS ids are separate id spaces that are NOT guaranteed disjoint (at
+// least one real collision exists in the catalog today: 'pasta' is both a recipe id and a
+// food id), so they're logged into two separate per-day arrays — dayUseRecipe / dayUseFood
+// — rather than one combined set. This mirrors the sideUse (recipes) / bfPairUse (foods)
+// split already used above, and means a food id can never accidentally shadow-exclude an
+// unrelated recipe of the same id (or vice versa).
+function recordDayUsage(history, entry, person, dayIndex){
+  planEntryComponents(entry).forEach(function(c){
+    if(c.recipeId){
+      if(!history[person].dayUseRecipe[dayIndex]) history[person].dayUseRecipe[dayIndex] = [];
+      history[person].dayUseRecipe[dayIndex].push(c.recipeId);
+    } else if(c.foodId){
+      if(!history[person].dayUseFood[dayIndex]) history[person].dayUseFood[dayIndex] = [];
+      history[person].dayUseFood[dayIndex].push(c.foodId);
+    }
+  });
 }
 
 // task D1: component[0] (the base dish) carries `.opts` when `entry.opts` is set (the
@@ -775,16 +816,48 @@ function lastUsedGap(history, person, slot, dayIndex, recipeId){
 // the last 3 days — and, for dinner, not at all this week. If no candidate is fresh
 // (pool too small), relax exactly as specified: keep only the candidates with the
 // LONGEST gap since last use, and score among those.
-function applyVarietyFilter(pool, history, person, slot, dayIndex){
+//
+// VARIETY-plan.md P1: on top of that per-slot gap rule, a candidate already placed
+// EARLIER TODAY for this person (any slot, main dish or composed extra —
+// history[person].dayUseRecipe[dayIndex], see recordDayUsage) is excluded too — this is
+// what stops e.g. the same main landing at both lunch and dinner, or a side reused as the
+// snack, none of which the old per-slot-only gap rule above could ever catch (lastUsedGap
+// only looks at history[person][slot], so a same-day pick in a DIFFERENT slot always
+// reads as gap=Infinity, i.e. maximally "fresh"). Applied AFTER the gap filter/relax
+// above, with its own never-empty fallback to that gap-filtered result — so on a thin
+// pool (e.g. only one legal candidate for this slot) the day-wide rule relaxes rather
+// than ever handing back zero candidates.
+// `dayUsePersons` (VARIETY-plan.md P1) — whose day-wide log to honour. Defaults to just
+// `person`, which is right for a solo pick. A SHARED slot must pass BOTH people: the
+// per-slot gap history is written in sync for shared slots (so Elena's stands for both
+// there), but the day-wide log is NOT, because the solo slots earlier the same day can give
+// each person a different main and a different side. Filtering a shared snack against
+// Elena's day alone let it collide with the side Andrea had already eaten at lunch — the
+// real failure this parameter fixes.
+function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons){
+  // The day-wide exclusion runs FIRST, against the full pool — not afterwards against the
+  // gap-filtered result. Ordering it second (the first version of this fix) left it
+  // powerless exactly where it was needed: the snack pool is 4 candidates, two of which
+  // double as sides, so the gap rule would narrow it to a set that was entirely used today,
+  // the day rule would find nothing left, and its fallback handed back that same set —
+  // reinstating the repeat. A same-day repeat is far more visible than a 3-day-gap
+  // violation, so day-wide dominates and only relaxes when it would leave literally nothing.
+  const usedToday = {};
+  (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]).forEach(function(p){
+    (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ usedToday[id] = true; });
+  });
+  const notUsedToday = pool.filter(function(id){ return !usedToday[id]; });
+  const base = notUsedToday.length ? notUsedToday : pool;
+
   const gaps = {};
-  pool.forEach(function(id){ gaps[id] = lastUsedGap(history, person, slot, dayIndex, id); });
-  const fresh = pool.filter(function(id){
+  base.forEach(function(id){ gaps[id] = lastUsedGap(history, person, slot, dayIndex, id); });
+  const fresh = base.filter(function(id){
     return gaps[id] > 3 && (slot !== 'dinner' || gaps[id] === Infinity);
   });
   if(fresh.length) return fresh;
   let maxGap = -1;
-  pool.forEach(function(id){ if(gaps[id] > maxGap) maxGap = gaps[id]; });
-  return pool.filter(function(id){ return gaps[id] === maxGap; });
+  base.forEach(function(id){ if(gaps[id] > maxGap) maxGap = gaps[id]; });
+  return base.filter(function(id){ return gaps[id] === maxGap; });
 }
 
 // Cross-week variety (two-week horizon) — a HARD filter, the same mechanism the
@@ -935,6 +1008,13 @@ function generateWeek(seed){
   // from the main-recipe history arrays above, which main/full ids still join unchanged.
   history.elena.sideUse = {}; history.partner.sideUse = {};
   history.elena.bfPairUse = {}; history.partner.bfPairUse = {};
+  // VARIETY-plan.md P1: day-wide usage logs, keyed by dayIndex (sparse) — EVERY recipe/food
+  // id placed for this person that day (main dish + every composed extra), split by id
+  // space (recordDayUsage doc above explains the recipe/food split). Read by
+  // applyVarietyFilter (recipe pools) and applyLightConsecutiveFilter's call sites below
+  // (recipe pools for sides, food pools for breakfast pairs).
+  history.elena.dayUseRecipe = {}; history.partner.dayUseRecipe = {};
+  history.elena.dayUseFood = {}; history.partner.dayUseFood = {};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
@@ -979,6 +1059,11 @@ function generateWeek(seed){
         history.elena[slot][d] = chosen.recipeId; history.partner[slot][d] = chosen.recipeId;
         recordCompositionUsage(history, chosen.elena, 'elena', slot, d);
         recordCompositionUsage(history, chosen.partner, 'partner', slot, d);
+        // VARIETY-plan.md P1: a shared dish records into BOTH people's day-wide log — one
+        // dish, both ate it (chosen.elena/chosen.partner carry the same recipeId/extra ids,
+        // just per-person portions/grams, so this naturally covers both).
+        recordDayUsage(history, chosen.elena, 'elena', d);
+        recordDayUsage(history, chosen.partner, 'partner', d);
       } else {
         const poolE = candidatesFor(slot, styleKey, avoidList.elena);
         const poolA = candidatesFor(slot, styleKey, avoidList.partner);
@@ -991,6 +1076,8 @@ function generateWeek(seed){
         history.elena[slot][d] = chE.recipeId; history.partner[slot][d] = chA.recipeId;
         recordCompositionUsage(history, chE, 'elena', slot, d);
         recordCompositionUsage(history, chA, 'partner', slot, d);
+        recordDayUsage(history, chE, 'elena', d);
+        recordDayUsage(history, chA, 'partner', d);
       }
       remainingWeight -= w;
     });
@@ -1044,7 +1131,9 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   // within-week variety filter over Elena's history — for shared slots both histories are
   // written in sync, so hers stands for both.
   pool = applyCrossWeekFilter(pool, excludePrevWeekId);
-  pool = applyVarietyFilter(pool, history, 'elena', slot, dayIndex);
+  // Shared slot: gap history via Elena (written in sync for both), but the day-wide
+  // exclusion must honour BOTH people — see applyVarietyFilter's doc.
+  pool = applyVarietyFilter(pool, history, 'elena', slot, dayIndex, ['elena', 'partner']);
   const maxPortion = SLOT_MAX_PORTION[slot];
   // task D1: hoisted above the slot branches below (breakfast/lunch/dinner already
   // computed this further down for the composed-pair pools) so the final opts-rotation
@@ -1087,7 +1176,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
 
     if(slot === 'breakfast'){
       const foodPoolRaw = breakfastPairFoodIds(avoidBoth);
-      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history.elena.bfPairUse[dayIndex - 1], history.partner.bfPairUse[dayIndex - 1]]);
+      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history.elena.bfPairUse[dayIndex - 1], history.partner.bfPairUse[dayIndex - 1]], [history.elena.dayUseFood[dayIndex], history.partner.dayUseFood[dayIndex]]);
       mainIds.forEach(function(id){
         const base = dbBaseNutrition(id);
         const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
@@ -1124,7 +1213,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidBoth);
-      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history.elena.sideUse[dayIndex - 1], history.partner.sideUse[dayIndex - 1]]);
+      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history.elena.sideUse[dayIndex - 1], history.partner.sideUse[dayIndex - 1]], [history.elena.dayUseRecipe[dayIndex], history.partner.dayUseRecipe[dayIndex]]);
       if(sidePool.length){
         mainIds.forEach(function(mainId){
           const mainBase = dbBaseNutrition(mainId);
@@ -1229,7 +1318,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
 
     if(slot === 'breakfast'){
       const foodPoolRaw = breakfastPairFoodIds(avoidP);
-      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history[person].bfPairUse[dayIndex - 1]]);
+      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history[person].bfPairUse[dayIndex - 1]], [history[person].dayUseFood[dayIndex]]);
       mainIds.forEach(function(id){
         const base = dbBaseNutrition(id);
         const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
@@ -1242,7 +1331,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidP);
-      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history[person].sideUse[dayIndex - 1]]);
+      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history[person].sideUse[dayIndex - 1]], [history[person].dayUseRecipe[dayIndex]]);
       if(sidePool.length){
         mainIds.forEach(function(mainId){
           const mainBase = dbBaseNutrition(mainId);
