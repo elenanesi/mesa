@@ -1937,6 +1937,12 @@ function buildShopSheet(){
     + '<button style="flex:1" class="'+(shopWeekMode === 'next' ? 'on' : '')+'" onclick="setShopWeek(\'next\')">Next week</button>'
     + '</div>'
     + '<p class="sub" style="margin-top:10px"><b>' + weekRange + '</b> · For both of you · 7 days · totals summed from ' + weekLabel + ' plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
+  // PANTRY-plan.md P3: a row the pantry fully covers is dropped from the list below, but
+  // never silently — this short summary says where it went (the plan is explicit that
+  // silent disappearance is indistinguishable from a bug).
+  if(list.fullyCovered.length){
+    html += '<p class="sub" style="margin-top:0">Already at home, not on this list: ' + list.fullyCovered.slice().sort().map(escapeHtml).join(', ') + '.</p>';
+  }
   let idx = 0;
   SHOP_CAT_ORDER.forEach(function(cat){
     const names = byCat[cat];
@@ -1947,7 +1953,15 @@ function buildShopSheet(){
       const t = list.totals[name];
       const id = 'sh-' + (idx++);
       const done = checked[name] ? ' done' : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      // PANTRY-plan.md P3: a PARTIALLY covered row keeps the reduced qty (t.qty, already
+      // net of the pantry) but annotates what pantry already contributed — same "never
+      // silent" reasoning as the fullyCovered summary above, just per-row. Mirrors the
+      // existing .dm-t/.li-t small-under-title pattern (mesa.css) inline rather than adding
+      // a new selector, since this file's scope doesn't include the stylesheet.
+      const haveNote = list.covered[name]
+        ? '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(list.covered[name].have, list.covered[name].unit) + '</small>'
+        : '';
+      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+haveNote+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
     });
   });
   const stapleNames = Object.keys(list.staples).sort();
@@ -1959,7 +1973,50 @@ function buildShopSheet(){
       html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
     });
   }
+  // Q2 (PANTRY-plan.md P3 step 4): explicit-only restock — ticking a row above never by
+  // itself stocks anything (checkedShopByWeek is a UI/shopping concept only); this button is
+  // the one and only path that writes to the pantry from this sheet.
+  html += '<button class="cta" onclick="addTickedShopItemsToPantry()">Add ticked items to pantry</button>';
   return html;
+}
+
+// Q2 (PANTRY-plan.md P3 step 4) — pure logic: stocks every currently-TICKED row of
+// `weekStartDate`'s shopping list into the pantry at its LISTED quantity (computeShoppingList's
+// already pantry-reduced `qty` — exactly what's still missing), adding it ON TOP of
+// whatever's already in stock (reads pantryRemaining() first) rather than replacing it.
+// Goes through setPantryRemaining (js/library.js), the ONE re-baselining mutator, once per
+// affected foodId — so this file never writes `pantry[...]` directly, and every write still
+// re-stamps setAt/u atomically like every other pantry edit path. No DOM here (the onclick
+// wrapper below owns the re-render + toast) so this is directly callable from
+// tools/check.js. Returns the number of foodId writes made, so the caller can tell "nothing
+// was ticked" apart from "stocked N things".
+function restockTickedShopItems(weekStartDate){
+  const list = computeShoppingList(weekStartDate);
+  const checked = checkedSetForWeek(weekStartDate);
+  const remaining = pantryRemaining();
+  let count = 0;
+  Object.keys(list.totals).forEach(function(name){
+    if(!checked[name]) return;
+    const row = list.totals[name];
+    (row.foodIds || []).forEach(function(foodId){
+      if(!FOODS[foodId]) return;
+      const have = (typeof remaining[foodId] === 'number') ? remaining[foodId] : 0;
+      const newQty = have + row.qty;
+      setPantryRemaining(foodId, newQty);
+      remaining[foodId] = newQty; // keep the local map in sync for the (rare) shared-foodId-per-row case
+      count++;
+    });
+  });
+  return count;
+}
+
+function addTickedShopItemsToPantry(){
+  const weekStartDate = currentShopWeekStartDate || (shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO()));
+  const count = restockTickedShopItems(weekStartDate);
+  if(!count){ toast('Tick items first, then add them to your pantry'); return; }
+  document.getElementById('sheetBody').innerHTML = buildShopSheet();
+  attachShopListClickHandler();
+  toast('Added to pantry');
 }
 
 /* ---------------- re-balance week (task C2 item 4 — real solver) ---------------- */

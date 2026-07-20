@@ -1681,6 +1681,58 @@ function foodQuantitiesForComponents(components){
   return out;
 }
 
+// Builds the ONE flat, ORDER-PRESERVING components list for `plan` (both people, every
+// day/slot) — computeShoppingList's original single traversal, factored out so PANTRY-
+// plan.md P3's next-week projection (pantry.js:pantryProjectedForNextWeek, via
+// currentWeekRemainingFoodQuantities below) can run the EXACT same walk over just the
+// current week. day -> slot -> elena -> partner order is preserved either way, so
+// foodQuantitiesForComponents' accumulation order (and so its summed float bits) is
+// unchanged from the pre-P3 traversal when `excludeLogged` is false.
+//
+// Q1 (PANTRY-plan.md P3): when `excludeLogged` is true, a (day, slot, person) already
+// logged OR skipped (slotLogStatus() truthy — reuses log.js's own source of truth rather
+// than re-deriving it) is left out entirely: that food was already bought/eaten, so the
+// list shouldn't ask for it again. computeShoppingList only ever passes true for the week
+// that IS the current week — a future week is never logged yet, so passing false there
+// (or passing true on an empty-logHistory week) is a no-op either way.
+// slotLogStatus() reads through getDayLog(), which LAZILY CREATES an empty logHistory
+// record for any date it's asked about. Building a shopping list is a pure read, so going
+// straight through it would leave 7 empty day records behind on every view — and
+// pruneLogHistory() only drops records by AGE, never by emptiness, so they would persist
+// and sync for the full 60-day retention window, accumulating in the same scarce iOS quota
+// persist() competes for. A date with no logHistory record has nothing logged BY
+// DEFINITION, so checking for the record first is exactly equivalent and side-effect-free.
+function slotLoggedReadOnly(dateISO, personKey, slot){
+  if(!logHistory[dateISO]) return false;
+  return !!slotLogStatus(dateISO, personKey, slot);
+}
+
+function weekPlanComponents(plan, excludeLogged){
+  const components = [];
+  plan.days.forEach(function(day){
+    SLOT_ORDER.forEach(function(slot){
+      const m = day.meals[slot];
+      const elenaDone = excludeLogged && slotLoggedReadOnly(day.date, 'elena', slot);
+      const partnerDone = excludeLogged && slotLoggedReadOnly(day.date, 'partner', slot);
+      if(!elenaDone) planEntryComponents(m.elena).forEach(function(c){ components.push(c); });
+      if(!partnerDone) planEntryComponents(m.partner).forEach(function(c){ components.push(c); });
+    });
+  });
+  return components;
+}
+
+// {foodId: qty} for the CURRENT week's plan, counting only what's still OUTSTANDING (not
+// yet logged or skipped) — Q1's exact exclusion, exposed standalone. This is "this week's
+// remaining, not-yet-logged demand" that PANTRY-plan.md P3 step 3's next-week projection
+// needs: the rest of the current week is still going to eat into the pantry between now
+// and next Monday, so next week's list must discount the pantry for that first. Lives here
+// (not pantry.js) because it only reads the plan/log side — pantry.js's own doc header
+// keeps that file to pure pantry-baseline derivation.
+function currentWeekRemainingFoodQuantities(){
+  const plan = ensureWeekPlan(mondayOfWeek(todayISO()));
+  return foodQuantitiesForComponents(weekPlanComponents(plan, true));
+}
+
 // Walks the full 7-day plan for BOTH people and aggregates identical ingredient (food)
 // names. Shared slots: one recipe cooked at (Elena's portion + Andrea's portion)
 // combined — cooked once, counted once, same convention as before. Solo slots: each
@@ -1691,28 +1743,32 @@ function foodQuantitiesForComponents(components){
 // CURRENT week's Monday when omitted, so any caller that predates the two-week horizon
 // feature keeps computing exactly what it always computed. Passing nextMondayISO()
 // aggregates NEXT week's plan instead, over the exact same RECIPES_DB/FOODS logic.
+//
+// PANTRY-plan.md P3 additions (kept additive — `totals[name]` keeps its original {qty,
+// unit, foodIds} shape, `staples` and `weekStartDate` are unchanged; `covered` and
+// `fullyCovered` are new top-level fields):
+//   Q1 — for the CURRENT week only, already-logged/skipped slots are excluded from the
+//   count in the first place (weekPlanComponents above) — see its doc block.
+//   Pantry subtraction — need = planned - available, floored at 0. `available` is
+//   pantryRemaining() for the current week, or the PROJECTED leftover for next week
+//   (pantryProjectedForNextWeek, js/pantry.js — see its doc block for why next week can't
+//   just use pantryRemaining() as-is). A row fully covered drops off `totals` entirely and
+//   its name is listed in `fullyCovered`; a row only partially covered keeps its REDUCED
+//   qty and is recorded in `covered[name] = {have, unit}` — never a silent disappearance,
+//   per the plan's explicit "indistinguishable from a bug" concern.
 function computeShoppingList(weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
   const totals = {};  // food display name -> {qty, unit, foodIds}
   const staples = {}; // food display name -> true (toTaste garnish, unquantified)
 
-  // ONE flat, ORDER-PRESERVING list of every component across the whole week (both
-  // people), in the exact day -> slot -> elena -> partner traversal the pre-refactor
-  // addRecipe/addFood calls used — feeding this as a single sequence into
-  // foodQuantitiesForComponents keeps its per-ingredient accumulation order (and so the
-  // exact summed float bits) identical to the pre-refactor code, which byte-identical
-  // parity depends on.
-  const allComponents = [];
-  plan.days.forEach(function(day){
-    SLOT_ORDER.forEach(function(slot){
-      const m = day.meals[slot];
-      planEntryComponents(m.elena).forEach(function(c){ allComponents.push(c); });
-      planEntryComponents(m.partner).forEach(function(c){ allComponents.push(c); });
-    });
-  });
+  const isCurrentWeek = plan.weekStartDate === mondayOfWeek(todayISO());
+  const isNextWeek = !isCurrentWeek && plan.weekStartDate === nextMondayISO();
+  const allComponents = weekPlanComponents(plan, isCurrentWeek);
 
   // Staples (toTaste) are gathered per recipe component, independent of quantity — same
   // guard (`r` exists, `portion > 0`) the old inline addRecipe used before touching staples.
+  // Reads allComponents AFTER Q1's exclusion, same as the totals below: a staple whose only
+  // recipe this week was already logged/eaten isn't worth flagging either.
   allComponents.forEach(function(c){
     if(!c || !c.recipeId) return;
     const r = RECIPES_DB[c.recipeId];
@@ -1736,7 +1792,30 @@ function computeShoppingList(weekStartDate){
     if(totals[name].foodIds.indexOf(foodId) === -1) totals[name].foodIds.push(foodId);
   });
 
-  return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate};
+  // PANTRY-plan.md P3 step 2/3: subtract what's already at home (see the function doc
+  // above for the exact contract). `have` sums availableByFood across every foodId the row
+  // aggregates, in the SAME pieces/grams/ml basis foodQuantitiesForComponents already used
+  // to build qty — no conversion layer needed. A tiny epsilon guards both comparisons
+  // against float dust turning an exact-cover row into a spurious 1-unit remainder (piece
+  // rounding uses Math.ceil in fmtShopQty, so even 1e-9 piece would otherwise display "1").
+  const availableByFood = isNextWeek ? pantryProjectedForNextWeek() : pantryRemaining();
+  const covered = {};      // name -> {have, unit} for a row that's only PARTIALLY covered
+  const fullyCovered = []; // names dropped entirely — pantry covers the row's full need
+  Object.keys(totals).forEach(function(name){
+    const row = totals[name];
+    let have = 0;
+    row.foodIds.forEach(function(foodId){ have += availableByFood[foodId] || 0; });
+    if(have <= 1e-9) return;
+    if(have >= row.qty - 1e-9){
+      fullyCovered.push(name);
+      delete totals[name];
+    } else {
+      covered[name] = {have: have, unit: row.unit};
+      row.qty -= have;
+    }
+  });
+
+  return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate, covered: covered, fullyCovered: fullyCovered};
 }
 
 // Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs),

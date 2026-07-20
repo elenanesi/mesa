@@ -3800,9 +3800,16 @@ function testShoppingListDecompositionParity(ctx){
   // reset alone.
   ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
   ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  // PANTRY-plan.md P3: computeShoppingList() now also excludes already-logged/skipped
+  // slots for the current week (Q1) and subtracts the pantry — the manual rebuild below
+  // does NEITHER, so this decomposition-parity check is only valid with logHistory/pantry
+  // both empty (a no-op for both). ensureWeekPlan() below always resolves `wk` to the
+  // CURRENT week (mondayOfWeek(MESA_TEST_TODAY)), so Q1 is live here without this reset.
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
   try{
     run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
-    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};');
     const plan = call(ctx, 'ensureWeekPlan', []);
     const wk = plan.weekStartDate;
     const list = call(ctx, 'computeShoppingList', [wk]);
@@ -3838,6 +3845,259 @@ function testShoppingListDecompositionParity(ctx){
       'computeShoppingList keys=' + Object.keys(list.totals).length + ' rebuilt keys=' + Object.keys(rebuilt).length);
   } finally {
     run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+  }
+}
+
+/* ===================================================================
+   PANTRY-plan.md P3: computeShoppingList() — Q1 (already-logged/skipped slots excluded
+   from the CURRENT week only), pantry subtraction (fully/partially covered rows), and the
+   next-week projection (pantryProjectedForNextWeek, js/pantry.js). Uses a dedicated fixture
+   FOOD (not just a fixture recipe) so the row's planned quantity is exactly and only what
+   this test put there — no real recipe can reference an id that doesn't exist yet, so
+   there's no risk of the randomly-generated rest of the week adding noise to the totals.
+   =================================================================== */
+function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
+  const FOOD_ID = '__pantry_p3_fixture_food__';
+  const RECIPE_ID = '__pantry_p3_fixture_recipe__';
+  const FOOD_NAME = 'P3 fixture food';
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  try{
+    // Building a shopping list is a PURE READ and must not mutate logHistory. The Q1
+    // logged-meal exclusion checks slot status per (day, slot, person), and log.js's
+    // slotLogStatus() reads through getDayLog(), which lazily CREATES an empty day record
+    // for any date asked about. Since pruneLogHistory() only drops records by age and never
+    // by emptiness, going straight through it would leave 7 empty records behind per view,
+    // persisted and synced for the full 60-day window (planner.js:slotLoggedReadOnly).
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; logHistory = {}; pantry = {}; weekPlans = {}; weekPlan = null;");
+      call(ctx, 'computeShoppingList', [call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])])]);
+      const keys = get(ctx, 'Object.keys(logHistory).length');
+      assert(keys === 0,
+        'computeShoppingList: builds the current-week list WITHOUT lazily creating empty logHistory day records (pure read)',
+        'logHistory gained ' + keys + ' day record(s)');
+    })();
+
+    run(ctx, "FOODS['" + FOOD_ID + "'] = " + JSON.stringify({
+      name: FOOD_NAME, per: 100, unit: 'g',
+      kcal: 30, protein: 3, carbs: 4, fat: 0, satFat: 0, fiber: 2, sugars: 0, freeSugars: 0,
+      flags: [], cat: 'Produce', iconKey: 'spinach', src: 'test fixture'
+    }) + ';');
+    run(ctx, "RECIPES_DB['" + RECIPE_ID + "'] = " + JSON.stringify({
+      title: 'P3 fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 5, servings: 1,
+      ingredients: [[FOOD_ID, 200]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    }) + ';');
+
+    const nextMonday = call(ctx, 'addDaysISO', [FIXED_MONDAY, 7]);
+    const fixtureEntryJSON = JSON.stringify({recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0});
+
+    // ---- (a) Q1: a logged/skipped slot is excluded from the CURRENT week's list only —
+    // the SAME (recipe, slot) logged against NEXT week's own calendar date must NOT be
+    // excluded from next week's list (proves the gate is "is this the current week", not
+    // merely "does a log entry exist touching this food"). ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+      run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};');
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      call(ctx, 'ensureWeekPlan', [nextMonday]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + fixtureEntryJSON + ';');
+      run(ctx, "weekPlans['" + nextMonday + "'].days[0].meals.dinner.elena = " + fixtureEntryJSON + ';');
+
+      const beforeCurrent = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      const beforeCurrentQty = (beforeCurrent.totals[FOOD_NAME] && beforeCurrent.totals[FOOD_NAME].qty) || 0;
+      const beforeNext = call(ctx, 'computeShoppingList', [nextMonday]);
+      const beforeNextQty = (beforeNext.totals[FOOD_NAME] && beforeNext.totals[FOOD_NAME].qty) || 0;
+      assert(Math.abs(beforeCurrentQty - 200) < 1e-6, 'Q1 test setup: current week list carries exactly the fixture\'s 200g before logging (no other recipe can reference this fixture food)', 'got ' + beforeCurrentQty);
+      assert(Math.abs(beforeNextQty - 200) < 1e-6, 'Q1 test setup: next week list carries the same 200g (mirrored slot)', 'got ' + beforeNextQty);
+
+      call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      assert(call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'dinner']) === 'confirmed',
+        'Q1 test setup: the fixture slot is really logged (slotLogStatus === "confirmed")');
+
+      const afterCurrent = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      const afterCurrentQty = (afterCurrent.totals[FOOD_NAME] && afterCurrent.totals[FOOD_NAME].qty) || 0;
+      assert(Math.abs(afterCurrentQty - 0) < 1e-6,
+        'Q1: the CURRENT week list drops the logged slot\'s contribution entirely once it is logged (200 -> 0, no other source)', 'got ' + afterCurrentQty);
+
+      // Log the SAME recipe/slot against NEXT week's own calendar date too — an entry that
+      // really does exist in logHistory for that date — and confirm next week's list is
+      // still unaffected: Q1 only ever applies to the week that IS the current week.
+      call(ctx, 'logPlanEntry', [nextMonday, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      assert(call(ctx, 'slotLogStatus', [nextMonday, 'elena', 'dinner']) === 'confirmed',
+        'Q1 test setup: next week\'s mirrored slot is ALSO logged (so the assertion below is a real exclusion test, not just an absence of data)');
+      const afterNext = call(ctx, 'computeShoppingList', [nextMonday]);
+      const afterNextQty = (afterNext.totals[FOOD_NAME] && afterNext.totals[FOOD_NAME].qty) || 0;
+      assert(Math.abs(afterNextQty - beforeNextQty) < 1e-6,
+        'Q1: NEXT week\'s list is unaffected by a logged slot, even one logged against next week\'s own calendar date — exclusion only ever applies to the CURRENT week',
+        'before=' + beforeNextQty + ' after=' + afterNextQty);
+    })();
+
+    // ---- (b) pantry subtraction: a fully-covered row disappears entirely; a partially-
+    // covered row keeps a REDUCED qty and is annotated in `covered` rather than just
+    // vanishing (PANTRY-plan.md's explicit "never silent" requirement). ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+      run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};');
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + fixtureEntryJSON + ';');
+
+      const base = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!base.totals[FOOD_NAME] && Math.abs(base.totals[FOOD_NAME].qty - 200) < 1e-6,
+        'pantry subtraction test setup: planned qty is exactly 200g with an empty pantry', JSON.stringify(base.totals[FOOD_NAME]));
+
+      // Partial: pantry has LESS than planned.
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 120, setAt: Date.now(), u: Date.now()};");
+      const partial = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!partial.totals[FOOD_NAME], 'partially-covered row: still on the list (need > 0)', JSON.stringify(Object.keys(partial.totals)));
+      assert(Math.abs(partial.totals[FOOD_NAME].qty - 80) < 1e-6,
+        'partially-covered row: shows the REDUCED quantity (200 planned - 120 in pantry = 80)', 'got ' + partial.totals[FOOD_NAME].qty);
+      assert(!!partial.covered[FOOD_NAME] && Math.abs(partial.covered[FOOD_NAME].have - 120) < 1e-6,
+        '`covered` annotates exactly how much the pantry contributed to the partially-covered row (120)', JSON.stringify(partial.covered[FOOD_NAME]));
+      assert(partial.fullyCovered.indexOf(FOOD_NAME) === -1, 'a partially-covered row is not ALSO listed in fullyCovered', JSON.stringify(partial.fullyCovered));
+
+      // Full: pantry has AT LEAST as much as planned — the row drops off the list entirely,
+      // but is never silently missing: it's named in fullyCovered instead.
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: Date.now(), u: Date.now()};");
+      const full = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!full.totals[FOOD_NAME], 'fully-covered row: disappears entirely from totals once the pantry fully covers it', JSON.stringify(Object.keys(full.totals)));
+      assert(full.fullyCovered.indexOf(FOOD_NAME) !== -1, 'fully-covered row: named in fullyCovered instead of silently vanishing', JSON.stringify(full.fullyCovered));
+      assert(!full.covered[FOOD_NAME], 'fully-covered row: not double-listed in the partial `covered` map', JSON.stringify(full.covered[FOOD_NAME]));
+
+      // Over-coverage: pantry has MORE than planned — still fully covered, still dropped.
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: Date.now(), u: Date.now()};");
+      const over = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!over.totals[FOOD_NAME], 'over-coverage: still fully covered when the pantry has MORE than needed', JSON.stringify(Object.keys(over.totals)));
+    })();
+
+    // ---- (c) next-week projection: pantryProjectedForNextWeek() = pantryRemaining() minus
+    // THIS week's still-outstanding (not logged/skipped) demand, floored at 0 — "the
+    // subtlest part of the feature" per the plan. A pantry item fully consumed by this
+    // week's remaining plan must NOT reduce next week's list. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+      run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};');
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      call(ctx, 'ensureWeekPlan', [nextMonday]);
+      // THIS week's day0 dinner (elena) is NOT logged — still outstanding demand (200g).
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + fixtureEntryJSON + ';');
+      // NEXT week's day0 dinner (elena) demands the same 200g of the same fixture food.
+      run(ctx, "weekPlans['" + nextMonday + "'].days[0].meals.dinner.elena = " + fixtureEntryJSON + ';');
+
+      // (c1) pantry has EXACTLY as much as this week still needs -> projected leftover for
+      // next week is 0 -> next week's list must show the FULL 200g, untouched.
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: Date.now(), u: Date.now()};");
+      const projected1 = call(ctx, 'pantryProjectedForNextWeek', []);
+      assert((projected1[FOOD_ID] || 0) === 0,
+        'pantryProjectedForNextWeek: a pantry item fully eaten by this week\'s remaining plan projects to 0 for next week', 'got ' + projected1[FOOD_ID]);
+      const nextList1 = call(ctx, 'computeShoppingList', [nextMonday]);
+      assert(!!nextList1.totals[FOOD_NAME] && Math.abs(nextList1.totals[FOOD_NAME].qty - 200) < 1e-6,
+        'next-week projection: a pantry item FULLY CONSUMED by this week\'s remaining plan must NOT reduce next week\'s list (still the full 200g)',
+        'got ' + JSON.stringify(nextList1.totals[FOOD_NAME]));
+
+      // (c2) pantry has MORE than this week needs -> only the SURPLUS projects forward.
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 350, setAt: Date.now(), u: Date.now()};");
+      const projected2 = call(ctx, 'pantryProjectedForNextWeek', []);
+      assert(Math.abs(projected2[FOOD_ID] - 150) < 1e-6,
+        'pantryProjectedForNextWeek: only the surplus over this week\'s outstanding demand projects forward (350 - 200 = 150)', 'got ' + projected2[FOOD_ID]);
+      const nextList2 = call(ctx, 'computeShoppingList', [nextMonday]);
+      assert(Math.abs(nextList2.totals[FOOD_NAME].qty - 50) < 1e-6,
+        'next-week projection: next week\'s list is reduced by exactly the projected leftover (200 planned - 150 projected = 50), not the raw pantry amount',
+        'got ' + JSON.stringify(nextList2.totals[FOOD_NAME]));
+
+      // (c3) sanity: prove this is really exercising the projection, not accidentally
+      // passing because plain pantryRemaining() would have produced the same number.
+      const rawRemaining = call(ctx, 'pantryRemaining', []);
+      assert(rawRemaining[FOOD_ID] === 350 && rawRemaining[FOOD_ID] !== projected2[FOOD_ID],
+        'sanity: pantryRemaining() (350) differs from the projected number actually used for next week (150)',
+        'remaining=' + rawRemaining[FOOD_ID] + ' projected=' + projected2[FOOD_ID]);
+
+      // (c4) meanwhile THIS week's own list still uses plain pantryRemaining() directly —
+      // 350 in stock covers the 200 needed, so the row is fully covered there.
+      const thisWeekList = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!thisWeekList.totals[FOOD_NAME] && thisWeekList.fullyCovered.indexOf(FOOD_NAME) !== -1,
+        'sanity: the CURRENT week\'s own list uses plain pantryRemaining() (350 covers the 200 needed -> fully covered)', JSON.stringify(Object.keys(thisWeekList.totals)));
+    })();
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + RECIPE_ID + "']; delete FOODS['" + FOOD_ID + "'];");
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+  }
+}
+
+/* ===================================================================
+   PANTRY-plan.md P3 step 4 (Q2) — "Add ticked items to pantry": restockTickedShopItems()
+   (js/render.js), the pure (no-DOM) logic behind the shopping sheet's restock button.
+   =================================================================== */
+function testRestockTickedShopItems(ctx){
+  const FOOD_ID = '__pantry_p3_restock_fixture_food__';
+  const RECIPE_ID = '__pantry_p3_restock_fixture_recipe__';
+  const FOOD_NAME = 'P3 restock fixture food';
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  const savedChecked = cloneJSON(get(ctx, 'checkedShopByWeek'));
+  try{
+    run(ctx, "FOODS['" + FOOD_ID + "'] = " + JSON.stringify({
+      name: FOOD_NAME, per: 100, unit: 'g',
+      kcal: 40, protein: 2, carbs: 5, fat: 1, satFat: 0, fiber: 1, sugars: 0, freeSugars: 0,
+      flags: [], cat: 'Pantry', iconKey: 'spinach', src: 'test fixture'
+    }) + ';');
+    run(ctx, "RECIPES_DB['" + RECIPE_ID + "'] = " + JSON.stringify({
+      title: 'P3 restock fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 5, servings: 1,
+      ingredients: [[FOOD_ID, 300]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    }) + ';');
+
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+    run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {}; checkedShopByWeek = {};');
+    call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+    run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + JSON.stringify({recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0}) + ';');
+
+    // Pantry already has SOME (80g) — the sheet's listed (net) qty is 300 - 80 = 220.
+    run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 80, setAt: 1000, u: 1000};");
+    const list = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+    assert(Math.abs(list.totals[FOOD_NAME].qty - 220) < 1e-6,
+      'restock test setup: the listed qty is net of the existing 80g pantry stock (300 - 80 = 220)', JSON.stringify(list.totals[FOOD_NAME]));
+
+    // (a) ticking a row alone must NOT stock anything — ticked is a shopping-list UI
+    // concept only (checkedShopByWeek), separate from the pantry until the explicit action.
+    const checkedObj = {}; checkedObj[FOOD_NAME] = true;
+    run(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "'] = " + JSON.stringify(checkedObj) + ';');
+    const remainingAfterTickOnly = call(ctx, 'pantryRemaining', []);
+    assert(remainingAfterTickOnly[FOOD_ID] === 80, 'ticking a row alone changes nothing in the pantry', 'got ' + remainingAfterTickOnly[FOOD_ID]);
+
+    // (b) the restock action: stocks the ticked row at its LISTED (net) quantity (220), ON
+    // TOP of the 80g already there — expected new remaining = 80 + 220 = 300 (exactly the
+    // recipe's full planned amount, as it should: you bought what was missing).
+    const beforeRestock = Date.now();
+    const count = call(ctx, 'restockTickedShopItems', [FIXED_MONDAY]);
+    assert(count === 1, 'restockTickedShopItems: writes exactly one foodId (the single ticked row\'s single foodId)', 'got ' + count);
+    const remaining = call(ctx, 'pantryRemaining', []);
+    assert(Math.abs(remaining[FOOD_ID] - 300) < 1e-6,
+      'restockTickedShopItems: stocks the LISTED (net) quantity ON TOP of what was already there (80 + 220 = 300)', 'got ' + remaining[FOOD_ID]);
+
+    // (c) goes through the ONE re-baselining mutator (setPantryRemaining) — qty/setAt/u are
+    // all freshly stamped there, not a raw pantry[...] write.
+    const entry = get(ctx, "pantry['" + FOOD_ID + "']");
+    assert(entry.qty === 300, 'restockTickedShopItems: pantry entry stores the new total qty verbatim (re-baselined)', JSON.stringify(entry));
+    assert(typeof entry.setAt === 'number' && entry.setAt >= beforeRestock,
+      'restockTickedShopItems: re-stamps setAt to NOW via setPantryRemaining — proves it went through the mutator, not a raw write', JSON.stringify(entry));
+    assert(typeof entry.u === 'number' && entry.u >= beforeRestock,
+      'restockTickedShopItems: re-stamps a fresh sync u too', JSON.stringify(entry));
+
+    // (d) nothing ticked -> nothing written.
+    run(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "'] = {};");
+    const countNone = call(ctx, 'restockTickedShopItems', [FIXED_MONDAY]);
+    assert(countNone === 0, 'restockTickedShopItems: with nothing ticked, writes nothing', 'got ' + countNone);
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + RECIPE_ID + "']; delete FOODS['" + FOOD_ID + "'];");
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + '; checkedShopByWeek = ' + JSON.stringify(savedChecked) + ';');
   }
 }
 
@@ -4953,6 +5213,8 @@ function main(){
   runTest('recipe options/variants (task D1)', function(){ testRecipeOptions(ctx); });
   runTest('foodQuantitiesForComponents decomposition (PANTRY-plan.md P1)', function(){ testFoodQuantitiesForComponents(ctx); });
   runTest('computeShoppingList decomposition parity (PANTRY-plan.md P1)', function(){ testShoppingListDecompositionParity(ctx); });
+  runTest('computeShoppingList: Q1 logged-exclusion + pantry subtraction + next-week projection (PANTRY-plan.md P3)', function(){ testShoppingListLoggedExclusionAndPantrySubtraction(ctx); });
+  runTest('restockTickedShopItems: Add ticked items to pantry (PANTRY-plan.md P3 Q2)', function(){ testRestockTickedShopItems(ctx); });
   runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });

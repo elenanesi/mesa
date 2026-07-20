@@ -111,3 +111,29 @@ function pantryRemaining(){
   });
   return out;
 }
+
+// PANTRY-plan.md P3 step 3 — THE SUBTLEST PART of the feature (the plan's own words). What
+// next week's shopping list can credit the pantry for is NOT plain pantryRemaining(): the
+// rest of THIS week's plan is still going to eat into that stock between now and next
+// Monday. Crediting next week with today's raw pantryRemaining() would over-credit it —
+// stock that's actually earmarked for tomorrow's dinner would look "available" for a meal
+// eight days from now, and the resulting list would under-buy.
+//
+// So: project the pantry forward through the rest of THIS week's plan first — subtracting
+// only what's still OUTSTANDING (not yet logged/skipped, currentWeekRemainingFoodQuantities
+// in planner.js — already-logged days don't consume the pantry a second time here; they
+// already did, and pantryRemaining() already reflects that via logHistory) — and hand next
+// week ONLY what's projected to be left after that. Floored at 0 per food: a pantry item
+// fully eaten by this week's remaining plan contributes nothing to next week's projection
+// (it must NOT reduce next week's list — that quantity is already spoken for by this week).
+//
+// projected(foodId) = max(0, pantryRemaining(foodId) - thisWeekOutstandingDemand(foodId))
+function pantryProjectedForNextWeek(){
+  const remaining = pantryRemaining();
+  const thisWeekOutstanding = currentWeekRemainingFoodQuantities(); // planner.js
+  const out = {};
+  Object.keys(remaining).forEach(function(foodId){
+    out[foodId] = Math.max(0, remaining[foodId] - (thisWeekOutstanding[foodId] || 0));
+  });
+  return out;
+}
