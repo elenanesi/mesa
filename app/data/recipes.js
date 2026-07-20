@@ -816,6 +816,90 @@ const RECIPES_DB = {
     tags: ['veggie'],
     avoid: []
   },
+
+  /* ================= VARIETY-plan.md P3 — sides ================= */
+
+  'spinach-garlic-lemon': {
+    title: 'Sautéed spinach with garlic & lemon', emoji: '🥬', slot: 'side', role: 'side',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 8,
+    ingredients: [['spinach', 250], ['olive-oil', 10], ['lemon-juice', 8]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Warm the olive oil with garlic in a wide pan.', 'Add the spinach in batches and wilt it down.', 'Finish with lemon juice and black pepper.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: []
+  },
+  'braised-mushrooms-balsamic': {
+    title: 'Braised mushrooms with balsamic', emoji: '🍄', slot: 'side', role: 'side',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 12,
+    ingredients: [['mushrooms', 260], ['olive-oil', 10], ['balsamic-vinegar', 10]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Sauté the mushrooms in olive oil until golden.', 'Add the balsamic vinegar and garlic and let it reduce slightly.', 'Season with black pepper and serve warm.'],
+    tags: ['veggie', 'quick'],
+    avoid: []
+  },
+  'rocket-parmesan-side': {
+    title: 'Rocket & parmesan side salad', emoji: '🥗', slot: 'side', role: 'side',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 5,
+    ingredients: [['rocket-arugula', 70], ['parmesan', 20], ['olive-oil', 8], ['lemon-juice', 8]],
+    toTaste: ['black pepper'],
+    steps: ['Pile the rocket onto a plate.', 'Shave the parmesan over the top.', 'Dress with olive oil, lemon juice and black pepper.'],
+    tags: ['veggie', 'heart', 'quick'],
+    avoid: ['lactose']
+  },
+  'marinated-cannellini-beans': {
+    title: 'Marinated cannellini beans', emoji: '🫘', slot: 'side', role: 'side',
+    season: 'evergreen',
+    styles: ['balanced'], time: 8,
+    ingredients: [['cannellini-beans', 120], ['rocket-arugula', 20], ['olive-oil', 8], ['lemon-juice', 10]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Drain and rinse the beans.', 'Toss with rocket, olive oil and lemon juice.', 'Season with garlic and black pepper and let sit a few minutes.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'cumin-roasted-carrots': {
+    title: 'Cumin-roasted carrots', emoji: '🥕', slot: 'side', role: 'side',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 25,
+    ingredients: [['carrots', 260], ['olive-oil', 10]],
+    toTaste: ['cumin', 'lemon', 'black pepper'],
+    steps: ['Cut the carrots into batons and toss with olive oil and cumin.', 'Roast at 200C for 18-20 min until tender and lightly charred.', 'Finish with a squeeze of lemon.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: []
+  },
+  'farro-lemon-herb-side': {
+    title: 'Farro with lemon & herbs', emoji: '🌾', slot: 'side', role: 'side',
+    season: 'evergreen',
+    styles: ['balanced'], time: 12,
+    ingredients: [['farro-cooked', 130], ['olive-oil', 8], ['lemon-juice', 8]],
+    toTaste: ['parsley', 'black pepper'],
+    steps: ['Warm the farro through.', 'Toss with olive oil and lemon juice.', 'Finish with parsley and black pepper.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten']
+  },
+  'braised-cavolo-nero': {
+    title: 'Braised cavolo nero with garlic', emoji: '🥬', slot: 'side', role: 'side',
+    season: 'winter/autumn',
+    styles: ['balanced', 'lowcarb'], time: 15,
+    ingredients: [['cavolo-nero', 220], ['olive-oil', 10]],
+    toTaste: ['garlic', 'chilli if wanted'],
+    steps: ['Strip the cavolo nero leaves from the stalks and chop roughly.', 'Braise in olive oil with garlic until tender, 8-10 min.', 'Season and serve warm.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'roasted-pumpkin-sage': {
+    title: 'Roasted pumpkin with sage', emoji: '🎃', slot: 'side', role: 'side',
+    season: 'winter/autumn',
+    styles: ['balanced', 'lowcarb'], time: 30,
+    ingredients: [['pumpkin', 260], ['olive-oil', 10]],
+    toTaste: ['sage', 'black pepper'],
+    steps: ['Cube the pumpkin and toss with olive oil and sage.', 'Roast at 200C for 22-25 min until tender and caramelised.', 'Season with black pepper before serving.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: []
+  },
+
   lasagna: {
     title: 'Lasagna', emoji: '🍝', slot: 'dinner', role: 'full',
     slots: ['dinner', 'lunch'],
@@ -938,6 +1022,65 @@ const RECIPES_DB = {
     tags: ['veggie', 'highFiber', 'lowGI', 'heart'],
     avoid: []
   },
+
+  /* ================= VARIETY-plan.md P3 — lunch mains (meatless/fish) ================= */
+
+  'baked-sea-bass-lemon': {
+    title: 'Baked sea bass with lemon', emoji: '🐟', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 18,
+    ingredients: [['sea-bass-fillet', 220], ['olive-oil', 8], ['lemon-juice', 10]],
+    toTaste: ['herbs', 'garlic', 'black pepper'],
+    steps: ['Rub the sea bass fillet with olive oil, lemon juice and herbs.', 'Bake at 200C for 12-14 min until just cooked through.', 'Rest briefly, then finish with an extra squeeze of lemon.'],
+    tags: ['muscle', 'thyroid', 'lowGI'],
+    avoid: []
+  },
+  'seared-tuna-lemon': {
+    title: 'Seared tuna steak with lemon', emoji: '🐟', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 12,
+    ingredients: [['tuna', 200], ['olive-oil', 8], ['lemon-juice', 8]],
+    toTaste: ['black pepper', 'garlic'],
+    steps: ['Season the tuna steak with black pepper and garlic.', 'Sear in olive oil over high heat, 1-2 min per side for a pink centre.', 'Rest briefly, slice and finish with a squeeze of lemon.'],
+    tags: ['muscle', 'omega3', 'lowGI'],
+    avoid: []
+  },
+  'chickpea-tomato-braise': {
+    title: 'Braised chickpeas in tomato sauce', emoji: '🫘', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 20,
+    ingredients: [['chickpeas', 200], ['tomato-passata', 100], ['olive-oil', 8]],
+    toTaste: ['garlic', 'oregano', 'black pepper'],
+    steps: ['Warm the olive oil with garlic in a pan.', 'Add the chickpeas and tomato passata and simmer 12-15 min.', 'Season with oregano and black pepper.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'lentils-spinach-lemon': {
+    title: 'Lentils with spinach & lemon', emoji: '🥣', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 15,
+    ingredients: [['cooked-lentils', 220], ['spinach', 60], ['olive-oil', 8], ['lemon-juice', 8]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Warm the lentils through in a pan with olive oil and garlic.', 'Stir in the spinach until just wilted.', 'Finish with lemon juice and black pepper.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'seared-tofu-greens': {
+    title: 'Pan-seared tofu with greens', emoji: '🥢', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 15,
+    ingredients: [['tofu', 200], ['spinach', 80], ['olive-oil', 8], ['soy-sauce', 10]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Pat the tofu dry and sear in olive oil until golden on both sides.', 'Add the spinach and wilt it in the same pan.', 'Finish with soy sauce, ginger and garlic.'],
+    tags: ['veggie', 'muscle'],
+    avoid: []
+  },
+
   'tomato-basil-sauce': {
     title: 'Tomato-basil sauce', emoji: '🍅', slot: 'side', role: 'sauce',
     slots: ['side'],
@@ -1027,6 +1170,61 @@ const RECIPES_DB = {
     tags: ['muscle', 'quick'],
     avoid: []
   },
+
+  /* ================= VARIETY-plan.md P3 — snacks ================= */
+
+  'banana-yogurt-honey-snack': {
+    title: 'Snack: Greek yogurt, banana & honey', emoji: '🍌', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 3,
+    ingredients: [['greek-yogurt', 150], ['bananas', 90], ['honey', 8]],
+    toTaste: [],
+    steps: ['Spoon yogurt into a bowl.', 'Slice the banana on top.', 'Finish with a drizzle of honey.'],
+    tags: ['muscle', 'lowGI'],
+    avoid: ['lactose']
+  },
+  'olives-feta-snack': {
+    title: 'Snack: Marinated olives & feta', emoji: '🫒', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 3,
+    ingredients: [['feta-cheese', 60], ['olives', 30]],
+    toTaste: ['oregano', 'olive oil'],
+    steps: ['Cube the feta.', 'Toss with the olives and a scatter of oregano.', 'Serve chilled.'],
+    tags: ['quick'],
+    avoid: ['lactose']
+  },
+  'tuna-white-bean-snack': {
+    title: 'Snack: Tuna & white bean bowl', emoji: '🐟', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 5,
+    ingredients: [['tuna-in-olive-oil', 90], ['cannellini-beans', 80], ['lemon-juice', 8]],
+    toTaste: ['black pepper'],
+    steps: ['Drain and rinse the beans.', 'Flake the tuna over the beans.', 'Dress with lemon juice and black pepper.'],
+    tags: ['muscle', 'omega3', 'highFiber'],
+    avoid: []
+  },
+  'carrot-yogurt-dip-snack': {
+    title: 'Snack: Carrots with yogurt dip', emoji: '🥣', slot: 'snack', role: 'side',
+    season: 'evergreen',
+    slots: ['snack', 'side'],
+    styles: ['balanced', 'lowcarb'], time: 6,
+    ingredients: [['carrots', 150], ['greek-yogurt', 100], ['lemon-juice', 8]],
+    toTaste: ['black pepper', 'garlic'],
+    steps: ['Cut the carrots into sticks.', 'Stir the yogurt with lemon juice and garlic.', 'Serve the carrot sticks with the dip.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: ['lactose']
+  },
+  'tofu-carrot-snack': {
+    title: 'Snack: Marinated tofu & carrots', emoji: '🥢', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 5,
+    ingredients: [['tofu', 150], ['carrots', 100]],
+    toTaste: ['soy sauce', 'ginger'],
+    steps: ['Cube the tofu.', 'Grate or stick-cut the carrots.', 'Toss together with a little soy sauce and ginger.'],
+    tags: ['veggie', 'muscle'],
+    avoid: []
+  },
+
   'gelato-cioccolato': {
     title: 'Chocolate ice cream', emoji: '🍨', slot: 'snack', role: 'full',
     imageKey: 'ice-cream',
