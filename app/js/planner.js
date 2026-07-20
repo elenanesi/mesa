@@ -61,6 +61,90 @@ const SLOT_MAX_PORTION = {breakfast: 1.5, lunch: 3, dinner: 3, snack: 1.5};
 // combined-at-1x kcal fit are evaluated (pair pruning — determinism + speed over the full
 // 9-recipe side pool). See sidePoolFor/topKSideIds below.
 const SIDE_TOP_K = 4;
+
+/* ---------------- VARIETY-plan.md P2: weekly repetition caps ----------------
+   How many times ONE recipe may appear in ONE person's week, counting the main dish and
+   every composed extra alike. P1 stopped same-day repeats; this is what stops the same
+   side turning up on five different days (measured before this cap: 'Carrots over hummus'
+   5x and 'Snack: Hummus & veg sticks' 4x in a single person-week).
+
+   Tuned against MEASURED pool sizes, not an ideal — a cap the catalog cannot satisfy just
+   makes the never-empty fallback fire on every pick, which looks exactly like the cap
+   doing nothing. Per person-week there are 28 meal slots plus ~11 composed side slots,
+   against an in-season side pool of 6 and a snack pool of 4 (2 of role 'full', 2 of role
+   'side'), so:
+     - role 'side'  -> 3: 11 side slots over 6 sides averages 1.8, and the 4-recipe snack
+                      pool needs 2 side-role recipes to supply up to 6 of its 7 slots.
+     - everything else -> 2: lunch/dinner pools are 24 and breakfast 13, so 2 is generous.
+   Raise these once VARIETY-plan.md P3 widens the catalog — that is the whole point of P3,
+   and this block is the only place to change. */
+const WEEKLY_RECIPE_CAP = {side: 3, sauce: 3, main: 2, full: 2};
+const WEEKLY_RECIPE_CAP_DEFAULT = 2;
+function weeklyCapForRecipe(id){
+  const r = RECIPES_DB[id];
+  const cap = r && WEEKLY_RECIPE_CAP[r.role];
+  return typeof cap === 'number' ? cap : WEEKLY_RECIPE_CAP_DEFAULT;
+}
+
+// Drops candidates this person has already used their weekly allowance of. Like every
+// other variety rule here it RELAXES rather than ever returning an empty pool — a thin
+// catalog must still produce a complete week (see applyLightConsecutiveFilter's doc).
+// `persons` mirrors applyVarietyFilter's dayUsePersons: a shared slot must count against
+// both people's weeks, since a shared dish lands on both plates.
+// Counts how often a weekly cap had to be relaxed during one generateWeek(). A relaxation
+// is not a bug — every rule here degrades rather than returning an empty pool — but it does
+// mean the catalog cannot supply that slot within quota, which is otherwise invisible and
+// looks exactly like the cap doing nothing. Reported once per generation (see generateWeek)
+// rather than per pick, so it stays quiet while remaining actionable: it is the signal for
+// which pools VARIETY-plan.md P3 needs to widen.
+let weeklyCapRelaxations = 0;
+
+function applyWeeklyCapFilter(pool, history, persons){
+  const under = pool.filter(function(id){
+    const cap = weeklyCapForRecipe(id);
+    return persons.every(function(p){ return (history[p].weekUse[id] || 0) < cap; });
+  });
+  if(under.length) return under;
+  if(pool.length) weeklyCapRelaxations++;
+  return pool;
+}
+
+// The composed-side pool's priority ladder. Nesting the three rules instead (cap wrapped
+// around the day/yesterday filter) silently ranked them wrong: "not yesterday" ended up
+// outranking "under quota", and sides still reached 4x a week against a cap of 3, because
+// the inner filter handed up a set that was entirely over quota and the cap could only
+// relax back onto it.
+//
+// Stated as an explicit ladder instead, worst-first: a SAME-DAY repeat is the most visible
+// failure, an over-quota WEEK the next, and a day-apart repeat the least. Each rung adds
+// back exactly one relaxation, and the first non-empty rung wins — so the pool can never
+// come back empty, and a constraint is only ever dropped after every softer one already has.
+function sidePoolLadder(rawPool, history, persons, dayIndex){
+  const today = {}, yesterday = {};
+  persons.forEach(function(p){
+    (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ today[id] = true; });
+    (history[p].sideUse[dayIndex - 1] || []).forEach(function(id){ yesterday[id] = true; });
+  });
+  function underCap(id){
+    const cap = weeklyCapForRecipe(id);
+    return persons.every(function(p){ return (history[p].weekUse[id] || 0) < cap; });
+  }
+  const rungs = [
+    rawPool.filter(function(id){ return !today[id] && underCap(id) && !yesterday[id]; }),
+    rawPool.filter(function(id){ return !today[id] && underCap(id); }),
+    rawPool.filter(function(id){ return !today[id]; }),
+    rawPool.filter(function(id){ return underCap(id); }),
+    rawPool
+  ];
+  for(let i = 0; i < rungs.length; i++){
+    if(!rungs[i].length) continue;
+    // Rungs 2 and 4 are the ones that dropped the weekly cap — same signal
+    // applyWeeklyCapFilter records, so P3 can see which pools are too thin.
+    if(i === 2 || i === 4) weeklyCapRelaxations++;
+    return rungs[i];
+  }
+  return rawPool;
+}
 // Breakfast-pairing food amount steps (Decisions Q2 whitelist): piece-unit foods in whole
 // pieces (1-2x avgG), everything else in 30g steps up to 120g — deterministic, no search
 // beyond these fixed candidates.
@@ -318,6 +402,8 @@ function recordDayUsage(history, entry, person, dayIndex){
     if(c.recipeId){
       if(!history[person].dayUseRecipe[dayIndex]) history[person].dayUseRecipe[dayIndex] = [];
       history[person].dayUseRecipe[dayIndex].push(c.recipeId);
+      // VARIETY-plan.md P2: same walk feeds the whole-week tally the cap reads.
+      history[person].weekUse[c.recipeId] = (history[person].weekUse[c.recipeId] || 0) + 1;
     } else if(c.foodId){
       if(!history[person].dayUseFood[dayIndex]) history[person].dayUseFood[dayIndex] = [];
       history[person].dayUseFood[dayIndex].push(c.foodId);
@@ -847,7 +933,14 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons
     (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ usedToday[id] = true; });
   });
   const notUsedToday = pool.filter(function(id){ return !usedToday[id]; });
-  const base = notUsedToday.length ? notUsedToday : pool;
+  const dayBase = notUsedToday.length ? notUsedToday : pool;
+
+  // VARIETY-plan.md P2: the weekly cap sits between the day rule and the gap rule — a
+  // same-day repeat is the most visible failure, an over-quota week the next, and the
+  // 3-day gap the softest of the three. Each stage relaxes to the previous stage's result
+  // rather than to the raw pool, so relaxing one constraint never silently discards one
+  // that was already satisfied.
+  const base = applyWeeklyCapFilter(dayBase, history, (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]));
 
   const gaps = {};
   base.forEach(function(id){ gaps[id] = lastUsedGap(history, person, slot, dayIndex, id); });
@@ -1001,6 +1094,7 @@ function generateWeek(seed){
     partner: (PROF.partner.avoid || []).slice()
   };
 
+  weeklyCapRelaxations = 0; // VARIETY-plan.md P2 observability, reported at the end of this function
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
   // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
@@ -1015,6 +1109,9 @@ function generateWeek(seed){
   // (recipe pools for sides, food pools for breakfast pairs).
   history.elena.dayUseRecipe = {}; history.partner.dayUseRecipe = {};
   history.elena.dayUseFood = {}; history.partner.dayUseFood = {};
+  // VARIETY-plan.md P2: per-person WEEK totals per recipe id (main dish + every composed
+  // extra), read by applyWeeklyCapFilter. Not keyed by day — this is the whole-week count.
+  history.elena.weekUse = {}; history.partner.weekUse = {};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
@@ -1082,6 +1179,14 @@ function generateWeek(seed){
       remainingWeight -= w;
     });
     days.push({date: addDaysISO(weekStartDate, d), meals: dayMeals});
+  }
+  // VARIETY-plan.md P2: one summary per generation, not one per pick. A non-zero count means
+  // some pool could not fill a slot within its weekly quota and the cap was relaxed — the
+  // plan is still complete and deterministic, but that pool is too thin and is exactly what
+  // P3 should widen. Silent truncation would be indistinguishable from the cap not working.
+  if(weeklyCapRelaxations > 0){
+    console.warn('Mesa planner: weekly recipe cap relaxed ' + weeklyCapRelaxations +
+      'x generating ' + weekStartDate + ' — a candidate pool is too thin to fill every slot within quota.');
   }
   return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days};
 }
@@ -1213,7 +1318,9 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidBoth);
-      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history.elena.sideUse[dayIndex - 1], history.partner.sideUse[dayIndex - 1]], [history.elena.dayUseRecipe[dayIndex], history.partner.dayUseRecipe[dayIndex]]);
+      // VARIETY-plan.md P1+P2 for sides, as one priority ladder (sidePoolLadder's doc
+      // explains why nesting the rules ranked them wrong). Shared slot -> both people.
+      const sidePool = sidePoolLadder(sidePoolRaw, history, ['elena', 'partner'], dayIndex);
       if(sidePool.length){
         mainIds.forEach(function(mainId){
           const mainBase = dbBaseNutrition(mainId);
@@ -1331,7 +1438,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidP);
-      const sidePool = applyLightConsecutiveFilter(sidePoolRaw, [history[person].sideUse[dayIndex - 1]], [history[person].dayUseRecipe[dayIndex]]);
+      const sidePool = sidePoolLadder(sidePoolRaw, history, [person], dayIndex);
       if(sidePool.length){
         mainIds.forEach(function(mainId){
           const mainBase = dbBaseNutrition(mainId);

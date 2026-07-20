@@ -2334,6 +2334,89 @@ function testDayWideVariety(ctx){
   }
 }
 
+/* ---------------- VARIETY-plan.md P2: weekly repetition caps ----------------
+   P1 stopped same-day repeats; this caps how often ONE recipe may appear in ONE person's
+   week. The caps are tuned to MEASURED pool sizes (see WEEKLY_RECIPE_CAP's doc), so where a
+   pool genuinely cannot fill its slots within quota the rule relaxes rather than failing —
+   that relaxation is counted and reported, and is the signal for P3. */
+function testWeeklyRecipeCaps(ctx){
+  const savedWeekPlans = get(ctx, 'weekPlans');
+  const savedWeekPlan = get(ctx, 'weekPlan');
+  try{
+    // (1) The cap is role-driven and lives in one constants block.
+    assert(call(ctx, 'weeklyCapForRecipe', ['hummus-veg-sticks']) === 3,
+      'weeklyCapForRecipe: a role:side recipe caps at 3 (thin side/snack pools)');
+    assert(call(ctx, 'weeklyCapForRecipe', ['shakshuka']) === 2,
+      'weeklyCapForRecipe: a role:full recipe caps at 2');
+    assert(call(ctx, 'weeklyCapForRecipe', ['__no_such_recipe__']) === get(ctx, 'WEEKLY_RECIPE_CAP_DEFAULT'),
+      'weeklyCapForRecipe: an unknown id falls back to the documented default');
+
+    // (2) applyWeeklyCapFilter drops at-quota ids, and RELAXES rather than returning an
+    // empty pool when every candidate is at quota — the never-empty invariant every
+    // variety rule here shares.
+    run(ctx, "var __h = {elena: {weekUse: {}}, partner: {weekUse: {}}};");
+    run(ctx, "__h.elena.weekUse['shakshuka'] = 2;"); // at its cap of 2
+    const filtered = call(ctx, 'applyWeeklyCapFilter', [['shakshuka', 'pizza'], get(ctx, '__h'), ['elena']]);
+    assert(JSON.stringify(filtered) === JSON.stringify(['pizza']),
+      'applyWeeklyCapFilter: drops a recipe already at its weekly quota', JSON.stringify(filtered));
+    run(ctx, "__h.elena.weekUse['pizza'] = 2;");
+    const relaxed = call(ctx, 'applyWeeklyCapFilter', [['shakshuka', 'pizza'], get(ctx, '__h'), ['elena']]);
+    assert(relaxed.length === 2,
+      'applyWeeklyCapFilter: relaxes to the full pool when everything is at quota (never returns empty)', JSON.stringify(relaxed));
+    run(ctx, "delete __h;");
+
+    // (3) The side ladder's priority order. Given one side that is over quota but NOT used
+    // today, and one under quota but ALREADY used today, it must prefer the over-quota one:
+    // a same-day repeat is more visible than an over-quota week. Nesting the filters (the
+    // first implementation) got this backwards.
+    run(ctx, "var __h2 = {elena: {weekUse: {}, dayUseRecipe: {}, sideUse: {}}};");
+    run(ctx, "__h2.elena.weekUse['hummus-veg-sticks'] = 99; __h2.elena.dayUseRecipe[0] = ['verdure-wok'];");
+    const ladder = call(ctx, 'sidePoolLadder', [['hummus-veg-sticks', 'verdure-wok'], get(ctx, '__h2'), ['elena'], 0]);
+    assert(JSON.stringify(ladder) === JSON.stringify(['hummus-veg-sticks']),
+      'sidePoolLadder: prefers an over-quota side over one already eaten today (same-day repeat outranks over-quota)', JSON.stringify(ladder));
+    run(ctx, "delete __h2;");
+
+    // (4) End to end: recipes drawing on the LARGE pools (lunch/dinner 24, breakfast 13)
+    // must respect the cap outright — no relaxation is justified there. The thin side and
+    // snack pools are excluded from this assertion on purpose; they are P3's job, and
+    // asserting on them would bake today's catalog shortage into the suite as correct.
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+    const RECIPES_DB = get(ctx, 'RECIPES_DB');
+    const plan = call(ctx, 'ensureWeekPlan', [call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])])]);
+    const over = [];
+    ['elena', 'partner'].forEach(function(person){
+      const counts = {};
+      plan.days.forEach(function(day){
+        SLOT_ORDER.forEach(function(slot){
+          const m = day.meals[slot];
+          const e = m.shared ? m[person] : m[person];
+          if(!e || !e.recipeId) return;
+          counts[e.recipeId] = (counts[e.recipeId] || 0) + 1;
+          (e.extras || []).forEach(function(x){ if(x.recipeId) counts[x.recipeId] = (counts[x.recipeId] || 0) + 1; });
+        });
+      });
+      Object.keys(counts).forEach(function(id){
+        const r = RECIPES_DB[id];
+        if(!r || r.role === 'side' || r.role === 'sauce') return; // thin pools — see above
+        const cap = call(ctx, 'weeklyCapForRecipe', [id]);
+        if(counts[id] > cap) over.push(person + ' ' + id + ' ' + counts[id] + '>' + cap);
+      });
+    });
+    assert(over.length === 0,
+      'weekly cap: no full/main recipe exceeds its quota in a person-week (large pools leave no excuse to relax)',
+      over.join(' | '));
+
+    // (5) The relaxation is COUNTED, not silent — that counter is how P3 knows which pools
+    // are too thin, and a silently-relaxing cap is indistinguishable from a broken one.
+    assert(typeof get(ctx, 'weeklyCapRelaxations') === 'number',
+      'weeklyCapRelaxations: the relaxation count is observable rather than silent');
+  } finally {
+    ctx.weekPlans = savedWeekPlans; ctx.weekPlan = savedWeekPlan;
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+  }
+}
+
 function testComposedMeals(ctx){
   const RECIPES_DB = get(ctx, 'RECIPES_DB');
   const KCAL_BAND = get(ctx, 'KCAL_BAND');
@@ -3800,6 +3883,9 @@ function testRecipeOptions(ctx){
       // so a hand-built history fixture calling pickSoloMeal/pickSharedMeal directly (as
       // below) needs them too, or it throws instead of exercising the real code path.
       h.dayUseRecipe = {}; h.dayUseFood = {};
+      // VARIETY-plan.md P2: applyWeeklyCapFilter reads weekUse unconditionally, same as
+      // applyVarietyFilter reads dayUseRecipe — a hand-built history needs it too.
+      h.weekUse = {};
       return h;
     }
     const history = {elena: freshHistory(), partner: freshHistory()};
@@ -5434,6 +5520,7 @@ function main(){
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
+  runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
