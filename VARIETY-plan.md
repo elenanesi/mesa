@@ -1,6 +1,6 @@
 # Planner variety + protein balance — build plan
 
-**Status:** proposed 2026-07-20, P1 approved to build. Decisions recorded in §5.
+**Status:** BUILT and deployed 2026-07-20 (P1 c89ef26, P2a a71faec, P2b 5cd52e3, P3 e5b69f4; sw CACHE mesa-07ca32abd3a2; D1 re-seeded to 114 recipes). Decisions Q1–Q2 in §5. Outcome: 0 same-day repeats, 0 cap relaxations, red 0/wk, poultry 3/wk, fish 7–9/wk, 2–3 meatless days — every target met.
 
 **Problem.** The generated week repeats recipes far too often, and puts meat in almost every
 meal. Measured on two freshly generated weeks (Elena's side, default profile):
