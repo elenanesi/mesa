@@ -1567,6 +1567,13 @@ function attachFoodDetailHandler(){
    reusing its searchFoods() helper rather than re-implementing food search.
    =================================================================== */
 let libPantryQuery = '';
+// Category-only, unlike the Ingredients page's {cats, flags, seasons}. A pantry holds the
+// handful of things you actually own, so "which shelf is it on" is the useful cut; season
+// and health-flag chips would filter a 20-row list by properties of the FOOD rather than
+// of your stock. Same Set-based shape and the same filterChipHtml/filterSummaryChips/
+// filterActiveCount helpers, so it reads identically to Ingredients.
+let libPantryFilters = {cats: new Set()};
+let libPantryFiltersOpen = false;
 
 // The ONE re-baselining mutator every pantry edit path calls — increase (via the add
 // flow), decrease, set-exact (typed row correction), and remove (qty 0) alike. Pure data
@@ -1606,7 +1613,80 @@ function pantryAgeHint(setAtMs){
 
 function openPantryLibrary(){
   libPantryQuery = '';
+  libPantryFilters = {cats: new Set()};
+  libPantryFiltersOpen = false;
   renderPantryLibraryList();
+}
+
+// Stocked pantry ids grouped by food category, honouring the search box and the category
+// chips. Mirrors libFoodIdsByCategory (above) including its defensive skip: a malformed
+// FOODS entry from a bad couple-sync merge (js/sync.js:mergeEntryMap) must not blank the
+// whole Pantry screen. qty:0 entries are setPantryRemaining's delete tombstones and are
+// filtered out here so they can never render as in stock.
+function pantryIdsByCategory(query){
+  const q = (query || '').trim().toLowerCase();
+  const byCat = {};
+  Object.keys(pantry).forEach(function(id){
+    const entry = pantry[id];
+    const food = FOODS[id];
+    if(!entry || !(entry.qty > 0) || !food || !food.name) return;
+    if(q && food.name.toLowerCase().indexOf(q) === -1) return;
+    if(libPantryFilters.cats.size && !libPantryFilters.cats.has(food.cat)) return;
+    (byCat[food.cat] = byCat[food.cat] || []).push(id);
+  });
+  return byCat;
+}
+
+function countFilteredPantryItems(query){
+  const byCat = pantryIdsByCategory(query);
+  return Object.keys(byCat).reduce(function(sum, c){ return sum + byCat[c].length; }, 0);
+}
+
+function renderLibPantryFilterBar(){
+  const activeCount = filterActiveCount(libPantryFilters);
+  const labels = [];
+  libPantryFilters.cats.forEach(function(c){ labels.push(c); });
+  const count = countFilteredPantryItems(libPantryQuery);
+  let html = '<div class="filter-compact">'
+    + '<button class="filter-toggle" onclick="togglePantryFiltersPanel()">' + (libPantryFiltersOpen ? 'Hide filters' : 'Filters') + (activeCount ? ' · ' + activeCount : '') + '</button>'
+    + '<span class="sub" style="margin:0">' + count + ' item' + (count === 1 ? '' : 's') + '</span>'
+    + '</div>'
+    + filterSummaryChips(labels, 'clearPantryFilters()');
+  if(libPantryFiltersOpen){
+    html += '<div class="filter-panel">'
+      + '<div class="filter-label">Category</div>'
+      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
+      + FOOD_CATEGORIES.map(function(c){ return filterChipHtml(c, libPantryFilters.cats.has(c), 'togglePantryCatFilter(\'' + c + '\')'); }).join('')
+      + '</div>'
+      + (activeCount ? '<button class="filter-clear full" onclick="clearPantryFilters()">Clear filters</button>' : '')
+      + '</div>';
+  }
+  return html;
+}
+
+function togglePantryFiltersPanel(){
+  libPantryFiltersOpen = !libPantryFiltersOpen;
+  rerenderPantryFilteredView();
+}
+function togglePantryCatFilter(cat){
+  if(libPantryFilters.cats.has(cat)) libPantryFilters.cats.delete(cat); else libPantryFilters.cats.add(cat);
+  rerenderPantryFilteredView();
+}
+function clearPantryFilters(){
+  libPantryFilters = {cats: new Set()};
+  libPantryFiltersOpen = false;
+  rerenderPantryFilteredView();
+}
+
+// Repaints the filter bar AND the list together — the bar carries the item count, which
+// depends on the search text too, so typing must refresh both. #libPantrySearchInput lives
+// OUTSIDE #libPantryFilterBar (buildPantryLibrarySheet), so repainting the bar can never
+// destroy the input the user is typing into. Same split as the Ingredients page's
+// rerenderLibFoodFilteredView.
+function rerenderPantryFilteredView(){
+  const bar = document.getElementById('libPantryFilterBar');
+  if(bar) bar.innerHTML = renderLibPantryFilterBar();
+  refreshPantryList();
 }
 
 function renderPantryLibraryList(){
@@ -1627,6 +1707,7 @@ function buildPantryLibrarySheet(){
   return '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Pantry</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
     + '<p class="sub" style="margin-top:6px">What you already have at home — Mesa subtracts what gets logged automatically.</p>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libPantrySearchInput" placeholder="Search your pantry…" value="' + htmlAttr(libPantryQuery) + '" oninput="onLibPantrySearchInput(this.value)" autocomplete="off">'
+    + '<div id="libPantryFilterBar">' + renderLibPantryFilterBar() + '</div>'
     + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openPantryAddSheet()">＋ Add to pantry</button>'
     + '<div id="libPantryList" style="margin-top:4px">' + renderPantryListMarkup(libPantryQuery) + '</div>';
 }
@@ -1637,18 +1718,30 @@ function buildPantryLibrarySheet(){
 // string-interpolated. qty:0 stored entries (setPantryRemaining's remove/tombstone shape)
 // are filtered out here: they must never render as "in stock".
 function renderPantryListMarkup(query){
-  const q = (query || '').trim().toLowerCase();
   const remaining = pantryRemaining();
   const stockedIds = Object.keys(pantry).filter(function(id){ return pantry[id] && pantry[id].qty > 0 && !!FOODS[id]; });
-  const ids = stockedIds
-    .filter(function(id){ return !q || FOODS[id].name.toLowerCase().indexOf(q) !== -1; })
-    .sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : (FOODS[a].name > FOODS[b].name ? 1 : 0); });
+  const byCat = pantryIdsByCategory(query);
+  const shown = Object.keys(byCat).reduce(function(sum, c){ return sum + byCat[c].length; }, 0);
 
-  if(!ids.length){
-    return '<p class="sub" style="margin-top:10px">' + (stockedIds.length ? 'No items match your search.' : 'Nothing in your pantry yet — tap “Add to pantry” to get started.') + '</p>';
+  if(!shown){
+    // Three distinct empty states: an untouched pantry gets the onboarding nudge, while a
+    // pantry that HAS stock but shows nothing is the user's own search/filter narrowing it —
+    // saying "nothing in your pantry" there would read as data loss.
+    let msg;
+    if(!stockedIds.length) msg = 'Nothing in your pantry yet — tap “Add to pantry” to get started.';
+    else if(libPantryFilters.cats.size) msg = 'No items match your search or filters.';
+    else msg = 'No items match your search.';
+    return '<p class="sub" style="margin-top:10px">' + msg + '</p>';
   }
 
-  return ids.map(function(id){
+  // Grouped into the same category sections, in the same SHOP_CAT_ORDER, that the
+  // Ingredients list and the shopping list already use — one ordering for every
+  // food-by-category surface in the app.
+  return SHOP_CAT_ORDER.map(function(cat){
+    const ids = byCat[cat];
+    if(!ids || !ids.length) return '';
+    ids.sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : (FOODS[a].name > FOODS[b].name ? 1 : 0); });
+    return '<div class="shop-cat">' + escapeHtml(cat) + '</div>' + ids.map(function(id){
     const food = FOODS[id];
     const entry = pantry[id];
     const remain = Math.max(0, remaining[id] || 0);
@@ -1664,12 +1757,16 @@ function renderPantryListMarkup(query){
       + (unit ? '<span class="sv-unit" style="margin-left:-2px">' + unit + '</span>' : '')
       + '<button class="lib-del" data-act="remove" aria-label="Remove ' + htmlAttr(food.name) + '">✕</button>'
       + '</div></div>';
+    }).join('');
   }).join('');
 }
 
 function onLibPantrySearchInput(v){
   libPantryQuery = v;
-  refreshPantryList();
+  // Repaints the bar too, not just the list: the bar shows the item count, which the search
+  // text changes. (Fixes the same stale-count wart the README lists as a known issue on the
+  // Ingredients page.)
+  rerenderPantryFilteredView();
 }
 
 // #libPantryList itself is only recreated by renderPantryLibraryList (full-page paint);

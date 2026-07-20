@@ -426,6 +426,66 @@ function testAddToPantryOnIngredientCards(ctx){
     'no pantry call site re-appends the unit around fmtPantryQty (the "100 g g" bug)');
 }
 
+/* ---------------- Pantry page: category sections + filters ----------------
+   The Pantry list groups into the same SHOP_CAT_ORDER sections the Ingredients list and
+   the shopping list use, with a category-chip filter alongside the search box. */
+function testPantrySectionsAndFilters(ctx){
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  try{
+    run(ctx, "pantry = {}; libPantryQuery = ''; libPantryFilters = {cats: new Set()}; libPantryFiltersOpen = false;");
+    // apples -> Produce, whole milk -> Dairy, chicken breast -> Protein.
+    run(ctx, "pantry['apples'] = {qty: 500, setAt: 1, u: 1};");
+    run(ctx, "pantry['greek-yogurt'] = {qty: 1000, setAt: 1, u: 1};");
+    run(ctx, "pantry['chicken-breast'] = {qty: 300, setAt: 1, u: 1};");
+    const cats = ['apples', 'greek-yogurt', 'chicken-breast'].map(function(id){ return get(ctx, "FOODS['" + id + "'] && FOODS['" + id + "'].cat"); });
+    assert(cats.every(Boolean), 'setup: the three fixture foods exist with categories', JSON.stringify(cats));
+
+    // (1) Sections render, in SHOP_CAT_ORDER, and only for categories that hold stock.
+    const html = call(ctx, 'renderPantryListMarkup', ['']);
+    const headings = (html.match(/<div class="shop-cat">([^<]+)<\/div>/g) || [])
+      .map(function(h){ return h.replace(/<[^>]+>/g, ''); });
+    const order = get(ctx, 'SHOP_CAT_ORDER');
+    const expected = order.filter(function(c){ return cats.indexOf(c) !== -1; });
+    assert(JSON.stringify(headings) === JSON.stringify(expected),
+      'renderPantryListMarkup: groups stock into category sections, in SHOP_CAT_ORDER, only for categories that have items',
+      'got ' + JSON.stringify(headings) + ' expected ' + JSON.stringify(expected));
+
+    // (2) A category chip narrows the list to that section alone.
+    run(ctx, "libPantryFilters.cats.add('Dairy');");
+    const dairyOnly = call(ctx, 'renderPantryListMarkup', ['']);
+    assert(dairyOnly.indexOf('data-food-id="greek-yogurt"') !== -1 && dairyOnly.indexOf('data-food-id="apples"') === -1,
+      'renderPantryListMarkup: a category filter shows only that category', dairyOnly.slice(0, 200));
+    assert(call(ctx, 'countFilteredPantryItems', ['']) === 1,
+      'countFilteredPantryItems: counts the filtered rows, not the whole pantry', String(call(ctx, 'countFilteredPantryItems', [''])));
+
+    // (3) The two narrowed-to-nothing states must NOT claim the pantry is empty — that
+    // would read as data loss when the user has simply over-filtered.
+    run(ctx, "libPantryFilters = {cats: new Set(['Frozen'])};");
+    const noMatch = call(ctx, 'renderPantryListMarkup', ['']);
+    assert(noMatch.indexOf('No items match') !== -1 && noMatch.indexOf('Nothing in your pantry yet') === -1,
+      'renderPantryListMarkup: over-filtering says "no items match", never "nothing in your pantry"', noMatch);
+    run(ctx, "libPantryFilters = {cats: new Set()}; pantry = {};");
+    const trulyEmpty = call(ctx, 'renderPantryListMarkup', ['']);
+    assert(trulyEmpty.indexOf('Nothing in your pantry yet') !== -1,
+      'renderPantryListMarkup: a genuinely empty pantry gets the onboarding nudge', trulyEmpty);
+
+    // (4) qty:0 tombstones (setPantryRemaining's delete shape) never render as stock.
+    run(ctx, "pantry = {'apples': {qty: 0, setAt: 1, u: 1}};");
+    assert(call(ctx, 'renderPantryListMarkup', ['']).indexOf('data-food-id="apples"') === -1,
+      'renderPantryListMarkup: a qty:0 delete tombstone is not shown as in stock');
+
+    // (5) Typing in the search box repaints the filter bar too, so the item count can't go
+    // stale — the known wart the Ingredients page still has.
+    const src = fs.readFileSync(path.join(APP_DIR, 'js/library.js'), 'utf8');
+    const onInput = /function onLibPantrySearchInput\(v\)\{[\s\S]*?\n\}/.exec(src);
+    assert(!!onInput && /rerenderPantryFilteredView\(\)/.test(onInput[0]),
+      'onLibPantrySearchInput: repaints the filter bar (item count) as well as the list',
+      onInput && onInput[0]);
+  } finally {
+    run(ctx, "pantry = " + JSON.stringify(savedPantry) + "; libPantryQuery = ''; libPantryFilters = {cats: new Set()}; libPantryFiltersOpen = false;");
+  }
+}
+
 /* ---------------- ingredient detail page (task C4): buildFoodDetailMarkup() ----------------
    library.js's buildFoodDetailMarkup(id) is the pure HTML-string builder behind
    openFoodDetail() — it reads the live merged FOODS[id] record (overrides applied) and
@@ -5233,6 +5293,7 @@ function main(){
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
+  runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
