@@ -185,11 +185,18 @@ const AUTO_STYLE_THRESHOLDS = {
 // like chickpeas/cannellini-beans, matching how built-in recipes are hand-tagged — e.g.
 // 'shakshuka' contains eggs and is tagged 'veggie' in data/recipes.js). Adding a new
 // fish/meat/poultry food later needs a one-line addition here.
-const ANIMAL_FOOD_IDS = [
-  'salmon-fillet', 'turkey-breast', 'chicken-breast', 'tuna-in-olive-oil', 'tuna',
-  'clams', 'mussels', 'cod', 'sole-fish', 'sea-bass-fillet', 'prawns', 'chicken-thigh',
-  'beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck'
+// Split by KIND (VARIETY-plan.md P2), because the planner's Mediterranean frequency rule
+// needs to tell red meat from poultry from fish — red meat at most once a week, poultry at
+// most three times, fish at least twice. ANIMAL_FOOD_IDS below is derived from these three
+// rather than listed again, so the veggie-tagging behaviour that already reads it stays
+// byte-identical and a new food can only ever be added in one place.
+const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck'];
+const POULTRY_FOOD_IDS = ['turkey-breast', 'chicken-breast', 'chicken-thigh'];
+const FISH_FOOD_IDS = [
+  'salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'clams', 'mussels',
+  'cod', 'sole-fish', 'sea-bass-fillet', 'prawns'
 ];
+const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);
 // Per the task brief's exact list.
 const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'oats'];
 const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds'];

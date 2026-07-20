@@ -91,6 +91,111 @@ function weeklyCapForRecipe(id){
 // catalog must still produce a complete week (see applyLightConsecutiveFilter's doc).
 // `persons` mirrors applyVarietyFilter's dayUsePersons: a shared slot must count against
 // both people's weeks, since a shared dish lands on both plates.
+/* ---------------- VARIETY-plan.md P2: Mediterranean protein balance ----------------
+   Decision Q1: red meat at most once a week, poultry at most three times, fish at least
+   twice, and at least two fully meatless days. Measured before this rule: meat in 15 of 28
+   meals, on 7 days out of 7 — even though the catalog is 60 meatless / 21 poultry /
+   10 fish / 5 red meat. That is a SCORING bias, not a catalog gap: mealScore rewards
+   hitting the protein target and meat scores best on it, so no amount of new vegetarian
+   recipes would have fixed it. Only an explicit frequency rule does.
+
+   Ceilings are enforced by filtering. The two FLOORS (fish, meatless days) cannot be — you
+   cannot filter your way to a food being present — so instead the week deterministically
+   designates which days carry them, spread from the week seed. That is also how a person
+   actually plans: "Tuesday and Friday are fish nights." */
+const PROTEIN_WEEK_LIMITS = {red: 1, poultry: 3}; // ceilings, per person per week
+const MEATLESS_DAYS_MIN = 2;                       // household days with no animal protein
+const FISH_DAYS_MIN = 2;                           // household dinners designated fish
+
+// Which kind of animal protein a meal carries, from its EFFECTIVE ingredients (so an
+// optionGroups variant is judged by the choice actually planned, not the default). Red
+// outranks poultry outranks fish when a dish somehow contains several. null = meatless.
+// The id lists live in js/library.js, which loads AFTER this file — function bodies resolve
+// names at call time, and the `typeof` guard matches how foodHitsAvoid already reaches
+// GLUTEN_FOOD_IDS/NUT_FOOD_IDS from here.
+function proteinKindForIngredientIds(ids){
+  if(typeof RED_MEAT_FOOD_IDS === 'undefined') return null;
+  if(ids.some(function(i){ return RED_MEAT_FOOD_IDS.indexOf(i) !== -1; })) return 'red';
+  if(ids.some(function(i){ return POULTRY_FOOD_IDS.indexOf(i) !== -1; })) return 'poultry';
+  if(ids.some(function(i){ return FISH_FOOD_IDS.indexOf(i) !== -1; })) return 'fish';
+  return null;
+}
+function recipeProteinKind(recipeId, opts){
+  const r = RECIPES_DB[recipeId];
+  if(!r) return null;
+  return proteinKindForIngredientIds(recipeEffectiveIngredients(r, opts).map(function(ing){ return ing[0]; }));
+}
+
+// Could this recipe carry animal protein under ANY of its optionGroups variants? A meatless
+// day has to ask this rather than recipeProteinKind(), because the variant is rotated
+// (chosenOptsForRecipe) only AFTER the candidate pool has been filtered — so judging by the
+// default choice let a meatless day pick 'pasta', whose default condiment is tomato & basil
+// but whose rotation landed on tuna & olives. Deliberately conservative: it also excludes a
+// pasta that would have been fine with the tomato variant, which is the right trade when the
+// alternative is silently breaking the day's one hard nutritional promise.
+function recipeMayContainAnimalProtein(id){
+  const r = RECIPES_DB[id];
+  if(!r) return false;
+  const ids = (r.ingredients || []).map(function(ing){ return ing[0]; });
+  (r.optionGroups || []).forEach(function(g){
+    (g.choices || []).forEach(function(c){
+      (c.ingredients || []).forEach(function(ing){ ids.push(ing[0]); });
+    });
+  });
+  return proteinKindForIngredientIds(ids) !== null;
+}
+// A whole meal unit (main + composed extras) — a veg side never makes a chicken dish
+// meatless, and a tuna side would make an otherwise-meatless main a fish meal.
+function entryProteinKind(entry){
+  const ids = [];
+  planEntryComponents(entry).forEach(function(c){
+    if(c.recipeId && RECIPES_DB[c.recipeId]){
+      recipeEffectiveIngredients(RECIPES_DB[c.recipeId], c.opts).forEach(function(ing){ ids.push(ing[0]); });
+    } else if(c.foodId){ ids.push(c.foodId); }
+  });
+  return proteinKindForIngredientIds(ids);
+}
+
+// Which days of THIS week carry the two floors. Deterministic from the week seed and spread
+// three days apart, so the meatless days never bunch together and never land on day 0 (the
+// week's first day, which is often already half-logged when a plan is regenerated). Fish
+// days are offset from the meatless days so the two never collide.
+function proteinScheduleForWeek(weekSeed){
+  const base = Math.abs(weekSeed) % 3; // 0..2
+  const meatless = {}, fish = {};
+  for(let i = 0; i < MEATLESS_DAYS_MIN; i++) meatless[1 + base + i * 3] = true;
+  for(let i = 0; i < FISH_DAYS_MIN; i++){
+    const d = 2 + ((base + 1) % 3) + i * 3;
+    if(!meatless[d] && d <= 6) fish[d] = true;
+  }
+  return {meatless: meatless, fish: fish};
+}
+
+// Applies the ceilings and the designated-day floors to a candidate pool. Like every other
+// rule here it RELAXES rather than emptying the pool — a day whose only legal candidates are
+// meaty still gets a meal, it just misses the target, and that is strictly better than a
+// blank slot.
+function applyProteinBalanceFilter(pool, history, persons, dayIndex, schedule){
+  let out = pool;
+  if(schedule.meatless[dayIndex]){
+    const meatless = out.filter(function(id){ return !recipeMayContainAnimalProtein(id); });
+    if(meatless.length) return meatless; // a meatless day outranks every other protein rule
+    proteinRuleRelaxations++;
+  }
+  const underCeiling = out.filter(function(id){
+    const kind = recipeProteinKind(id);
+    if(kind !== 'red' && kind !== 'poultry') return true;
+    return persons.every(function(p){ return (history[p].proteinUse[kind] || 0) < PROTEIN_WEEK_LIMITS[kind]; });
+  });
+  if(underCeiling.length) out = underCeiling; else proteinRuleRelaxations++;
+  if(schedule.fish[dayIndex]){
+    const fish = out.filter(function(id){ return recipeProteinKind(id) === 'fish'; });
+    if(fish.length) return fish;
+  }
+  return out;
+}
+let proteinRuleRelaxations = 0;
+
 // Counts how often a weekly cap had to be relaxed during one generateWeek(). A relaxation
 // is not a bug — every rule here degrades rather than returning an empty pool — but it does
 // mean the catalog cannot supply that slot within quota, which is otherwise invisible and
@@ -120,6 +225,11 @@ function applyWeeklyCapFilter(pool, history, persons){
 // back exactly one relaxation, and the first non-empty rung wins — so the pool can never
 // come back empty, and a constraint is only ever dropped after every softer one already has.
 function sidePoolLadder(rawPool, history, persons, dayIndex){
+  // A side can carry animal protein too (a tuna or bresaola side would break a meatless
+  // day), so the same protein rule narrows the raw pool before the variety ladder runs.
+  if(history.proteinSchedule){
+    rawPool = applyProteinBalanceFilter(rawPool, history, persons, dayIndex, history.proteinSchedule);
+  }
   const today = {}, yesterday = {};
   persons.forEach(function(p){
     (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ today[id] = true; });
@@ -398,6 +508,10 @@ function recordCompositionUsage(history, entry, person, slot, dayIndex){
 // split already used above, and means a food id can never accidentally shadow-exclude an
 // unrelated recipe of the same id (or vice versa).
 function recordDayUsage(history, entry, person, dayIndex){
+  // VARIETY-plan.md P2: one increment per MEAL unit (not per component) — a chicken main
+  // with a veg side is one poultry meal, not one poultry plus one meatless.
+  const kind = entryProteinKind(entry);
+  if(kind && history[person].proteinUse) history[person].proteinUse[kind] = (history[person].proteinUse[kind] || 0) + 1;
   planEntryComponents(entry).forEach(function(c){
     if(c.recipeId){
       if(!history[person].dayUseRecipe[dayIndex]) history[person].dayUseRecipe[dayIndex] = [];
@@ -932,15 +1046,23 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons
   (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]).forEach(function(p){
     (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ usedToday[id] = true; });
   });
-  const notUsedToday = pool.filter(function(id){ return !usedToday[id]; });
-  const dayBase = notUsedToday.length ? notUsedToday : pool;
+  // VARIETY-plan.md P2: the protein rule runs FIRST — it is a health constraint, not a
+  // variety preference, so a meatless day outranks even the same-day-repeat rule. It has
+  // its own relax-rather-than-empty step, so it can only ever narrow the pool.
+  const persons = (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]);
+  const proteinBase = history.proteinSchedule
+    ? applyProteinBalanceFilter(pool, history, persons, dayIndex, history.proteinSchedule)
+    : pool;
+
+  const notUsedToday = proteinBase.filter(function(id){ return !usedToday[id]; });
+  const dayBase = notUsedToday.length ? notUsedToday : proteinBase;
 
   // VARIETY-plan.md P2: the weekly cap sits between the day rule and the gap rule — a
   // same-day repeat is the most visible failure, an over-quota week the next, and the
   // 3-day gap the softest of the three. Each stage relaxes to the previous stage's result
   // rather than to the raw pool, so relaxing one constraint never silently discards one
   // that was already satisfied.
-  const base = applyWeeklyCapFilter(dayBase, history, (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]));
+  const base = applyWeeklyCapFilter(dayBase, history, persons);
 
   const gaps = {};
   base.forEach(function(id){ gaps[id] = lastUsedGap(history, person, slot, dayIndex, id); });
@@ -1094,7 +1216,7 @@ function generateWeek(seed){
     partner: (PROF.partner.avoid || []).slice()
   };
 
-  weeklyCapRelaxations = 0; // VARIETY-plan.md P2 observability, reported at the end of this function
+  weeklyCapRelaxations = 0; proteinRuleRelaxations = 0; // VARIETY-plan.md P2 observability, reported at the end of this function
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
   // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
@@ -1112,10 +1234,17 @@ function generateWeek(seed){
   // VARIETY-plan.md P2: per-person WEEK totals per recipe id (main dish + every composed
   // extra), read by applyWeeklyCapFilter. Not keyed by day — this is the whole-week count.
   history.elena.weekUse = {}; history.partner.weekUse = {};
+  // VARIETY-plan.md P2: per-person tally of meals by animal-protein kind, for the
+  // Mediterranean ceilings (red/poultry). Counted per MEAL unit, not per component.
+  history.elena.proteinUse = {red: 0, poultry: 0, fish: 0};
+  history.partner.proteinUse = {red: 0, poultry: 0, fish: 0};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
   const weekSeed = stableHash(weekStartDate);
+  // Rides on `history` — already the generation-scoped state bag every pick function
+  // receives — rather than threading another argument through two long signatures.
+  history.proteinSchedule = proteinScheduleForWeek(weekSeed);
 
   // Cross-week variety filter input: the PREVIOUS week's stored plan, if any (see
   // applyCrossWeekFilter doc). prevRecipeId(d, slot, person) is what that person ate at
@@ -1184,9 +1313,10 @@ function generateWeek(seed){
   // some pool could not fill a slot within its weekly quota and the cap was relaxed — the
   // plan is still complete and deterministic, but that pool is too thin and is exactly what
   // P3 should widen. Silent truncation would be indistinguishable from the cap not working.
-  if(weeklyCapRelaxations > 0){
-    console.warn('Mesa planner: weekly recipe cap relaxed ' + weeklyCapRelaxations +
-      'x generating ' + weekStartDate + ' — a candidate pool is too thin to fill every slot within quota.');
+  if(weeklyCapRelaxations > 0 || proteinRuleRelaxations > 0){
+    console.warn('Mesa planner: generating ' + weekStartDate + ' relaxed the weekly recipe cap ' +
+      weeklyCapRelaxations + 'x and the protein-balance rule ' + proteinRuleRelaxations +
+      'x — a candidate pool is too thin to fill every slot within target.');
   }
   return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days};
 }

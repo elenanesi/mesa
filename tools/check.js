@@ -2118,7 +2118,15 @@ function testNextWeekTuning(ctx){
     'n=' + JSON.stringify({none: totNone.n, protein: totProtein.n, fiber: totFiber.n, lowSugar: totLowSugar.n}));
   assert(totProtein.protein >= (totNone.protein * 0.98) - 1e-6, "'protein' tuning: fortnight total protein remains close to 'none' after catalog removals",
     'protein=' + totProtein.protein + ', none=' + totNone.protein);
-  assert(totFiber.fiber >= totNone.fiber - 1e-6, "'fiber' tuning: fortnight total fiber >= 'none' fortnight's",
+  // Tolerance, like the 'protein' assertion above, and for the same class of reason:
+  // VARIETY-plan.md P2's Mediterranean ceilings (red <=1/wk, poultry <=3/wk, 2 meatless
+  // days) are HARD filters applied before scoring, so once poultry hits its quota every
+  // poultry recipe leaves the pool for the rest of the week. tuningBonus is a scoring term
+  // and can only choose among what survives, so it can no longer be guaranteed to move a
+  // nutrient strictly upward — it now optimises within a materially smaller feasible set.
+  // Measured drift at the time of writing: 1028.9 vs 1040.1, ~1%. Kept as a 2% guard rather
+  // than deleted, so a real collapse of the tuning feature would still fail here.
+  assert(totFiber.fiber >= (totNone.fiber * 0.98) - 1e-6, "'fiber' tuning: fortnight total fiber stays within 2% of 'none' (protein ceilings shrink the feasible set)",
     'fiber=' + totFiber.fiber + ', none=' + totNone.fiber);
   assert(totLowSugar.freeSugars <= totNone.freeSugars + 1e-6, "'lowSugar' tuning: fortnight total free sugars <= 'none' fortnight's",
     'lowSugar=' + totLowSugar.freeSugars + ', none=' + totNone.freeSugars);
@@ -2411,6 +2419,89 @@ function testWeeklyRecipeCaps(ctx){
     // are too thin, and a silently-relaxing cap is indistinguishable from a broken one.
     assert(typeof get(ctx, 'weeklyCapRelaxations') === 'number',
       'weeklyCapRelaxations: the relaxation count is observable rather than silent');
+  } finally {
+    ctx.weekPlans = savedWeekPlans; ctx.weekPlan = savedWeekPlan;
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+  }
+}
+
+/* ---------------- VARIETY-plan.md P2: Mediterranean protein balance ----------------
+   Decision Q1: red meat <=1/week, poultry <=3/week, fish >=2/week, >=2 fully meatless days.
+   Measured before the rule: meat in 15 of 28 meals on 7 days out of 7, despite the catalog
+   being 60 meatless / 21 poultry / 10 fish / 5 red — a scoring bias (mealScore rewards the
+   protein target and meat scores best on it), not a catalog gap. */
+function testProteinBalance(ctx){
+  const savedWeekPlans = get(ctx, 'weekPlans');
+  const savedWeekPlan = get(ctx, 'weekPlan');
+  try{
+    // (1) Classification reads the real ingredient lists, split by kind, and red outranks
+    // poultry outranks fish. The id lists live in library.js and are derived into
+    // ANIMAL_FOOD_IDS, so the veggie-tagging that already reads it cannot drift.
+    assert(call(ctx, 'recipeProteinKind', ['lemon-herb-chicken-breast']) === 'poultry',
+      'recipeProteinKind: a chicken dish classifies as poultry');
+    assert(call(ctx, 'recipeProteinKind', ['shakshuka']) === null,
+      'recipeProteinKind: an egg/veg dish is meatless (eggs are deliberately not animal-protein here)');
+    const animal = get(ctx, 'ANIMAL_FOOD_IDS');
+    const parts = get(ctx, 'RED_MEAT_FOOD_IDS').length + get(ctx, 'POULTRY_FOOD_IDS').length + get(ctx, 'FISH_FOOD_IDS').length;
+    assert(animal.length === parts,
+      'ANIMAL_FOOD_IDS is derived from the three kind lists, so a food can only be added in one place',
+      'animal=' + animal.length + ' parts=' + parts);
+
+    // (2) The conservative meatless test. 'pasta' has a tuna & olives OPTION, so it may be
+    // meaty even though its default condiment is not — the variant is rotated only AFTER
+    // the pool is filtered, which is exactly how a designated meatless day picked a tuna
+    // pasta before this existed.
+    assert(call(ctx, 'recipeProteinKind', ['pasta']) === null,
+      'setup: pasta classifies as meatless by its DEFAULT option');
+    assert(call(ctx, 'recipeMayContainAnimalProtein', ['pasta']) === true,
+      'recipeMayContainAnimalProtein: pasta MAY be meaty via its tuna option — a meatless day must exclude it');
+    assert(call(ctx, 'recipeMayContainAnimalProtein', ['shakshuka']) === false,
+      'recipeMayContainAnimalProtein: a dish with no meaty variant stays eligible on a meatless day');
+
+    // (3) The two floors are carried by deterministically designated days, spread apart and
+    // never on day 0, and the two kinds of day never collide.
+    const sched = call(ctx, 'proteinScheduleForWeek', [12345]);
+    const meatlessDays = Object.keys(sched.meatless).map(Number);
+    const fishDays = Object.keys(sched.fish).map(Number);
+    assert(meatlessDays.length === get(ctx, 'MEATLESS_DAYS_MIN'),
+      'proteinScheduleForWeek: designates the required number of meatless days', JSON.stringify(meatlessDays));
+    assert(meatlessDays.every(function(d){ return d >= 1 && d <= 6; }),
+      'proteinScheduleForWeek: never designates day 0 (often already part-logged on regeneration)', JSON.stringify(meatlessDays));
+    assert(fishDays.every(function(d){ return meatlessDays.indexOf(d) === -1; }),
+      'proteinScheduleForWeek: a fish day never lands on a meatless day', JSON.stringify({meatlessDays: meatlessDays, fishDays: fishDays}));
+
+    // (4) End to end over a real week, for both people: ceilings respected and the meatless
+    // floor met. This is the assertion that would have caught the tuna-pasta leak.
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+    const plan = call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+    const limits = get(ctx, 'PROTEIN_WEEK_LIMITS');
+    ['elena', 'partner'].forEach(function(person){
+      const counts = {red: 0, poultry: 0, fish: 0};
+      let meatlessDayCount = 0;
+      plan.days.forEach(function(day){
+        let dayHasAnimal = false;
+        SLOT_ORDER.forEach(function(slot){
+          const m = day.meals[slot];
+          const e = m.shared ? m[person] : m[person];
+          if(!e || !e.recipeId) return;
+          const kind = call(ctx, 'entryProteinKind', [e]);
+          if(kind){ counts[kind]++; dayHasAnimal = true; }
+        });
+        if(!dayHasAnimal) meatlessDayCount++;
+      });
+      assert(counts.red <= limits.red,
+        'protein balance (' + person + '): red meat within its weekly ceiling', 'red=' + counts.red + ' limit=' + limits.red);
+      assert(counts.poultry <= limits.poultry,
+        'protein balance (' + person + '): poultry within its weekly ceiling', 'poultry=' + counts.poultry + ' limit=' + limits.poultry);
+      assert(meatlessDayCount >= get(ctx, 'MEATLESS_DAYS_MIN'),
+        'protein balance (' + person + '): at least the required number of fully meatless days',
+        'meatlessDays=' + meatlessDayCount + ' required=' + get(ctx, 'MEATLESS_DAYS_MIN'));
+    });
+
+    // (5) Relaxation stays observable — same reasoning as the weekly cap's counter.
+    assert(typeof get(ctx, 'proteinRuleRelaxations') === 'number',
+      'proteinRuleRelaxations: the protein rule reports when it had to relax rather than doing so silently');
   } finally {
     ctx.weekPlans = savedWeekPlans; ctx.weekPlan = savedWeekPlan;
     run(ctx, "weekPlans = {}; weekPlan = null;");
@@ -4202,6 +4293,11 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
     }) + ';');
     run(ctx, "RECIPES_DB['" + RECIPE_ID + "'] = " + JSON.stringify({
       title: 'P3 fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      // occasional:true keeps it out of candidatesFor(), so the ONLY appearances of this
+      // fixture are the ones this test injects into a plan cell by hand. Without it the
+      // generator started picking it too once VARIETY-plan.md P2's protein ceilings began
+      // favouring meatless recipes, and the "exactly 200g planned" setup read 1400g.
+      occasional: true,
       styles: ['balanced'], time: 5, servings: 1,
       ingredients: [[FOOD_ID, 200]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
     }) + ';');
@@ -4363,6 +4459,7 @@ function testRestockTickedShopItems(ctx){
     }) + ';');
     run(ctx, "RECIPES_DB['" + RECIPE_ID + "'] = " + JSON.stringify({
       title: 'P3 restock fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      occasional: true, // see the other P3 fixture: keeps the generator from planning it too
       styles: ['balanced'], time: 5, servings: 1,
       ingredients: [[FOOD_ID, 300]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
     }) + ';');
@@ -5521,6 +5618,7 @@ function main(){
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
+  runTest('Mediterranean protein balance (VARIETY-plan.md P2)', function(){ testProteinBalance(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
