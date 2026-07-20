@@ -51,7 +51,7 @@ const FIXED_MONDAY = '2026-07-13'; // a real Monday — planner/plan-signature t
 // ensureDefaultFoodIconCached() call).
 const APP_SCRIPT_ORDER = [
   'data/foods.js', 'data/recipes.js', 'data/validate.js',
-  'js/state.js', 'js/log.js', 'js/engine.js', 'js/planner.js', 'js/render.js',
+  'js/state.js', 'js/log.js', 'js/engine.js', 'js/planner.js', 'js/pantry.js', 'js/render.js',
   // 'vendor/zxing-browser.min.js' (barcode/camera) skipped
   'js/library.js', 'js/sync.js'
   // 'js/app.js' (boot/nav DOM code) skipped
@@ -3949,6 +3949,213 @@ function testValidateBackupStructurePantry(ctx){
 }
 
 /* ===================================================================
+   PANTRY-plan.md P2: pantryConsumedSince()/pantryRemaining() (js/pantry.js) — pure
+   derivation from logHistory + the pantry baseline. Snapshots/restores both `pantry` and
+   `logHistory` (including on failure) since every sub-test mutates them directly, per the
+   plan's test list: consumption summed across both people, a backdated (t:null) entry
+   counted, remaining floored at 0, each food using its OWN setAt (never a shared/global
+   one), and the 60-day retention bound pinned so nobody later assumes unlimited history.
+   =================================================================== */
+function testPantryConsumedSinceAndRemaining(ctx){
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  try{
+    // (a) both people summed: a shared dish is logged once per eater (matching
+    // computeShoppingList's convention, planner.js) — both contribute to consumption.
+    (function(){
+      run(ctx, 'logHistory = {}; pantry = {};');
+      call(ctx, 'logFoodEntry', ['2026-07-10', 'elena', 'eggs', 100]);   // 100/50 = 2 pieces
+      call(ctx, 'logFoodEntry', ['2026-07-10', 'partner', 'eggs', 150]); // 150/50 = 3 pieces
+      const consumed = call(ctx, 'pantryConsumedSince', [0]);
+      assert(Math.abs(consumed['eggs'] - 5) < 1e-9,
+        'pantryConsumedSince: sums BOTH people\'s logs for the same food (2 + 3 = 5 eggs)', 'got ' + consumed['eggs']);
+    })();
+
+    // Consumption is filtered on WHEN THE FOOD WAS EATEN (date + t), never on the entry's
+    // `u` sync stamp — see pantry.js:logEntryEatenAtMs. These fixtures therefore anchor
+    // setAt to a real calendar instant relative to the logged dates, rather than pairing a
+    // "now" baseline with a past log date (which is only coherent under the old, wrong
+    // `u`-based reading).
+    const AT = function(y, m, d, hh, mm){ return 'new Date(' + y + ',' + (m - 1) + ',' + d + ',' + (hh || 0) + ',' + (mm || 0) + ',0,0).getTime()'; };
+
+    // (b) a backdated (t:null, task B5 catch-up) plan entry for a day AFTER the baseline
+    // still counts: t:null resolves to the END of its day, so a same-day ambiguity counts
+    // the meal rather than silently keeping food the household may not have.
+    const FIXTURE_ID = '__pantry_p2_fixture_recipe__';
+    run(ctx, "RECIPES_DB['" + FIXTURE_ID + "'] = " + JSON.stringify({
+      title: 'P2 fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 5, servings: 1,
+      ingredients: [['spinach', 100]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    }) + ';');
+    try{
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['spinach'] = {qty: 500, setAt: " + AT(2026, 7, 10, 8, 0) + ", u: 1};");
+      call(ctx, 'logPlanEntry', ['2026-07-12', 'elena', 'dinner', FIXTURE_ID, 1, [{recipeId: FIXTURE_ID, portion: 1}], {tNull: true}]);
+      const logged = get(ctx, "logHistory['2026-07-12'].elena[0]");
+      assert(logged && logged.t === null, 'sanity: the fixture entry is really backdated (t === null)', JSON.stringify(logged));
+      const remaining = call(ctx, 'pantryRemaining', []);
+      assert(Math.abs(remaining['spinach'] - 400) < 1e-9,
+        'pantryRemaining: a backdated (t:null) entry AFTER the baseline is counted (500 - 100 = 400)', 'got ' + remaining['spinach']);
+
+      // (b2) THE CATCH-UP CASE the `u` stamp got wrong: the same backdated entry, but for a
+      // day BEFORE the baseline. The baseline is a PHYSICAL count of the cupboard, so it
+      // already reflected that meal — subtracting it again would double-count. Filtering on
+      // `u` (when it was entered, i.e. now) would wrongly deduct it.
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['spinach'] = {qty: 500, setAt: " + AT(2026, 7, 10, 8, 0) + ", u: 1};");
+      call(ctx, 'logPlanEntry', ['2026-07-05', 'elena', 'dinner', FIXTURE_ID, 1, [{recipeId: FIXTURE_ID, portion: 1}], {tNull: true}]);
+      const catchUp = call(ctx, 'pantryRemaining', []);
+      assert(catchUp['spinach'] === 500,
+        'pantryRemaining: catch-up logging a meal EATEN BEFORE the baseline does not deduct it (the physical count already reflected it)', 'got ' + catchUp['spinach']);
+
+      // (b3) EDITING an old meal re-stamps its `u` to now (log.js:upsertLogEntry does this
+      // so sync sees the edit as newer). That must NOT drag a pre-baseline meal's whole
+      // ingredient list into today's pantry — the food still left the shelf back then.
+      run(ctx, "logHistory['2026-07-05'].elena[0].u = Date.now();");
+      const afterEdit = call(ctx, 'pantryRemaining', []);
+      assert(afterEdit['spinach'] === 500,
+        'pantryRemaining: bumping a pre-baseline entry\'s `u` (an edit/swap) does not retroactively deduct it', 'got ' + afterEdit['spinach']);
+    } finally {
+      run(ctx, "delete RECIPES_DB['" + FIXTURE_ID + "'];");
+    }
+
+    // (c) never negative: consumption can exceed the stored baseline (e.g. a baseline that
+    // was already stale) — pantryRemaining() must floor at 0, not go negative.
+    (function(){
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['eggs'] = {qty: 1, setAt: " + AT(2026, 7, 5, 0, 0) + ", u: 1};");
+      call(ctx, 'logFoodEntry', ['2026-07-06', 'elena', 'eggs', 1000]); // 20 pieces, way over baseline
+      const remaining = call(ctx, 'pantryRemaining', []);
+      assert(remaining['eggs'] === 0, 'pantryRemaining: floors at 0, never negative', 'got ' + remaining['eggs']);
+    })();
+
+    // (d) each food uses its OWN setAt as the consumption origin, never a single shared/
+    // global timestamp. Spinach was re-baselined on the 10th (a later shop) while eggs'
+    // baseline dates from the 1st. A spinach meal eaten on the 8th falls BEFORE spinach's
+    // own baseline — already reflected in that count — so it must not be deducted, even
+    // though it is after eggs' baseline. A (wrong) shared-minimum-timestamp implementation
+    // would count it.
+    (function(){
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['eggs'] = {qty: 10, setAt: " + AT(2026, 7, 1, 0, 0) + ", u: 1};");
+      run(ctx, "pantry['spinach'] = {qty: 500, setAt: " + AT(2026, 7, 10, 8, 0) + ", u: 1};");
+      run(ctx, "logHistory['2026-07-08'] = {elena: [{kind: 'food', ref: 'spinach', grams: 200, id: 'a', kcal: 1, protein: 1, carbs: 1, fat: 1, satFat: 1, fiber: 1, sugars: 0, freeSugars: 0, t: '10:00', u: 2000}], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}, tomb: {elena: [], partner: []}};");
+      const remaining = call(ctx, 'pantryRemaining', []);
+      assert(remaining['spinach'] === 500,
+        'pantryRemaining: each food consumes from its OWN setAt — a spinach meal on the 8th is excluded from a spinach baseline set on the 10th, even though it is after eggs\' baseline', 'got ' + remaining['spinach']);
+      assert(remaining['eggs'] === 10, 'sanity: eggs baseline is unaffected (no eggs consumption was logged)', 'got ' + remaining['eggs']);
+    })();
+
+    // (d2) the same spinach meal, now eaten AFTER its baseline, IS deducted — proving (d)
+    // excludes on the timeline rather than by ignoring that food's entries altogether.
+    (function(){
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['spinach'] = {qty: 500, setAt: " + AT(2026, 7, 7, 0, 0) + ", u: 1};");
+      run(ctx, "logHistory['2026-07-08'] = {elena: [{kind: 'food', ref: 'spinach', grams: 200, id: 'a', kcal: 1, protein: 1, carbs: 1, fat: 1, satFat: 1, fiber: 1, sugars: 0, freeSugars: 0, t: '10:00', u: 2000}], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}, tomb: {elena: [], partner: []}};");
+      const remaining = call(ctx, 'pantryRemaining', []);
+      assert(remaining['spinach'] === 300,
+        'pantryRemaining: a spinach meal on the 8th IS deducted from a baseline set on the 7th (500 - 200 = 300)', 'got ' + remaining['spinach']);
+    })();
+
+    // (e) retention bound pinned: LOG_HISTORY_RETENTION_DAYS (log.js) is 60 — a baseline
+    // older than that would over-report what's left once logHistory is pruned. Pinning this
+    // so nobody later assumes unlimited history (PANTRY-plan.md §2).
+    assert(get(ctx, 'LOG_HISTORY_RETENTION_DAYS') === 60,
+      'LOG_HISTORY_RETENTION_DAYS is pinned at 60 (pantryConsumedSince cannot see further back than logHistory retains)',
+      'got ' + get(ctx, 'LOG_HISTORY_RETENTION_DAYS'));
+  } finally {
+    run(ctx, 'pantry = ' + JSON.stringify(savedPantry) + '; logHistory = ' + JSON.stringify(savedLogHistory) + ';');
+  }
+}
+
+/* ===================================================================
+   PANTRY-plan.md P2: the re-baseline mutation path (js/library.js: setPantryRemaining()
+   and its direct-on-row callers) — the load-bearing rule from the plan's P2 step 4. Covers:
+   undo/delete restoring the remaining quantity with NO compensating write (the "derive,
+   don't mutate" payoff), and the critical re-baseline case itself: a manual downward
+   correction must show EXACTLY what was set, proving the pre-edit consumption is not
+   double-subtracted.
+   =================================================================== */
+function testPantryRebaselineMutationPath(ctx){
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  try{
+    // (a) undo/delete restores remaining with NO compensating write — logging consumes,
+    // removeLogEntryAt (the "Today so far" ✕) undoes it, and the pantry baseline entry
+    // itself must be byte-identical before and after (a pure derivation needs no write to
+    // "undo" anything; the undone entry is just absent from the next pantryRemaining() walk).
+    (function(){
+      const dateISO = '2026-07-10';
+      run(ctx, 'logHistory = {}; pantry = {};');
+      // Baseline predates the logged meal: consumption is filtered on when the food was
+      // EATEN (pantry.js:logEntryEatenAtMs), so a "now" setAt paired with a past log date
+      // would (correctly) exclude the meal and defeat the point of this case.
+      run(ctx, "pantry['eggs'] = {qty: 12, setAt: new Date(2026,6,9,0,0,0,0).getTime(), u: 1};");
+      call(ctx, 'logFoodEntry', [dateISO, 'elena', 'eggs', 100]); // consumes 2 pieces
+      let remaining = call(ctx, 'pantryRemaining', []);
+      assert(Math.abs(remaining['eggs'] - 10) < 1e-9, 'sanity: after logging, remaining = 12 - 2 = 10', 'got ' + remaining['eggs']);
+
+      const before = get(ctx, "pantry['eggs']");
+      call(ctx, 'removeLogEntryAt', [dateISO, 'elena', 0]); // undo the quick-add
+      remaining = call(ctx, 'pantryRemaining', []);
+      assert(Math.abs(remaining['eggs'] - 12) < 1e-9,
+        'pantryRemaining: undoing a log entry restores the FULL baseline (12) with no compensating write', 'got ' + remaining['eggs']);
+      const after = get(ctx, "pantry['eggs']");
+      assert(JSON.stringify(before) === JSON.stringify(after),
+        'undo makes NO write at all to the pantry baseline itself (pure derivation) — before=' + JSON.stringify(before) + ' after=' + JSON.stringify(after));
+    })();
+
+    // (b) THE re-baseline test: log consumption against a food, then manually correct it
+    // DOWN via setPantryRemaining (the row's typed "set-exact" / decrease path) — the
+    // displayed remaining must equal EXACTLY what was set, proving setAt was re-stamped
+    // atomically with qty (a stale setAt would double-subtract the pre-edit consumption and
+    // show LESS than what was just typed).
+    (function(){
+      // The pre-correction baseline/consumption use small EXPLICIT timestamps (not
+      // Date.now()) precisely so the assertion below can't collide with setPantryRemaining's
+      // own real Date.now()-based setAt a few statements later — two real Date.now() calls
+      // executed back-to-back in a synchronous test can legitimately land in the same
+      // millisecond, which would make this test flaky rather than proving anything.
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['spinach'] = {qty: 500, setAt: 1000, u: 1000};");
+      run(ctx, "logHistory['2026-07-07'] = {elena: [{kind: 'food', ref: 'spinach', grams: 150, id: 'a', kcal: 1, protein: 1, carbs: 1, fat: 1, satFat: 1, fiber: 1, sugars: 0, freeSugars: 0, t: '10:00', u: 5000}], partner: [], targets: {elena: null, partner: null}, skipped: {elena: {}, partner: {}}, tomb: {elena: [], partner: []}};"); // consumes 150g at u=5000 (>= setAt=1000)
+      let remaining = call(ctx, 'pantryRemaining', []);
+      assert(Math.abs(remaining['spinach'] - 350) < 1e-9, 'sanity: before the correction, remaining = 500 - 150 = 350', 'got ' + remaining['spinach']);
+
+      const beforeCorrection = Date.now();
+      call(ctx, 'setPantryRemaining', ['spinach', 100]); // user corrects down to 100 — re-baselines with a real (large) Date.now(), guaranteed well past the u:5000 fixture entry above
+      remaining = call(ctx, 'pantryRemaining', []);
+      assert(remaining['spinach'] === 100,
+        'RE-BASELINE: remaining equals EXACTLY what the user set (100) — the pre-edit consumption is not double-subtracted', 'got ' + remaining['spinach']);
+      const entry = get(ctx, "pantry['spinach']");
+      assert(entry.qty === 100, 'setPantryRemaining: stores the new qty verbatim', JSON.stringify(entry));
+      assert(typeof entry.setAt === 'number' && entry.setAt >= beforeCorrection,
+        'setPantryRemaining: re-stamps setAt to NOW (fresh depletion origin), not left at the old value', JSON.stringify(entry));
+      assert(typeof entry.u === 'number' && entry.u >= beforeCorrection,
+        'setPantryRemaining: re-stamps a fresh sync `u` too (so the correction propagates through couple sync)', JSON.stringify(entry));
+    })();
+
+    // (c) remove -> setPantryRemaining(id, 0) writes a proper fresh-`u` tombstone that
+    // mergePantrySection (js/sync.js, already covered end-to-end by the P1 merge tests)
+    // treats as a delete beating an older non-zero remote copy — an integration check that
+    // MY mutator (not just the merge function in isolation) produces a mergeable tombstone.
+    (function(){
+      run(ctx, 'pantry = {};');
+      run(ctx, "pantry['milk'] = {qty: 500, setAt: 1000, u: 1000};");
+      call(ctx, 'setPantryRemaining', ['milk', 0]); // the row's "remove" action
+      const localEntry = get(ctx, "pantry['milk']");
+      assert(localEntry.qty === 0 && typeof localEntry.u === 'number' && localEntry.u > 1000,
+        'setPantryRemaining(id, 0): produces a qty:0 tombstone with a fresh `u`', JSON.stringify(localEntry));
+      const merged = call(ctx, 'mergePantrySection', [{pantry: {milk: localEntry}}, {pantry: {milk: {qty: 500, setAt: 1000, u: 1000}}}]);
+      assert(merged.pantry.milk.qty === 0,
+        'mergePantrySection: the tombstone from setPantryRemaining beats an older non-zero remote copy (not resurrected)', JSON.stringify(merged.pantry.milk));
+    })();
+  } finally {
+    run(ctx, 'pantry = ' + JSON.stringify(savedPantry) + '; logHistory = ' + JSON.stringify(savedLogHistory) + ';');
+  }
+}
+
+/* ===================================================================
    task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
    (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
    recipes, 2 role:'sauce' recipes), butter-chicken season fix.
@@ -4720,6 +4927,8 @@ function main(){
   runTest('mergePantrySection: tie-break converges (PANTRY-plan.md P1)', function(){ testMergePantrySectionTieBreakConverges(ctx); });
   runTest('pantry load-validation (PANTRY-plan.md P1)', function(){ testPantryLoadValidation(ctx); });
   runTest('validateBackupStructure: pantry field (PANTRY-plan.md P1)', function(){ testValidateBackupStructurePantry(ctx); });
+  runTest('pantryConsumedSince/pantryRemaining derivation (PANTRY-plan.md P2)', function(){ testPantryConsumedSinceAndRemaining(ctx); });
+  runTest('pantry re-baseline mutation path (PANTRY-plan.md P2)', function(){ testPantryRebaselineMutationPath(ctx); });
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });

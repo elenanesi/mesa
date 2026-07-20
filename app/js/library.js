@@ -426,6 +426,7 @@ function renderLibraryHub(){
     '<div style="margin-top:10px">'
     + '<div class="altrow" onclick="openFoodLibrary()"><div class="ae">🧺</div><div class="at"><div class="an">Ingredients</div><div class="ad">Browse, edit or add foods</div></div></div>'
     + '<div class="altrow" onclick="openMyRecipes()"><div class="ae">📖</div><div class="at"><div class="an">Recipes</div><div class="ad">Browse, edit or add recipes</div></div></div>'
+    + '<div class="altrow" onclick="openPantryLibrary()"><div class="ae">🥫</div><div class="at"><div class="an">Pantry</div><div class="ad">Track what you already have at home</div></div></div>'
     + '<div class="altrow" onclick="openBarcodeScanner(true)"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Add packaged products sold in Italy</div></div></div>'
     + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">＋</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food from macros</div></div></div>'
     + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">✎</div><div class="at"><div class="an">New recipe</div><div class="ad">Build from ingredients and meal slots</div></div></div>'
@@ -450,6 +451,7 @@ function setLibraryScreenHtml(screenId, bodyId, html){
 function setIngredientsScreenHtml(html){ return setLibraryScreenHtml('libraryIngredients', 'libraryIngredientsBody', html); }
 function setRecipesScreenHtml(html){ return setLibraryScreenHtml('libraryRecipes', 'libraryRecipesBody', html); }
 function setScannerScreenHtml(html){ return setLibraryScreenHtml('libraryScanner', 'libraryScannerBody', html); }
+function setPantryScreenHtml(html){ return setLibraryScreenHtml('libraryPantry', 'libraryPantryBody', html); }
 
 function openFoodLibrary(){
   libFoodQuery = '';
@@ -1538,6 +1540,298 @@ function attachFoodDetailHandler(){
     else if(act === 'reset'){ resetFoodOverride(id); openFoodDetail(id); }
     else if(act === 'delete') deleteCustomFood(id);
   };
+}
+
+/* ===================================================================
+   FEATURE (PANTRY-plan.md P2) — Pantry page
+
+   The Pantry page shows pantryRemaining() (js/pantry.js — pure derivation from the
+   `pantry` baseline + logHistory) and lets Elena/Andrea correct it. Every user-initiated
+   change funnels through ONE mutator, setPantryRemaining() below — the load-bearing rule
+   from the plan's P2 step 4: it writes qty AND a fresh setAt/u atomically, always, so a
+   correction never leaves the depletion-origin stale (which would double-subtract
+   consumption that already happened and show less than what was just set). Decrease and
+   remove sit directly on each row (not behind a sheet, per the plan); the add flow is a
+   sheet, same shape as render.js's quick-add-food search (openFoodSearch/buildFoodSearchSheet),
+   reusing its searchFoods() helper rather than re-implementing food search.
+   =================================================================== */
+let libPantryQuery = '';
+
+// The ONE re-baselining mutator every pantry edit path calls — increase (via the add
+// flow), decrease, set-exact (typed row correction), and remove (qty 0) alike. Pure data
+// mutation + persist(): no DOM, no toast, so it's directly unit-testable (tools/check.js)
+// independent of the UI wrappers below that call it.
+//
+// Why setAt MUST be re-stamped in the SAME assignment as qty (not a separate write):
+// pantryRemaining() (js/pantry.js) = qty - pantryConsumedSince(setAt). If qty changed but
+// setAt stayed at its old value, whatever was consumed since that OLD setAt would be
+// subtracted a SECOND time on the next render, showing less than the user just set — an
+// obvious-looking bug with a non-obvious cause (PANTRY-plan.md §3 P2 step 4). Re-basing
+// setAt to now resets that consumption window to zero, so what was just set is exactly
+// what renders next.
+//
+// Remove is qty:0 through this exact same path — never `delete pantry[foodId]` — so the
+// fresh `u` makes it a proper tombstone (js/sync.js:mergePantrySection) that propagates the
+// delete through couple sync instead of a stale remote copy resurrecting the item.
+function setPantryRemaining(foodId, newQty){
+  if(!FOODS[foodId]) return;
+  const qty = (typeof newQty === 'number' && isFinite(newQty) && newQty > 0) ? newQty : 0;
+  const now = Date.now();
+  pantry[foodId] = {qty: qty, setAt: now, u: now};
+  persist();
+}
+
+// Q3 (plan §4): age hint only — no expiry/decay modeling (inventing shelf-life rates would
+// violate "computed, never typed in"). Deliberately paired with the row's direct
+// decrease/remove controls: instead of Mesa guessing when food went off, it shows how old
+// the NUMBER is and makes correcting it one tap away.
+function pantryAgeHint(setAtMs){
+  if(typeof setAtMs !== 'number' || !isFinite(setAtMs) || setAtMs <= 0) return '';
+  const days = Math.floor(Math.max(0, Date.now() - setAtMs) / 86400000);
+  if(days <= 0) return 'set today';
+  if(days === 1) return 'set 1 day ago';
+  return 'set ' + days + ' days ago';
+}
+
+function openPantryLibrary(){
+  libPantryQuery = '';
+  renderPantryLibraryList();
+}
+
+function renderPantryLibraryList(){
+  setPantryScreenHtml(buildPantryLibrarySheet());
+  attachPantryListHandler();
+}
+
+// Replaces just the row list (not the search box or its focus/caret) — same targeted-
+// refresh convention as onLibFoodSearchInput/rerenderLibFoodFilteredView, used after every
+// row-level mutation (decrease/remove/typed correction/add) so the still-open page reflects
+// the new remaining quantities without losing whatever the user was doing in the search bar.
+function refreshPantryList(){
+  const el = document.getElementById('libPantryList');
+  if(el) el.innerHTML = renderPantryListMarkup(libPantryQuery);
+}
+
+function buildPantryLibrarySheet(){
+  return '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Pantry</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
+    + '<p class="sub" style="margin-top:6px">What you already have at home — Mesa subtracts what gets logged automatically.</p>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libPantrySearchInput" placeholder="Search your pantry…" value="' + htmlAttr(libPantryQuery) + '" oninput="onLibPantrySearchInput(this.value)" autocomplete="off">'
+    + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openPantryAddSheet()">＋ Add to pantry</button>'
+    + '<div id="libPantryList" style="margin-top:4px">' + renderPantryListMarkup(libPantryQuery) + '</div>';
+}
+
+// foodId can be a user-authored 'cf-<slug>' (custom food), so — same convention as the
+// Ingredients list (renderLibFoodListMarkup) — it only ever rides in data-food-id
+// attributes, read back by attachPantryListHandler's delegation, never inline-onclick
+// string-interpolated. qty:0 stored entries (setPantryRemaining's remove/tombstone shape)
+// are filtered out here: they must never render as "in stock".
+function renderPantryListMarkup(query){
+  const q = (query || '').trim().toLowerCase();
+  const remaining = pantryRemaining();
+  const stockedIds = Object.keys(pantry).filter(function(id){ return pantry[id] && pantry[id].qty > 0 && !!FOODS[id]; });
+  const ids = stockedIds
+    .filter(function(id){ return !q || FOODS[id].name.toLowerCase().indexOf(q) !== -1; })
+    .sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : (FOODS[a].name > FOODS[b].name ? 1 : 0); });
+
+  if(!ids.length){
+    return '<p class="sub" style="margin-top:10px">' + (stockedIds.length ? 'No items match your search.' : 'Nothing in your pantry yet — tap “Add to pantry” to get started.') + '</p>';
+  }
+
+  return ids.map(function(id){
+    const food = FOODS[id];
+    const entry = pantry[id];
+    const remain = Math.max(0, remaining[id] || 0);
+    const unit = food.unit === 'piece' ? '' : food.unit;
+    const displayVal = food.unit === 'piece' ? +(remain.toFixed(2)) : Math.round(remain);
+    return '<div class="altrow" data-food-id="' + htmlAttr(id) + '" style="cursor:default">'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(food.name) + '</div>'
+      + '<div class="ad">' + escapeHtml(pantryAgeHint(entry.setAt)) + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:6px;flex:0 0 auto">'
+      + '<button class="lib-edit" data-act="dec" aria-label="Decrease ' + htmlAttr(food.name) + '">–</button>'
+      + '<input class="pantry-qty-input" type="text" inputmode="decimal" value="' + displayVal + '" aria-label="Remaining ' + htmlAttr(food.name) + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" style="font-size:16px;width:3.4em;height:44px;text-align:center;border:1px solid var(--line);border-radius:10px;box-sizing:border-box;padding:0 2px">'
+      + (unit ? '<span class="sv-unit" style="margin-left:-2px">' + unit + '</span>' : '')
+      + '<button class="lib-del" data-act="remove" aria-label="Remove ' + htmlAttr(food.name) + '">✕</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+function onLibPantrySearchInput(v){
+  libPantryQuery = v;
+  refreshPantryList();
+}
+
+// #libPantryList itself is only recreated by renderPantryLibraryList (full-page paint);
+// search (onLibPantrySearchInput) and row mutations (refreshPantryList) replace its
+// CHILDREN only, so one attach survives them — same non-accumulating pattern as
+// attachLibFoodListHandler. `blur` doesn't bubble, so the typeable qty input's commit is
+// caught on `focusout` (which does) rather than delegated `click`.
+function attachPantryListHandler(){
+  const el = document.getElementById('libPantryList');
+  if(!el) return;
+  el.onclick = function(e){
+    const btn = e.target.closest('button[data-act]');
+    if(!btn || !el.contains(btn)) return;
+    const row = btn.closest('.altrow[data-food-id]');
+    if(!row) return;
+    const id = row.getAttribute('data-food-id');
+    const act = btn.getAttribute('data-act');
+    if(act === 'dec') decreasePantryItem(id);
+    else if(act === 'remove') removePantryItem(id);
+  };
+  el.onfocusout = function(e){
+    const input = e.target.closest('.pantry-qty-input');
+    if(!input || !el.contains(input)) return;
+    const row = input.closest('.altrow[data-food-id]');
+    if(!row) return;
+    commitPantryQtyInput(row.getAttribute('data-food-id'), input.value);
+  };
+}
+
+// Direct-on-row decrease (plan: "not behind a sheet"). Step mirrors render.js's quick-add
+// grams stepper granularity (stepQuickAddGrams's 10) for gram/ml foods; whole pieces for
+// unit:'piece' foods. Floored at 0 by setPantryRemaining itself.
+function decreasePantryItem(foodId){
+  const food = FOODS[foodId];
+  if(!food) return;
+  const current = pantryRemaining()[foodId] || 0;
+  const step = food.unit === 'piece' ? 1 : 10;
+  setPantryRemaining(foodId, current - step);
+  refreshPantryList();
+}
+
+// Direct-on-row remove (plan: "not behind a sheet") — qty 0 through the same re-baselining
+// mutator, so it writes a proper fresh-`u` tombstone rather than a stale-`u` one a concurrent
+// remote edit could beat in mergePantrySection.
+function removePantryItem(foodId){
+  const food = FOODS[foodId];
+  setPantryRemaining(foodId, 0);
+  toast('Removed' + (food ? ' ' + food.name : '') + ' from pantry');
+  refreshPantryList();
+}
+
+// Typed "set-exact" correction — the row's qty input doubles as both the at-a-glance
+// number and the direct-edit field (FIX 2's typeable-everywhere convention). Invalid/empty
+// text reverts to the real stored value with a toast, same convention as
+// commitQuickAddGrams/commitRecipeIngredientGrams.
+function commitPantryQtyInput(foodId, raw){
+  const food = FOODS[foodId];
+  if(!food) return;
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){
+    toast('Enter an amount, e.g. 250');
+    refreshPantryList();
+    return;
+  }
+  setPantryRemaining(foodId, n);
+  refreshPantryList();
+}
+
+/* ---------------- add to pantry (search + quantity, sheet flow) ----------------
+   Same shape as render.js's quick-add-food sheet (openFoodSearch/buildFoodSearchSheet/
+   selectQuickAddFood/buildGramsStepperSheet) — reuses its searchFoods() helper rather than
+   re-implementing food search. Unlike quick-add (which LOGS a food), confirming here calls
+   setPantryRemaining with current-remaining + typed amount: "Add to pantry" always means
+   "I got more of this", stacking onto whatever's already left rather than replacing it. */
+let pantryAdd = {query: '', selectedId: null, qty: 0};
+
+function openPantryAddSheet(){
+  pantryAdd = {query: '', selectedId: null, qty: 0};
+  document.getElementById('sheetBody').innerHTML = buildPantryAddSearchSheet();
+  const sheetBody = document.getElementById('sheetBody');
+  sheetBody.onclick = function(e){
+    const row = e.target.closest('.altrow[data-food-id]');
+    if(!row || !sheetBody.contains(row)) return;
+    selectPantryAddFood(row.getAttribute('data-food-id'));
+  };
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  // Explicit picker flow, opened by an intentional tap — README's "no auto-focus" rule is
+  // for top-level landing-page searches (like this page's own #libPantrySearchInput above,
+  // which does NOT auto-focus); auto-focus stays correct here, same as openFoodSearch's.
+  const input = document.getElementById('pantryAddSearchInput');
+  if(input) input.focus();
+}
+
+function buildPantryAddSearchSheet(){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add to pantry</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="pantryAddSearchInput" placeholder="Search foods… (e.g. flour)" value="' + htmlAttr(pantryAdd.query) + '" oninput="onPantryAddSearchInput(this.value)" autocomplete="off"></div>'
+    + '<div id="pantryAddResults">' + renderPantryAddResults() + '</div>';
+}
+
+function renderPantryAddResults(){
+  const q = pantryAdd.query.trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
+  const ids = searchFoods(q); // render.js — same substring match the quick-add sheet uses
+  if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + escapeHtml(q) + '”.</p>';
+  const remaining = pantryRemaining();
+  return ids.map(function(id){
+    const f = FOODS[id];
+    const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
+    const already = remaining[id];
+    const stockNote = already ? ' <span class="pill mini gold">' + fmtShopQty(already, f.unit === 'piece' ? '' : f.unit) + (f.unit === 'piece' ? '' : ' ' + f.unit) + ' in stock</span>' : '';
+    return '<div class="altrow" data-food-id="' + htmlAttr(id) + '">'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(f.name) + stockNote + '</div>'
+      + '<div class="ad">per ' + per + '</div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function onPantryAddSearchInput(value){
+  pantryAdd.query = value;
+  const el = document.getElementById('pantryAddResults');
+  if(el) el.innerHTML = renderPantryAddResults();
+}
+
+function selectPantryAddFood(id){
+  if(!FOODS[id]) return;
+  pantryAdd.selectedId = id;
+  pantryAdd.qty = FOODS[id].unit === 'piece' ? 1 : 100;
+  document.getElementById('sheetBody').innerHTML = buildPantryAddQtySheet();
+}
+
+function stepPantryAddQty(delta){
+  pantryAdd.qty = Math.max(0, pantryAdd.qty + delta);
+  document.getElementById('sheetBody').innerHTML = buildPantryAddQtySheet();
+}
+
+function commitPantryAddQty(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter an amount, e.g. 250'); document.getElementById('sheetBody').innerHTML = buildPantryAddQtySheet(); return; }
+  pantryAdd.qty = n;
+  document.getElementById('sheetBody').innerHTML = buildPantryAddQtySheet();
+}
+
+function buildPantryAddQtySheet(){
+  const food = FOODS[pantryAdd.selectedId];
+  if(!food) return buildPantryAddSearchSheet();
+  const unitLabel = food.unit === 'piece' ? (pantryAdd.qty === 1 ? 'piece' : 'pieces') : food.unit;
+  const step = food.unit === 'piece' ? 1 : 50;
+  const already = pantryRemaining()[pantryAdd.selectedId] || 0;
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(food.name) + '</h2><button class="backbtn" style="margin:0" onclick="openPantryAddSheet()">‹ Back</button></div>'
+    + (already > 0 ? '<p class="sub" style="margin-top:6px">Already have ' + fmtShopQty(already, food.unit === 'piece' ? '' : food.unit) + (food.unit === 'piece' ? '' : ' ' + food.unit) + ' — this adds to it.</p>' : '')
+    + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
+    + '<div class="sv-name">Amount to add</div>'
+    + '<div class="sv-stepper"><button onclick="stepPantryAddQty(-' + step + ')" aria-label="Decrease amount">–</button>'
+    + '<input class="sv-val" type="text" inputmode="decimal" value="' + pantryAdd.qty + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitPantryAddQty(this.value)" aria-label="Amount">'
+    + '<span class="sv-unit">' + unitLabel + '</span>'
+    + '<button onclick="stepPantryAddQty(' + step + ')" aria-label="Increase amount">+</button></div></div></div>'
+    + '<button class="cta" onclick="confirmPantryAdd()">Add to pantry</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+function confirmPantryAdd(){
+  const food = FOODS[pantryAdd.selectedId];
+  if(!food || !(pantryAdd.qty > 0)){ toast('Enter an amount above 0'); return; }
+  const current = pantryRemaining()[pantryAdd.selectedId] || 0;
+  const unitSuffix = food.unit === 'piece' ? '' : (' ' + food.unit);
+  setPantryRemaining(pantryAdd.selectedId, current + pantryAdd.qty);
+  toast('✓ Added ' + fmtShopQty(pantryAdd.qty, food.unit === 'piece' ? '' : food.unit) + unitSuffix + ' ' + food.name);
+  closeSheet();
+  pantryAdd = {query: '', selectedId: null, qty: 0};
+  refreshPantryList();
 }
 
 /* ===================================================================
