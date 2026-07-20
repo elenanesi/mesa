@@ -372,6 +372,60 @@ function testFoodMacrosLinearity(ctx){
     'fields failing: ' + bad.join(', '));
 }
 
+/* ---------------- "Add to pantry" on ingredient cards ----------------
+   The button lives on both ingredient surfaces (the Library > Ingredients rows and the
+   ingredient detail page) and routes through openPantryAddForFood(), which reuses P2's
+   selectPantryAddFood/confirmPantryAdd quantity flow. openPantryAddForFood itself can't be
+   called here (it paints #sheetBody, and this harness's getElementById always returns
+   null — see the file header), so the wiring is asserted the same way the C1 render-funnel
+   guards do it: over the real source text. */
+function testAddToPantryOnIngredientCards(ctx){
+  const listHtml = call(ctx, 'renderLibFoodListMarkup', ['']);
+  const rowCount = (listHtml.match(/class="altrow" data-food-id=/g) || []).length;
+  const pantryBtnCount = (listHtml.match(/data-act="pantry"/g) || []).length;
+  assert(rowCount > 0, 'setup: the ingredients list rendered at least one row', 'rows=' + rowCount);
+  assert(pantryBtnCount === rowCount,
+    'renderLibFoodListMarkup: every ingredient row offers Add to pantry (one button per row, regardless of built-in/custom)',
+    'rows=' + rowCount + ' pantryButtons=' + pantryBtnCount);
+
+  // Regression guard of the same class the README calls out for recipe rows: the row BODY
+  // must still open the ingredient detail. A new action button must not swallow the row tap.
+  const listSrc = fs.readFileSync(path.join(APP_DIR, 'js/library.js'), 'utf8');
+  const handler = /function attachLibFoodListHandler\(\)\{[\s\S]*?\n\}/.exec(listSrc);
+  assert(!!handler, 'setup: attachLibFoodListHandler() found in library.js');
+  assert(/openFoodDetail\(row\.getAttribute\('data-food-id'\)\)/.test(handler[0]),
+    'attachLibFoodListHandler: tapping the row body still opens the ingredient detail page');
+  assert(/act === 'pantry'\) openPantryAddForFood\(id\)/.test(handler[0]),
+    'attachLibFoodListHandler: the pantry button is routed (a data-act with no branch renders a dead button)');
+
+  const detailHandler = /function attachFoodDetailHandler\(\)\{[\s\S]*?\n\}/.exec(listSrc);
+  assert(!!detailHandler, 'setup: attachFoodDetailHandler() found in library.js');
+  assert(/act === 'pantry'\) openPantryAddForFood\(id\)/.test(detailHandler[0]),
+    'attachFoodDetailHandler: the detail page pantry button is routed');
+
+  // The whole point of openPantryAddForFood is that it REUSES the one quantity flow. If a
+  // future edit gives it its own setPantryRemaining call, the app grows a second notion of
+  // "how much" and a second place that must honour the re-baselining rule.
+  const opener = /function openPantryAddForFood\(foodId\)\{[\s\S]*?\n\}/.exec(listSrc);
+  assert(!!opener, 'setup: openPantryAddForFood() found in library.js');
+  assert(/selectPantryAddFood\(foodId\)/.test(opener[0]),
+    'openPantryAddForFood: delegates to selectPantryAddFood — one quantity-entry path, not a private shortcut');
+  assert(opener[0].indexOf('setPantryRemaining') === -1,
+    'openPantryAddForFood: does NOT write the pantry directly — it must go through confirmPantryAdd/setPantryRemaining\'s re-baselining path', opener[0]);
+
+  // fmtShopQty already appends the unit ("100 g"), so a call site that ALSO appends
+  // food.unit renders "100 g g" — which shipped in P2's add toast, its "Already have …"
+  // note and the picker's in-stock pill, and was only caught by looking at the screen.
+  // fmtPantryQty is the single formatter; assert both that it is correct and that no call
+  // site re-appends the unit around it.
+  assert(call(ctx, 'fmtPantryQty', [100, get(ctx, "FOODS['apples']")]) === '100 g',
+    'fmtPantryQty: a gram food formats once, not "100 g g"', call(ctx, 'fmtPantryQty', [100, get(ctx, "FOODS['apples']")]));
+  assert(call(ctx, 'fmtPantryQty', [2, get(ctx, "FOODS['eggs']")]) === '2',
+    'fmtPantryQty: a piece food formats as a bare count', call(ctx, 'fmtPantryQty', [2, get(ctx, "FOODS['eggs']")]));
+  assert(!/fmtPantryQty\([^)]*\)\s*\+\s*\(?[a-z]*\.?unit/.test(listSrc),
+    'no pantry call site re-appends the unit around fmtPantryQty (the "100 g g" bug)');
+}
+
 /* ---------------- ingredient detail page (task C4): buildFoodDetailMarkup() ----------------
    library.js's buildFoodDetailMarkup(id) is the pure HTML-string builder behind
    openFoodDetail() — it reads the live merged FOODS[id] record (overrides applied) and
@@ -393,6 +447,14 @@ function testFoodDetailMarkup(ctx){
   assert(hostileHtml.indexOf('data-act="reset"') === -1, 'buildFoodDetailMarkup: custom (non-override) food shows no Reset action', hostileHtml);
   run(ctx, "delete customFoods['cf-detail-hostile-test'];");
   call(ctx, 'applyCustomFoods', []);
+
+  // 1b) "Add to pantry" is offered on EVERY ingredient, built-in or custom — unlike
+  // edit/reset/delete it does not depend on provenance. The button carries data-act="pantry"
+  // so attachFoodDetailHandler's delegation routes it; a missing verb would render a dead
+  // button rather than an obvious error.
+  const pantryDetailHtml = call(ctx, 'buildFoodDetailMarkup', ['eggs']);
+  assert(pantryDetailHtml.indexOf('data-act="pantry"') !== -1,
+    'buildFoodDetailMarkup: every ingredient detail offers an Add to pantry action', pantryDetailHtml);
 
   // 2) Per-piece food (eggs) shows the per-piece basis with avgG.
   const eggsHtml = call(ctx, 'buildFoodDetailMarkup', ['eggs']);
@@ -5170,6 +5232,7 @@ function main(){
   runTest('nutrition perServing non-numeric fields', function(){ testNutritionPerServingNonNumericFields(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
+  runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });

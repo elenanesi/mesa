@@ -488,7 +488,8 @@ function attachLibFoodListHandler(){
       if(!row) return;
       const id = row.getAttribute('data-food-id');
       const act = btn.getAttribute('data-act');
-      if(act === 'edit') openEditFoodForm(id);
+      if(act === 'pantry') openPantryAddForFood(id);
+      else if(act === 'edit') openEditFoodForm(id);
       else if(act === 'reset') resetFoodOverride(id);
       else if(act === 'delete') deleteCustomFood(id);
       return;
@@ -1088,9 +1089,17 @@ function renderLibFoodListMarkup(query){
         + '<div class="ae">' + foodIconHtml(id) + '</div>'
         + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + ' <span class="pill mini">' + sugarQualityLabel(f.sugarQuality) + '</span></div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
+        // Actions stack in one 44px column (.lib-food-actions) instead of sitting inline:
+        // a third inline button cost the text block 29% of its width. 🥫 matches the Library
+        // hub's Pantry row and leads the group deliberately — while browsing ingredients
+        // "I have this at home" is the frequent action, and putting it first keeps the
+        // destructive delete furthest from where a thumb lands.
+        + '<div class="lib-food-actions">'
+        + '<button class="lib-edit" data-act="pantry" aria-label="Add ' + htmlAttr(f.name) + ' to pantry">🥫</button>'
         + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(f.name) + '">✎</button>'
         + (isEdited ? '<button class="lib-del" data-act="reset" aria-label="Reset ' + htmlAttr(f.name) + '">↺</button>' : '')
         + (isCustom ? '<button class="lib-del" data-act="delete" aria-label="Delete ' + htmlAttr(f.name) + '">✕</button>' : '')
+        + '</div>'
         + '</div>';
     });
   });
@@ -1510,7 +1519,8 @@ function buildFoodDetailMarkup(id){
     + flagsHtml
     + foodDetailBarcodeSection(f)
     + srcLine
-    + '<button class="cta ghostbtn" style="margin-top:14px" data-act="edit">✎ Edit</button>'
+    + '<button class="cta" style="margin-top:14px" data-act="pantry">🥫 Add to pantry</button>'
+    + '<button class="cta ghostbtn" data-act="edit">✎ Edit</button>'
     + (isEdited ? '<button class="cta ghostbtn" data-act="reset">↺ Reset to default</button>' : '')
     + (isCustom ? '<button class="cta ghostbtn" data-act="delete">✕ Delete</button>' : '')
     + '</div>';
@@ -1536,7 +1546,8 @@ function attachFoodDetailHandler(){
     const id = libFoodDetailId;
     if(!id) return;
     const act = btn.getAttribute('data-act');
-    if(act === 'edit') openEditFoodForm(id);
+    if(act === 'pantry') openPantryAddForFood(id);
+    else if(act === 'edit') openEditFoodForm(id);
     else if(act === 'reset'){ resetFoodOverride(id); openFoodDetail(id); }
     else if(act === 'delete') deleteCustomFood(id);
   };
@@ -1754,6 +1765,32 @@ function openPantryAddSheet(){
   if(input) input.focus();
 }
 
+// Formats a pantry amount in a food's own basis. fmtShopQty (planner.js) ALREADY appends
+// the unit ("100 g"), so the three call sites that also appended `' ' + food.unit` rendered
+// "100 g g" — visible in the add toast, the "Already have …" note and the picker's in-stock
+// pill. One helper so a fourth call site can't reintroduce it. Piece foods pass '' to
+// fmtShopQty and get a bare count ("2"), which reads correctly next to the food name.
+function fmtPantryQty(qty, food){
+  return fmtShopQty(qty, food.unit === 'piece' ? '' : food.unit);
+}
+
+// Jumps straight to the quantity step for ONE known food, skipping openPantryAddSheet's
+// search — the caller (an Ingredients row's 🥫 button, or the ingredient detail page)
+// already knows which food. Deliberately reuses selectPantryAddFood + confirmPantryAdd
+// rather than adding a shortcut of its own, so there stays exactly ONE place that decides
+// the default amount, one that adds on top of existing stock, and one that writes through
+// setPantryRemaining's re-baselining rule (PANTRY-plan.md §3 P2 step 4).
+// `direct` marks this entry point so the quantity sheet's back button closes instead of
+// dropping the user into a food search they never asked for.
+function openPantryAddForFood(foodId){
+  if(!FOODS[foodId]){ toast('Ingredient not found'); return; }
+  pantryAdd = {query: '', selectedId: null, qty: 0, direct: true};
+  selectPantryAddFood(foodId); // sets the per-unit default qty and paints the qty sheet
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
 function buildPantryAddSearchSheet(){
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add to pantry</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="pantryAddSearchInput" placeholder="Search foods… (e.g. flour)" value="' + htmlAttr(pantryAdd.query) + '" oninput="onPantryAddSearchInput(this.value)" autocomplete="off"></div>'
@@ -1770,7 +1807,7 @@ function renderPantryAddResults(){
     const f = FOODS[id];
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     const already = remaining[id];
-    const stockNote = already ? ' <span class="pill mini gold">' + fmtShopQty(already, f.unit === 'piece' ? '' : f.unit) + (f.unit === 'piece' ? '' : ' ' + f.unit) + ' in stock</span>' : '';
+    const stockNote = already ? ' <span class="pill mini gold">' + fmtPantryQty(already, f) + ' in stock</span>' : '';
     return '<div class="altrow" data-food-id="' + htmlAttr(id) + '">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + stockNote + '</div>'
@@ -1810,8 +1847,14 @@ function buildPantryAddQtySheet(){
   const unitLabel = food.unit === 'piece' ? (pantryAdd.qty === 1 ? 'piece' : 'pieces') : food.unit;
   const step = food.unit === 'piece' ? 1 : 50;
   const already = pantryRemaining()[pantryAdd.selectedId] || 0;
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(food.name) + '</h2><button class="backbtn" style="margin:0" onclick="openPantryAddSheet()">‹ Back</button></div>'
-    + (already > 0 ? '<p class="sub" style="margin-top:6px">Already have ' + fmtShopQty(already, food.unit === 'piece' ? '' : food.unit) + (food.unit === 'piece' ? '' : ' ' + food.unit) + ' — this adds to it.</p>' : '')
+  // Opened straight from an ingredient card (openPantryAddForFood) there is no search step
+  // behind this sheet, so "‹ Back" would drop the user into a food search they never asked
+  // for — close instead.
+  const backBtn = pantryAdd.direct
+    ? '<button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button>'
+    : '<button class="backbtn" style="margin:0" onclick="openPantryAddSheet()">‹ Back</button>';
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(food.name) + '</h2>' + backBtn + '</div>'
+    + (already > 0 ? '<p class="sub" style="margin-top:6px">Already have ' + fmtPantryQty(already, food) + ' — this adds to it.</p>' : '')
     + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">Amount to add</div>'
     + '<div class="sv-stepper"><button onclick="stepPantryAddQty(-' + step + ')" aria-label="Decrease amount">–</button>'
@@ -1826,9 +1869,8 @@ function confirmPantryAdd(){
   const food = FOODS[pantryAdd.selectedId];
   if(!food || !(pantryAdd.qty > 0)){ toast('Enter an amount above 0'); return; }
   const current = pantryRemaining()[pantryAdd.selectedId] || 0;
-  const unitSuffix = food.unit === 'piece' ? '' : (' ' + food.unit);
   setPantryRemaining(pantryAdd.selectedId, current + pantryAdd.qty);
-  toast('✓ Added ' + fmtShopQty(pantryAdd.qty, food.unit === 'piece' ? '' : food.unit) + unitSuffix + ' ' + food.name);
+  toast('✓ Added ' + fmtPantryQty(pantryAdd.qty, food) + ' ' + food.name);
   closeSheet();
   pantryAdd = {query: '', selectedId: null, qty: 0};
   refreshPantryList();

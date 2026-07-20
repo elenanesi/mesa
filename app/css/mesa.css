@@ -164,6 +164,13 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .lib-edit{width:44px;height:44px;min-width:44px;flex:0 0 44px;border:0;border-radius:12px;background:var(--sage-tint);color:var(--sage-deep);font-size:17px;font-weight:700;cursor:pointer;}
 .lib-edit.is-pref{background:var(--terra-tint);color:#b25e35;}
 .lib-edit:active{transform:scale(.94);}
+/* Ingredient-row actions stack VERTICALLY in one 44px column rather than sitting side by
+   side. Adding "Add to pantry" as a third inline button cost the row's text block 56px of
+   its 195px (29%), pushing names onto two lines and adding 17px to every row — ~2,300px of
+   extra scrolling across the ingredient list. Stacking restores the text block to exactly
+   its pre-button 195px for +2px of row height, while keeping full 44px tap targets (unlike
+   .lib-recipe-actions below, which shrinks to 34px to fit four verbs). */
+.lib-food-actions{display:flex;flex-direction:column;gap:6px;flex:0 0 44px;align-self:center;}
 .lib-recipe-actions{display:grid;grid-template-columns:repeat(2,34px);grid-auto-rows:34px;gap:6px;flex:0 0 74px;align-self:center;}
 .lib-recipe-actions .lib-edit,.lib-recipe-actions .lib-del{width:34px;height:34px;min-width:34px;flex:0 0 34px;border-radius:10px;font-size:14px;padding:0;}
 .lib-recipe-actions .lib-del{font-size:13px;}
