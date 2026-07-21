@@ -74,6 +74,11 @@ function pantryConsumedSince(sinceMs){
       const arr = Array.isArray(day[personKey]) ? day[personKey] : [];
       arr.forEach(function(e){
         if(!e) return;
+        // FAVORITES-EATENOUT-plan.md item 3: eaten-out food (delivery/restaurant) was never
+        // taken from home stock, so it must not reduce pantryRemaining() — skip it here,
+        // the ONE behavioural change this feature makes (kcal/macros still count elsewhere,
+        // via logEntryNutrition, which never looks at this flag).
+        if(e.eatenOut === true) return;
         const eatenAt = logEntryEatenAtMs(dateISO, e);
         if(!isFinite(eatenAt) || eatenAt < sinceMs) return;
         if(e.kind === 'plan'){

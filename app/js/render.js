@@ -2428,12 +2428,18 @@ function renderTodaySoFar(){
   list.innerHTML = entries.map(function(row){
     const e = row.e;
     const removeBtn = '<button class="li-x" aria-label="Remove this entry" onclick="removeTodayEntry('+row.i+')">✕</button>';
+    // FAVORITES-EATENOUT-plan.md item 3: a per-row toggle for the eaten-out flag — kcal
+    // stays in the day total either way (logEntryNutrition doesn't look at it), the only
+    // effect is on pantryConsumedSince (pantry.js). The pill makes an eaten-out row read as
+    // such at a glance, since its absence from pantry depletion is otherwise invisible.
+    const outPill = e.eatenOut ? ' <span class="chip-computed">🍴 out</span>' : '';
+    const toggleBtn = '<button class="li-x" aria-label="'+(e.eatenOut ? 'Mark eaten at home' : 'Mark eaten out')+'" onclick="toggleTodayEntryEatenOut('+row.i+')">'+(e.eatenOut ? '🏠' : '🍴')+'</button>';
     if(e.kind === 'plan'){
       const r = RECIPES_DB[e.ref];
       const emoji = r ? r.emoji : '🍽️';
       const title = escapeHtml(logEntryTitleWithComponents(e));
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + (e.t ? ' · ' + e.t : ' · earlier today');
-      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+removeBtn+'</div>';
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+toggleBtn+removeBtn+'</div>';
     }
     const food = FOODS[e.ref];
     const name = escapeHtml(food ? food.name : 'Food');
@@ -2443,8 +2449,22 @@ function renderTodaySoFar(){
       amount = count + 'x';
     }
     const label = (e.ref === 'espresso-unsweetened' || e.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + amount + (e.t ? ' · ' + e.t : '');
-    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+removeBtn+'</div>';
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+toggleBtn+removeBtn+'</div>';
   }).join('');
+}
+
+// FAVORITES-EATENOUT-plan.md item 3: toggles ONE "Today so far" row's eaten-out flag by its
+// ORIGINAL logHistory index (row.i above — the same identity removeTodayEntry uses), then
+// goes through the same refreshAfterLogChange() funnel as every other log mutation in this
+// file so Today/Log/Insights/Week (and, on the next Pantry-page view, pantryRemaining())
+// all repaint consistently from the one logHistory source of truth.
+function toggleTodayEntryEatenOut(index){
+  const entry = getDayLog(currentLogDateISO())[currentProf][index];
+  if(!entry) return;
+  const next = !entry.eatenOut;
+  if(!setLogEntryEatenOut(currentLogDateISO(), currentProf, index, next)) return;
+  refreshAfterLogChange();
+  toast(next ? '🍴 Marked eaten out — pantry stays untouched' : '🏠 Marked home-cooked');
 }
 
 function renderTodayRecords(){
@@ -2462,20 +2482,53 @@ function renderTodayRecords(){
   list.innerHTML = todayRecordGroups.map(function(group, gi){
     const editBtn = '<button class="li-x" aria-label="Edit this item" onclick="openEditTodayRecord('+gi+')">✎</button>';
     const deleteBtn = '<button class="li-x" aria-label="Delete this item" onclick="deleteTodayRecordGroup('+gi+')">✕</button>';
+    // FAVORITES-EATENOUT-plan.md item 3: same toggle as "Today so far", but at the GROUP
+    // level (groupedTodayRecords merges repeat quick-adds of the same food into one row) —
+    // see groupEatenOut()/toggleTodayRecordGroupEatenOut() below.
+    const isOut = groupEatenOut(group);
+    const outPill = isOut ? ' <span class="chip-computed">🍴 out</span>' : '';
+    const toggleBtn = '<button class="li-x" aria-label="'+(isOut ? 'Mark eaten at home' : 'Mark eaten out')+'" onclick="toggleTodayRecordGroupEatenOut('+gi+')">'+(isOut ? '🏠' : '🍴')+'</button>';
     if(group.kind === 'plan'){
       const e = group.entry;
       const r = RECIPES_DB[e.ref];
       const emoji = r ? r.emoji : '🍽️';
       const title = escapeHtml(logEntryTitleWithComponents(e));
       const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + ' · ' + macroSummaryFromTotals(logEntryNutrition(e)) + (e.t ? ' · ' + e.t : '');
-      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+deleteBtn+'</div>';
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+toggleBtn+deleteBtn+'</div>';
     }
     const food = FOODS[group.ref];
     const title = escapeHtml(foodGroupTitle(food, group.grams));
     const nut = foodMacros(group.ref, group.grams);
     const label = (group.ref === 'espresso-unsweetened' || group.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + foodAmountLabel(food, group.grams) + ' · ' + macroSummaryFromTotals(nut);
-    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(group.kcal)+'</div>'+editBtn+deleteBtn+'</div>';
+    // A quick-add food row already carries edit + delete; a third inline button crowds the
+    // text on a phone, so eaten-out moves INTO the edit sheet (buildEditTodayFoodSheet) for
+    // food rows. The pill still shows the state on the row at a glance. Plan rows above keep
+    // the inline toggle — they have only delete (2 buttons, uncrowded) and no edit sheet.
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+title+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(group.kcal)+'</div>'+editBtn+deleteBtn+'</div>';
   }).join('');
+}
+
+// True iff every logHistory index this "Today records" group represents is currently
+// marked eaten-out — a group can span >1 index (groupedTodayRecords merges repeat
+// quick-adds of the same food today), so the row's single pill/toggle needs a single
+// summary truth rather than just peeking at the first index.
+function groupEatenOut(group){
+  const day = getDayLog(todayISO())[currentProf];
+  return group.indices.length > 0 && group.indices.every(function(i){ return day[i] && day[i].eatenOut === true; });
+}
+
+// Flips the eaten-out flag for every logHistory index a "Today records" group represents,
+// together, so the row's merged pill/button stays a true summary rather than drifting
+// index-by-index. Uses todayISO() (not currentLogDateISO()) to match every other
+// renderTodayRecords mutator (deleteTodayRecordGroup, saveEditTodayFood, openEditTodayRecord)
+// — this list is always "today", unlike "Today so far" which can view a past date.
+function toggleTodayRecordGroupEatenOut(groupIndex){
+  const group = todayRecordGroups[groupIndex];
+  if(!group) return;
+  const next = !groupEatenOut(group);
+  group.indices.forEach(function(i){ setLogEntryEatenOut(todayISO(), currentProf, i, next); });
+  refreshAfterLogChange();
+  toast(next ? '🍴 Marked eaten out — pantry stays untouched' : '🏠 Marked home-cooked');
 }
 
 function deleteTodayRecordGroup(groupIndex){
@@ -2493,7 +2546,7 @@ function openEditTodayRecord(groupIndex){
     deleteTodayRecordGroup(groupIndex);
     return;
   }
-  editTodayFoodCtx = {indices: group.indices.slice(), ref: group.ref, grams: Math.max(1, Math.round(group.grams))};
+  editTodayFoodCtx = {indices: group.indices.slice(), ref: group.ref, grams: Math.max(1, Math.round(group.grams)), eatenOut: groupEatenOut(group)};
   document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -2520,8 +2573,18 @@ function buildEditTodayFoodSheet(){
     + '<div class="n"><div class="nt"><span>Sugars</span><b>'+Math.round(nut.sugars)+' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
     + '</div>'
+    // FAVORITES-EATENOUT-plan.md item 3: the eaten-out toggle lives here (not as a third
+    // inline row button) — kcal still counts in the day, it only stops this item depleting
+    // the pantry. Reflected on Save via editTodayFoodCtx.eatenOut.
+    + '<button class="cta ghostbtn" onclick="toggleEditTodayFoodEatenOut()">' + (editTodayFoodCtx.eatenOut ? '🏠 Eaten out — tap for home-cooked' : '🍴 Mark as eaten out (delivery / restaurant)') + '</button>'
     + '<button class="cta" onclick="saveEditTodayFood()">Save</button>'
     + '<button class="cta ghostbtn" onclick="deleteEditingTodayFood()">Delete</button>';
+}
+
+function toggleEditTodayFoodEatenOut(){
+  if(!editTodayFoodCtx) return;
+  editTodayFoodCtx.eatenOut = !editTodayFoodCtx.eatenOut;
+  document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
 }
 
 function stepEditTodayFood(delta){
@@ -2539,6 +2602,10 @@ function saveEditTodayFood(){
   const nut = roundedNutritionTotals(foodMacros(editTodayFoodCtx.ref, editTodayFoodCtx.grams));
   base.grams = editTodayFoodCtx.grams;
   base.kcal = nut.kcal; base.protein = nut.protein; base.carbs = nut.carbs; base.fat = nut.fat; base.satFat = nut.satFat; base.fiber = nut.fiber; base.sugars = nut.sugars; base.freeSugars = nut.freeSugars; base.u = Date.now();
+  // Apply the eaten-out choice from the sheet. The merged group collapses to this one kept
+  // entry (the others are removed just below), so only `base` needs the flag; setLogEntryEatenOut
+  // re-stamps u exactly as the field-writes above already did.
+  setLogEntryEatenOut(todayISO(), currentProf, keepIndex, editTodayFoodCtx.eatenOut);
   editTodayFoodCtx.indices.slice(1).sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
   editTodayFoodCtx = null;
   refreshAfterLogChange();

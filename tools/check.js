@@ -4957,6 +4957,233 @@ function testPantryRebaselineMutationPath(ctx){
 }
 
 /* ===================================================================
+   FAVORITES-EATENOUT-plan.md item 3 — "eaten out": a log entry's `eatenOut` flag. The ONE
+   behavioural change is pantryConsumedSince (js/pantry.js) skipping such entries; nutrition
+   (logEntryNutrition), the shopping-list exclusion (already achieved by being LOGGED, Q1 in
+   planner.js), and sync (mergeLogSection keeps whole entries by identity+newer `u`) are all
+   unaffected BY DESIGN — this suite proves that rather than assuming it. Uses a dedicated
+   fixture food+recipe (not a real catalog item) so the planned/consumed quantities are
+   exactly and only what this test put there. Snapshots/restores every global touched
+   (logHistory, pantry, weekPlans, weekPlan), including on failure.
+   =================================================================== */
+function testEatenOutFlag(ctx){
+  const FOOD_ID = '__eatenout_fixture_food__';
+  const RECIPE_ID = '__eatenout_fixture_recipe__';
+  const FOOD_NAME = 'Eaten-out fixture food';
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  try{
+    run(ctx, "FOODS['" + FOOD_ID + "'] = " + JSON.stringify({
+      name: FOOD_NAME, per: 100, unit: 'g',
+      kcal: 50, protein: 5, carbs: 5, fat: 2, satFat: 1, fiber: 1, sugars: 0, freeSugars: 0,
+      flags: [], cat: 'Produce', iconKey: 'spinach', src: 'test fixture'
+    }) + ';');
+    run(ctx, "RECIPES_DB['" + RECIPE_ID + "'] = " + JSON.stringify({
+      title: 'Eaten-out fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      occasional: true, // keeps the random generator from ever picking it too (see the other pantry fixtures' doc notes)
+      styles: ['balanced'], time: 5, servings: 1,
+      ingredients: [[FOOD_ID, 200]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    }) + ';');
+
+    // ---- (a) a logged kind:'plan' entry marked eaten-out: kcal stays in the day total
+    // (logEntryNutrition is unchanged) but pantryConsumedSince/pantryRemaining stop
+    // reflecting it — the pantry math un-deducts the 200g this dish would otherwise cost.
+    // Toggling back to false restores depletion. ----
+    (function(){
+      const dateISO = '2026-07-10';
+      run(ctx, 'logHistory = {}; pantry = {};');
+      // Baseline predates the meal (consumption is filtered on WHEN THE FOOD WAS EATEN —
+      // pantry.js:logEntryEatenAtMs), same convention testPantryConsumedSinceAndRemaining
+      // uses: setAt at the START of the day, the entry backdated (t:null) so it resolves to
+      // the END of that same day, i.e. clearly after setAt.
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: new Date(2026,6,10,0,0,0,0).getTime(), u: 1};");
+      call(ctx, 'logPlanEntry', [dateISO, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}], {tNull: true}]);
+
+      const entryPath = "logHistory['" + dateISO + "'].elena[0]";
+      const kcalBefore = run(ctx, 'logEntryNutrition(' + entryPath + ').kcal');
+      // recipeNutrition recomputes kcal 4/4/9 from the summed macros (never the food's own
+      // declared `kcal` field — see engine.js's doc comment on that policy), so this is
+      // 200g of {protein:5, carbs:5, fat:2} per 100g -> protein 10, carbs 10, fat 4 ->
+      // 4*10 + 4*10 + 9*4 = 116, not the food's naive 50*2=100.
+      assert(Math.abs(kcalBefore - 116) < 1e-9, 'setup sanity: the fixture dish (200g, Atwater 4/4/9 from summed macros) logs at 116 kcal', 'got ' + kcalBefore);
+
+      const remainingBeforeFlag = call(ctx, 'pantryRemaining', []);
+      assert(Math.abs(remainingBeforeFlag[FOOD_ID] - 300) < 1e-9,
+        'setup sanity: BEFORE marking eaten-out, the logged meal depletes the pantry normally (500 - 200 = 300)', 'got ' + remainingBeforeFlag[FOOD_ID]);
+
+      const marked = call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 0, true]);
+      assert(!!marked && marked.eatenOut === true, 'setLogEntryEatenOut: sets eatenOut === true on the target entry', JSON.stringify(marked));
+
+      const kcalAfter = run(ctx, 'logEntryNutrition(' + entryPath + ').kcal');
+      assert(kcalAfter === kcalBefore, 'eaten-out kind:"plan" entry: kcal in the day total is UNCHANGED (logEntryNutrition never looks at eatenOut)', 'before=' + kcalBefore + ' after=' + kcalAfter);
+
+      const remainingEatenOut = call(ctx, 'pantryRemaining', []);
+      assert(remainingEatenOut[FOOD_ID] === 500,
+        'pantryConsumedSince: an eaten-out kind:"plan" entry is skipped entirely — pantryRemaining() does NOT drop for its ingredients (stays at the full 500)', 'got ' + remainingEatenOut[FOOD_ID]);
+
+      // Toggle back off: depletion is restored (this is a live derivation, not a one-way flag).
+      call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 0, false]);
+      const remainingRestored = call(ctx, 'pantryRemaining', []);
+      assert(remainingRestored[FOOD_ID] === 300,
+        'toggling eaten-out back to false restores pantry depletion (500 - 200 = 300 again)', 'got ' + remainingRestored[FOOD_ID]);
+    })();
+
+    // ---- (b) a logged kind:'food' quick-add marked eaten-out likewise does not deplete
+    // the pantry, and likewise restores on toggle-off. ----
+    (function(){
+      const dateISO = '2026-07-11';
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: new Date(2026,6,11,0,0,0,0).getTime(), u: 1};");
+      call(ctx, 'logFoodEntry', [dateISO, 'elena', FOOD_ID, 200]); // quick-add 200g of the fixture food directly
+
+      const remainingBefore = call(ctx, 'pantryRemaining', []);
+      assert(Math.abs(remainingBefore[FOOD_ID] - 300) < 1e-9,
+        'setup sanity: a quick-add depletes the pantry normally before any flag (500 - 200 = 300)', 'got ' + remainingBefore[FOOD_ID]);
+
+      call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 0, true]);
+      const remainingEatenOut = call(ctx, 'pantryRemaining', []);
+      assert(remainingEatenOut[FOOD_ID] === 500,
+        'pantryConsumedSince: an eaten-out kind:"food" quick-add is skipped too — pantryRemaining() stays at 500', 'got ' + remainingEatenOut[FOOD_ID]);
+
+      call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 0, false]);
+      const remainingRestored = call(ctx, 'pantryRemaining', []);
+      assert(remainingRestored[FOOD_ID] === 300,
+        'toggling a quick-add\'s eaten-out flag back to false restores pantry depletion (300 again)', 'got ' + remainingRestored[FOOD_ID]);
+    })();
+
+    // ---- (c) setLogEntryEatenOut bumps `u` (so mergeLogSection sees the toggle as newer)
+    // and guards a bad/stale index the same way removeLogEntryAt does. ----
+    (function(){
+      const dateISO = '2026-07-12';
+      run(ctx, 'logHistory = {}; pantry = {};');
+      call(ctx, 'logFoodEntry', [dateISO, 'elena', FOOD_ID, 50]);
+      // Pin an explicit, unambiguously-old `u` first — two real Date.now() calls executed
+      // back-to-back can legitimately land in the same millisecond, which would make a
+      // "strictly newer" assertion flaky rather than proving anything (same reasoning
+      // testPantryRebaselineMutationPath's re-baseline case already documents).
+      run(ctx, "logHistory['" + dateISO + "'].elena[0].u = 1000;");
+      const beforeToggle = Date.now();
+      const marked = call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 0, true]);
+      assert(!!marked && typeof marked.u === 'number' && marked.u >= beforeToggle,
+        'setLogEntryEatenOut: re-stamps `u` to (approximately) now', JSON.stringify(marked));
+      assert(marked.u > 1000, 'setLogEntryEatenOut: the fresh `u` is strictly newer than the pinned old one', 'got ' + marked.u);
+
+      const badIndex = call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 7, true]);
+      assert(badIndex === null, 'setLogEntryEatenOut: an out-of-range index is a no-op (returns null), mirroring removeLogEntryAt\'s guard', 'got ' + JSON.stringify(badIndex));
+    })();
+
+    // ---- (d) the flag survives a mergeLogSection round-trip: an entry toggled eaten-out
+    // (via the real mutator, so its `u` is genuinely fresh) beats an older remote copy of
+    // the SAME identity that predates the toggle — the couple-sync contract every other
+    // log edit already relies on (mergeLogSection: newer-`u`-wins by identity). ----
+    (function(){
+      const dateISO = '2026-07-13';
+      run(ctx, 'logHistory = {};');
+      call(ctx, 'logFoodEntry', [dateISO, 'elena', 'eggs', 100]);
+      run(ctx, "logHistory['" + dateISO + "'].elena[0].u = 1000;"); // pin an old `u` (see (c)'s note on avoiding same-millisecond flakiness)
+      const beforeEntry = cloneJSON(get(ctx, "logHistory['" + dateISO + "'].elena[0]"));
+      call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', 0, true]);
+      const afterEntry = cloneJSON(get(ctx, "logHistory['" + dateISO + "'].elena[0]"));
+      assert(afterEntry.eatenOut === true && afterEntry.u > beforeEntry.u,
+        'setup: the toggled entry really is eatenOut:true with a strictly newer `u` than the pre-toggle copy', JSON.stringify({before: beforeEntry, after: afterEntry}));
+
+      const wireLocal = {}; wireLocal[dateISO] = {entries: [afterEntry], tomb: [], target: null, skipped: {}};
+      const wireRemote = {}; wireRemote[dateISO] = {entries: [beforeEntry], tomb: [], target: null, skipped: {}}; // an older remote copy that never saw the toggle
+      const merged = call(ctx, 'mergeLogSection', [cloneJSON(wireLocal), cloneJSON(wireRemote)]);
+      assert(merged[dateISO].entries.length === 1 && merged[dateISO].entries[0].eatenOut === true,
+        'mergeLogSection: the eatenOut toggle (newer `u`) survives merging against an older remote copy without it', JSON.stringify(merged[dateISO].entries));
+
+      // Order-independence: passing the same two wire copies with local/remote swapped
+      // must reach the same result — mergeLogSection's newer-`u`-wins rule keys on the
+      // entry's OWN `u`, never on which argument slot it arrived in.
+      const mergedSwapped = call(ctx, 'mergeLogSection', [cloneJSON(wireRemote), cloneJSON(wireLocal)]);
+      assert(mergedSwapped[dateISO].entries.length === 1 && mergedSwapped[dateISO].entries[0].eatenOut === true,
+        'mergeLogSection: eatenOut survival is order-independent (newer `u` wins regardless of local/remote argument order)', JSON.stringify(mergedSwapped[dateISO].entries));
+    })();
+
+    // ---- (e) shopping list: a planned meal LOGGED and marked eaten-out stays absent from
+    // the current-week shopping list. This is the plan's explicit "verify, don't build"
+    // item — the exclusion already comes from being logged (Q1, planner.js:
+    // weekPlanComponents/slotLoggedReadOnly, which reads slotLogStatus() and never looks at
+    // eatenOut at all), so marking it eaten-out on top must be a complete no-op for the
+    // list, not a second exclusion path and not a reintroduction. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + JSON.stringify({recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0}) + ';');
+
+      const before = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!before.totals[FOOD_NAME] && Math.abs(before.totals[FOOD_NAME].qty - 200) < 1e-6,
+        'setup sanity: the fixture dish is planned at 200g before logging', JSON.stringify(before.totals[FOOD_NAME]));
+
+      call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      const afterLogged = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!afterLogged.totals[FOOD_NAME],
+        'sanity: logging the slot already drops it from the current-week list (Q1, pre-existing behavior — unrelated to eatenOut)', JSON.stringify(Object.keys(afterLogged.totals)));
+
+      call(ctx, 'setLogEntryEatenOut', [FIXED_MONDAY, 'elena', 0, true]);
+      const afterEatenOut = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!afterEatenOut.totals[FOOD_NAME],
+        'FAVORITES-EATENOUT-plan.md item 3: a planned meal marked eaten-out stays absent from the current-week shopping list (no second exclusion path was added — the existing logged-exclusion already covers it)', JSON.stringify(Object.keys(afterEatenOut.totals)));
+    })();
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + RECIPE_ID + "']; delete FOODS['" + FOOD_ID + "'];");
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+  }
+}
+
+/* ---------------- FAVORITES-EATENOUT-plan.md item 3: toggle wiring (source guard) ----------------
+   The Today lists' per-row eaten-out toggle can't be exercised through the DOM here (this
+   harness's document stub returns null from getElementById — see this file's header doc,
+   and the same reasoning testRefreshAfterLogChangeRendersWeekOnce already applies to the
+   Week-render funnel). So this asserts the WIRING structurally: the toggle handlers really
+   call setLogEntryEatenOut() and go through the shared refreshAfterLogChange() funnel (not
+   some ad-hoc repaint), and the two render functions really reference the toggle handlers
+   and the "eaten out" pill, rather than silently never being called. */
+function testEatenOutToggleWiring(){
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+
+  const toggleRow = fnBody('toggleTodayEntryEatenOut');
+  assert(toggleRow.length > 0, 'wiring setup: toggleTodayEntryEatenOut() function body found in render.js', 'not found');
+  assert(toggleRow.indexOf('setLogEntryEatenOut(') !== -1, 'toggleTodayEntryEatenOut(): calls setLogEntryEatenOut() (log.js)', toggleRow);
+  assert(toggleRow.indexOf('refreshAfterLogChange()') !== -1, 'toggleTodayEntryEatenOut(): re-renders through the shared refreshAfterLogChange() funnel', toggleRow);
+
+  const toggleGroup = fnBody('toggleTodayRecordGroupEatenOut');
+  assert(toggleGroup.length > 0, 'wiring setup: toggleTodayRecordGroupEatenOut() function body found in render.js', 'not found');
+  assert(toggleGroup.indexOf('setLogEntryEatenOut(') !== -1, 'toggleTodayRecordGroupEatenOut(): calls setLogEntryEatenOut() (log.js)', toggleGroup);
+  assert(toggleGroup.indexOf('refreshAfterLogChange()') !== -1, 'toggleTodayRecordGroupEatenOut(): re-renders through the shared refreshAfterLogChange() funnel', toggleGroup);
+
+  const soFarFn = fnBody('renderTodaySoFar');
+  assert(soFarFn.length > 0, 'wiring setup: renderTodaySoFar() function body found in render.js', 'not found');
+  assert(soFarFn.indexOf('toggleTodayEntryEatenOut(') !== -1, 'renderTodaySoFar(): each row wires its toggle button to toggleTodayEntryEatenOut()', soFarFn);
+  assert(soFarFn.indexOf('chip-computed') !== -1, 'renderTodaySoFar(): an eaten-out row shows an at-a-glance pill (reuses the chip-computed style)', soFarFn);
+
+  const recordsFn = fnBody('renderTodayRecords');
+  assert(recordsFn.length > 0, 'wiring setup: renderTodayRecords() function body found in render.js', 'not found');
+  // A plan row (delete only, no edit sheet) keeps the inline toggle; a food row routes it
+  // into the edit sheet to avoid a crowded three-button row (Elena's call, 2026-07-21).
+  assert(recordsFn.indexOf('toggleTodayRecordGroupEatenOut(') !== -1, 'renderTodayRecords(): a plan row wires its inline toggle to toggleTodayRecordGroupEatenOut()', recordsFn);
+  assert(recordsFn.indexOf('chip-computed') !== -1, 'renderTodayRecords(): an eaten-out row shows an at-a-glance pill (reuses the chip-computed style)', recordsFn);
+
+  // Food-row eaten-out lives in the edit sheet: the sheet exposes the toggle, and Save
+  // applies it through setLogEntryEatenOut (which bumps u for sync). This is the no-crowding
+  // path Elena chose over a third inline button.
+  const editSheetFn = fnBody('buildEditTodayFoodSheet');
+  assert(editSheetFn.indexOf('toggleEditTodayFoodEatenOut()') !== -1, 'buildEditTodayFoodSheet(): exposes the eaten-out toggle inside the food edit sheet', editSheetFn);
+  const saveFn = fnBody('saveEditTodayFood');
+  assert(saveFn.indexOf('setLogEntryEatenOut(') !== -1, 'saveEditTodayFood(): applies the sheet\'s eaten-out choice via setLogEntryEatenOut()', saveFn);
+  const openFn = fnBody('openEditTodayRecord');
+  assert(openFn.indexOf('groupEatenOut(group)') !== -1, 'openEditTodayRecord(): seeds the edit sheet with the group\'s current eaten-out state', openFn);
+}
+
+/* ===================================================================
    task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
    (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
    recipes, 2 role:'sauce' recipes), butter-chicken season fix.
@@ -5732,6 +5959,8 @@ function main(){
   runTest('validateBackupStructure: pantry field (PANTRY-plan.md P1)', function(){ testValidateBackupStructurePantry(ctx); });
   runTest('pantryConsumedSince/pantryRemaining derivation (PANTRY-plan.md P2)', function(){ testPantryConsumedSinceAndRemaining(ctx); });
   runTest('pantry re-baseline mutation path (PANTRY-plan.md P2)', function(){ testPantryRebaselineMutationPath(ctx); });
+  runTest('eaten-out flag: nutrition unchanged, pantry skip/restore, merge round-trip, shopping-list (FAVORITES-EATENOUT-plan.md item 3)', function(){ testEatenOutFlag(ctx); });
+  runTest('eaten-out toggle wiring (FAVORITES-EATENOUT-plan.md item 3)', function(){ testEatenOutToggleWiring(); });
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });

@@ -31,7 +31,16 @@
    }
 
    LogEntry = {kind:'plan'|'food', ref: recipeId|foodId, portion?, grams?, kcal, protein,
-     carbs, fat, satFat, fiber, sugars, freeSugars, slot?, t:'HH:MM'|null, u: epochMs}. Every macro number is computed
+     carbs, fat, satFat, fiber, sugars, freeSugars, slot?, t:'HH:MM'|null, u: epochMs,
+     eatenOut?: true}. `eatenOut` (FAVORITES-EATENOUT-plan.md item 3): absent/false means
+     today's behaviour — eaten from home stock. `true` means the meal was eaten out
+     (delivery/restaurant): kcal/macros still count (logEntryNutrition is unchanged) but
+     pantryConsumedSince (pantry.js) skips the entry, so it never depletes pantryRemaining().
+     Set/cleared only via setLogEntryEatenOut() below, which re-stamps `u` like every other
+     log edit. normalizeLogEntry's Object.assign copies it through untouched, so it survives
+     persist()/loadState() and couple sync (mergeLogSection keeps whole entries by identity +
+     newer `u`) for free — no snapshot/validator/sync change needed for this field. Every
+     macro number is computed
    ONCE, at log time, via recipeNutrition()/foodMacros() (engine.js) and stored verbatim —
    never re-derived from the live recipe/food DB on a later read, so editing a recipe or
    swapping a plan meal never rewrites a past day's history (ground rule 1 + task D1's
@@ -242,6 +251,29 @@ function removeLogEntryAt(dateISO, personKey, index){
   const removed = arr.splice(index, 1)[0];
   tombstoneEntry(dateISO, personKey, entryIdentity(removed));
   return removed;
+}
+
+// FAVORITES-EATENOUT-plan.md item 3: sets (or clears) the `eatenOut` flag on ONE specific
+// entry by its index in the day's per-person array — same index convention as
+// removeLogEntryAt above, so callers (render.js's "Today so far"/"Today records" toggle)
+// can reuse the exact row identity they already carry. Nutrition is untouched
+// (logEntryNutrition still reads kcal/protein/etc. off the entry); the only consumer of
+// this flag is pantryConsumedSince (pantry.js), which skips entries with eatenOut === true.
+// Re-stamps `u` to now, exactly like upsertLogEntry's edit-in-place path and
+// saveEditTodayFood (render.js) do for every other post-log correction, so mergeLogSection
+// (js/sync.js) — which keeps whichever side's copy of an identity has the newer `u` — sees
+// this toggle as newer and it converges to both of the couple's phones. A direct
+// `entry.eatenOut = value` poke without bumping `u` would NOT converge: the other phone's
+// still-standing older copy could win a later merge and silently revert the toggle.
+// Returns the mutated entry, or null on a bad/stale index (mirrors removeLogEntryAt's
+// no-op-safe contract) so a caller racing a delete on the other device just no-ops.
+function setLogEntryEatenOut(dateISO, personKey, index, value){
+  const arr = getDayLog(dateISO)[personKey];
+  if(!(index >= 0 && index < arr.length)) return null;
+  const entry = arr[index];
+  entry.eatenOut = !!value;
+  entry.u = Date.now();
+  return entry;
 }
 
 // 'confirmed' | 'skipped' | null — drives the Log screen's per-slot restore (app.js:
