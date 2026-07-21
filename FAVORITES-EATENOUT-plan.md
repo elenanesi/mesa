@@ -1,6 +1,6 @@
 # Stronger favorites + Eaten-out logging — build plan
 
-**Status:** proposed 2026-07-21, approved to build (items 2 and 3). Decisions in §4.
+**Status:** BUILT and deployed 2026-07-21 (item 2 ae08648, item 3 d5ed180; sw CACHE mesa-42d1767cb7fa). Item 1 needed no code (already occasional). Decisions in §4.
 
 Two independent features from a three-item request. **Item 1 (block junk food from planning)
 needs no work** — Chinese dinner (`cena-cinese`), McDonald's (`mcdonald-menu`), Burger King
