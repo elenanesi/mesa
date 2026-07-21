@@ -1,6 +1,6 @@
 # Eaten-out from the Week plan — build plan
 
-**Status:** approved 2026-07-21. Follows the daily eaten-out feature (commit d5ed180). Decisions below.
+**Status:** BUILT and deployed 2026-07-21 (a9d2365; sw CACHE mesa-f571ab16cd02). Follows the daily eaten-out feature (d5ed180). Decisions below.
 
 **Goal.** Mark any meal in the Week plan — this week or next, past, today or future — as "we're
 eating out" (delivery / restaurant). It drops from the shopping list and never depletes the
