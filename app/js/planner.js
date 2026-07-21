@@ -2087,13 +2087,22 @@ function slotLoggedReadOnly(dateISO, personKey, slot){
   return !!slotLogStatus(dateISO, personKey, slot);
 }
 
+// WEEK-EATENOUT-plan.md: a (day, slot, person) pre-logged as eaten-out is excluded
+// UNCONDITIONALLY — not gated on `excludeLogged` like the slotLoggedReadOnly rule above —
+// because marking a Week meal eaten-out logs it on ITS OWN date regardless of which week
+// (this one or next) is being viewed/shopped-for. The current-week list already drops it
+// via the excludeLogged rule (redundant with this one there, harmless); THIS is what makes
+// a pre-logged next-week eaten-out meal drop too, since computeShoppingList only passes
+// excludeLogged=true for the current week. slotLoggedEatenOut (log.js) is the same
+// side-effect-free "check logHistory[dateISO] first" read as slotLoggedReadOnly above, so
+// this stays a pure read like the rest of this function.
 function weekPlanComponents(plan, excludeLogged){
   const components = [];
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      const elenaDone = excludeLogged && slotLoggedReadOnly(day.date, 'elena', slot);
-      const partnerDone = excludeLogged && slotLoggedReadOnly(day.date, 'partner', slot);
+      const elenaDone = (excludeLogged && slotLoggedReadOnly(day.date, 'elena', slot)) || slotLoggedEatenOut(day.date, 'elena', slot);
+      const partnerDone = (excludeLogged && slotLoggedReadOnly(day.date, 'partner', slot)) || slotLoggedEatenOut(day.date, 'partner', slot);
       if(!elenaDone) planEntryComponents(m.elena).forEach(function(c){ components.push(c); });
       if(!partnerDone) planEntryComponents(m.partner).forEach(function(c){ components.push(c); });
     });

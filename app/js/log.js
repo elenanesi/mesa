@@ -286,6 +286,24 @@ function slotLogStatus(dateISO, personKey, slot){
   return null;
 }
 
+// WEEK-EATENOUT-plan.md: true iff dateISO/personKey/slot has a logged kind:'plan' entry
+// with eatenOut === true. The read helper both the shopping-list exclusion
+// (planner.js:weekPlanComponents) and the Week UI (render.js's row pill + the add/edit
+// meal sheet's toggle) need — lives here (not planner.js/render.js) because log.js owns
+// log access and loads before both. Modeled on slotLogStatus just above, but reads
+// `logHistory` directly rather than going through getDayLog(): weekPlanComponents calls
+// this UNCONDITIONALLY for every (day, slot, person) of a plan, including days with no
+// logHistory record yet (a future week), and getDayLog() would LAZILY CREATE an empty
+// record for each of those on every shopping-list read — exactly the persist()-quota
+// side effect slotLoggedReadOnly (planner.js) already guards against for slotLogStatus.
+function slotLoggedEatenOut(dateISO, personKey, slot){
+  const day = logHistory[dateISO];
+  if(!day) return false;
+  const arr = day[personKey];
+  if(!Array.isArray(arr)) return false;
+  return arr.some(function(e){ return e && e.kind === 'plan' && e.slot === slot && e.eatenOut === true; });
+}
+
 // Drops days older than LOG_HISTORY_RETENTION_DAYS (relative to today) — called from
 // persist() so the store never grows unbounded. String comparison is safe: ISO dates
 // sort lexicographically.

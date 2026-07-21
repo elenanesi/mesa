@@ -5184,6 +5184,290 @@ function testEatenOutToggleWiring(){
 }
 
 /* ===================================================================
+   WEEK-EATENOUT-plan.md — marking a Week-plan meal "eating out". NOT a new plan-cell flag:
+   toggling it LOGS the planned meal as eaten-out on THAT ROW'S OWN DATE, reusing the daily
+   eaten-out machinery FAVORITES-EATENOUT-plan.md item 3 already built (logPlanEntry +
+   setLogEntryEatenOut on, removeLoggedSlot off) — already proven generically by
+   testEatenOutFlag above (kcal counts, pantryConsumedSince skips it, setLogEntryEatenOut's
+   `u`/merge behavior). This suite proves the pieces THIS feature actually adds:
+   slotLoggedEatenOut() (log.js) and weekPlanComponents' UNCONDITIONAL exclusion on it
+   (planner.js) — that a pre-logged eaten-out meal drops off BOTH the current week's AND
+   (the plan's own flagged "subtle bit") NEXT week's shopping list, that a SHARED meal
+   logs/drops BOTH people (not just one), and that undo (removeLoggedSlot) restores the
+   list and leaves the slot genuinely clean for a normal re-log. The real UI handler
+   (toggleWeekMealEatenOut) can't be invoked directly here — it ends in
+   refreshAfterLogChange() -> renderWeek(), which needs a real #weekList element this
+   harness's document stub doesn't provide (same reasoning testEatenOutToggleWiring's doc
+   comment gives for the daily toggle) — so each scenario below calls the exact same
+   primitives that handler calls, in the same order, and the separate wiring-guard suite
+   below (testWeekEatenOutToggleWiring) proves the handler really does call them. Uses a
+   dedicated fixture food+recipe (not a real catalog item, `occasional:true` so
+   ensureWeekPlan's random generator never picks it on its own) so every planned/consumed
+   quantity in the assertions is exactly and only what this test put there. Snapshots/
+   restores every global touched (logHistory, pantry, weekPlans, weekPlan), including on
+   failure.
+   =================================================================== */
+function testWeekEatenOut(ctx){
+  const FOOD_ID = '__week_eatenout_fixture_food__';
+  const RECIPE_ID = '__week_eatenout_fixture_recipe__';
+  const FOOD_NAME = 'Week eaten-out fixture food';
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  try{
+    run(ctx, "FOODS['" + FOOD_ID + "'] = " + JSON.stringify({
+      name: FOOD_NAME, per: 100, unit: 'g',
+      kcal: 50, protein: 5, carbs: 5, fat: 2, satFat: 1, fiber: 1, sugars: 0, freeSugars: 0,
+      flags: [], cat: 'Produce', iconKey: 'spinach', src: 'test fixture'
+    }) + ';');
+    run(ctx, "RECIPES_DB['" + RECIPE_ID + "'] = " + JSON.stringify({
+      title: 'Week eaten-out fixture dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      occasional: true, // keeps the random plan generator from ever picking it on its own
+      styles: ['balanced'], time: 5, servings: 1,
+      ingredients: [[FOOD_ID, 200]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    }) + ';');
+
+    // ---- (a) SOLO meal, CURRENT week, TODAY's date (FIXED_MONDAY === todayISO()): log +
+    // mark eaten-out via the exact (logPlanEntry, setLogEntryEatenOut) pair
+    // toggleWeekMealEatenOut()'s "turning ON" branch calls. Proves calories count, the
+    // entry is eatenOut===true, and the pantry is NOT depleted; undo (removeLoggedSlot)
+    // leaves the slot genuinely clean — a fresh NORMAL (non-eaten-out) re-log afterward
+    // depletes the pantry exactly as if the eaten-out detour never happened. Shopping-list
+    // assertions are the SEPARATE scenario (a2) below, with an EMPTY pantry: computeShoppingList
+    // subtracts pantry stock from planned need (PANTRY-plan.md P3), so the 500g pantry
+    // baseline this scenario needs (to observe depletion/non-depletion) would fully cover
+    // this dish's 200g need and drop it from `totals` regardless of log state — proving
+    // nothing about the eaten-out exclusion itself, and fighting the pantry feature instead
+    // of testing this one. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      // partner's recipeId MUST be a real RECIPES_DB entry, not null: ensureWeekPlan's own
+      // staleness check (planReferencesMissingRecipe) treats a meal cell with an unknown
+      // recipeId as reason to regenerate the WHOLE plan from scratch on its very next call —
+      // which would silently discard this manual override. 'baked-cod-greens' is a real,
+      // unrelated built-in recipe so partner's half never touches FOOD_NAME.
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner = " + JSON.stringify({
+        shared: false,
+        elena: {recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0},
+        partner: {recipeId: 'baked-cod-greens', portion: 1, kcal: 0, protein: 0}
+      }) + ';');
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: new Date(2026,6,13,0,0,0,0).getTime(), u: 1};"); // 2026-07-13 00:00 = start of FIXED_MONDAY
+
+      call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      call(ctx, 'setLogEntryEatenOut', [FIXED_MONDAY, 'elena', 0, true]);
+
+      const entry = get(ctx, "logHistory['" + FIXED_MONDAY + "'].elena[0]");
+      assert(entry.kind === 'plan' && entry.slot === 'dinner' && entry.ref === RECIPE_ID && entry.eatenOut === true,
+        'Week eaten-out: logs a normal kind:"plan" entry for the row\'s slot, with eatenOut===true', JSON.stringify(entry));
+
+      const kcal = run(ctx, "logEntryNutrition(logHistory['" + FIXED_MONDAY + "'].elena[0]).kcal");
+      // 200g of {protein:5, carbs:5, fat:2} per 100g -> protein 10, carbs 10, fat 4 ->
+      // Atwater 4*10 + 4*10 + 9*4 = 116 (recipeNutrition recomputes from summed macros,
+      // same fixture math testEatenOutFlag's setup sanity above already established).
+      assert(Math.abs(kcal - 116) < 1e-9, 'Week eaten-out: the date\'s logged nutrition includes the meal\'s calories (unaffected by eatenOut)', 'got ' + kcal);
+
+      const remainingOut = call(ctx, 'pantryRemaining', []);
+      assert(remainingOut[FOOD_ID] === 500, 'Week eaten-out: pantryConsumedSince skips the eaten-out entry — the pantry is NOT depleted (stays at 500)', 'got ' + remainingOut[FOOD_ID]);
+
+      call(ctx, 'removeLoggedSlot', [FIXED_MONDAY, 'elena', 'dinner']);
+      const statusAfterUndo = call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'dinner']);
+      assert(statusAfterUndo === null, 'undo (removeLoggedSlot): the slot is genuinely un-logged (slotLogStatus back to null)', 'got ' + JSON.stringify(statusAfterUndo));
+
+      call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      const remainingRelogged = call(ctx, 'pantryRemaining', []);
+      assert(remainingRelogged[FOOD_ID] === 300,
+        'undo (removeLoggedSlot): pantry depletion works normally again for a fresh, non-eaten-out log of the same slot (500 - 200 = 300) — undo left no residual eatenOut taint', 'got ' + remainingRelogged[FOOD_ID]);
+    })();
+
+    // ---- (a2) shopping list, CURRENT week: same solo/today setup as (a), but with an
+    // EMPTY pantry (no baseline for FOOD_ID) so the plan's raw need is what shows up in
+    // `totals` — pantry subtraction is orthogonal to this feature and would otherwise mask
+    // the assertion (see (a)'s doc note above). Proves the meal drops off the CURRENT
+    // week's list once marked eaten-out (sanity — already covered by the pre-existing Q1
+    // logged-exclusion) and that undo (removeLoggedSlot) restores it. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner = " + JSON.stringify({
+        shared: false,
+        elena: {recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0},
+        partner: {recipeId: 'baked-cod-greens', portion: 1, kcal: 0, protein: 0}
+      }) + ';');
+
+      const beforeList = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!beforeList.totals[FOOD_NAME] && Math.abs(beforeList.totals[FOOD_NAME].qty - 200) < 1e-6,
+        'setup sanity: the fixture dish is planned at 200g before any logging', JSON.stringify(beforeList.totals[FOOD_NAME]));
+
+      call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      call(ctx, 'setLogEntryEatenOut', [FIXED_MONDAY, 'elena', 0, true]);
+
+      const listAfterOut = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!listAfterOut.totals[FOOD_NAME], 'Week eaten-out: the meal drops off the CURRENT week\'s shopping list', JSON.stringify(Object.keys(listAfterOut.totals)));
+
+      call(ctx, 'removeLoggedSlot', [FIXED_MONDAY, 'elena', 'dinner']);
+      const listAfterUndo = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!listAfterUndo.totals[FOOD_NAME] && Math.abs(listAfterUndo.totals[FOOD_NAME].qty - 200) < 1e-6,
+        'undo (removeLoggedSlot): the meal reappears on the shopping list', JSON.stringify(listAfterUndo.totals[FOOD_NAME]));
+    })();
+
+    // ---- (b) THE SUBTLE BIT (WEEK-EATENOUT-plan.md's own "Risks" section): a solo meal on
+    // NEXT week, pre-logged eaten-out for a date that is NOT today ({tNull:true} — the same
+    // backdated convention weekLogConfirm uses for a past date, here used for a FUTURE one
+    // per the plan's "log it now, dated to that day" decision). computeShoppingList only
+    // ever passes excludeLogged=true for the CURRENT week — a next-week list is built via
+    // weekPlanComponents(plan, /*excludeLogged*/ false) — so WITHOUT the new UNCONDITIONAL
+    // slotLoggedEatenOut() exclusion, this meal would silently stay on next week's list
+    // forever. This is THE test that must fail if that planner.js line is reverted. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      // nextMondayISO() must be computed AFTER MESA_TEST_TODAY is pinned above — it derives
+      // from the mocked "today", and a stale value left over from an earlier test's own
+      // MESA_TEST_TODAY would silently point this scenario at the wrong week.
+      const nextMonday = call(ctx, 'nextMondayISO', []);
+      call(ctx, 'ensureWeekPlan', [nextMonday]);
+      // partner's recipeId must be real (see the identical note in scenario (a) above) —
+      // otherwise ensureWeekPlan's planReferencesMissingRecipe() regenerates the whole plan
+      // on the very next ensureWeekPlan call and silently discards this override.
+      run(ctx, "weekPlans['" + nextMonday + "'].days[2].meals.lunch = " + JSON.stringify({
+        shared: false,
+        elena: {recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0},
+        partner: {recipeId: 'baked-cod-greens', portion: 1, kcal: 0, protein: 0}
+      }) + ';');
+      const nextDayISO = get(ctx, "weekPlans['" + nextMonday + "'].days[2].date");
+
+      const beforeNext = call(ctx, 'computeShoppingList', [nextMonday]);
+      assert(!!beforeNext.totals[FOOD_NAME] && Math.abs(beforeNext.totals[FOOD_NAME].qty - 200) < 1e-6,
+        'setup sanity: next week\'s fixture dish is planned at 200g before pre-logging', JSON.stringify(beforeNext.totals[FOOD_NAME]));
+      assert(nextDayISO !== FIXED_MONDAY, 'setup sanity: the pre-logged date is genuinely NOT today', nextDayISO);
+
+      call(ctx, 'logPlanEntry', [nextDayISO, 'elena', 'lunch', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}], {tNull: true}]);
+      call(ctx, 'setLogEntryEatenOut', [nextDayISO, 'elena', 0, true]);
+      const preloggedEntry = get(ctx, "logHistory['" + nextDayISO + "'].elena[0]");
+      assert(preloggedEntry.t === null && preloggedEntry.eatenOut === true,
+        'setup sanity: the future pre-log carries t:null (unknown eating time, weekLogConfirm\'s own backdated convention) and eatenOut===true', JSON.stringify(preloggedEntry));
+
+      const afterNext = call(ctx, 'computeShoppingList', [nextMonday]);
+      assert(!afterNext.totals[FOOD_NAME],
+        'THE CRITICAL ASSERTION: a pre-logged eaten-out meal is absent from NEXT week\'s shopping list too, even though computeShoppingList builds next week via weekPlanComponents(plan, /*excludeLogged*/ false)', JSON.stringify(Object.keys(afterNext.totals)));
+
+      // Pins the assertion to the exact call shape the plan's Risks section calls out
+      // (weekPlanComponents called directly with excludeLogged=false), not just the
+      // higher-level computeShoppingList wrapper.
+      const nextPlan = get(ctx, "weekPlans['" + nextMonday + "']");
+      const directComponents = call(ctx, 'weekPlanComponents', [nextPlan, false]);
+      const stillPresent = directComponents.some(function(c){ return c.recipeId === RECIPE_ID; });
+      assert(!stillPresent, 'weekPlanComponents(plan, /*excludeLogged*/ false): the eaten-out exclusion is UNCONDITIONAL, not gated on the excludeLogged argument', JSON.stringify(directComponents));
+    })();
+
+    // ---- (c) SHARED meal, CURRENT week: marking eaten-out logs+drops BOTH `elena` and
+    // `partner` — a shared dinner eating out means both people ate out, and
+    // weekPlanComponents/computeShoppingList counts a shared meal once PER EATER, so
+    // dropping only one person would leave the other's portion still on the list. Undo
+    // removes both too. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner = " + JSON.stringify({
+        shared: true, recipeId: RECIPE_ID,
+        elena: {recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0},
+        partner: {recipeId: RECIPE_ID, portion: 1.5, kcal: 0, protein: 0}
+      }) + ';');
+
+      const before = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      // elena portion 1 (200g) + partner portion 1.5 (300g) = 500g combined.
+      assert(!!before.totals[FOOD_NAME] && Math.abs(before.totals[FOOD_NAME].qty - 500) < 1e-6,
+        'setup sanity: the shared fixture dish sums BOTH portions (1x + 1.5x = 500g) before logging', JSON.stringify(before.totals[FOOD_NAME]));
+
+      ['elena', 'partner'].forEach(function(p){
+        const portion = p === 'elena' ? 1 : 1.5;
+        call(ctx, 'logPlanEntry', [FIXED_MONDAY, p, 'dinner', RECIPE_ID, portion, [{recipeId: RECIPE_ID, portion: portion}]]);
+        call(ctx, 'setLogEntryEatenOut', [FIXED_MONDAY, p, 0, true]);
+      });
+      const elenaLogged = get(ctx, "logHistory['" + FIXED_MONDAY + "'].elena[0]");
+      const partnerLogged = get(ctx, "logHistory['" + FIXED_MONDAY + "'].partner[0]");
+      assert(elenaLogged.eatenOut === true && partnerLogged.eatenOut === true,
+        'shared meal eaten-out: BOTH elena and partner get a logged eatenOut===true entry for the slot', JSON.stringify({elena: elenaLogged, partner: partnerLogged}));
+
+      const afterOut = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!afterOut.totals[FOOD_NAME],
+        'shared meal eaten-out: drops the WHOLE row (both people\'s portions) from the shopping list, not just one person\'s half', JSON.stringify(Object.keys(afterOut.totals)));
+
+      ['elena', 'partner'].forEach(function(p){ call(ctx, 'removeLoggedSlot', [FIXED_MONDAY, p, 'dinner']); });
+      const afterUndo = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!afterUndo.totals[FOOD_NAME] && Math.abs(afterUndo.totals[FOOD_NAME].qty - 500) < 1e-6,
+        'shared meal undo: removing BOTH people\'s logs restores the FULL combined shopping quantity (not just half)', JSON.stringify(afterUndo.totals[FOOD_NAME]));
+    })();
+
+    // ---- (d) determinism / no snapshot-shape change: buildSnapshot()/loadState() round-
+    // trips a Week-path-produced eaten-out entry exactly — same normalizeLogEntry() path
+    // every other logHistory entry takes (WEEK-EATENOUT-plan.md: "no new state field ...
+    // it rides entirely on the existing log:* sync section"). ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + JSON.stringify({recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0}) + ';');
+      call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'dinner', RECIPE_ID, 1, [{recipeId: RECIPE_ID, portion: 1}]]);
+      call(ctx, 'setLogEntryEatenOut', [FIXED_MONDAY, 'elena', 0, true]);
+      const before = cloneJSON(get(ctx, "logHistory['" + FIXED_MONDAY + "'].elena[0]"));
+
+      run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot()));");
+      run(ctx, "logHistory = {};"); // scramble in-memory before reload
+      run(ctx, "loadState();");
+      const after = get(ctx, "logHistory['" + FIXED_MONDAY + "'].elena[0]");
+      assert(!!after && after.kind === 'plan' && after.slot === 'dinner' && after.ref === RECIPE_ID && after.eatenOut === true,
+        'buildSnapshot()/loadState(): the Week path\'s eaten-out entry round-trips with kind/slot/ref/eatenOut intact — no snapshot/validator change was needed', JSON.stringify(after));
+      assert(after.kcal === before.kcal && after.protein === before.protein && after.carbs === before.carbs
+        && after.fat === before.fat && after.u === before.u && after.t === before.t,
+        'buildSnapshot()/loadState(): every other field of the round-tripped entry matches the pre-persist entry exactly', JSON.stringify({before: before, after: after}));
+      run(ctx, "localStorage.removeItem(STORE_KEY);"); // don't leak this store into later tests
+    })();
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + RECIPE_ID + "']; delete FOODS['" + FOOD_ID + "'];");
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+  }
+}
+
+/* ---------------- WEEK-EATENOUT-plan.md: toggle wiring (source guard) ----------------
+   The add/edit meal sheet's toggle and its handler can't be exercised through the DOM here
+   (this harness's document stub returns null from getElementById — see
+   testEatenOutToggleWiring's doc comment above for the same reasoning). So this asserts the
+   WIRING structurally: the sheet exposes the toggle and reflects state via
+   slotLoggedEatenOut(), the handler it routes to really calls logPlanEntry() +
+   setLogEntryEatenOut() (on, date-aware via tNull) and removeLoggedSlot() (off) and
+   branches on meal.shared, and renderWeek() really emits the "🍴 out" pill from
+   slotLoggedEatenOut() using the same chip-computed style. */
+function testWeekEatenOutToggleWiring(){
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+
+  const sheetFn = fnBody('openAddMealSheetForContext');
+  assert(sheetFn.length > 0, 'wiring setup: openAddMealSheetForContext() function body found in render.js', 'not found');
+  assert(sheetFn.indexOf('slotLoggedEatenOut(') !== -1, 'openAddMealSheetForContext(): reflects the current eaten-out state via slotLoggedEatenOut()', sheetFn);
+  assert(sheetFn.indexOf('toggleWeekMealEatenOut()') !== -1, 'openAddMealSheetForContext(): the sheet\'s toggle button routes to toggleWeekMealEatenOut()', sheetFn);
+
+  const toggleFn = fnBody('toggleWeekMealEatenOut');
+  assert(toggleFn.length > 0, 'wiring setup: toggleWeekMealEatenOut() function body found in render.js', 'not found');
+  assert(toggleFn.indexOf('logPlanEntry(') !== -1, 'toggleWeekMealEatenOut(): turning ON calls logPlanEntry()', toggleFn);
+  assert(toggleFn.indexOf('setLogEntryEatenOut(') !== -1, 'toggleWeekMealEatenOut(): turning ON calls setLogEntryEatenOut()', toggleFn);
+  assert(toggleFn.indexOf('removeLoggedSlot(') !== -1, 'toggleWeekMealEatenOut(): turning OFF calls removeLoggedSlot()', toggleFn);
+  assert(toggleFn.indexOf('tNull') !== -1, 'toggleWeekMealEatenOut(): passes a date-aware {tNull:true} for a non-today date, mirroring weekLogConfirm', toggleFn);
+  assert(toggleFn.indexOf('refreshAfterLogChange()') !== -1, 'toggleWeekMealEatenOut(): re-renders through the shared refreshAfterLogChange() funnel', toggleFn);
+  assert(toggleFn.indexOf('meal.shared') !== -1, 'toggleWeekMealEatenOut(): branches on meal.shared to log/drop BOTH people for a shared meal', toggleFn);
+
+  const weekFn = fnBody('renderWeek');
+  assert(weekFn.length > 0, 'wiring setup: renderWeek() function body found in render.js', 'not found');
+  assert(weekFn.indexOf('slotLoggedEatenOut(') !== -1, 'renderWeek(): emits the row\'s "eating out" pill from slotLoggedEatenOut()', weekFn);
+  assert(weekFn.indexOf('chip-computed') !== -1, 'renderWeek(): the eaten-out pill reuses the chip-computed style', weekFn);
+}
+
+/* ===================================================================
    task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
    (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
    recipes, 2 role:'sauce' recipes), butter-chicken season fix.
@@ -5961,6 +6245,8 @@ function main(){
   runTest('pantry re-baseline mutation path (PANTRY-plan.md P2)', function(){ testPantryRebaselineMutationPath(ctx); });
   runTest('eaten-out flag: nutrition unchanged, pantry skip/restore, merge round-trip, shopping-list (FAVORITES-EATENOUT-plan.md item 3)', function(){ testEatenOutFlag(ctx); });
   runTest('eaten-out toggle wiring (FAVORITES-EATENOUT-plan.md item 3)', function(){ testEatenOutToggleWiring(); });
+  runTest('Week eaten-out: calories/pantry/shopping-list (both weeks)/shared/undo (WEEK-EATENOUT-plan.md)', function(){ testWeekEatenOut(ctx); });
+  runTest('Week eaten-out toggle wiring (WEEK-EATENOUT-plan.md)', function(){ testWeekEatenOutToggleWiring(); });
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });

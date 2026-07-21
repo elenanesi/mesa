@@ -837,6 +837,11 @@ function renderWeek(){
       if(!r) return '';
       titles.push(escapeHtml(mealTitleWithExtras(view)));
       const together = view.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
+      // WEEK-EATENOUT-plan.md: a "🍴 out" pill, same chip-computed styling the daily
+      // "Today so far"/"Today records" eaten-out pill uses (renderTodayEntries above),
+      // when this row's slot is logged eaten-out for the viewer — the meal's absence from
+      // the shopping list is otherwise invisible on this row.
+      const eatenOutPill = slotLoggedEatenOut(day.date, person, slot) ? ' <span class="chip-computed">🍴 out</span>' : '';
       // Recipe ids can be user-authored ('cr-<slug>'), so every per-row argument rides in
       // data-* attributes (htmlAttr-escaped once, never re-parsed as JS) and clicks are
       // resolved by the delegated #weekList handler below instead of inline onclick JS.
@@ -867,7 +872,7 @@ function renderWeek(){
       }
       return '<div class="day-meal-row" data-di="'+di+'" data-slot="'+htmlAttr(slot)+'" data-recipe-id="'+htmlAttr(view.recipeId)+'">'
         + '<div class="dm-e">'+r.emoji+'</div>'
-        + '<div class="dm-t">'+escapeHtml(mealTitleWithExtras(view))+'<small>'+SLOT_LABEL[slot]+together+'</small></div>'
+        + '<div class="dm-t">'+escapeHtml(mealTitleWithExtras(view))+'<small>'+SLOT_LABEL[slot]+together+eatenOutPill+'</small></div>'
         + '<div class="dm-k">'+Math.round(view.kcal)+'</div>'
         + actionBtns + '</div>';
     }).join('');
@@ -1448,6 +1453,19 @@ function openAddMealSheetForContext(ctx){
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + sheetTitle + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<p class="sub" style="margin-top:6px">See what’s in this meal, add plain ingredients, a side or a full recipe, or remove something you added earlier. Mesa recalculates the meal’s calories and nutrients either way.</p>';
 
+  // WEEK-EATENOUT-plan.md: "eating out" toggle, near the top of the sheet — this is the
+  // one per-meal sheet reachable from EVERY Week row's ✎/＋ button (no 5th inline row
+  // button needed). Marking it ON logs (or, for a future date, PRE-logs) this row's planned
+  // meal as eaten-out on ITS OWN date via toggleWeekMealEatenOut() below — a normal logged
+  // meal (calories still count) that pantryConsumedSince (pantry.js) and weekPlanComponents
+  // (planner.js) both skip. Current state reads addMealCtx's own (dateISO, person, slot) —
+  // NOT the `logged` var above, which only reflects a today-or-past CONFIRMED slot — so a
+  // future date's not-yet-elapsed row still shows the right state right after a pre-log.
+  const isEatenOut = slotLoggedEatenOut(dateISO, addMealCtx.person, addMealCtx.slot);
+  html += '<button class="cta ghostbtn" onclick="toggleWeekMealEatenOut()">'
+    + (isEatenOut ? '🏠 Eaten out — tap for home-cooked' : '🍴 Eating out (log as delivery / restaurant)')
+    + '</button>';
+
   html += '<div class="shop-cat">In this meal</div>';
   allComponents.forEach(function(c, i){
     const isRecipe = !!c.recipeId;
@@ -1514,6 +1532,46 @@ function openAddMealRecipeSheet(slot, dateISO){
 // (weekStartDate, dayIndex), without first converting back to a dateISO.
 function openWeekAddMealSheet(weekStartDate, dayIndex, slot, person){
   openAddMealSheetForContext({weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: person});
+}
+
+// WEEK-EATENOUT-plan.md: the add/edit meal sheet's "eating out" toggle handler (see the
+// button built in openAddMealSheetForContext above). Reuses the SAME log-history funnel
+// weekLogConfirm/weekLogUndo (above) use for catch-up logging — logPlanEntry +
+// setLogEntryEatenOut on, removeLoggedSlot off, `{tNull:true}` for any date that isn't
+// today — just reachable for ANY row's sheet (this week or next, any date) via addMealCtx
+// rather than weekLogCtx's current-week-only ◯/✓/∅ button. A SHARED meal (meal.shared)
+// means BOTH people ate out, so this logs/drops BOTH `elena` and `partner`; a solo meal
+// logs only addMealCtx.person — dropping only one side of a shared meal would leave the
+// other person's ingredients still on the shopping list (weekPlanComponents excludes per
+// person, not per slot). Re-renders the sheet in place afterward via openAddMealRecipeSheet
+// (not closeSheet()) — same pattern removeMealExtraRecipe/stepMealExtraPortion already use
+// — so the toggle's new label shows immediately and can be flipped back without reopening.
+function toggleWeekMealEatenOut(){
+  if(!addMealCtx) return;
+  const ctx = addMealCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  const plan = editableWeekPlan(ctx.weekStartDate);
+  const meal = plan && plan.days[ctx.dayIndex] && plan.days[ctx.dayIndex].meals[ctx.slot];
+  if(!meal) return;
+  const people = meal.shared ? ['elena', 'partner'] : [ctx.person];
+  const turningOn = !slotLoggedEatenOut(dateISO, ctx.person, ctx.slot);
+  const opts = dateISO === todayISO() ? undefined : {tNull: true};
+  if(turningOn){
+    people.forEach(function(p){
+      const entry = meal[p];
+      if(!entry || !entry.recipeId) return;
+      const components = planEntryComponents(entry);
+      logPlanEntry(dateISO, p, ctx.slot, entry.recipeId, entry.portion, components, opts);
+      const arr = getDayLog(dateISO)[p];
+      const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === ctx.slot; });
+      if(idx !== -1) setLogEntryEatenOut(dateISO, p, idx, true);
+    });
+  } else {
+    people.forEach(function(p){ removeLoggedSlot(dateISO, p, ctx.slot); });
+  }
+  refreshAfterLogChange();
+  openAddMealRecipeSheet(ctx.slot, dateISO);
+  toast(turningOn ? '🍴 Marked eating out — logged & dropped from the shopping list' : '🏠 Marked home-cooked again');
 }
 
 // Delegated click handler for the whole add-meal sheet: composition-row steppers/remove
