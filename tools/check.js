@@ -2425,6 +2425,136 @@ function testWeeklyRecipeCaps(ctx){
   }
 }
 
+/* ---------------- FAVORITES-EATENOUT-plan.md item 2: stronger favorites ----------------
+   Covers the two changes made to make a favorite ('recipePrefs[id] === "favorite"')
+   noticeably more likely to appear: (1) weeklyCapForRecipe's +1 for a favorite (full/main
+   2->3, side/sauce 3->4), and (2) mealScore's prefBoost raised from 35 to the empirically-
+   chosen FAVORITE_SCORE_BOOST=90 (see that constant's doc in planner.js for the sweep).
+   Fixture recipes and their measured FIXED_MONDAY fortnight (current + next week) usage,
+   pinned so a regression in either change shows up as a concrete number mismatch rather
+   than a vague "favorites don't work" failure:
+     chicken-couscous-salad (role:full)  baseline=0 -> favorited=4  (cap 2->3)
+     carrots-over-hummus    (role:side)  baseline=3 -> favorited=5  (cap 3->4) */
+function testFavorites(ctx){
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  ctx.__savedRecipePrefs__ = get(ctx, 'recipePrefs');
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+
+    function fortnightUsage(recipeId, person){
+      run(ctx, "weekPlans = {}; weekPlan = null;");
+      const cur = call(ctx, 'ensureWeekPlan', []);
+      const nextMonday = call(ctx, 'nextMondayISO', []);
+      const next = call(ctx, 'ensureWeekPlan', [nextMonday]);
+      let n = 0;
+      [cur, next].forEach(function(plan){
+        plan.days.forEach(function(day){
+          Object.keys(day.meals).forEach(function(slot){
+            const entry = day.meals[slot] && day.meals[slot][person];
+            if(!entry) return;
+            call(ctx, 'planEntryComponents', [entry]).forEach(function(c){ if(c.recipeId === recipeId) n++; });
+          });
+        });
+      });
+      return n;
+    }
+
+    // (1) Favoriting measurably raises a recipe's planned fortnight count vs the unfavorited
+    // baseline, same seed (FIXED_MONDAY) both times — pinned exact numbers, per the doc
+    // block above.
+    run(ctx, "recipePrefs = {};");
+    const fullBaseline = fortnightUsage('chicken-couscous-salad', 'elena');
+    run(ctx, "recipePrefs = {'chicken-couscous-salad': 'favorite'};");
+    const fullFavorited = fortnightUsage('chicken-couscous-salad', 'elena');
+    assert(fullBaseline === 0 && fullFavorited === 4,
+      'favorites: favoriting "chicken-couscous-salad" raises its fortnight usage vs the unfavorited baseline (FIXED_MONDAY, default household)',
+      'baseline=' + fullBaseline + ' favorited=' + fullFavorited + ' (expected 0 -> 4)');
+    assert(fullFavorited > fullBaseline,
+      'favorites: favorited fortnight usage is strictly greater than the unfavorited baseline (general form of the pinned assertion above)',
+      'baseline=' + fullBaseline + ' favorited=' + fullFavorited);
+
+    run(ctx, "recipePrefs = {};");
+    const sideBaseline = fortnightUsage('carrots-over-hummus', 'elena');
+    run(ctx, "recipePrefs = {'carrots-over-hummus': 'favorite'};");
+    const sideFavorited = fortnightUsage('carrots-over-hummus', 'elena');
+    assert(sideBaseline === 3 && sideFavorited === 5,
+      'favorites: favoriting "carrots-over-hummus" (role:side) raises its fortnight usage vs the unfavorited baseline',
+      'baseline=' + sideBaseline + ' favorited=' + sideFavorited + ' (expected 3 -> 5)');
+
+    // (2) A favorited full/main can reach 3/week where an unfavorited one caps at 2; a
+    // favorited side/sauce reaches 4 where an unfavorited one caps at 3 — the raised-cap
+    // half of item 2, asserted directly against weeklyCapForRecipe (not just via usage,
+    // which can under-shoot the cap for reasons unrelated to the cap itself — see the
+    // planner.js FAVORITE_SCORE_BOOST doc's note on day-wide/ladder relaxation).
+    run(ctx, "recipePrefs = {};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad']) === 2,
+      'weeklyCapForRecipe: an unfavorited role:full recipe still caps at the base 2');
+    run(ctx, "recipePrefs = {'chicken-couscous-salad': 'favorite'};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad']) === 3,
+      'weeklyCapForRecipe: a favorited role:full recipe caps one higher, at 3');
+    run(ctx, "recipePrefs = {};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['carrots-over-hummus']) === 3,
+      'weeklyCapForRecipe: an unfavorited role:side recipe still caps at the base 3');
+    run(ctx, "recipePrefs = {'carrots-over-hummus': 'favorite'};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['carrots-over-hummus']) === 4,
+      'weeklyCapForRecipe: a favorited role:side recipe caps one higher, at 4');
+
+    // (3)+(4): a week with SEVERAL favorites still respects P1's day-wide no-repeat rule and
+    // does not collapse to only those favorites — the finite raised cap + day-wide rule
+    // must still bound it (FAVORITES-EATENOUT-plan.md item 2's "risk" section).
+    const manyIds = ['chicken-couscous-salad', 'lemon-herb-chicken-breast', 'seared-tuna-lemon', 'carrots-over-hummus'];
+    const prefsObj = {};
+    manyIds.forEach(function(id){ prefsObj[id] = 'favorite'; });
+    run(ctx, "recipePrefs = " + JSON.stringify(prefsObj) + "; weekPlans = {}; weekPlan = null;");
+    const manyPlan = call(ctx, 'ensureWeekPlan', []);
+    const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+    let dayRepeatFound = false;
+    const allUsed = {};
+    ['elena', 'partner'].forEach(function(person){
+      manyPlan.days.forEach(function(day){
+        const idsToday = [];
+        SLOT_ORDER.forEach(function(slot){
+          const entry = day.meals[slot] && day.meals[slot][person];
+          if(!entry) return;
+          call(ctx, 'planEntryComponents', [entry]).forEach(function(c){
+            if(!c.recipeId) return;
+            idsToday.push(c.recipeId);
+            if(person === 'elena') allUsed[c.recipeId] = (allUsed[c.recipeId] || 0) + 1;
+          });
+        });
+        const seen = {};
+        idsToday.forEach(function(id){ if(seen[id]) dayRepeatFound = true; seen[id] = true; });
+      });
+    });
+    assert(!dayRepeatFound,
+      'favorites: a many-favorites week still never repeats the same recipe on the same day for either person (P1 holds with the raised cap)');
+    const totalSlots = Object.keys(allUsed).reduce(function(s, k){ return s + allUsed[k]; }, 0);
+    const favoriteSlots = manyIds.reduce(function(s, id){ return s + (allUsed[id] || 0); }, 0);
+    const nonFavoriteRecipeCount = Object.keys(allUsed).filter(function(id){ return manyIds.indexOf(id) === -1; }).length;
+    assert(nonFavoriteRecipeCount > 0,
+      'favorites: a many-favorites week still contains non-favorite recipes (does not collapse to only favorites)',
+      'distinct recipes used=' + Object.keys(allUsed).length + ', all of them favorited=' + (nonFavoriteRecipeCount === 0));
+    assert(favoriteSlots < totalSlots,
+      'favorites: favorited recipes account for only PART of the week\'s component-slots, not all of them',
+      'favoriteSlots=' + favoriteSlots + ' totalSlots=' + totalSlots);
+
+    // (5) Determinism: same seed (FIXED_MONDAY, same recipePrefs) -> byte-identical plan —
+    // the planner stays deterministic with favorites in play, same contract
+    // testPlannerDeterminism already pins for the unfavorited path.
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const detA = JSON.stringify(call(ctx, 'ensureWeekPlan', []));
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const detB = JSON.stringify(call(ctx, 'ensureWeekPlan', []));
+    assert(detA === detB,
+      'favorites: ensureWeekPlan() stays byte-identical across two fresh generations for the same Monday with favorites set',
+      'lengths differ or content differs (lenA=' + detA.length + ', lenB=' + detB.length + ')');
+  } finally {
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; recipePrefs = __savedRecipePrefs__;' +
+      ' delete __savedWeekPlans__; delete __savedWeekPlan__; delete __savedRecipePrefs__;');
+  }
+}
+
 /* ---------------- VARIETY-plan.md P2: Mediterranean protein balance ----------------
    Decision Q1: red meat <=1/week, poultry <=3/week, fish >=2/week, >=2 fully meatless days.
    Measured before the rule: meat in 15 of 28 meals on 7 days out of 7, despite the catalog
@@ -5618,6 +5748,7 @@ function main(){
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
+  runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });
   runTest('Mediterranean protein balance (VARIETY-plan.md P2)', function(){ testProteinBalance(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });

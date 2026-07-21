@@ -80,10 +80,17 @@ const SIDE_TOP_K = 4;
    and this block is the only place to change. */
 const WEEKLY_RECIPE_CAP = {side: 3, sauce: 3, main: 2, full: 2};
 const WEEKLY_RECIPE_CAP_DEFAULT = 2;
+// FAVORITES-EATENOUT-plan.md item 2, Decision Q1: a favorited recipe's weekly cap is +1
+// over the same recipe unfavorited (full/main 2->3, side/sauce 3->4) -- the ONE place caps
+// are read (applyWeeklyCapFilter and sidePoolLadder both call this), so nothing else needs
+// to duplicate the +1. Still a finite ceiling, and still subject to VARIETY-plan.md P1's
+// day-wide no-repeat rule -- see testFavorites in tools/check.js for the "doesn't collapse"
+// proof.
 function weeklyCapForRecipe(id){
   const r = RECIPES_DB[id];
   const cap = r && WEEKLY_RECIPE_CAP[r.role];
-  return typeof cap === 'number' ? cap : WEEKLY_RECIPE_CAP_DEFAULT;
+  const base = typeof cap === 'number' ? cap : WEEKLY_RECIPE_CAP_DEFAULT;
+  return recipePref(id) === 'favorite' ? base + 1 : base;
 }
 
 // Drops candidates this person has already used their weekly allowance of. Like every
@@ -1095,6 +1102,49 @@ function applyCrossWeekFilter(pool, excludeId){
   return filtered.length ? filtered : pool;
 }
 
+/* ---------------- FAVORITES-EATENOUT-plan.md item 2: favorite score boost ----------------
+   FAVORITE_SCORE_BOOST=90 replaces the old flat +35, which measured (before this change)
+   as barely moving a favorite's weekly usage (1->2, 2->2 for three test favorites) — the
+   boost was swamped by kcalErr*1000, and the (then-flat) weekly cap ceilinged a favorite at
+   the same 2 as everything else. This is an EMPIRICAL choice, found the same way
+   TUNING_WEIGHT was (see that doc block below): a throwaway vm-harness script (mirroring
+   tools/check.js's loader), NOT checked in, generated a fresh FIXED_MONDAY (2026-07-13)
+   week for the default household, favorited ONE real, in-season, avoid-list-clean recipe
+   at a time, and counted its weekly usage against the (already-raised, see
+   weeklyCapForRecipe above) cap, for boost candidates 35/50/60/70/75/80/90/105/120/150/200:
+
+     recipe (role, 1x kcal)                          | baseline | b=35 | b=60 | b=80 | b=90 | b=200
+     chicken-couscous-salad (full, 553kcal)           |   0/3    | 0/3  | 2/3  | 2/3  | 2/3  | 2/3
+     lemon-herb-chicken-breast (main/poultry, 358kcal)|   1/3    | 2/3  | 2/3  | 2/3  | 2/3  | 2/3
+     seared-tuna-lemon (main/fish, 298kcal)           |   1/3    | 3/3  | 3/3  | 3/3  | 3/3  | 3/3
+     carrots-over-hummus (side, base cap 3)           |   1/4    | 1/4  | 1/4  | 3/4  | 3/4  | 3/4
+
+   Two of the four already responded at the OLD 35 (poultry/fish mains — their kcal-fit
+   competition was thin enough that even 35 flips them); the other two needed more:
+   chicken-couscous-salad plateaus at boost>=60, carrots-over-hummus only moves once
+   boost>=80. Every recipe's usage plateaus by 90 and does not climb further even at
+   200 — the remaining gap to the raised cap (e.g. carrots-over-hummus never quite reaches
+   4/4) is P1's day-wide no-repeat rule and the side pool's own ladder relaxation order,
+   not an under-sized boost, so pushing the constant past the point where these four
+   plateau buys nothing. 90 is the smallest of the plan's suggested sweep points (35, 60,
+   90, 120, 200) at or above every one of those plateaus, so it was chosen over 80 for
+   margin against recipes this small sample didn't cover.
+
+   90 sits clearly BELOW kcalErr's scale (kcalErr*1000 typically separates real candidates
+   by tens of points and reaches ~1000 for a wildly-off pick, per the tuningBonus doc
+   below) — a favorite still can't out-argue a genuinely much-better kcal fit — while
+   sitting comfortably ABOVE the old 35, tuningBonus's 15-point cap, and the 0-0.5
+   rotation tie-break, so a favorite reliably wins realistic ties the old boost didn't.
+   Confirmed with a many-favorites run (4 recipes favorited at once, boost 35/90/200): the
+   household's fortnight still used 24-26 DISTINCT recipes and favorited recipes never
+   exceeded ~22% of that week's component-slots (9 of 41 at boost=200) — P1's day-wide rule
+   and the still-finite raised cap keep a many-favorites week from collapsing to just those
+   recipes. Confirmed via `node tools/check.js` that this choice does not break the
+   'protein'/'fiber' fortnight tuning tests (testNextWeekTuning) — those stay the guardrail
+   that the boost hasn't started distorting the calorie/protein targets. See
+   tools/check.js testFavorites for the pinned assertions. */
+const FAVORITE_SCORE_BOOST = 90;
+
 // Weighted so priority (c) kcal-fit > (d) protein-fit; variety (e) is the hard filter
 // above. The tiny rotation term only breaks ties that survive both (deterministic — a
 // stable hash of day/slot/recipe id folded with a stable hash of the WEEK's Monday, no
@@ -1105,7 +1155,7 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
   const kcalErr = Math.abs(actualKcal - desiredKcal) / Math.max(Math.abs(desiredKcal), 1);
   const proteinShort = desiredProtein > 0 ? Math.max(0, desiredProtein - actualProtein) / desiredProtein : 0;
   const rotation = ((dayIndex * 7 + slotIndex + stableHash(recipeId) + (weekSeed || 0)) % 97) / 97;
-  const prefBoost = recipePref(recipeId) === 'favorite' ? 35 : 0;
+  const prefBoost = recipePref(recipeId) === 'favorite' ? FAVORITE_SCORE_BOOST : 0;
   return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + rotation * 0.5;
 }
 
@@ -1116,11 +1166,13 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
    mealScore() above: a candidate's kcal-fit term (kcalErr*1000) typically separates real
    candidates by tens of points whenever their portion search lands at meaningfully
    different kcal residuals, and can reach ~1000 for a wildly-off pick; the protein-fit
-   term (proteinShort*100) is 0-100; prefBoost is a flat 35; the existing rotation
-   tie-break is the smallest term in the system at 0-0.5. tuningBonus must sit clearly
-   ABOVE rotation (or it would never survive being a real secondary signal) but clearly
-   BELOW kcal/protein-fit (or it would distort the targets the old banner promised to
-   keep — "same calories and protein"). 'none' returns exactly 0 regardless of weight — no
+   term (proteinShort*100) is 0-100; prefBoost is a flat FAVORITE_SCORE_BOOST (90, see that
+   constant's own doc above — raised from the original 35 by FAVORITES-EATENOUT-plan.md
+   item 2); the existing rotation tie-break is the smallest term in the system at 0-0.5.
+   tuningBonus must sit clearly ABOVE rotation (or it would never survive being a real
+   secondary signal) but clearly BELOW kcal/protein-fit (or it would distort the targets
+   the old banner promised to keep — "same calories and protein"). 'none' returns exactly
+   0 regardless of weight — no
    term, no floating-point-visible change to the score at all (x + 0 === x), which is what
    keeps plan generation bit-identical to pre-this-batch output at the default.
      protein / fiber : +weight * (grams / norm)      — norm ~= a "big" meal's grams for
@@ -1155,10 +1207,12 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
    (protein/fiber up, freeSugars down) non-negative for the real default household on
    FIXED_MONDAY — verified with both the full fortnight and a frozen-current-week/
    next-week-only isolation (ruling out cross-week filter noise as the sole cause). 15 is
-   still a fraction of kcalErr's scale and under half of prefBoost (35), so a favorited
-   recipe or a genuinely-better kcal fit still wins — it just needed to be bigger than 4 to
-   reliably beat the existing proteinShort/kcalErr terms' OWN budget-driven noise floor on
-   this dataset. See tools/check.js testNextWeekTuning for the pinned assertions. */
+   still a fraction of kcalErr's scale and well under FAVORITE_SCORE_BOOST (90, raised from
+   35 by FAVORITES-EATENOUT-plan.md item 2 — 15 was already under half of the OLD 35 too),
+   so a favorited recipe or a genuinely-better kcal fit still wins — it just needed to be
+   bigger than 4 to reliably beat the existing proteinShort/kcalErr terms' OWN budget-driven
+   noise floor on this dataset. See tools/check.js testNextWeekTuning for the pinned
+   assertions. */
 const TUNING_WEIGHT = 15;
 const TUNING_PROTEIN_NORM = 40; // grams — a high-protein full meal
 const TUNING_FIBER_NORM = 8;    // grams — a high-fiber meal/side
