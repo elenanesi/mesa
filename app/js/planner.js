@@ -844,6 +844,62 @@ function isMealPinned(weekStartDate, dayIndex, slot, person){
   return !!mealPins[mealPinKey(weekStartDate, dayIndex, slot, person)];
 }
 
+/* ---------------- per-meal share override ("eat different / eat together") ----------------
+   Whether a specific (day, slot) is cooked as one shared dish or two separate ones. Defaults
+   to the household SHARED[slot] setting, but a per-cell override in mealShareOverrides
+   ('solo' | 'shared') wins — set only when a cell differs from the default, so the map stays
+   small and clears back to nothing when a cell returns to the household default. generateWeek
+   reads effectiveMealShared, so a split/merge survives regeneration exactly like a pin does. */
+function mealShareOverrideKey(weekStartDate, dayIndex, slot){
+  return [weekStartDate, dayIndex, slot].join('|');
+}
+function effectiveMealShared(weekStartDate, dayIndex, slot){
+  const o = mealShareOverrides[mealShareOverrideKey(weekStartDate, dayIndex, slot)];
+  if(o === 'solo') return false;
+  if(o === 'shared') return true;
+  return !!SHARED[slot];
+}
+// Record wantShared for a cell — but only when it DIFFERS from the household default; if it
+// matches the default, drop any override so the cell just tracks the household setting again.
+function setMealShareOverride(weekStartDate, dayIndex, slot, wantShared){
+  const key = mealShareOverrideKey(weekStartDate, dayIndex, slot);
+  if(!!wantShared === !!SHARED[slot]) delete mealShareOverrides[key];
+  else mealShareOverrides[key] = wantShared ? 'shared' : 'solo';
+}
+
+// Live-convert a plan cell to two separate dishes ("eat different tonight"). A shared cell
+// already holds independent per-person entries (same recipe, each at their own portion), so
+// splitting is just un-linking them — both keep tonight's dish and can now be swapped
+// separately (Decision: "keep the shared dish for both, then swap"). Also records the
+// per-cell override so a later regeneration keeps this cell solo.
+function splitMealCell(plan, dayIndex, slot){
+  const m = plan && plan.days[dayIndex] && plan.days[dayIndex].meals[slot];
+  if(!m || !m.shared) return false;
+  m.shared = false;
+  setMealShareOverride(plan.weekStartDate, dayIndex, slot, false);
+  return true;
+}
+// Live-convert a solo cell back to one shared dish ("eat together"). Both people take
+// `viewerPerson`'s current dish (the one who chose to eat together), each re-portioned to
+// keep their own current calorie level — so nobody's target lurches and there's no surprise
+// new meal. Records the override so regeneration keeps this cell shared.
+function mergeMealCell(plan, dayIndex, slot, viewerPerson){
+  const m = plan && plan.days[dayIndex] && plan.days[dayIndex].meals[slot];
+  if(!m || m.shared) return false;
+  const src = m[viewerPerson];
+  if(!src || !src.recipeId) return false;
+  const base = dbBaseNutrition(src.recipeId);
+  ['elena', 'partner'].forEach(function(p){
+    const curKcal = planEntryNutrition(m[p]).kcal;
+    const bp = bestPortion(base.kcal, curKcal, PERSON_ANCHOR[p], SLOT_MAX_PORTION[slot]);
+    m[p] = makePlanEntry(src.recipeId, bp.portion, undefined, src.opts);
+  });
+  m.shared = true;
+  m.recipeId = src.recipeId;
+  setMealShareOverride(plan.weekStartDate, dayIndex, slot, true);
+  return true;
+}
+
 function routineOccurrencePerson(plan, dayIndex, slot, person){
   const meal = plan && plan.days && plan.days[dayIndex] && plan.days[dayIndex].meals && plan.days[dayIndex].meals[slot];
   return mealPinPersonForMeal(meal, person);
@@ -1404,7 +1460,11 @@ function generateWeek(seed){
     const dayMeals = {};
     SLOT_ORDER.forEach(function(slot, si){
       const w = SLOT_WEIGHT[slot];
-      const shared = !!SHARED[slot];
+      // Per-cell share override (2026-07-22): a specific day's meal can be split/merged
+      // against the household SHARED[slot] default and that choice persists through
+      // regeneration (mealShareOverrides), so this reads the EFFECTIVE state, not the raw
+      // household toggle.
+      const shared = effectiveMealShared(weekStartDate, d, slot);
       if(shared){
         const avoidBoth = unionAvoid(avoidList.elena, avoidList.partner);
         const pool = candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner']);

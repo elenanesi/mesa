@@ -2339,6 +2339,70 @@ function testPersistFailureHook(ctx){
    other side: applyLightConsecutiveFilter only looked at yesterday. Measured before the
    fix: 'Snack: Hummus & veg sticks' 6x in one week, twice on one day (as a lunch side, a
    dinner side AND the standalone snack). */
+/* ---------------- per-meal share override: eat different / eat together ---------------- */
+function testMealShareOverride(ctx){
+  const savedWeekPlans = cloneJSON(get(ctx, 'weekPlans'));
+  const savedOverrides = cloneJSON(get(ctx, 'mealShareOverrides'));
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealShareOverrides = {};");
+    // Dinner is shared by default in the test household (SHARED.dinner === true).
+    assert(get(ctx, 'SHARED.dinner') === true, 'setup: dinner is shared by default');
+    const wsd = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+
+    // (1) effectiveMealShared tracks the household default until overridden.
+    assert(call(ctx, 'effectiveMealShared', [wsd, 2, 'dinner']) === true,
+      'effectiveMealShared: dinner defaults to the household shared setting');
+    // setMealShareOverride only stores a value that DIFFERS from the default.
+    call(ctx, 'setMealShareOverride', [wsd, 2, 'dinner', false]); // want solo (differs) -> stored
+    assert(get(ctx, "mealShareOverrides['" + wsd + "|2|dinner']") === 'solo',
+      'setMealShareOverride: a differ-from-default choice is stored');
+    assert(call(ctx, 'effectiveMealShared', [wsd, 2, 'dinner']) === false,
+      'effectiveMealShared: a solo override wins over the shared default');
+    call(ctx, 'setMealShareOverride', [wsd, 2, 'dinner', true]); // back to default -> cleared
+    assert(get(ctx, "mealShareOverrides['" + wsd + "|2|dinner']") === undefined,
+      'setMealShareOverride: returning to the household default clears the override (map stays small)');
+
+    // (2) generateWeek honours a solo override on a shared slot, and only for that cell.
+    run(ctx, "mealShareOverrides = {'" + wsd + "|2|dinner': 'solo'}; weekPlans = {}; weekPlan = null;");
+    const plan = call(ctx, 'ensureWeekPlan', [wsd]);
+    assert(plan.days[2].meals.dinner.shared === false,
+      'generateWeek: the overridden day-2 dinner is generated SOLO despite the shared default');
+    assert(plan.days[0].meals.dinner.shared === true && plan.days[3].meals.dinner.shared === true,
+      'generateWeek: other days\' dinners stay shared (override is per-cell)');
+    // Survives regeneration.
+    call(ctx, 'regenerateWeekPreservingLocks', [wsd]);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[2].meals.dinner.shared") === false,
+      'the split survives a full regeneration (override drives generation, like a pin)');
+
+    // (3) splitMealCell un-links a live shared cell keeping both dishes; mergeMealCell
+    // re-unifies to the viewer's dish, each at their own portion.
+    run(ctx, "mealShareOverrides = {}; weekPlans = {}; weekPlan = null;");
+    const p2 = call(ctx, 'ensureWeekPlan', [wsd]);
+    const sharedRecipe = get(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.recipeId");
+    call(ctx, 'splitMealCell', [get(ctx, "weekPlans['" + wsd + "']"), 1, 'dinner']);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.shared") === false,
+      'splitMealCell: a shared cell becomes solo');
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.elena.recipeId") === sharedRecipe &&
+           get(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.partner.recipeId") === sharedRecipe,
+      'splitMealCell: both people keep the shared dish (swap either one afterwards)');
+    // Now change Elena's dish, then merge on Elena's view: both should take Elena's dish.
+    run(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.elena = makePlanEntry('shakshuka', 1);");
+    call(ctx, 'mergeMealCell', [get(ctx, "weekPlans['" + wsd + "']"), 1, 'dinner', 'elena']);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.shared") === true &&
+           get(ctx, "weekPlans['" + wsd + "'].days[1].meals.dinner.partner.recipeId") === 'shakshuka',
+      'mergeMealCell: both take the viewer\'s current dish, one shared meal again');
+
+    // (4) The override round-trips through buildSnapshot/loadState.
+    run(ctx, "mealShareOverrides = {'" + wsd + "|4|dinner': 'solo'}; persist();");
+    run(ctx, "mealShareOverrides = {}; loadState();");
+    assert(get(ctx, "mealShareOverrides['" + wsd + "|4|dinner']") === 'solo',
+      'mealShareOverrides survive a localStorage round-trip');
+  } finally {
+    ctx.weekPlans = savedWeekPlans; ctx.mealShareOverrides = savedOverrides;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; mealShareOverrides = " + JSON.stringify(get(ctx, 'mealShareOverrides')) + ";");
+  }
+}
+
 /* ---------------- lunch fish/meat exclusion + swap variety (2026-07-22) ---------------- */
 function testLunchFishMeatExclusionAndSwapVariety(ctx){
   const saved = cloneJSON(get(ctx, 'weekPlans'));
@@ -6796,6 +6860,7 @@ function main(){
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
+  runTest('per-meal share override (eat different/together)', function(){ testMealShareOverride(ctx); });
   runTest('lunch fish/meat exclusion + swap variety', function(){ testLunchFishMeatExclusionAndSwapVariety(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });

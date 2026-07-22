@@ -320,6 +320,12 @@ let nextWeekTuning = 'none';
 let weekPlans = {};
 let weekPlan = null;
 let mealPins = {};
+// Per-meal share overrides (2026-07-22): key `weekStartDate|dayIndex|slot` -> 'solo' | 'shared',
+// stored ONLY for cells that differ from the household SHARED[slot] default. Lets a single
+// dinner be split ("eat different tonight") or merged ("eat together") without flipping the
+// whole household toggle. Read by planner.js:effectiveMealShared (so it survives regeneration,
+// like mealPins) and synced in the plans section.
+let mealShareOverrides = {};
 let mealRules = [];
 
 // Drops any weekPlans entry (and its per-week shopping-checked state, checkedShopByWeek)
@@ -717,6 +723,7 @@ function buildSnapshot(){
     deletedFoods: deletedFoods,
     recipePrefs: recipePrefs,
     mealPins: mealPins,
+    mealShareOverrides: mealShareOverrides,
     mealRules: mealRules,
     customRev: customRev,
     // pantry (PANTRY-plan.md P1): foodId -> {qty, setAt, u} — see the block above for the
@@ -970,6 +977,13 @@ function loadState(){
   if(saved.mealPins && typeof saved.mealPins === 'object'){
     Object.keys(saved.mealPins).forEach(function(k){
       if(typeof k === 'string' && saved.mealPins[k]) mealPins[k] = true;
+    });
+  }
+  mealShareOverrides = {};
+  if(saved.mealShareOverrides && typeof saved.mealShareOverrides === 'object'){
+    Object.keys(saved.mealShareOverrides).forEach(function(k){
+      const v = saved.mealShareOverrides[k];
+      if(typeof k === 'string' && (v === 'solo' || v === 'shared')) mealShareOverrides[k] = v;
     });
   }
   mealRules = [];

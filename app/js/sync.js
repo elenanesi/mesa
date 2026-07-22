@@ -126,6 +126,7 @@ function plansSectionData(){
   return {
     weekPlans: clone(weekPlans),
     mealPins: clone(mealPins),
+    mealShareOverrides: clone(mealShareOverrides),
     mealRules: clone(mealRules),
     SHARED: {breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack},
     householdStyle: householdStyle,
@@ -186,6 +187,13 @@ function applyPlansSectionData(data){
   if(data.mealPins && typeof data.mealPins === 'object'){
     mealPins = {};
     Object.keys(data.mealPins).forEach(function(k){ if(typeof k === 'string' && data.mealPins[k]) mealPins[k] = true; });
+  }
+  if(data.mealShareOverrides && typeof data.mealShareOverrides === 'object'){
+    mealShareOverrides = {};
+    Object.keys(data.mealShareOverrides).forEach(function(k){
+      const v = data.mealShareOverrides[k];
+      if(typeof k === 'string' && (v === 'solo' || v === 'shared')) mealShareOverrides[k] = v;
+    });
   }
   if(Array.isArray(data.mealRules)){
     mealRules = [];

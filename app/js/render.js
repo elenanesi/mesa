@@ -1531,6 +1531,23 @@ function openAddMealSheetForContext(ctx){
     + (isEatenOut ? '🏠 Eaten out — tap for home-cooked' : '🍴 Eating out (log as delivery / restaurant)')
     + '</button>';
 
+  // Per-meal share toggle (2026-07-22): split a shared meal into two separate dishes ("eat
+  // different tonight") or merge two back into one ("eat together"), for THIS occurrence only
+  // — the household default (Profile → Meal sharing) is untouched, and the choice persists
+  // through regeneration via mealShareOverrides. Same sheet, so it's reachable from every
+  // Week row AND every Today card. Splitting keeps tonight's dish for both, then each is
+  // swappable on its own; merging gives both the current viewer's dish at each own portion.
+  const cellShared = (function(){
+    const pl = ensureWeekPlan(addMealCtx.weekStartDate);
+    const mm = pl.days[addMealCtx.dayIndex] && pl.days[addMealCtx.dayIndex].meals[addMealCtx.slot];
+    return !!(mm && mm.shared);
+  })();
+  const slotWord = (SLOT_LABEL[addMealCtx.slot] || addMealCtx.slot).toLowerCase();
+  html += '<button class="cta ghostbtn" onclick="toggleMealShareFromSheet()">'
+    + (cellShared ? '🍽️ Eat different — split into two ' + slotWord + 's'
+                  : '👥 Eat together — one ' + slotWord + ' for both')
+    + '</button>';
+
   html += '<div class="shop-cat">In this meal</div>';
   allComponents.forEach(function(c, i){
     const isRecipe = !!c.recipeId;
@@ -1637,6 +1654,33 @@ function toggleWeekMealEatenOut(){
   refreshAfterLogChange();
   openAddMealRecipeSheet(ctx.slot, dateISO);
   toast(turningOn ? '🍴 Marked eating out — logged & dropped from the shopping list' : '🏠 Marked home-cooked again');
+}
+
+// Split this occurrence into two separate dishes, or merge two back into one — see the
+// mealShareOverrides doc in planner.js and the sheet button above. Re-renders the sheet in
+// place (openAddMealRecipeSheet) like toggleWeekMealEatenOut, so the button label flips and
+// the split/merged cell shows immediately; the household default is never touched.
+function toggleMealShareFromSheet(){
+  if(!addMealCtx) return;
+  const ctx = addMealCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  const plan = editableWeekPlan(ctx.weekStartDate);
+  const m = plan && plan.days[ctx.dayIndex] && plan.days[ctx.dayIndex].meals[ctx.slot];
+  if(!m) return;
+  const slotWord = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
+  let ok, msg;
+  if(m.shared){
+    ok = splitMealCell(plan, ctx.dayIndex, ctx.slot);
+    msg = '🍽️ Split — you can now swap each ' + slotWord + ' on its own';
+  } else {
+    ok = mergeMealCell(plan, ctx.dayIndex, ctx.slot, ctx.person || currentProf);
+    msg = '👥 Eating together again';
+  }
+  if(!ok) return;
+  markWeekPlanEdited(plan);
+  refreshAfterLogChange();
+  openAddMealRecipeSheet(ctx.slot, dateISO);
+  toast(msg);
 }
 
 // Delegated click handler for the whole add-meal sheet: composition-row steppers/remove
