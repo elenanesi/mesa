@@ -96,13 +96,23 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   eggsturkey: {
-    title: 'Eggs, turkey & rye', emoji: '🍳', slot: 'breakfast', role: 'full',
+    title: 'Eggs, turkey, cheese & bread', emoji: '🍳', slot: 'breakfast', role: 'full',
+    slots: ['breakfast', 'lunch'],
     styles: ['highprotein'], time: 10,
-    ingredients: [['eggs', 100], ['turkey-breast', 80], ['rye-bread', 60], ['olive-oil', 5]],
+    ingredients: [['eggs', 100], ['turkey-breast', 80], ['scamorza', 30], ['olive-oil', 5]],
     toTaste: ['herbs', 'black pepper'],
-    steps: ['Scramble or fry the eggs in olive oil.', 'Warm the turkey slices briefly in the same pan.', 'Toast the rye and plate everything together.'],
+    steps: ['Scramble or fry the eggs in olive oil.', 'Warm the turkey slices and scamorza briefly in the same pan until the cheese starts to melt.', 'Toast the bread and plate everything together.'],
     tags: ['muscle', 'thyroid'],
-    avoid: ['gluten']
+    avoid: ['gluten', 'lactose'],
+    optionGroups: [
+      {
+        key: 'bread', label: 'Bread',
+        choices: [
+          {id: 'wholegrain', label: 'Wholegrain', ingredients: [['wholewheat-bread', 60]]},
+          {id: 'white', label: 'White', ingredients: [['white-bread', 60]]}
+        ]
+      }
+    ]
   },
   chiapudding: {
     title: 'Chia pudding, coconut & berries', emoji: '🍮', slot: 'breakfast', role: 'full',
@@ -115,12 +125,38 @@ const RECIPES_DB = {
   },
   'oats-berries-walnuts': {
     title: 'Overnight oats, walnuts & berries', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'winter/autumn',
     styles: ['balanced'], time: 5,
     ingredients: [['oats', 50], ['milk', 150], ['walnuts', 15], ['mixed-berries', 50], ['honey', 8]],
     toTaste: [],
     steps: ['Stir oats and milk together and chill overnight (or at least 20 min).', 'Stir again before serving to loosen the texture.', 'Top with walnuts, berries and a drizzle of honey.'],
     tags: ['heart', 'omega3', 'highFiber'],
     avoid: ['nuts', 'lactose']
+  },
+  // Two dairy-free balanced breakfasts (added 2026-07-22): the cream-cheese/scamorza edits
+  // above plus turkey-spinach-omelette leaving breakfast dropped Elena's lactose-free
+  // balanced breakfast pool to ~3 (and one of those is summer-only), which the weekly-cap
+  // guard rightly flagged as forced repetition. These two are evergreen, milk/cheese-free,
+  // and 'balanced' so they refill that rotation year-round.
+  'porridge-banana-almond': {
+    title: 'Porridge with banana & almonds', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced'], time: 8,
+    ingredients: [['oats', 50], ['bananas', 100], ['apples', 60], ['almonds', 12], ['honey', 6]],
+    toTaste: ['cinnamon'],
+    steps: ['Simmer the oats in water until creamy, 5-6 min.', 'Slice the banana and grate or dice the apple.', 'Top the porridge with the fruit, almonds, a drizzle of honey and a pinch of cinnamon.'],
+    tags: ['heart', 'highFiber'],
+    avoid: ['nuts']
+  },
+  'scrambled-eggs-tomato-toast': {
+    title: 'Scrambled eggs, tomato & toast', emoji: '🍳', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 10,
+    ingredients: [['eggs', 120], ['cherry-tomatoes', 100], ['wholewheat-bread', 60], ['olive-oil', 6]],
+    toTaste: ['herbs', 'black pepper'],
+    steps: ['Toast the bread.', 'Soft-scramble the eggs in olive oil.', 'Halve the cherry tomatoes and serve alongside the eggs on toast.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['gluten']
   },
   'avocado-eggs': {
     title: 'Eggs & avocado', emoji: '🥑', slot: 'breakfast', role: 'main',
@@ -160,7 +196,8 @@ const RECIPES_DB = {
     avoid: ['lactose', 'nuts']
   },
   'turkey-spinach-omelette': {
-    title: 'Turkey & spinach omelette', emoji: '🍳', slot: 'breakfast', role: 'main',
+    title: 'Turkey & spinach omelette', emoji: '🍳', slot: 'lunch', role: 'main',
+    slots: ['lunch'],
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['eggs', 150], ['turkey-breast', 60], ['spinach', 40], ['olive-oil', 5]],
     toTaste: ['herbs', 'black pepper'],
@@ -285,7 +322,7 @@ const RECIPES_DB = {
   },
   'chicken-sweet-potato-broccoli': {
     title: 'Roast chicken, sweet potato & broccoli', emoji: '🍗', slot: 'dinner', role: 'full',
-    slots: ['dinner', 'lunch'],
+    slots: ['dinner'],
     styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['chicken-breast', 180], ['sweet-potato', 200], ['broccoli', 100], ['olive-oil', 10]],
     toTaste: ['herbs', 'lemon'],
@@ -401,23 +438,25 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'uova-bacon': {
-    title: 'Eggs & bacon', emoji: '🍳', slot: 'breakfast', role: 'main',
-    styles: ['highprotein', 'lowcarb'], time: 12,
-    ingredients: [['eggs', 100], ['bacon', 35], ['cherry-tomatoes', 80]],
+    title: 'Eggs, bacon, avocado & beans on toast', emoji: '🍳', slot: 'breakfast', role: 'full',
+    slots: ['breakfast', 'lunch'],
+    styles: ['highprotein', 'lowcarb'], time: 15,
+    ingredients: [['eggs', 100], ['bacon', 35], ['cherry-tomatoes', 80], ['wholewheat-bread', 50], ['avocado', 50], ['cannellini-beans', 80]],
     toTaste: ['black pepper'],
-    steps: ['Cook bacon until crisp.', 'Fry or scramble the eggs.', 'Serve with tomatoes on the side.'],
+    steps: ['Cook the bacon until crisp.', 'Toast the bread and mash the avocado on top.', 'Fry or scramble the eggs and warm the cannellini beans through.', 'Plate everything together with the cherry tomatoes on the side.'],
     tags: ['muscle', 'quick'],
-    avoid: []
+    avoid: ['gluten']
   },
   'uova-avocado-toast': {
     title: 'Egg & avocado toast', emoji: '🥑', slot: 'breakfast', role: 'full',
     imageKey: 'uova-avocado-toast',
+    slots: ['breakfast', 'lunch'],
     styles: ['balanced', 'highprotein'], time: 12,
-    ingredients: [['wholewheat-bread', 70], ['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60]],
-    toTaste: ['lemon', 'black pepper'],
-    steps: ['Toast the bread.', 'Mash avocado with lemon and pepper.', 'Top with eggs and tomatoes.'],
+    ingredients: [['wholewheat-bread', 70], ['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60], ['cream-cheese', 20]],
+    toTaste: ['lemon', 'black pepper', 'lime', 'pink pepper'],
+    steps: ['Toast the bread and spread with cream cheese.', 'Mash avocado with lemon and black pepper.', 'Top the toast with mashed avocado, eggs and tomatoes.', 'Finish with a squeeze of lime and a pinch of pink pepper.'],
     tags: ['heart', 'highFiber', 'muscle'],
-    avoid: ['gluten']
+    avoid: ['gluten', 'lactose']
   },
   'ricotta-pere-noci-toast': {
     title: 'Ricotta, pear & walnut toast', emoji: '🍐', slot: 'breakfast', role: 'full',
@@ -927,9 +966,9 @@ const RECIPES_DB = {
   /* ================= TASK D2 — recipe options, mains, sauces ================= */
 
   'baked-fish': {
-    title: 'Baked fish', emoji: '🐟', slot: 'lunch', role: 'main',
+    title: 'Baked fish', emoji: '🐟', slot: 'dinner', role: 'main',
     imageKey: 'fish-main',
-    slots: ['lunch', 'dinner'],
+    slots: ['dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 20,
     ingredients: [['olive-oil', 10], ['lemon-juice', 20]],
     toTaste: ['herbs', 'garlic', 'black pepper'],
@@ -1026,9 +1065,9 @@ const RECIPES_DB = {
   /* ================= VARIETY-plan.md P3 — lunch mains (meatless/fish) ================= */
 
   'baked-sea-bass-lemon': {
-    title: 'Baked sea bass with lemon', emoji: '🐟', slot: 'lunch', role: 'main',
+    title: 'Baked sea bass with lemon', emoji: '🐟', slot: 'dinner', role: 'main',
     season: 'evergreen',
-    slots: ['lunch', 'dinner'],
+    slots: ['dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 18,
     ingredients: [['sea-bass-fillet', 220], ['olive-oil', 8], ['lemon-juice', 10]],
     toTaste: ['herbs', 'garlic', 'black pepper'],
@@ -1058,14 +1097,14 @@ const RECIPES_DB = {
     tags: ['veggie', 'highFiber', 'heart'],
     avoid: []
   },
-  'lentils-spinach-lemon': {
-    title: 'Lentils with spinach & lemon', emoji: '🥣', slot: 'lunch', role: 'main',
+  'lentils-tomato-cumin': {
+    title: 'Braised lentils with tomato & cumin', emoji: '🥣', slot: 'lunch', role: 'main',
     season: 'evergreen',
     slots: ['lunch', 'dinner'],
-    styles: ['balanced'], time: 15,
-    ingredients: [['cooked-lentils', 220], ['spinach', 60], ['olive-oil', 8], ['lemon-juice', 8]],
-    toTaste: ['garlic', 'black pepper'],
-    steps: ['Warm the lentils through in a pan with olive oil and garlic.', 'Stir in the spinach until just wilted.', 'Finish with lemon juice and black pepper.'],
+    styles: ['balanced'], time: 20,
+    ingredients: [['cooked-lentils', 220], ['tomato-passata', 100], ['red-onion', 30], ['olive-oil', 8]],
+    toTaste: ['cumin', 'garlic', 'black pepper'],
+    steps: ['Warm the olive oil in a pan and soften the red onion.', 'Add the tomato passata and cumin; simmer a couple of minutes.', 'Stir in the lentils and warm through, 5-6 min.', 'Season with garlic and black pepper before serving.'],
     tags: ['veggie', 'highFiber', 'heart'],
     avoid: []
   },

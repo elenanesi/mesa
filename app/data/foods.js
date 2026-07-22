@@ -402,6 +402,11 @@ const FOODS = {
     kcal: 326, protein: 8.8, carbs: 2.0, fat: 31.4, satFat: 20.0, fiber: 0,
     flags: ['fermented'], cat: 'Dairy', iconKey: 'robiola', src: 'CREA-style Italian food table / manufacturer label average (robiola)'
   },
+  'cream-cheese': {
+    name: 'Cream cheese', per: 100, unit: 'g',
+    kcal: 352, protein: 6.0, carbs: 5.5, fat: 34.0, satFat: 19.0, fiber: 0, sugars: 3.2, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', iconKey: 'robiola', src: 'USDA FDC 173419-style (cheese, cream); kcal per 4/4/9'
+  },
   'provola': {
     name: 'Provola cheese', per: 100, unit: 'g',
     kcal: 351, protein: 25.0, carbs: 2.0, fat: 27.0, satFat: 17.0, fiber: 0,
