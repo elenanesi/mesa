@@ -973,6 +973,28 @@ function mealRuleApplies(rule, dateISO, dayIndex, slot, person){
   return false;
 }
 
+// Forced one-time regeneration for `monday`, on demand (a user action), rebuilding the plan
+// from the CURRENT catalog and rules. It applies the SAME preservation an automatic
+// (signature-triggered) regen does in ensureWeekPlan's freshen(): pinned meals
+// (preservePinnedSlots) and anything already logged or skipped (preserveLoggedSlots) survive
+// untouched — only the free, unpinned, un-eaten slots are rebuilt. This is how a catalog
+// change (new slot rules, the lunch/dinner nudge, a removed recipe) gets pulled into an
+// existing plan without a profile/target change to invalidate its signature. Deterministic
+// (same seed), so it produces the same result each time. Does NOT persist or render — the
+// caller does that, exactly like applyRebalance.
+function regenerateWeekPreservingLocks(monday){
+  const sig = computePlanSignature();
+  const prev = weekPlans[monday] ? JSON.parse(JSON.stringify(weekPlans[monday])) : null;
+  const plan = generateWeek({weekStartDate: monday, signature: sig});
+  applyMealRulesToPlan(plan);
+  preserveLoggedSlots(prev, plan);
+  preservePinnedSlots(prev, plan);
+  markWeekPlanEdited(plan);
+  weekPlans[monday] = plan;
+  refreshPlanNutrition(plan);
+  return plan;
+}
+
 function applyMealRulesToPlan(plan){
   if(!plan || !Array.isArray(plan.days) || !mealRules.length) return false;
   let changed = false;

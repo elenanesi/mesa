@@ -1026,6 +1026,50 @@ function updateWeekActionsForMode(){
 // explicit weekStartDate through swapCtx so chooseSwap (planner.js) applies the swap to
 // the right week's plan, and — for next week — skips the "correct today's log entry" step
 // entirely (there's nothing logged for a future date).
+/* ---------------- Regenerate week (keep pinned + logged) ----------------
+   A one-tap rebuild of the shown week from the CURRENT catalog/rules, so a catalog change
+   (new slot rules, the lunch/dinner nudge, a removed recipe) can be pulled into an existing
+   plan — which normally only regenerates on a profile/target change. Pinned meals and
+   anything already logged/skipped are kept; every other slot is rebuilt. Confirmed first,
+   since it replaces any un-pinned manual swaps on the shown week. */
+function openRegenerateSheet(){
+  document.getElementById('sheetBody').innerHTML = buildRegenerateSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function buildRegenerateSheet(){
+  const label = weekScreenShowsNext ? 'next week' : 'this week';
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Regenerate ' + label + '?</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub" style="margin-top:10px">Rebuilds ' + label + '’s plan for both of you using the latest recipes and rules. '
+    + '<b>Pinned meals and anything you’ve already logged or skipped stay exactly as they are</b> — only the other meals are replaced. Any un-pinned manual swaps on ' + label + ' will be redone.</p>'
+    + '<button class="cta" onclick="confirmRegenerateWeek()">↻ Regenerate ' + label + '</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+function confirmRegenerateWeek(){
+  const showingNext = weekScreenShowsNext;
+  const monday = showingNext ? nextMondayISO() : mondayOfWeek(todayISO());
+  regenerateWeekPreservingLocks(monday);
+  if(monday === mondayOfWeek(todayISO())) weekPlan = weekPlans[monday];
+  // Regenerating the current week invalidates a stored next week (its cross-week variety
+  // input just changed), so rebuild it too, same pairing ensureWeekPlan uses.
+  if(!showingNext){
+    const nm = nextMondayISO();
+    if(weekPlans[nm]) regenerateWeekPreservingLocks(nm);
+  }
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  closeSheet();
+  toast('↻ Regenerated ' + (showingNext ? 'next week' : 'this week') + ' — pinned & logged meals kept');
+}
+
 // 'tall' (not 'remove'): the sheet now has a "Best matches" + "All <slot> options" section
 // (FEATURE: swap anything) which can be long — same tall/scrollable treatment as the
 // shopping list and library sheets.

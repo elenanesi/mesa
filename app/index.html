@@ -189,6 +189,9 @@
       <button class="cta ghostbtn" onclick="openShopping()">🛒 Generate shopping list</button>
       <button class="cta" id="rebalanceBtn" onclick="openRebalanceSheet()">✨ Re-balance this week</button>
       <p class="sub cap-note" id="rebalanceCapNote" style="display:none;text-align:center;margin-top:8px">Re-balance also works on next week.</p>
+      <!-- Regenerate the shown week from the latest catalog/rules, keeping pinned + logged
+           meals (render.js:openRegenerateSheet). Secondary/ghost — a rare deliberate action. -->
+      <button class="cta ghostbtn" onclick="openRegenerateSheet()">↻ Regenerate week (keep pinned &amp; logged)</button>
     </section>
 
     <!-- ============ RECIPE DETAIL ============ -->

@@ -2339,6 +2339,72 @@ function testPersistFailureHook(ctx){
    other side: applyLightConsecutiveFilter only looked at yesterday. Measured before the
    fix: 'Snack: Hummus & veg sticks' 6x in one week, twice on one day (as a lunch side, a
    dinner side AND the standalone snack). */
+/* ---------------- Regenerate week (keep pinned + logged) ----------------
+   regenerateWeekPreservingLocks() forces a fresh plan for a week from the current catalog
+   while preserving pinned meals and anything logged/skipped — the on-demand version of the
+   preservation ensureWeekPlan already applies on an automatic regen. */
+function testRegenerateWeekPreservingLocks(ctx){
+  const saved = cloneJSON(get(ctx, 'weekPlans'));
+  const savedPins = cloneJSON(get(ctx, 'mealPins'));
+  const savedLog = cloneJSON(get(ctx, 'logHistory'));
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; logHistory = {};");
+    const monday = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+    call(ctx, 'ensureWeekPlan', [monday]);
+
+    // Pin day 2 dinner (shared or elena) and log day 1 lunch for elena, capturing both.
+    run(ctx, "var __p = weekPlans['" + monday + "']; " +
+      "__pinPerson = __p.days[2].meals.dinner.shared ? 'shared' : 'elena'; " +
+      "mealPins[mealPinKey('" + monday + "', 2, 'dinner', __pinPerson)] = true;");
+    const pinnedBefore = get(ctx, "JSON.stringify(weekPlans['" + monday + "'].days[2].meals.dinner)");
+    // log day 1 lunch (freeze what's there)
+    run(ctx, "var __d1l = weekPlans['" + monday + "'].days[1].meals.lunch; var __e = __d1l.shared ? __d1l.elena : __d1l.elena; " +
+      "logPlanEntry(weekPlans['" + monday + "'].days[1].date, 'elena', 'lunch', __e.recipeId, __e.portion, planEntryComponents(__e), {tNull:true});");
+    const loggedRecipe = get(ctx, "(function(){var e=loggedPlanEntryForSlot(weekPlans['" + monday + "'].days[1].date,'elena','lunch'); return e && e.ref;})()");
+
+    // Force a regeneration.
+    call(ctx, 'regenerateWeekPreservingLocks', [monday]);
+    const plan = get(ctx, "weekPlans['" + monday + "']");
+
+    // Pinned dinner survives byte-for-byte.
+    const pinnedAfter = get(ctx, "JSON.stringify(weekPlans['" + monday + "'].days[2].meals.dinner)");
+    assert(pinnedAfter === pinnedBefore,
+      'regenerateWeekPreservingLocks: a pinned meal is preserved byte-for-byte through regeneration');
+
+    // The logged lunch's recipe is still what was logged (preserveLoggedSlots restored it).
+    const loggedAfter = get(ctx, "(function(){var e=weekPlans['" + monday + "'].days[1].meals.lunch; var x=e.shared?e.elena:e.elena; return x && x.recipeId;})()");
+    assert(loggedAfter === loggedRecipe,
+      'regenerateWeekPreservingLocks: a logged slot keeps the recipe it was logged with',
+      'logged=' + loggedRecipe + ' after=' + loggedAfter);
+
+    // The plan is otherwise complete and valid (7 days, no null recipeIds).
+    let nulls = 0, slots = 0;
+    plan.days.forEach(function(day){
+      ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(s){
+        ['elena', 'partner'].forEach(function(p){
+          const e = day.meals[s] && day.meals[s][p];
+          if(!e) return;
+          slots++;
+          if(!e.recipeId) nulls++;
+        });
+      });
+    });
+    assert(plan.days.length === 7 && slots > 0 && nulls === 0,
+      'regenerateWeekPreservingLocks: produces a complete 7-day plan with no empty slots',
+      'days=' + plan.days.length + ' slots=' + slots + ' nulls=' + nulls);
+
+    // Deterministic: regenerating again yields an identical plan.
+    const first = get(ctx, "JSON.stringify(weekPlans['" + monday + "'])");
+    call(ctx, 'regenerateWeekPreservingLocks', [monday]);
+    const second = get(ctx, "JSON.stringify(weekPlans['" + monday + "'])");
+    assert(first === second, 'regenerateWeekPreservingLocks: deterministic (same result on a repeat regeneration)');
+  } finally {
+    ctx.weekPlans = saved; ctx.mealPins = savedPins; ctx.logHistory = savedLog;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null;");
+    run(ctx, "delete globalThis.__pinPerson; delete globalThis.__p; delete globalThis.__d1l; delete globalThis.__e;");
+  }
+}
+
 function testDayWideVariety(ctx){
   const savedWeekPlans = get(ctx, 'weekPlans');
   const savedWeekPlan = get(ctx, 'weekPlan');
@@ -6677,6 +6743,7 @@ function main(){
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
+  runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
   runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });
