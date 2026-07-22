@@ -496,6 +496,59 @@ function testPantrySectionsAndFilters(ctx){
    asserted over source text — the same way the B4 week-summary guards above do it — plus a
    math sanity check that the viewer-portion and whole-dish figures genuinely differ, so the
    fix can't silently regress to summing both people. */
+/* ---------------- soft lunch=carbs / dinner=protein bias (2026-07-22) ----------------
+   slotCompositionBias nudges lunch toward carb-forward dishes and dinner toward
+   protein-forward ones, gently (well under the kcal/protein-fit and favorite terms). */
+function testSlotCompositionBias(ctx){
+  const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+  const lunchIdx = SLOT_ORDER.indexOf('lunch');
+  const dinnerIdx = SLOT_ORDER.indexOf('dinner');
+  const bfIdx = SLOT_ORDER.indexOf('breakfast');
+  const snackIdx = SLOT_ORDER.indexOf('snack');
+  const CARB = 'pasta';            // ~69% kcal from carbs
+  const PROT = 'seared-tuna-lemon'; // ~70% kcal from protein
+
+  // (1) Breakfast/snack are never biased.
+  assert(call(ctx, 'slotCompositionBias', [CARB, bfIdx]) === 0 && call(ctx, 'slotCompositionBias', [PROT, snackIdx]) === 0,
+    'slotCompositionBias: breakfast and snack get no composition bias (0)');
+
+  // (2) A carb-forward dish is rewarded at LUNCH and penalised at DINNER; a protein-forward
+  // dish the reverse. (Same dish, opposite-signed bias by slot.)
+  const carbAtLunch = call(ctx, 'slotCompositionBias', [CARB, lunchIdx]);
+  const carbAtDinner = call(ctx, 'slotCompositionBias', [CARB, dinnerIdx]);
+  assert(carbAtLunch > 0 && carbAtDinner < 0 && carbAtLunch > carbAtDinner,
+    'slotCompositionBias: a carb-forward dish (pasta) is favoured at lunch, disfavoured at dinner',
+    'lunch=' + carbAtLunch + ' dinner=' + carbAtDinner);
+  const protAtDinner = call(ctx, 'slotCompositionBias', [PROT, dinnerIdx]);
+  const protAtLunch = call(ctx, 'slotCompositionBias', [PROT, lunchIdx]);
+  assert(protAtDinner > 0 && protAtLunch < 0 && protAtDinner > protAtLunch,
+    'slotCompositionBias: a protein-forward dish (seared tuna) is favoured at dinner, disfavoured at lunch',
+    'dinner=' + protAtDinner + ' lunch=' + protAtLunch);
+
+  // (3) SOFT: the bias magnitude is bounded well below the favorite boost, so a personal
+  // favorite (and, being far under the kcal-fit term, a genuinely better calorie fit) still
+  // wins. This is the whole point of it being a nudge, not a rule.
+  const W = get(ctx, 'LUNCH_DINNER_COMPOSITION_WEIGHT');
+  const boost = get(ctx, 'FAVORITE_SCORE_BOOST');
+  assert(W < boost,
+    'slotCompositionBias: the weight is well under FAVORITE_SCORE_BOOST so favorites/targets still win',
+    'weight=' + W + ' boost=' + boost);
+  assert(Math.abs(carbAtLunch) <= W && Math.abs(protAtDinner) <= W,
+    'slotCompositionBias: the bias never exceeds its weight (signal is a -1..1 macro-share difference)');
+
+  // (4) It enters mealScore additively — the score with the bias differs from a hand-summed
+  // score without it by exactly slotCompositionBias, proving it's wired in and nothing else.
+  run(ctx, "recipePrefs = {elena:{}, partner:{}};");
+  const full = call(ctx, 'mealScore', [500, 500, 30, 30, 0, lunchIdx, CARB, 0, 'elena']);
+  const bias = call(ctx, 'slotCompositionBias', [CARB, lunchIdx]);
+  const withoutBias = full - bias;
+  // Re-derive the non-bias part independently: kcal fit perfect (0), protein fit perfect (0),
+  // no favorite, plus the rotation term — so withoutBias must equal just the rotation nudge (<0.5).
+  assert(withoutBias >= 0 && withoutBias < 0.5,
+    'slotCompositionBias: mealScore adds it additively (residual after removing the bias is only the <0.5 rotation term)',
+    'residual=' + withoutBias);
+}
+
 function testSharedRecipeViewerNutrition(ctx){
   const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
   const fnBody = function(name){
@@ -6583,6 +6636,7 @@ function main(){
   runTest('nutrition perServing non-numeric fields', function(){ testNutritionPerServingNonNumericFields(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
+  runTest('soft lunch=carbs / dinner=protein bias', function(){ testSlotCompositionBias(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });

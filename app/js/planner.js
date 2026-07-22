@@ -1164,6 +1164,26 @@ const FAVORITE_SCORE_BOOST = 90;
 // randomness). weekSeed shifts those tie-breaks between weeks; it is a SECONDARY
 // mechanism only — the primary cross-week variety is applyCrossWeekFilter() above (a
 // score-sized nudge can't outvote the kcal term; a hard filter doesn't have to).
+// Soft Mediterranean-rhythm nudge (2026-07-22): lunch leans carb-forward (the bigger,
+// energy-for-the-day midday meal — salad/pasta/grain/legume), dinner leans protein-forward
+// (lighter, more satiating before sleep). DELIBERATELY small: the signal is the recipe's
+// own carb-vs-protein kcal balance (portion-invariant, so it's about the DISH not the
+// serving), scaled by a weight kept well under the kcal-fit (~1000) and protein-fit (~100)
+// terms and under prefBoost (90) — so calorie/protein targets, personal favorites, and the
+// variety rules all still win when they conflict; this only tips otherwise-close choices.
+// Applies to lunch/dinner only (breakfast/snack return 0).
+const LUNCH_DINNER_COMPOSITION_WEIGHT = 14;
+function slotCompositionBias(recipeId, slotIndex){
+  const slot = SLOT_ORDER[slotIndex];
+  if(slot !== 'lunch' && slot !== 'dinner') return 0;
+  const b = dbBaseNutrition(recipeId);
+  if(!(b.kcal > 0)) return 0;
+  const carbShare = (b.carbs * 4) / b.kcal;       // 0..1 of kcal from carbs
+  const proteinShare = (b.protein * 4) / b.kcal;  // 0..1 of kcal from protein
+  const signal = slot === 'lunch' ? (carbShare - proteinShare) : (proteinShare - carbShare);
+  return LUNCH_DINNER_COMPOSITION_WEIGHT * signal;
+}
+
 function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIndex, slotIndex, recipeId, weekSeed, person){
   const kcalErr = Math.abs(actualKcal - desiredKcal) / Math.max(Math.abs(desiredKcal), 1);
   const proteinShort = desiredProtein > 0 ? Math.max(0, desiredProtein - actualProtein) / desiredProtein : 0;
@@ -1172,7 +1192,7 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
   // dish is boosted if EITHER person favorited it — elena's call boosts on elena's own
   // favorite, partner's call on partner's, and the two scores are summed by the caller.
   const prefBoost = recipePref(recipeId, person) === 'favorite' ? FAVORITE_SCORE_BOOST : 0;
-  return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + rotation * 0.5;
+  return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + slotCompositionBias(recipeId, slotIndex) + rotation * 0.5;
 }
 
 /* ---------------- task C2 (2026-07-18): next-week tuning bonus ----------------
