@@ -491,6 +491,40 @@ function testPantrySectionsAndFilters(ctx){
    openFoodDetail() — it reads the live merged FOODS[id] record (overrides applied) and
    returns a self-contained markup string with no DOM access, so it's testable headlessly
    here exactly like renderLibFoodListMarkup()/buildRecipeIngredientPickerSheet() above. */
+/* ---------------- recipe screen: shared-meal nutrition is the VIEWER's portion ----------------
+   updateServings()/updateNutritionGrid() are DOM writers (getElementById), so the wiring is
+   asserted over source text — the same way the B4 week-summary guards above do it — plus a
+   math sanity check that the viewer-portion and whole-dish figures genuinely differ, so the
+   fix can't silently regress to summing both people. */
+function testSharedRecipeViewerNutrition(ctx){
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+  const usFn = fnBody('updateServings');
+  assert(usFn.length > 0, 'setup: updateServings() found in render.js');
+  // Nutrition scale (nutServings) must be the viewer's own share, not the pot total.
+  assert(/nutServings\s*=\s*viewerIsPartner\s*\?\s*svM\s*:\s*svE/.test(usFn),
+    'updateServings: a shared meal scales NUTRITION by the viewer\'s own portion (svM if partner, else svE), not svE+svM', usFn);
+  assert(/updateNutritionGrid\(nutServings/.test(usFn),
+    'updateServings: passes the viewer portion (nutServings) to updateNutritionGrid, not the whole-dish total', usFn);
+  // Ingredients must STILL scale to the whole dish (cooked once for both) — that half was
+  // correct and must not regress to the per-person portion.
+  assert(/const\s+scaled\s*=\s*\+\(qty\s*\*\s*total\)/.test(usFn),
+    'updateServings: the INGREDIENT list still scales by the whole-dish total (both people cook once)', usFn);
+  assert(/total\s*=\s*\+\(svE\s*\+\s*svM\)/.test(usFn),
+    'updateServings: total is still svE+svM for a shared dish (ingredient/cooking amount)', usFn);
+
+  // Math sanity: for a real shared meal the viewer-portion nutrition and the summed-portion
+  // nutrition are different numbers, so this is a behavioural change, not a relabel.
+  const rid = get(ctx, "Object.keys(RECIPES_DB).find(function(id){ return RECIPES_DB[id].role !== 'sauce'; })");
+  const viewerKcal = call(ctx, 'recipeNutrition', [rid, 1]).totals.kcal;   // Elena's 1x portion
+  const potKcal = call(ctx, 'recipeNutrition', [rid, 3.5]).totals.kcal;    // svE(1) + svM(2.5)
+  assert(potKcal > viewerKcal + 1e-6,
+    'recipeNutrition: the whole-dish (3.5x) kcal exceeds a single viewer portion (1x) — the two figures the fix keeps separate', 'viewer=' + viewerKcal + ' pot=' + potKcal);
+}
+
 function testFoodDetailMarkup(ctx){
   const FOODS = get(ctx, 'FOODS');
 
@@ -6221,6 +6255,7 @@ function main(){
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
   runTest('nutrition perServing non-numeric fields', function(){ testNutritionPerServingNonNumericFields(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
+  runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });

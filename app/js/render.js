@@ -512,21 +512,35 @@ function updateServings(){
   document.getElementById('serveRowShared').style.display = shared ? 'flex' : 'none';
   document.getElementById('sharedCaption').style.display = shared ? 'block' : 'none';
   document.getElementById('serveRowSolo').style.display = shared ? 'none' : 'flex';
-  let total;
+  // `total` scales the INGREDIENTS — the whole dish, cooked once for everyone.
+  // `nutServings` scales the NUTRITION grid — only the VIEWER's own portion, because the
+  // recipe screen answers "what am I eating", not "what's in the pot". For a shared meal
+  // these differ (the pot is svE+svM servings, but you only eat your own); for a solo meal
+  // they're the same. (A LOGGED shared meal already arrives here as solo — its per-person
+  // logged portion — via recipeServingContextFor's 'logged' branch, so this only changes
+  // the PLANNED shared case that used to show both people's nutrition summed.)
+  let total, nutServings, nutHeader;
   if(shared){
     document.getElementById('svElenaVal').textContent = svE + '×';
     document.getElementById('svAndreaVal').textContent = svM + '×';
     total = +(svE + svM).toFixed(1);
+    const viewerIsPartner = (recipeServingCtx && recipeServingCtx.person)
+      ? recipeServingCtx.person === 'partner' : currentProf === 'partner';
+    const viewerName = viewerIsPartner ? 'Andrea' : 'Elena';
+    nutServings = viewerIsPartner ? svM : svE;
     document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
-    document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' servings';
+    document.getElementById('ingHeader').innerHTML = 'Ingredients · for the whole dish (' + total + ' servings)';
     const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey] || 'meal';
-    document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once, plated per target';
+    document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once for both; nutrition below is your ' + nutServings + '× portion';
+    nutHeader = 'Your portion (' + viewerName + ' · ' + nutServings + '×)';
   } else {
     document.getElementById('svSoloVal').textContent = svS + '×';
     total = svS;
+    nutServings = svS;
     const label = total === 1 ? 'serving' : 'servings';
     document.getElementById('rsServesMeta').textContent = '🍽️ ' + total + ' ' + label;
     document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' ' + label;
+    nutHeader = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
   }
   const ingredients = recipeDisplayIngredients(currentRecipeKey, recipeOptsCtx);
   document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
@@ -535,7 +549,7 @@ function updateServings(){
     const scaled = +(qty * total).toFixed(1);
     return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
   }).join('');
-  updateNutritionGrid(total);
+  updateNutritionGrid(nutServings, nutHeader);
   syncServeHighlight();
 }
 
@@ -543,10 +557,15 @@ function updateServings(){
 // current total serving scale (same scale the ingredient list above uses) — so the
 // steppers rescale nutrition exactly as they rescale ingredients (task C1). Replaces
 // the old hand-typed r.nutrition/r.kcalSplit fields entirely; nothing here is typed in.
-function updateNutritionGrid(total){
+// `servings` is the VIEWER's portion (updateServings passes each person their own share of
+// a shared dish, not the pot total), and `headerText` is the caption updateServings already
+// computed for it ("Your portion (Elena · 1×)" for shared, the per-serving/scaled label for
+// solo). Kept as a param rather than re-derived here so the grid and the header can never
+// disagree about how many servings they describe.
+function updateNutritionGrid(servings, headerText){
   const header = document.getElementById('nutriHeader');
-  if(header) header.textContent = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
-  const nut = recipeNutrition(currentRecipeKey, total, recipeOptsCtx).totals;
+  if(header) header.textContent = headerText || ((servings === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + servings + ' servings');
+  const nut = recipeNutrition(currentRecipeKey, servings, recipeOptsCtx).totals;
   const topKcal = document.getElementById('rsKcal');
   const topProt = document.getElementById('rsProt');
   if(topKcal) topKcal.textContent = '🔥 ' + fmtKcal(Math.round(nut.kcal)) + ' kcal';
