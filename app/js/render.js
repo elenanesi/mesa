@@ -1386,8 +1386,10 @@ let addMealFoodQuery = '';
 // (base + extras) so all three pick lists exclude what's already in — same resolution
 // openAddMealRecipeSheet already had.
 function mealTitleSort(a, b){
-  const aFav = recipePrefs[a] === 'favorite';
-  const bFav = recipePrefs[b] === 'favorite';
+  // PERSONAL-PREFS: sort favorites the CURRENTLY ACTIVE person's own prefs.
+  const activePrefs = recipePrefs[currentProf] || {};
+  const aFav = activePrefs[a] === 'favorite';
+  const bFav = activePrefs[b] === 'favorite';
   if(aFav !== bFav) return aFav ? -1 : 1;
   return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
 }

@@ -553,7 +553,52 @@ let customRecipes = {};
 let recipeOverrides = {};
 let deletedRecipes = {};
 let deletedFoods = {};
-let recipePrefs = {};
+// recipePrefs (PERSONAL-PREFS, 2026-07): PER-PERSON hearts/thumbs, not a shared
+// household map — {elena: {recipeId: 'favorite'|'down'}, partner: {recipeId:
+// 'favorite'|'down'}}. Each person favorites/downs a recipe for themselves; planner.js's
+// recipeFavoritedByAny/recipeDownedByAny read across BOTH people's maps for a shared
+// slot ("either-down excludes, either-favorite boosts" — see those functions' doc), while
+// the UI (library recipe list, swap sheet, sort order) always reads/writes
+// recipePrefs[currentProf] — whichever person is currently active (js/library.js:
+// toggleRecipePref, js/render.js/js/library.js sort sites).
+// Pre-this-batch stores/synced payloads/manual-import files can still carry the OLD FLAT
+// {recipeId: 'favorite'|'down'} household-level shape — normalizeRecipePrefsShape() below
+// is the one place that migrates a flat map onto BOTH persons (the household pref becomes
+// each person's own starting pref), reused by loadState() below, sync.js's
+// mergePersonalPrefs(), and library.js's mergeImportedLibrary().
+let recipePrefs = {elena: {}, partner: {}};
+
+// Accepts an already-nested {elena:{},partner:{}} recipePrefs, the OLD FLAT
+// {recipeId:'favorite'|'down'} shape, or missing/garbage input, and normalizes to the
+// current nested shape. Flat is detected structurally: its own values ARE the pref
+// strings ('favorite'/'down'), where a nested map's per-key values are objects instead —
+// the one shape difference between the two. Never throws on bad input; worst case is two
+// empty maps.
+function normalizeRecipePrefsShape(raw){
+  const out = {elena: {}, partner: {}};
+  if(!raw || typeof raw !== 'object') return out;
+  const keys = Object.keys(raw);
+  const isFlat = keys.some(function(k){ const v = raw[k]; return v === 'favorite' || v === 'down'; });
+  if(isFlat){
+    keys.forEach(function(id){
+      const v = raw[id];
+      if(typeof id === 'string' && (v === 'favorite' || v === 'down')){
+        out.elena[id] = v;
+        out.partner[id] = v;
+      }
+    });
+    return out;
+  }
+  ['elena', 'partner'].forEach(function(person){
+    const src = raw[person];
+    if(!src || typeof src !== 'object') return;
+    Object.keys(src).forEach(function(id){
+      const v = src[id];
+      if(typeof id === 'string' && (v === 'favorite' || v === 'down')) out[person][id] = v;
+    });
+  });
+  return out;
+}
 let customRev = 0;
 
 function normalizeFood(food){
@@ -899,13 +944,10 @@ function loadState(){
       else if(typeof v === 'number' && isFinite(v)) deletedFoods[id] = v;
     });
   }
-  recipePrefs = {};
-  if(saved.recipePrefs && typeof saved.recipePrefs === 'object'){
-    Object.keys(saved.recipePrefs).forEach(function(id){
-      const v = saved.recipePrefs[id];
-      if(typeof id === 'string' && (v === 'favorite' || v === 'down')) recipePrefs[id] = v;
-    });
-  }
+  // PERSONAL-PREFS: normalizeRecipePrefsShape() (above) handles both the current nested
+  // shape and a pre-migration OLD FLAT store (the household pref becomes each person's
+  // own starting pref) in one place — see its doc block for the detection rule.
+  recipePrefs = normalizeRecipePrefsShape(saved.recipePrefs);
   // pantry (PANTRY-plan.md P1) — reset path: structurally-wrong entries are dropped
   // rather than trusted (same defensive posture as customFoods/deletedFoods above), so a
   // corrupt store can't crash rendering. isValidPantryEntry() requires qty >= 0 (not > 0)

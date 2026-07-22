@@ -86,11 +86,11 @@ const WEEKLY_RECIPE_CAP_DEFAULT = 2;
 // to duplicate the +1. Still a finite ceiling, and still subject to VARIETY-plan.md P1's
 // day-wide no-repeat rule -- see testFavorites in tools/check.js for the "doesn't collapse"
 // proof.
-function weeklyCapForRecipe(id){
+function weeklyCapForRecipe(id, persons){
   const r = RECIPES_DB[id];
   const cap = r && WEEKLY_RECIPE_CAP[r.role];
   const base = typeof cap === 'number' ? cap : WEEKLY_RECIPE_CAP_DEFAULT;
-  return recipePref(id) === 'favorite' ? base + 1 : base;
+  return recipeFavoritedByAny(id, persons) ? base + 1 : base;
 }
 
 // Drops candidates this person has already used their weekly allowance of. Like every
@@ -213,7 +213,7 @@ let weeklyCapRelaxations = 0;
 
 function applyWeeklyCapFilter(pool, history, persons){
   const under = pool.filter(function(id){
-    const cap = weeklyCapForRecipe(id);
+    const cap = weeklyCapForRecipe(id, persons);
     return persons.every(function(p){ return (history[p].weekUse[id] || 0) < cap; });
   });
   if(under.length) return under;
@@ -243,7 +243,7 @@ function sidePoolLadder(rawPool, history, persons, dayIndex){
     (history[p].sideUse[dayIndex - 1] || []).forEach(function(id){ yesterday[id] = true; });
   });
   function underCap(id){
-    const cap = weeklyCapForRecipe(id);
+    const cap = weeklyCapForRecipe(id, persons);
     return persons.every(function(p){ return (history[p].weekUse[id] || 0) < cap; });
   }
   const rungs = [
@@ -306,15 +306,28 @@ function recipeHitsAvoid(recipe, avoidList){
   if(!avoidList || !avoidList.length) return false;
   return recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; });
 }
-function recipePref(id){ return recipePrefs[id] || null; }
+// PERSONAL-PREFS: recipePrefs (state.js) is now {elena:{},partner:{}} — reads always go
+// through one specific person. recipeFavoritedByAny/recipeDownedByAny are the "either
+// person" checks a SHARED slot needs (Decisions: "either-down excludes, either-favorite
+// boosts") — pass the one or two persons relevant to the call site (see each caller).
+function recipePref(id, person){ return (recipePrefs[person] && recipePrefs[person][id]) || null; }
+function recipeFavoritedByAny(id, persons){
+  return (persons || []).some(function(p){ return recipePref(id, p) === 'favorite'; });
+}
+function recipeDownedByAny(id, persons){
+  return (persons || []).some(function(p){ return recipePref(id, p) === 'down'; });
+}
 // Every recipe for a slot x style that doesn't hit the given avoid-list, sorted
-// lexicographically by id (the base order every tie-break falls back to).
-function candidatesFor(slot, styleKey, avoidList, opts){
+// lexicographically by id (the base order every tie-break falls back to). `persons` is
+// who this candidate pool is FOR — a shared slot passes both, a solo slot passes just the
+// one person — used only for the down-vote filter below (opts.includeThumbsDown bypasses
+// it regardless of persons, same as before this batch).
+function candidatesFor(slot, styleKey, avoidList, persons, opts){
   opts = opts || {};
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return !r.occasional
-      && (opts.includeThumbsDown || recipePref(id) !== 'down')
+      && (opts.includeThumbsDown || !recipeDownedByAny(id, persons))
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && recipeSlotList(r).indexOf(slot) !== -1
       && r.styles.indexOf(styleKey) !== -1
@@ -338,12 +351,12 @@ function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the re
 // B2 tagging handoff). Sides need not carry the current slot in `slots` — a side is a side
 // at lunch or dinner regardless of its own slot metadata (e.g. a side tagged only for
 // 'side'/'snack' can still compose into a lunch or dinner meal). Sorted id order.
-function sidePoolFor(avoidList){
+function sidePoolFor(avoidList, persons){
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return r.role === 'side'
       && !r.occasional
-      && recipePref(id) !== 'down'
+      && !recipeDownedByAny(id, persons)
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && !recipeHitsAvoid(r, avoidList);
   }).sort();
@@ -1151,11 +1164,14 @@ const FAVORITE_SCORE_BOOST = 90;
 // randomness). weekSeed shifts those tie-breaks between weeks; it is a SECONDARY
 // mechanism only — the primary cross-week variety is applyCrossWeekFilter() above (a
 // score-sized nudge can't outvote the kcal term; a hard filter doesn't have to).
-function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIndex, slotIndex, recipeId, weekSeed){
+function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIndex, slotIndex, recipeId, weekSeed, person){
   const kcalErr = Math.abs(actualKcal - desiredKcal) / Math.max(Math.abs(desiredKcal), 1);
   const proteinShort = desiredProtein > 0 ? Math.max(0, desiredProtein - actualProtein) / desiredProtein : 0;
   const rotation = ((dayIndex * 7 + slotIndex + stableHash(recipeId) + (weekSeed || 0)) % 97) / 97;
-  const prefBoost = recipePref(recipeId) === 'favorite' ? FAVORITE_SCORE_BOOST : 0;
+  // PERSONAL-PREFS: called once per person for a shared slot (pickSharedMeal), so a shared
+  // dish is boosted if EITHER person favorited it — elena's call boosts on elena's own
+  // favorite, partner's call on partner's, and the two scores are summed by the caller.
+  const prefBoost = recipePref(recipeId, person) === 'favorite' ? FAVORITE_SCORE_BOOST : 0;
   return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + rotation * 0.5;
 }
 
@@ -1323,10 +1339,10 @@ function generateWeek(seed){
       const shared = !!SHARED[slot];
       if(shared){
         const avoidBoth = unionAvoid(avoidList.elena, avoidList.partner);
-        const pool = candidatesFor(slot, styleKey, avoidBoth);
+        const pool = candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner']);
         // For shared slots both people ate the same dish last week — Elena's entry stands
         // for both (same convention as the variety filter's history handling).
-        const chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner'], {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
         dayMeals[slot] = chosen;
         // Deduct the WHOLE unit (main + any composed extra) via planEntryNutrition, not the
         // raw entry.kcal/protein cache (which — like every existing manual meal-extra —
@@ -1345,10 +1361,10 @@ function generateWeek(seed){
         recordDayUsage(history, chosen.elena, 'elena', d);
         recordDayUsage(history, chosen.partner, 'partner', d);
       } else {
-        const poolE = candidatesFor(slot, styleKey, avoidList.elena);
-        const poolA = candidatesFor(slot, styleKey, avoidList.partner);
-        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
-        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
+        const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
+        const poolA = candidatesFor(slot, styleKey, avoidList.partner, ['partner']);
+        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
         const soloNutE = planEntryNutrition(chE), soloNutA = planEntryNutrition(chA);
         remainingKcal.elena -= soloNutE.kcal; remainingKcal.partner -= soloNutA.kcal;
@@ -1501,7 +1517,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
         }, id, base, bpE, desiredE, foodPool);
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
-      const sidePoolRaw = sidePoolFor(avoidBoth);
+      const sidePoolRaw = sidePoolFor(avoidBoth, ['elena', 'partner']);
       // VARIETY-plan.md P1+P2 for sides, as one priority ladder (sidePoolLadder's doc
       // explains why nesting the rules ranked them wrong). Shared slot -> both people.
       const sidePool = sidePoolLadder(sidePoolRaw, history, ['elena', 'partner'], dayIndex);
@@ -1544,8 +1560,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // never the composite tieId — so a composed unit's score treats "which main" exactly
     // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
     // ONLY for the final deterministic tie-break below.
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed) + tuningBonus(c.totalsE, nextWeekTuning);
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed) + tuningBonus(c.totalsA, nextWeekTuning);
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning);
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning);
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
@@ -1621,7 +1637,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
         }, id, base, bp, desired, foodPool);
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
-      const sidePoolRaw = sidePoolFor(avoidP);
+      const sidePoolRaw = sidePoolFor(avoidP, [person]);
       const sidePool = sidePoolLadder(sidePoolRaw, history, [person], dayIndex);
       if(sidePool.length){
         mainIds.forEach(function(mainId){
@@ -1640,7 +1656,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   let best = null;
   candidates.forEach(function(c){
     // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed) + tuningBonus(c.totals, nextWeekTuning);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
   });
@@ -2308,8 +2324,8 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
     const id = other.shared ? other.recipeId : other[person].recipeId;
     if(id) plannedToday[id] = true;
   });
-  let pool = candidatesFor(slot, styleKey, avoidL).filter(function(id){ return id !== currentId && !plannedToday[id]; });
-  if(!pool.length) pool = candidatesFor(slot, styleKey, avoidL).filter(function(id){ return id !== currentId; });
+  let pool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId && !plannedToday[id]; });
+  if(!pool.length) pool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId; });
   const anchor = PERSON_ANCHOR[person];
   const scored = pool.map(function(id){
     const base = dbBaseNutrition(id);
@@ -2364,8 +2380,10 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
       kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
   });
   scored.sort(function(a, b){
-    const aFav = recipePref(a.id) === 'favorite';
-    const bFav = recipePref(b.id) === 'favorite';
+    // PERSONAL-PREFS: swap sort favorites the CURRENTLY ACTIVE person's own prefs
+    // (currentProf), same convention as the library recipe list/swap sheet elsewhere.
+    const aFav = recipePref(a.id, currentProf) === 'favorite';
+    const bFav = recipePref(b.id, currentProf) === 'favorite';
     if(aFav !== bFav) return aFav ? -1 : 1;
     if(a.custom !== b.custom) return a.custom ? -1 : 1;
     if(a.avoidHit !== b.avoidHit) return a.avoidHit ? 1 : -1;
@@ -2859,7 +2877,10 @@ function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson
   // task B2: re-balance's side suggestions now come from the same role:'side' pool the
   // generator composes with (sidePoolFor — avoid + season, deliberately not style-filtered),
   // not the old slot='side' + style lookup.
-  const sidePool = sidePoolFor(avoidL).filter(function(id){
+  // PERSONAL-PREFS: this is a per-current-person re-balance action — a shared unit has no
+  // unit.person, so fall back to currentProf (same "unit.person || currentProf" convention
+  // already used elsewhere for a shared unit's active person, e.g. render.js/planner.js).
+  const sidePool = sidePoolFor(avoidL, [unit.person || currentProf]).filter(function(id){
     return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
   });
   const results = [];
@@ -3044,8 +3065,11 @@ function todayRebalanceCandidateIds(plan, unit, dateISO){
       if(id) plannedToday[id] = true;
     });
   });
-  let pool = candidatesFor(unit.slot, styleKey, avoidL).filter(function(id){ return id !== currentId && !plannedToday[id]; });
-  if(!pool.length) pool = candidatesFor(unit.slot, styleKey, avoidL).filter(function(id){ return id !== currentId; });
+  // PERSONAL-PREFS: per-current-person re-balance action (see sideCandidatesForUnit above
+  // for the same unit.person||currentProf fallback a shared unit needs).
+  const persons = [unit.person || currentProf];
+  let pool = candidatesFor(unit.slot, styleKey, avoidL, persons).filter(function(id){ return id !== currentId && !plannedToday[id]; });
+  if(!pool.length) pool = candidatesFor(unit.slot, styleKey, avoidL, persons).filter(function(id){ return id !== currentId; });
   return pool;
 }
 
@@ -3054,7 +3078,7 @@ function todayRebalanceSideCandidateIds(plan, unit){
   const currentEntry = unit.shared ? meal.elena : meal[unit.person];
   const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
   const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
-  return sidePoolFor(avoidL).filter(function(sideId){
+  return sidePoolFor(avoidL, [unit.person || currentProf]).filter(function(sideId){
     return sideId !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== sideId; });
   });
 }
@@ -3146,7 +3170,7 @@ function proposeRebalanceSuggestions(weekStartDate){
       const m = planCopy.days[unit.dayIndex].meals[unit.slot];
       const currentId = unit.shared ? m.recipeId : m[unit.person].recipeId;
       const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
-      const cands = candidatesFor(unit.slot, styleKey, avoidL).filter(function(id){ return id !== currentId; });
+      const cands = candidatesFor(unit.slot, styleKey, avoidL, [unit.person || currentProf]).filter(function(id){ return id !== currentId; });
       cands.forEach(function(candId){
         const trial = JSON.parse(JSON.stringify(planCopy));
         applySwapToPlan(trial, unit, candId);

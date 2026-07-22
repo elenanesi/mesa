@@ -469,6 +469,29 @@ function buildSyncPayload(){
   return payload;
 }
 
+// PERSONAL-PREFS: the D1 mirror (worker/sync.js's `recipe_prefs` table, untouched by this
+// batch) predates the per-person split and only ever stores a flat {recipeId:
+// 'favorite'|'down'} map. It is also NEVER read back into any client — the only two
+// client fetches to /library/* are this mirror's own POST (mirrorLibraryCatalogToD1
+// below) and the GET /library/GLOBAL catalog fetch (fetchBuiltinRecipeCatalogFromD1),
+// which reads payload.recipes ONLY, never payload.recipePrefs — so this flattening is
+// purely informational, safe to be lossy. Uses the SAME household-union rule
+// generateWeek's shared slots use (planner.js recipeFavoritedByAny/recipeDownedByAny):
+// either person's down wins over a favorite, either person's favorite beats neither.
+function flattenRecipePrefsForMirror(nested){
+  const out = {};
+  const elena = (nested && nested.elena) || {};
+  const partner = (nested && nested.partner) || {};
+  const ids = {};
+  Object.keys(elena).forEach(function(id){ ids[id] = true; });
+  Object.keys(partner).forEach(function(id){ ids[id] = true; });
+  Object.keys(ids).sort().forEach(function(id){
+    if(elena[id] === 'down' || partner[id] === 'down') out[id] = 'down';
+    else if(elena[id] === 'favorite' || partner[id] === 'favorite') out[id] = 'favorite';
+  });
+  return out;
+}
+
 function buildLibraryCatalogPayload(){
   const foods = Object.keys(FOODS).map(function(id){
     const f = FOODS[id];
@@ -500,7 +523,7 @@ function buildLibraryCatalogPayload(){
   return {
     foods: foods,
     recipes: recipes,
-    recipePrefs: clone(recipePrefs),
+    recipePrefs: flattenRecipePrefsForMirror(recipePrefs),
     deletedFoods: clone(deletedFoods),
     deletedRecipes: clone(deletedRecipes)
   };
@@ -689,6 +712,21 @@ function mergeSimpleMap(localMap, remoteMap){
   return out;
 }
 
+// PERSONAL-PREFS: recipePrefs is now {elena:{},partner:{}} — merge each person's map
+// independently via mergeSimpleMap (same per-id union + tie-break rule as before, just run
+// twice). `local`/`remote` can each be missing a side, corrupt, or (a peer that hasn't
+// upgraded yet, or pre-migration stored/synced data) the OLD FLAT {recipeId:pref} shape —
+// normalizeRecipePrefsShape (state.js) handles all of that uniformly, treating a flat
+// incoming map as applying to BOTH persons, same rule loadState()'s own migration uses.
+function mergePersonalPrefs(local, remote){
+  const L = normalizeRecipePrefsShape(local);
+  const R = normalizeRecipePrefsShape(remote);
+  return {
+    elena: mergeSimpleMap(L.elena, R.elena),
+    partner: mergeSimpleMap(L.partner, R.partner)
+  };
+}
+
 // Top-level library section merge — see the doc block above. `local`/`remote` are the wire
 // shapes librarySectionData() produces (customFoods/foodOverrides/customRecipes/recipeOverrides/
 // deletedRecipes/deletedFoods/recipePrefs, plus a `customRev` counter that ISN'T part of
@@ -703,7 +741,7 @@ function mergeLibrarySection(local, remote){
     recipeOverrides: pruneTombstoned(mergeEntryMap(local.recipeOverrides, remote.recipeOverrides), mergedDeletedRecipes),
     deletedRecipes: mergedDeletedRecipes,
     deletedFoods: mergedDeletedFoods,
-    recipePrefs: mergeSimpleMap(local.recipePrefs, remote.recipePrefs)
+    recipePrefs: mergePersonalPrefs(local.recipePrefs, remote.recipePrefs)
   };
 }
 

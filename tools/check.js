@@ -1106,7 +1106,7 @@ function testNoLegacyRecipesCompatView(){
 /* ---------------- sync.js merge tests ---------------- */
 
 function emptyLibrarySection(){
-  return {customFoods: {}, foodOverrides: {}, customRecipes: {}, recipeOverrides: {}, deletedRecipes: {}, deletedFoods: {}, recipePrefs: {}};
+  return {customFoods: {}, foodOverrides: {}, customRecipes: {}, recipeOverrides: {}, deletedRecipes: {}, deletedFoods: {}, recipePrefs: {elena: {}, partner: {}}};
 }
 
 // mergeLibrarySection case (a): same id edited on both sides with different `u`
@@ -2510,25 +2510,47 @@ function testFavorites(ctx){
     // FAVORITE_SCORE_BOOST regardless of what else is in the catalog. Combined with the
     // cap-raise assertions in (2) below, this proves the whole mechanism ("favorites score
     // higher AND may appear one more time") without depending on a specific week's plan.
-    const MS_ARGS = [500, 500, 30, 30, 0, 1, 'chicken-couscous-salad', 0];
-    run(ctx, "recipePrefs = {};");
+    // PERSONAL-PREFS (2026-07): recipePrefs is now {elena:{},partner:{}} and mealScore/
+    // weeklyCapForRecipe take a trailing person/persons argument — MS_ARGS ends in
+    // 'elena' (mealScore's per-person favorite check) and weeklyCapForRecipe is called
+    // with persons=['elena'] throughout this test.
+    const MS_ARGS = [500, 500, 30, 30, 0, 1, 'chicken-couscous-salad', 0, 'elena'];
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};");
     const scoreBase = call(ctx, 'mealScore', MS_ARGS);
-    run(ctx, "recipePrefs = {'chicken-couscous-salad': 'favorite'};");
+    run(ctx, "recipePrefs = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {}};");
     const scoreFav = call(ctx, 'mealScore', MS_ARGS);
     assert(Math.abs((scoreFav - scoreBase) - get(ctx, 'FAVORITE_SCORE_BOOST')) < 1e-9,
       'favorites: mealScore adds exactly FAVORITE_SCORE_BOOST for a favorited recipe (same inputs, favorited vs not)',
       'delta=' + (scoreFav - scoreBase) + ' expected=' + get(ctx, 'FAVORITE_SCORE_BOOST'));
 
+    // A recipe favorited by the OTHER person only must not boost THIS person's mealScore
+    // call — proves the boost is genuinely per-person, not still reading a shared map.
+    run(ctx, "recipePrefs = {elena: {}, partner: {'chicken-couscous-salad': 'favorite'}};");
+    const scorePartnerOnly = call(ctx, 'mealScore', MS_ARGS); // MS_ARGS' trailing person is 'elena'
+    assert(Math.abs(scorePartnerOnly - scoreBase) < 1e-9,
+      'favorites: mealScore for elena is unaffected by a favorite recorded only under partner (per-person, not shared)',
+      'scorePartnerOnly=' + scorePartnerOnly + ' scoreBase=' + scoreBase);
+
     // Emergent sanity: favoriting a recipe must never REDUCE its fortnight usage. (The
     // stronger "appears more" claim is inherently plan-dependent — proven above via the
     // score boost + the raised cap, and spot-checked manually in the browser, rather than
     // pinned to a brittle exact count here.)
-    run(ctx, "recipePrefs = {};");
+    // PERSONAL-PREFS: favorited by BOTH persons here, deliberately — a shared slot's total
+    // score is scoreE+scoreA (mealScore called once per person, see pickSharedMeal), so an
+    // elena-ONLY favorite is now a genuinely WEAKER signal on a shared slot than the old
+    // flat map's household-wide favorite was (which — as a side effect of being a single
+    // shared value — boosted both scoreE and scoreA). That per-person weakening is the
+    // intended semantic change (Decisions: "either-favorite boosts", not "boosts as hard as
+    // a household favorite used to"), proven directly via mealScore above rather than
+    // pinned via plan-emergent usage counts (see this feature's own "do NOT pin
+    // plan-emergent usage counts" note for the shared-slot case). A favorite recorded for
+    // BOTH persons is the household-wide case this "never reduces" sanity check is about.
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};");
     const fullBaseline = fortnightUsage('chicken-couscous-salad', 'elena');
-    run(ctx, "recipePrefs = {'chicken-couscous-salad': 'favorite'};");
+    run(ctx, "recipePrefs = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {'chicken-couscous-salad': 'favorite'}};");
     const fullFavorited = fortnightUsage('chicken-couscous-salad', 'elena');
     assert(fullFavorited >= fullBaseline,
-      'favorites: favoriting a recipe never reduces its fortnight usage',
+      'favorites: favoriting a recipe for BOTH persons never reduces its fortnight usage',
       'baseline=' + fullBaseline + ' favorited=' + fullFavorited);
 
     // (2) A favorited full/main can reach 3/week where an unfavorited one caps at 2; a
@@ -2536,18 +2558,25 @@ function testFavorites(ctx){
     // half of item 2, asserted directly against weeklyCapForRecipe (not just via usage,
     // which can under-shoot the cap for reasons unrelated to the cap itself — see the
     // planner.js FAVORITE_SCORE_BOOST doc's note on day-wide/ladder relaxation).
-    run(ctx, "recipePrefs = {};");
-    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad']) === 2,
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad', ['elena']]) === 2,
       'weeklyCapForRecipe: an unfavorited role:full recipe still caps at the base 2');
-    run(ctx, "recipePrefs = {'chicken-couscous-salad': 'favorite'};");
-    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad']) === 3,
+    run(ctx, "recipePrefs = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {}};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad', ['elena']]) === 3,
       'weeklyCapForRecipe: a favorited role:full recipe caps one higher, at 3');
-    run(ctx, "recipePrefs = {};");
-    assert(call(ctx, 'weeklyCapForRecipe', ['carrots-over-hummus']) === 3,
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['carrots-over-hummus', ['elena']]) === 3,
       'weeklyCapForRecipe: an unfavorited role:side recipe still caps at the base 3');
-    run(ctx, "recipePrefs = {'carrots-over-hummus': 'favorite'};");
-    assert(call(ctx, 'weeklyCapForRecipe', ['carrots-over-hummus']) === 4,
+    run(ctx, "recipePrefs = {elena: {'carrots-over-hummus': 'favorite'}, partner: {}};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['carrots-over-hummus', ['elena']]) === 4,
       'weeklyCapForRecipe: a favorited role:side recipe caps one higher, at 4');
+    // weeklyCapForRecipe(id, persons): a favorite recorded for a person NOT in the
+    // `persons` list does not raise the cap — proves the +1 checks the given persons only.
+    run(ctx, "recipePrefs = {elena: {}, partner: {'chicken-couscous-salad': 'favorite'}};");
+    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad', ['elena']]) === 2,
+      'weeklyCapForRecipe: a favorite recorded only for partner does not raise elena-only persons\' cap');
+    assert(call(ctx, 'weeklyCapForRecipe', ['chicken-couscous-salad', ['partner']]) === 3,
+      'weeklyCapForRecipe: that same favorite DOES raise the cap when partner is in the persons list');
 
     // (3)+(4): a week with SEVERAL favorites still respects P1's day-wide no-repeat rule and
     // does not collapse to only those favorites — the finite raised cap + day-wide rule
@@ -2555,7 +2584,11 @@ function testFavorites(ctx){
     const manyIds = ['chicken-couscous-salad', 'lemon-herb-chicken-breast', 'seared-tuna-lemon', 'carrots-over-hummus'];
     const prefsObj = {};
     manyIds.forEach(function(id){ prefsObj[id] = 'favorite'; });
-    run(ctx, "recipePrefs = " + JSON.stringify(prefsObj) + "; weekPlans = {}; weekPlan = null;");
+    // Both persons favorite the same recipes here (matches the pre-PERSONAL-PREFS flat
+    // map's household-wide effect) — this test is about the raised-cap/day-wide-rule
+    // mechanism holding up under many favorites, not about the per-person split itself
+    // (that's covered separately, e.g. the mealScore/weeklyCapForRecipe assertions above).
+    run(ctx, "recipePrefs = {elena: " + JSON.stringify(prefsObj) + ", partner: " + JSON.stringify(prefsObj) + "}; weekPlans = {}; weekPlan = null;");
     const manyPlan = call(ctx, 'ensureWeekPlan', []);
     const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
     let dayRepeatFound = false;
@@ -2602,6 +2635,283 @@ function testFavorites(ctx){
     run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; recipePrefs = __savedRecipePrefs__;' +
       ' delete __savedWeekPlans__; delete __savedWeekPlan__; delete __savedRecipePrefs__;');
   }
+}
+
+/* ===================================================================
+   PERSONAL-PREFS (2026-07): recipePrefs went from a flat household-level
+   {recipeId:'favorite'|'down'} map to per-person {elena:{},partner:{}}. This block covers
+   normalizeRecipePrefsShape() (state.js), the loadState() migration, sync.js's
+   mergePersonalPrefs(), the planner's per-person candidatesFor/sidePoolFor down-exclusion,
+   and the library toggle's currentProf scoping. mealScore/weeklyCapForRecipe's per-person
+   behavior is covered directly in testFavorites above (see its PERSONAL-PREFS comments).
+   =================================================================== */
+
+// normalizeRecipePrefsShape() unit-level: flat detection, nested pass-through, and
+// missing/garbage input never throwing (state.js).
+function testNormalizeRecipePrefsShape(ctx){
+  assert(JSON.stringify(call(ctx, 'normalizeRecipePrefsShape', [null])) === JSON.stringify({elena: {}, partner: {}}),
+    'normalizeRecipePrefsShape: null input yields two empty maps, never throws');
+  assert(JSON.stringify(call(ctx, 'normalizeRecipePrefsShape', [undefined])) === JSON.stringify({elena: {}, partner: {}}),
+    'normalizeRecipePrefsShape: undefined input yields two empty maps, never throws');
+  assert(JSON.stringify(call(ctx, 'normalizeRecipePrefsShape', ['not-an-object'])) === JSON.stringify({elena: {}, partner: {}}),
+    'normalizeRecipePrefsShape: a non-object (string) input yields two empty maps, never throws');
+
+  const flat = {'chicken-couscous-salad': 'favorite', 'carrots-over-hummus': 'down', 'garbage-id': 'not-a-pref'};
+  const migrated = call(ctx, 'normalizeRecipePrefsShape', [flat]);
+  assert(migrated.elena['chicken-couscous-salad'] === 'favorite' && migrated.partner['chicken-couscous-salad'] === 'favorite',
+    'normalizeRecipePrefsShape: an OLD FLAT favorite migrates onto BOTH persons', JSON.stringify(migrated));
+  assert(migrated.elena['carrots-over-hummus'] === 'down' && migrated.partner['carrots-over-hummus'] === 'down',
+    'normalizeRecipePrefsShape: an OLD FLAT down migrates onto BOTH persons', JSON.stringify(migrated));
+  assert(migrated.elena['garbage-id'] === undefined && migrated.partner['garbage-id'] === undefined,
+    'normalizeRecipePrefsShape: a flat entry with a garbage value is dropped, not migrated', JSON.stringify(migrated));
+
+  const nested = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {'carrots-over-hummus': 'down', 'bad-id': 123}};
+  const loadedNested = call(ctx, 'normalizeRecipePrefsShape', [nested]);
+  assert(loadedNested.elena['chicken-couscous-salad'] === 'favorite' && loadedNested.elena['carrots-over-hummus'] === undefined,
+    'normalizeRecipePrefsShape: an already-nested shape loads per-person, not duplicated across both', JSON.stringify(loadedNested));
+  assert(loadedNested.partner['carrots-over-hummus'] === 'down' && loadedNested.partner['chicken-couscous-salad'] === undefined,
+    'normalizeRecipePrefsShape: the OTHER person\'s nested map stays independent', JSON.stringify(loadedNested));
+  assert(loadedNested.partner['bad-id'] === undefined,
+    'normalizeRecipePrefsShape: a nested entry with a garbage value is dropped', JSON.stringify(loadedNested));
+
+  // A side missing entirely (e.g. {elena: {...}} with no `partner` key at all) is handled
+  // safely rather than throwing.
+  const oneSided = {elena: {'chicken-couscous-salad': 'favorite'}};
+  const loadedOneSided = call(ctx, 'normalizeRecipePrefsShape', [oneSided]);
+  assert(loadedOneSided.elena['chicken-couscous-salad'] === 'favorite' && JSON.stringify(loadedOneSided.partner) === '{}',
+    'normalizeRecipePrefsShape: a nested shape missing the partner key entirely yields an empty partner map, not a crash', JSON.stringify(loadedOneSided));
+}
+
+// loadState() migration: a saved snapshot with the OLD FLAT recipePrefs shape loads into
+// BOTH persons; an already-nested snapshot loads per-person; missing/garbage resets to
+// two empty maps (mirrors testPantryLoadValidation's localStorage round-trip pattern).
+function testRecipePrefsLoadStateMigration(ctx){
+  const savedRecipePrefs = get(ctx, 'recipePrefs');
+  try{
+    // (a) OLD FLAT store -> both persons.
+    const oldFlat = {'chicken-couscous-salad': 'favorite', 'carrots-over-hummus': 'down'};
+    run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign({}, buildSnapshot(), {recipePrefs: " + JSON.stringify(oldFlat) + "})));");
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};"); // scramble in-memory before reload
+    run(ctx, 'loadState();');
+    const migrated = get(ctx, 'recipePrefs');
+    assert(migrated.elena['chicken-couscous-salad'] === 'favorite' && migrated.partner['chicken-couscous-salad'] === 'favorite',
+      'loadState(): an OLD FLAT store\'s favorite migrates onto BOTH persons', JSON.stringify(migrated));
+    assert(migrated.elena['carrots-over-hummus'] === 'down' && migrated.partner['carrots-over-hummus'] === 'down',
+      'loadState(): an OLD FLAT store\'s down migrates onto BOTH persons', JSON.stringify(migrated));
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+
+    // (b) already-nested store -> loads per-person, not duplicated across both.
+    const nested = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {'carrots-over-hummus': 'down'}};
+    run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign({}, buildSnapshot(), {recipePrefs: " + JSON.stringify(nested) + "})));");
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};");
+    run(ctx, 'loadState();');
+    const loadedNested = get(ctx, 'recipePrefs');
+    assert(JSON.stringify(loadedNested) === JSON.stringify(nested),
+      'loadState(): an already-nested store round-trips exactly, per-person', JSON.stringify(loadedNested));
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+
+    // (c) missing/garbage recipePrefs resets to two empty maps rather than keeping stale
+    // in-memory data (same "reset path" convention testPantryLoadValidation uses).
+    const base = call(ctx, 'buildSnapshot', []);
+    delete base.recipePrefs;
+    run(ctx, "localStorage.setItem(STORE_KEY, " + JSON.stringify(JSON.stringify(base)) + ");");
+    run(ctx, "recipePrefs = {elena: {'stale': 'favorite'}, partner: {}};"); // scramble with a NONEMPTY value first
+    run(ctx, 'loadState();');
+    assert(JSON.stringify(get(ctx, 'recipePrefs')) === JSON.stringify({elena: {}, partner: {}}),
+      'loadState(): a store with no recipePrefs key at all resets to two empty maps, not stale in-memory data',
+      'got ' + JSON.stringify(get(ctx, 'recipePrefs')));
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+  } finally {
+    ctx.__savedRecipePrefs__ = savedRecipePrefs;
+    run(ctx, 'recipePrefs = __savedRecipePrefs__; delete __savedRecipePrefs__;');
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+  }
+}
+
+// sync.js: mergePersonalPrefs() merges each person's map independently (elena's and
+// partner's converge separately, same per-id union/tie-break rule mergeSimpleMap already
+// had), and a flat incoming map (an un-upgraded peer, or pre-migration synced data)
+// applies to BOTH persons on whichever side it arrives.
+function testMergePersonalPrefs(ctx){
+  // (a) independent per-person union.
+  const local = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {'carrots-over-hummus': 'down'}};
+  const remote = {elena: {'seared-tuna-lemon': 'favorite'}, partner: {}};
+  const merged = call(ctx, 'mergePersonalPrefs', [cloneJSON(local), cloneJSON(remote)]);
+  assert(merged.elena['chicken-couscous-salad'] === 'favorite' && merged.elena['seared-tuna-lemon'] === 'favorite',
+    'mergePersonalPrefs: elena\'s map unions entries from both sides', JSON.stringify(merged.elena));
+  assert(merged.partner['carrots-over-hummus'] === 'down',
+    'mergePersonalPrefs: partner\'s map keeps a local-only entry (remote had nothing for partner)', JSON.stringify(merged.partner));
+
+  // (b) a genuine per-id conflict (both sides set a DIFFERENT pref for the same id, same
+  // person) converges to the same value regardless of argument order — mirrors
+  // mergeSimpleMap's own tie-break, just exercised per-person here.
+  const localConflict = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {}};
+  const remoteConflict = {elena: {'chicken-couscous-salad': 'down'}, partner: {}};
+  const mergedLR = call(ctx, 'mergePersonalPrefs', [cloneJSON(localConflict), cloneJSON(remoteConflict)]);
+  const mergedRL = call(ctx, 'mergePersonalPrefs', [cloneJSON(remoteConflict), cloneJSON(localConflict)]);
+  assert(mergedLR.elena['chicken-couscous-salad'] === mergedRL.elena['chicken-couscous-salad'],
+    'mergePersonalPrefs: a genuine per-id conflict converges to the same value regardless of argument order',
+    'LR=' + mergedLR.elena['chicken-couscous-salad'] + ' RL=' + mergedRL.elena['chicken-couscous-salad']);
+
+  // (c) a flat incoming map (old peer / pre-migration data) applies to BOTH persons,
+  // whichever side (local or remote) it arrives on.
+  const emptyNested = {elena: {}, partner: {}};
+  const flat = {'chicken-couscous-salad': 'favorite'};
+  const mergedFlatRemote = call(ctx, 'mergePersonalPrefs', [cloneJSON(emptyNested), cloneJSON(flat)]);
+  assert(mergedFlatRemote.elena['chicken-couscous-salad'] === 'favorite' && mergedFlatRemote.partner['chicken-couscous-salad'] === 'favorite',
+    'mergePersonalPrefs: a flat REMOTE map (un-upgraded peer) applies to both persons', JSON.stringify(mergedFlatRemote));
+  const mergedFlatLocal = call(ctx, 'mergePersonalPrefs', [cloneJSON(flat), cloneJSON(emptyNested)]);
+  assert(mergedFlatLocal.elena['chicken-couscous-salad'] === 'favorite' && mergedFlatLocal.partner['chicken-couscous-salad'] === 'favorite',
+    'mergePersonalPrefs: a flat LOCAL map applies to both persons too', JSON.stringify(mergedFlatLocal));
+
+  // (d) idempotence: merging the converged result with itself is a no-op.
+  const again = call(ctx, 'mergePersonalPrefs', [cloneJSON(merged), cloneJSON(merged)]);
+  assert(JSON.stringify(again) === JSON.stringify(merged),
+    'mergePersonalPrefs: merging the converged result with itself is a no-op', 'converged=' + JSON.stringify(merged) + ' again=' + JSON.stringify(again));
+
+  // (e) plumbing: mergeLibrarySection threads local.recipePrefs/remote.recipePrefs through
+  // mergePersonalPrefs correctly (not just the standalone function above).
+  const localSection = emptyLibrarySection();
+  localSection.recipePrefs = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {}};
+  const remoteSection = emptyLibrarySection();
+  remoteSection.recipePrefs = {elena: {}, partner: {'carrots-over-hummus': 'down'}};
+  const mergedSection = call(ctx, 'mergeLibrarySection', [cloneJSON(localSection), cloneJSON(remoteSection)]);
+  assert(mergedSection.recipePrefs.elena['chicken-couscous-salad'] === 'favorite' && mergedSection.recipePrefs.partner['carrots-over-hummus'] === 'down',
+    'mergeLibrarySection: threads local/remote recipePrefs through mergePersonalPrefs correctly', JSON.stringify(mergedSection.recipePrefs));
+}
+
+// planner.js: candidatesFor()/sidePoolFor()'s down-exclusion now checks the PERSONS passed
+// in, not a shared global — a solo pool only excludes what THAT person downed (the other
+// person's solo pool is untouched), and a SHARED pool (persons=['elena','partner']) is
+// excluded if EITHER person downed it ("either-down excludes" — Decisions).
+function testPersonalPrefsPlannerExclusion(ctx){
+  const savedRecipePrefs = get(ctx, 'recipePrefs');
+  try{
+    // (a) solo: elena downs a recipe -> absent from elena's own solo pool, still present in
+    // partner's solo pool (untouched by elena's down).
+    run(ctx, "recipePrefs = {elena: {'chicken-couscous-salad': 'down'}, partner: {}};");
+    const soloElena = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena']]);
+    const soloPartner = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['partner']]);
+    assert(soloElena.indexOf('chicken-couscous-salad') === -1,
+      'candidatesFor: a recipe elena downed is absent from HER OWN solo pool', JSON.stringify(soloElena));
+    assert(soloPartner.indexOf('chicken-couscous-salad') !== -1,
+      'candidatesFor: that same recipe is still present in PARTNER\'s solo pool (elena\'s down does not leak across persons)', JSON.stringify(soloPartner));
+
+    // (b) shared: EITHER person's down excludes it from the shared (both-persons) pool,
+    // even though the other person never downed it.
+    run(ctx, "recipePrefs = {elena: {}, partner: {'chicken-couscous-salad': 'down'}};");
+    const sharedPoolPartnerDown = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena', 'partner']]);
+    assert(sharedPoolPartnerDown.indexOf('chicken-couscous-salad') === -1,
+      'candidatesFor: a shared pool excludes a recipe downed by EITHER person (partner-only down here)', JSON.stringify(sharedPoolPartnerDown));
+
+    run(ctx, "recipePrefs = {elena: {'chicken-couscous-salad': 'down'}, partner: {}};");
+    const sharedPoolElenaDown = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena', 'partner']]);
+    assert(sharedPoolElenaDown.indexOf('chicken-couscous-salad') === -1,
+      'candidatesFor: a shared pool also excludes a recipe downed by elena only (symmetric)', JSON.stringify(sharedPoolElenaDown));
+
+    // Sanity: with NEITHER person downing it, it's back in both the solo and shared pools.
+    run(ctx, "recipePrefs = {elena: {}, partner: {}};");
+    const soloElenaClean = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena']]);
+    const sharedClean = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena', 'partner']]);
+    assert(soloElenaClean.indexOf('chicken-couscous-salad') !== -1 && sharedClean.indexOf('chicken-couscous-salad') !== -1,
+      'candidatesFor: with no down recorded for either person, the recipe is present in both solo and shared pools (sanity baseline)');
+
+    // (c) opts.includeThumbsDown still bypasses the down filter regardless of persons.
+    run(ctx, "recipePrefs = {elena: {'chicken-couscous-salad': 'down'}, partner: {'chicken-couscous-salad': 'down'}};");
+    const bypassPool = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena', 'partner'], {includeThumbsDown: true}]);
+    assert(bypassPool.indexOf('chicken-couscous-salad') !== -1,
+      'candidatesFor: opts.includeThumbsDown still bypasses the down filter with both persons downing it', JSON.stringify(bypassPool));
+
+    // (d) sidePoolFor mirrors the same solo/shared down-exclusion rule for role:'side' recipes.
+    run(ctx, "recipePrefs = {elena: {'carrots-over-hummus': 'down'}, partner: {}};");
+    const sideSoloElena = call(ctx, 'sidePoolFor', [[], ['elena']]);
+    const sideSoloPartner = call(ctx, 'sidePoolFor', [[], ['partner']]);
+    assert(sideSoloElena.indexOf('carrots-over-hummus') === -1 && sideSoloPartner.indexOf('carrots-over-hummus') !== -1,
+      'sidePoolFor: elena\'s down excludes it from her own side pool but not partner\'s', 'elena=' + JSON.stringify(sideSoloElena) + ' partner=' + JSON.stringify(sideSoloPartner));
+    const sideShared = call(ctx, 'sidePoolFor', [[], ['elena', 'partner']]);
+    assert(sideShared.indexOf('carrots-over-hummus') === -1,
+      'sidePoolFor: a shared (both-persons) side pool excludes it too (either-down excludes)', JSON.stringify(sideShared));
+  } finally {
+    ctx.__savedRecipePrefs__ = savedRecipePrefs;
+    run(ctx, 'recipePrefs = __savedRecipePrefs__; delete __savedRecipePrefs__;');
+  }
+}
+
+// library.js: the library recipe list's toggleRecipePref() writes to the CURRENTLY ACTIVE
+// person's own map only (currentProf), never the other person's — and switching currentProf
+// changes what the UI shows as favorited (filteredRecipeIds()'s favorite-first sort).
+function testRecipePrefsUIScopedToCurrentProf(ctx){
+  const savedRecipePrefs = get(ctx, 'recipePrefs');
+  const savedCurrentProf = get(ctx, 'currentProf');
+  try{
+    run(ctx, "recipePrefs = {elena: {}, partner: {}}; currentProf = 'elena';");
+    const baselineOrder = call(ctx, 'filteredRecipeIds', []);
+
+    call(ctx, 'toggleRecipePref', ['carrots-over-hummus', 'favorite']);
+    const afterToggle = get(ctx, 'recipePrefs');
+    assert(afterToggle.elena['carrots-over-hummus'] === 'favorite',
+      'toggleRecipePref: writes to recipePrefs[currentProf] (elena, since currentProf is elena)', JSON.stringify(afterToggle));
+    assert(afterToggle.partner['carrots-over-hummus'] === undefined,
+      'toggleRecipePref: does NOT write to the other person\'s map', JSON.stringify(afterToggle));
+
+    // As elena (who favorited it), the recipe is the only favorite -> sorts first.
+    const asElena = call(ctx, 'filteredRecipeIds', []);
+    assert(asElena[0] === 'carrots-over-hummus',
+      'filteredRecipeIds: as elena (currentProf), the recipe she favorited sorts first', JSON.stringify(asElena.slice(0, 3)));
+
+    // Switching currentProf to partner: partner never favorited it, so the sort order is
+    // completely unaffected by elena's favorite — proves the read is currentProf-scoped,
+    // not a shared/global read.
+    run(ctx, "currentProf = 'partner';");
+    const asPartner = call(ctx, 'filteredRecipeIds', []);
+    assert(JSON.stringify(asPartner) === JSON.stringify(baselineOrder),
+      'filteredRecipeIds: as partner (who never favorited it), sort order is identical to the pre-favorite baseline — switching currentProf shows different prefs',
+      'asPartner[0..2]=' + JSON.stringify(asPartner.slice(0, 3)) + ' baseline[0..2]=' + JSON.stringify(baselineOrder.slice(0, 3)));
+
+    // toggling it again (now as partner) sets partner's own pref, independent of elena's.
+    call(ctx, 'toggleRecipePref', ['carrots-over-hummus', 'down']);
+    const afterPartnerToggle = get(ctx, 'recipePrefs');
+    assert(afterPartnerToggle.partner['carrots-over-hummus'] === 'down' && afterPartnerToggle.elena['carrots-over-hummus'] === 'favorite',
+      'toggleRecipePref: toggling as partner sets partner\'s own pref without touching elena\'s already-set favorite',
+      JSON.stringify(afterPartnerToggle));
+  } finally {
+    ctx.__savedRecipePrefs__ = savedRecipePrefs;
+    ctx.__savedCurrentProf__ = savedCurrentProf;
+    run(ctx, 'recipePrefs = __savedRecipePrefs__; currentProf = __savedCurrentProf__; delete __savedRecipePrefs__; delete __savedCurrentProf__;');
+  }
+}
+
+// sync.js: the D1 mirror (buildLibraryCatalogPayload/flattenRecipePrefsForMirror) flattens
+// the nested recipePrefs to a household-union map for the worker's flat recipe_prefs
+// table — "either-down excludes, either-favorite boosts", same rule generateWeek's shared
+// slots use — and that mirrored data is (by inspection, see the function's own doc)
+// structurally never read back into client state.
+function testFlattenRecipePrefsForMirror(ctx){
+  const nested1 = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {}};
+  assert(call(ctx, 'flattenRecipePrefsForMirror', [nested1])['chicken-couscous-salad'] === 'favorite',
+    'flattenRecipePrefsForMirror: elena-only favorite flattens to favorite (either-favorite boosts)');
+
+  const nested2 = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {'chicken-couscous-salad': 'down'}};
+  assert(call(ctx, 'flattenRecipePrefsForMirror', [nested2])['chicken-couscous-salad'] === 'down',
+    'flattenRecipePrefsForMirror: one favorite + one down flattens to down (either-down excludes, outranks favorite)');
+
+  const nested3 = {elena: {}, partner: {}};
+  assert(JSON.stringify(call(ctx, 'flattenRecipePrefsForMirror', [nested3])) === '{}',
+    'flattenRecipePrefsForMirror: two empty maps flatten to an empty map');
+
+  assert(JSON.stringify(call(ctx, 'flattenRecipePrefsForMirror', [null])) === '{}',
+    'flattenRecipePrefsForMirror: missing/null input flattens to an empty map rather than throwing');
+
+  // Structural check: fetchBuiltinRecipeCatalogFromD1's own source never references
+  // recipePrefs at all — the GET /library/GLOBAL response's recipePrefs field (if any) is
+  // never read into client state, only payload.recipes is (see the function's own doc
+  // comment on buildLibraryCatalogPayload above for the full reasoning: this is one of only
+  // two client fetches to /library/*, the other being this mirror's own POST).
+  const syncSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'sync.js'), 'utf8');
+  const m = syncSrc.match(/function fetchBuiltinRecipeCatalogFromD1\([^)]*\)\{[\s\S]*?\n\}\n/);
+  assert(!!m, 'fetchBuiltinRecipeCatalogFromD1: function body found in sync.js', 'not found');
+  if(m) assert(m[0].indexOf('recipePrefs') === -1,
+    'fetchBuiltinRecipeCatalogFromD1: its source never references recipePrefs — the D1 mirror is write-only from the client\'s perspective', m[0]);
 }
 
 /* ---------------- VARIETY-plan.md P2: Mediterranean protein balance ----------------
@@ -5614,7 +5924,7 @@ function testD2SauceRoleAndCatalog(ctx){
     const hits = [];
     ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
       ['balanced', 'highprotein', 'lowcarb'].forEach(function(style){
-        const pool = call(ctx, 'candidatesFor', [slot, style, [], {includeThumbsDown: true}]);
+        const pool = call(ctx, 'candidatesFor', [slot, style, [], [], {includeThumbsDown: true}]);
         SAUCE_IDS.forEach(function(id){ if(pool.indexOf(id) !== -1) hits.push(slot + '/' + style + '/' + id); });
       });
     });
@@ -6316,6 +6626,12 @@ function main(){
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
   runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });
+  runTest('PERSONAL-PREFS: normalizeRecipePrefsShape (flat migration + nested pass-through)', function(){ testNormalizeRecipePrefsShape(ctx); });
+  runTest('PERSONAL-PREFS: loadState() migration (flat -> both persons, nested round-trip, reset path)', function(){ testRecipePrefsLoadStateMigration(ctx); });
+  runTest('PERSONAL-PREFS: mergePersonalPrefs (per-person merge, convergence, flat-incoming)', function(){ testMergePersonalPrefs(ctx); });
+  runTest('PERSONAL-PREFS: planner candidatesFor/sidePoolFor per-person down-exclusion', function(){ testPersonalPrefsPlannerExclusion(ctx); });
+  runTest('PERSONAL-PREFS: library toggle scoped to currentProf', function(){ testRecipePrefsUIScopedToCurrentProf(ctx); });
+  runTest('PERSONAL-PREFS: D1 mirror flattening + never read back', function(){ testFlattenRecipePrefsForMirror(ctx); });
   runTest('Mediterranean protein balance (VARIETY-plan.md P2)', function(){ testProteinBalance(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });

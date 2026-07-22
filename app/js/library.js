@@ -2055,8 +2055,10 @@ function filteredRecipeIds(){
     if(libRecipeFilters.seasons.size && !libRecipeFilters.seasons.has(recipeSeason(r))) return false;
     return true;
   }).sort(function(a, b){
-    const aFav = recipePrefs[a] === 'favorite';
-    const bFav = recipePrefs[b] === 'favorite';
+    // PERSONAL-PREFS: sort favorites the CURRENTLY ACTIVE person's own prefs.
+    const activePrefs = recipePrefs[currentProf] || {};
+    const aFav = activePrefs[a] === 'favorite';
+    const bFav = activePrefs[b] === 'favorite';
     if(aFav !== bFav) return aFav ? -1 : 1;
     return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
   });
@@ -2148,7 +2150,7 @@ function renderLibRecipeListMarkup(){
     const nut = recipeNutrition(id, 1).totals;
     const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
     const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
-    const pref = recipePrefs[id] || null;
+    const pref = (recipePrefs[currentProf] && recipePrefs[currentProf][id]) || null;
     return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
       + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
@@ -2164,8 +2166,12 @@ function renderLibRecipeListMarkup(){
 
 function toggleRecipePref(id, pref){
   if(!RECIPES_DB[id]) return;
-  if(recipePrefs[id] === pref) delete recipePrefs[id];
-  else recipePrefs[id] = pref;
+  // PERSONAL-PREFS: always writes to the CURRENTLY ACTIVE person's own map, never the
+  // other person's — switching currentProf and reopening this sheet shows THEIR prefs.
+  if(!recipePrefs[currentProf]) recipePrefs[currentProf] = {};
+  const mine = recipePrefs[currentProf];
+  if(mine[id] === pref) delete mine[id];
+  else mine[id] = pref;
   customRev++;
   persist();
   rerenderLibRecipeFilteredView();
@@ -2866,13 +2872,11 @@ function mergeImportedLibrary(parsed){
       if(typeof id === 'string' && parsed.deletedRecipes[id]) incomingDeleted[id] = true;
     });
   }
-  const incomingPrefs = {};
-  if(parsed && parsed.recipePrefs && typeof parsed.recipePrefs === 'object'){
-    Object.keys(parsed.recipePrefs).forEach(function(id){
-      const pref = parsed.recipePrefs[id];
-      if(typeof id === 'string' && (pref === 'favorite' || pref === 'down')) incomingPrefs[id] = pref;
-    });
-  }
+  // PERSONAL-PREFS: an imported file's recipePrefs can be the current nested shape OR a
+  // pre-migration OLD FLAT {recipeId:'favorite'|'down'} shape — normalizeRecipePrefsShape
+  // (state.js) migrates a flat map onto BOTH persons, same rule loadState()'s own
+  // migration uses.
+  const incomingPrefs = normalizeRecipePrefsShape(parsed && parsed.recipePrefs);
 
   // Existing display names (built-in + current custom), normalized — extended as entries
   // are merged in, so two incoming entries sharing a name don't both land unrenamed.
@@ -2963,10 +2967,14 @@ function mergeImportedLibrary(parsed){
     if(customRecipes[id]) delete customRecipes[id];
     changedRecipeControls++;
   });
-  Object.keys(incomingPrefs).sort().forEach(function(id){
-    if(recipePrefs[id] === incomingPrefs[id]) return;
-    recipePrefs[id] = incomingPrefs[id];
-    changedPrefs++;
+  ['elena', 'partner'].forEach(function(person){
+    if(!recipePrefs[person]) recipePrefs[person] = {};
+    const mine = recipePrefs[person];
+    Object.keys(incomingPrefs[person]).sort().forEach(function(id){
+      if(mine[id] === incomingPrefs[person][id]) return;
+      mine[id] = incomingPrefs[person][id];
+      changedPrefs++;
+    });
   });
 
   if(addedFoods || addedRecipes || changedRecipeControls || changedPrefs){
@@ -3246,13 +3254,18 @@ function cleanupDuplicateLibraryEntries(){
   });
 
   // recipePrefs keyed by a deleted id: remap onto the kept id (unless it already has its
-  // own pref, in which case the deleted id's pref is just dropped rather than clobbering it).
+  // own pref, in which case the deleted id's pref is just dropped rather than clobbering
+  // it) — done for BOTH persons' maps independently (PERSONAL-PREFS).
   Object.keys(idRemap).forEach(function(deletedId){
     const keptId = idRemap[deletedId];
-    if(recipePrefs[deletedId] !== undefined){
-      if(recipePrefs[keptId] === undefined) recipePrefs[keptId] = recipePrefs[deletedId];
-      delete recipePrefs[deletedId];
-    }
+    ['elena', 'partner'].forEach(function(person){
+      const prefs = recipePrefs[person];
+      if(!prefs) return;
+      if(prefs[deletedId] !== undefined){
+        if(prefs[keptId] === undefined) prefs[keptId] = prefs[deletedId];
+        delete prefs[deletedId];
+      }
+    });
   });
 
   customRev++;
