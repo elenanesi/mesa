@@ -2339,6 +2339,59 @@ function testPersistFailureHook(ctx){
    other side: applyLightConsecutiveFilter only looked at yesterday. Measured before the
    fix: 'Snack: Hummus & veg sticks' 6x in one week, twice on one day (as a lunch side, a
    dinner side AND the standalone snack). */
+/* ---------------- lunch fish/meat exclusion + swap variety (2026-07-22) ---------------- */
+function testLunchFishMeatExclusionAndSwapVariety(ctx){
+  const saved = cloneJSON(get(ctx, 'weekPlans'));
+  try{
+    // (A) A protein-forward fish/meat main (seared tuna) is dinner-only for auto-planning;
+    // a salad, a pasta dish, an egg dish, and a carb-forward veg main all stay lunch-eligible.
+    assert(call(ctx, 'isDinnerOnlyProteinMain', ['seared-tuna-lemon']) === true,
+      'isDinnerOnlyProteinMain: a plain seared tuna steak is dinner-only');
+    assert(call(ctx, 'isDinnerOnlyProteinMain', ['tuna-white-bean-salad']) === false,
+      'isDinnerOnlyProteinMain: a tuna SALAD stays lunch-eligible (salad exemption)');
+    assert(call(ctx, 'isDinnerOnlyProteinMain', ['pasta']) === false,
+      'isDinnerOnlyProteinMain: a pasta dish stays lunch-eligible (carb-forward)');
+    assert(call(ctx, 'isDinnerOnlyProteinMain', ['eggsturkey']) === false,
+      'isDinnerOnlyProteinMain: an egg-based dish stays lunch-eligible (egg exemption)');
+    assert(call(ctx, 'isDinnerOnlyProteinMain', ['lentils-tomato-cumin']) === false,
+      'isDinnerOnlyProteinMain: a meatless (veg) main is never caught');
+
+    // The lunch candidate pool excludes it; the dinner pool includes it.
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+    const lunchPool = call(ctx, 'candidatesFor', ['lunch', 'balanced', [], ['elena']]);
+    const dinnerPool = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena']]);
+    assert(lunchPool.indexOf('seared-tuna-lemon') === -1 && dinnerPool.indexOf('seared-tuna-lemon') !== -1,
+      'candidatesFor: seared tuna is out of the lunch auto-pool but in the dinner pool');
+    assert(lunchPool.length >= 8,
+      'candidatesFor: the lunch pool stays healthy after the fish/meat exclusion', 'lunch pool=' + lunchPool.length);
+
+    // (B) Swap "best matches" avoid recipes already used elsewhere that week, and vary the
+    // top pick across days (not one calorie-closest dish every time).
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const wsd = get(ctx, "(function(){ var p = ensureWeekPlan(mondayOfWeek(todayISO())); return p.weekStartDate; })()");
+    // A recipe planned at day 0 lunch must not be offered as a day 2 lunch swap.
+    const plan = get(ctx, "weekPlans['" + wsd + "']");
+    const day0LunchId = get(ctx, "(function(){var m=weekPlans['" + wsd + "'].days[0].meals.lunch; var e=m.shared?m.elena:m.elena; return e && e.recipeId;})()");
+    const d2alts = call(ctx, 'buildSwapAlternatives', [2, 'lunch', 'elena', wsd]).map(function(a){ return a.id; });
+    assert(d2alts.indexOf(day0LunchId) === -1,
+      'buildSwapAlternatives: does not suggest a recipe already planned elsewhere this week', 'day0Lunch=' + day0LunchId + ' d2alts=' + JSON.stringify(d2alts));
+
+    // Top lunch suggestion is not identical on ALL 7 days (rotation within the fit band).
+    const tops = [];
+    for(let d = 0; d < 7; d++){
+      const a = call(ctx, 'buildSwapAlternatives', [d, 'lunch', 'elena', wsd]);
+      if(a.length) tops.push(a[0].id);
+    }
+    const distinctTops = tops.filter(function(v, i){ return tops.indexOf(v) === i; }).length;
+    assert(distinctTops >= 3,
+      'buildSwapAlternatives: the #1 lunch suggestion varies across the week (>=3 distinct), not one dish every day',
+      'tops=' + JSON.stringify(tops));
+  } finally {
+    ctx.weekPlans = saved;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null;");
+  }
+}
+
 /* ---------------- Regenerate week (keep pinned + logged) ----------------
    regenerateWeekPreservingLocks() forces a fresh plan for a week from the current catalog
    while preserving pinned meals and anything logged/skipped — the on-demand version of the
@@ -6743,6 +6796,7 @@ function main(){
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
+  runTest('lunch fish/meat exclusion + swap variety', function(){ testLunchFishMeatExclusionAndSwapVariety(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

@@ -151,6 +151,29 @@ function recipeMayContainAnimalProtein(id){
   });
   return proteinKindForIngredientIds(ids) !== null;
 }
+// "Fish/meat dinners that are not salads or pasta" (user, 2026-07-22): a fish- or meat-based,
+// PROTEIN-FORWARD dish (more kcal from protein than carbs) belongs at DINNER, not lunch —
+// UNLESS it's a salad, a pasta/noodle dish, or an egg dish, all of which are lunch-friendly.
+// The carb-forward test alone exempts pasta/grain/legume dishes (a tuna PASTA is carb-heavy
+// -> stays lunch); the salad-title and egg checks exempt the cases the macro test would
+// otherwise misclassify (a lean tuna SALAD is protein-forward but IS a salad; an eggs+turkey
+// dish is breakfast/lunch food). Used ONLY to drop such a recipe from LUNCH auto-planning
+// (candidatesFor) and ONLY when it can still go to dinner — so a deliberately lunch-only dish
+// is never stranded, and manual swap search (buildSwapSearchOptions) still lets you put a
+// fish at lunch by hand.
+const PASTA_NOODLE_FOOD_IDS = ['pasta', 'spaghetti', 'wholegrain-pasta', 'lasagna-sheets', 'ravioli', 'egg-noodles', 'ramen-noodles'];
+function isDinnerOnlyProteinMain(id){
+  const r = RECIPES_DB[id];
+  if(!r || recipeProteinKind(id) === null) return false;      // no fish/meat -> rule doesn't apply
+  const base = dbBaseNutrition(id);
+  if(!(base.kcal > 0) || base.protein * 4 <= base.carbs * 4) return false; // carb-forward stays lunch
+  const ids = recipeEffectiveIngredients(r, {}).map(function(ing){ return ing[0]; });
+  if(ids.indexOf('eggs') !== -1) return false;                // egg dishes are breakfast/lunch food
+  if(/salad|insalata/i.test(r.title || '')) return false;     // explicit salads stay lunch
+  if(ids.some(function(i){ return PASTA_NOODLE_FOOD_IDS.indexOf(i) !== -1; })) return false; // pasta/noodles stay lunch
+  return true;
+}
+
 // A whole meal unit (main + composed extras) — a veg side never makes a chicken dish
 // meatless, and a tuna side would make an otherwise-meatless main a fish meal.
 function entryProteinKind(entry){
@@ -330,6 +353,9 @@ function candidatesFor(slot, styleKey, avoidList, persons, opts){
       && (opts.includeThumbsDown || !recipeDownedByAny(id, persons))
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && recipeSlotList(r).indexOf(slot) !== -1
+      // Fish/meat protein mains (not salads/pasta/eggs) skip LUNCH auto-planning when they can
+      // go to dinner instead — see isDinnerOnlyProteinMain (user rule, 2026-07-22).
+      && !(slot === 'lunch' && recipeSlotList(r).indexOf('dinner') !== -1 && isDinnerOnlyProteinMain(id))
       && r.styles.indexOf(styleKey) !== -1
       && !recipeHitsAvoid(r, avoidList)
       && recipeOptionsViable(r, avoidList);
@@ -2349,6 +2375,9 @@ function addSideToPlan(plan, unit, sideRecipeId){
 // computed kcal to what's currently planned (deterministic tie-break by id).
 // weekStartDate (optional, defaults to the current week — same compat contract as
 // ensureWeekPlan) lets the Week screen's swap sheet operate on NEXT week's plan too.
+// Two swap candidates whose best-fit calories land within this many kcal of the meal being
+// swapped are treated as an equally good fit and rotated for variety (see buildSwapAlternatives).
+const SWAP_KCAL_TIE_BAND = 120;
 function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
   const day = plan.days[dayIndex];
@@ -2366,18 +2395,41 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
     const id = other.shared ? other.recipeId : other[person].recipeId;
     if(id) plannedToday[id] = true;
   });
-  let pool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId && !plannedToday[id]; });
-  if(!pool.length) pool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId; });
+  // Variety (2026-07-22): also avoid recipes already used ANYWHERE ELSE this week (main dish
+  // or composed extra, for this person), so the suggestions aren't just "whatever's closest
+  // in calories" — which used to make two similar-calorie meals surface the identical top
+  // pick. Falls back gracefully if that would leave nothing.
+  const usedThisWeek = {};
+  plan.days.forEach(function(dd, di){
+    SLOT_ORDER.forEach(function(s){
+      if(di === dayIndex && s === slot) return; // the slot being swapped is fair game
+      const mm = dd.meals[s];
+      const e = mm.shared ? mm[person] : mm[person];
+      if(!e) return;
+      planEntryComponents(e).forEach(function(c){ if(c.recipeId) usedThisWeek[c.recipeId] = true; });
+    });
+  });
+  const rawPool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId; });
+  let pool = rawPool.filter(function(id){ return !plannedToday[id] && !usedThisWeek[id]; });
+  if(!pool.length) pool = rawPool.filter(function(id){ return !plannedToday[id]; }); // relax week-wide
+  if(!pool.length) pool = rawPool;                                                    // relax today
   const anchor = PERSON_ANCHOR[person];
+  const slotIndex = SLOT_ORDER.indexOf(slot);
   const scored = pool.map(function(id){
     const base = dbBaseNutrition(id);
     const bp = bestPortion(base.kcal, currentKcal, anchor, SLOT_MAX_PORTION[slot]);
     const protein = base.protein * bp.portion;
-    return {id: id, portion: bp.portion, kcal: bp.kcal, protein: protein, kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
+    // Group by calorie-fit BAND (not raw delta): every candidate within SWAP_KCAL_TIE_BAND of
+    // the target counts as an equally good fit, and within a band we ROTATE by (day, slot,
+    // recipe) — deterministic, but different per day — so a given calorie target no longer
+    // always surfaces the single closest dish first. Best-fitting band still comes first.
+    const band = Math.round(Math.abs(bp.kcal - currentKcal) / SWAP_KCAL_TIE_BAND);
+    const rot = (dayIndex * 7 + slotIndex + stableHash(id)) % 997;
+    return {id: id, portion: bp.portion, kcal: bp.kcal, protein: protein, kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein, band: band, rot: rot};
   });
   scored.sort(function(a, b){
-    const d = Math.abs(a.kcalDelta) - Math.abs(b.kcalDelta);
-    if(Math.abs(d) > 1e-9) return d;
+    if(a.band !== b.band) return a.band - b.band;
+    if(a.rot !== b.rot) return a.rot - b.rot;
     return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
   });
   return scored.slice(0, 5);
