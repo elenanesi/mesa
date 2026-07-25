@@ -37,6 +37,58 @@
         the cached user exactly as-is — the whole point of caching it.
    =================================================================== */
 
+/* ===================================================================
+   Sign-in diagnostics
+
+   Sign-in failures here are invisible by construction: the interesting
+   half happens in another browser context (or another BROWSER), the URL
+   fragment carrying the evidence is stripped on arrival by design, and
+   a loop looks identical whether the token never arrived, arrived and
+   was rejected, or arrived into a build too old to understand it. So
+   every step appends to a small ring buffer in localStorage that the
+   gate can show on demand ("Trouble signing in?").
+
+   AUTH_BUILD is stamped by tools/build-sw.js from the same content hash
+   as the service-worker cache name, so the log states plainly WHICH
+   build produced it — the first question worth answering when a fix
+   appears not to work, since an installed PWA or a Safari cache can
+   easily still be running last week's JavaScript.
+   =================================================================== */
+const AUTH_BUILD = 'mesa-c74a726cd83a'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
+const AUTH_LOG_KEY = 'mesaAuthLog';
+const AUTH_LOG_MAX = 40;
+
+function authLog(event, detail){
+  const line = {
+    t: new Date().toISOString().slice(11, 19),
+    b: AUTH_BUILD.slice(5, 11),
+    e: String(event),
+    d: (detail === undefined || detail === null) ? '' : String(detail).slice(0, 160)
+  };
+  try{ console.log('[mesa-auth]', line.t, line.e, line.d); }catch(e){}
+  try{
+    const raw = localStorage.getItem(AUTH_LOG_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    arr.push(line);
+    while(arr.length > AUTH_LOG_MAX) arr.shift();
+    localStorage.setItem(AUTH_LOG_KEY, JSON.stringify(arr));
+  }catch(e){ /* storage unavailable — the console line above is still emitted */ }
+}
+
+function authLogText(){
+  try{
+    const raw = localStorage.getItem(AUTH_LOG_KEY);
+    const arr = raw ? JSON.parse(raw) : [];
+    if(!arr.length) return 'No sign-in activity recorded yet.';
+    return arr.map(function(l){ return l.t + ' [' + l.b + '] ' + l.e + (l.d ? ' ' + l.d : ''); }).join('\n');
+  }catch(e){ return 'Log unavailable.'; }
+}
+
+function clearAuthLog(){
+  try{ localStorage.removeItem(AUTH_LOG_KEY); }catch(e){}
+  renderAuthDiagnostics();
+}
+
 /* ---------------- storage ---------------- */
 // Two keys, per the spec: the bearer token itself, and a small cached copy
 // of the user record for offline/instant display. Kept separate (not one
@@ -175,10 +227,11 @@ function claimPendingSignIn(){
     headers: {'Accept': 'application/json'},
     cache: 'no-store'
   }).then(function(res){
-    if(res.status === 404) return false; // still waiting on the user to finish in the browser
-    if(!res.ok) return false;
+    if(res.status === 404){ authLog('claim.wait', 'ticket=' + pending.id.slice(0, 8)); return false; } // still waiting on the user to finish in the browser
+    if(!res.ok){ authLog('claim.http', res.status); return false; }
     return res.json().then(function(body){
       if(!body || typeof body.token !== 'string' || !body.token) return false;
+      authLog('claim.ok', 'len=' + body.token.length);
       setAuthToken(body.token);
       setPendingClaim(null);
       stopClaimPolling();
@@ -188,7 +241,7 @@ function claimPendingSignIn(){
       toast('✓ Signed in');
       return true;
     });
-  }).catch(function(){ return false; }); // offline/unreachable — the timer tries again
+  }).catch(function(err){ authLog('claim.err', err && err.message); return false; }); // offline/unreachable — the timer tries again
 }
 
 /* Poll while a ticket is outstanding. Also fires on visibilitychange, which is the moment
@@ -232,6 +285,7 @@ function consumeAuthHash(){
 
   if(authMatch){
     const token = decodeURIComponent(authMatch[1] || '');
+    authLog('hash.token', token ? 'len=' + token.length : 'EMPTY');
     if(token){
       setAuthToken(token);
       // The redirect got here, so this context never needs its claim ticket — drop it
@@ -294,6 +348,7 @@ function refreshAuthMe(){
     method: 'GET',
     headers: {Authorization: 'Bearer ' + token}
   }).then(function(res){
+    authLog('me.status', res.status);
     if(res.status === 401){
       // Session gone server-side (revoked, expired, or logged out elsewhere) — the local
       // token is now dead weight; drop it so the UI stops claiming to be signed in. This is
@@ -358,6 +413,7 @@ function authSignIn(){
   // storage jar, so the redirect alone can never sign the PWA in.
   const linkId = newClaimId();
   if(linkId) setPendingClaim(linkId);
+  authLog('signin.start', 'ticket=' + (linkId ? linkId.slice(0, 8) : 'none') + ' return=' + location.pathname);
   location.href = SYNC_URL + '/auth/google/start?return_to=' + returnTo
     + (linkId ? '&link_id=' + encodeURIComponent(linkId) : '');
 }
@@ -661,6 +717,7 @@ function sendPartnerInvite(){
     headers: Object.assign({'Content-Type': 'application/json'}, authHeader()),
     body: JSON.stringify({email: email})
   }).then(function(res){
+    authLog('me.status', res.status);
     if(res.status === 401){
       // The one path allowed to conclude the session is dead (see authSessionExpired's own
       // doc) — repaints the Account section back to signed-out, which removes this whole
@@ -733,6 +790,8 @@ function updateLoginGate(){
   const waitNote = document.getElementById('loginGateError');
   if(waitNote && waiting) waitNote.textContent = 'Finish signing in with Google in your browser, then come back here.';
 
+  renderAuthDiagnostics();
+
   const show = !authToken();
   gate.hidden = !show;
   try{ document.body.classList.toggle('gate-open', show); }catch(e){ /* non-browser env */ }
@@ -742,12 +801,33 @@ function updateLoginGate(){
   }
 }
 
+/* The gate's "Trouble signing in?" disclosure. Collapsed by default — this is a
+   debugging aid, not part of the product — but reachable without a desktop, a cable or a
+   console, which matters because the failures worth diagnosing here happen on phones. */
+function toggleAuthDiagnostics(){
+  const box = document.getElementById('loginGateDiag');
+  if(!box) return;
+  box.hidden = !box.hidden;
+  renderAuthDiagnostics();
+}
+
+function renderAuthDiagnostics(){
+  const box = document.getElementById('loginGateDiag');
+  if(!box || box.hidden) return;
+  const pre = document.getElementById('loginGateDiagLog');
+  if(pre) pre.textContent = 'build ' + AUTH_BUILD + '\n' + authLogText();
+}
+
 /* ---------------- boot ---------------- */
 // Called once from app.js's boot sequence, alongside initSync() (same "typeof === function"
 // guard style — a no-op if this file somehow isn't loaded). Paints from whatever's cached
 // immediately (works offline, matches Couple sync's own paint-then-fetch shape), then
 // reconciles with the server if there's a token to check.
 function initAuth(){
+  authLog('boot', 'hash=' + (location.hash ? location.hash.slice(0, 12) + '…' : 'none')
+    + ' token=' + (authToken() ? 'yes' : 'no')
+    + ' ticket=' + (pendingClaim() ? 'yes' : 'no')
+    + ' standalone=' + (window.navigator.standalone === true || (window.matchMedia && window.matchMedia('(display-mode: standalone)').matches) ? 'yes' : 'no'));
   consumeAuthHash();
   // A ticket left over from a sign-in started before this launch (the iOS PWA case: the
   // user finished in Safari and reopened Mesa) — redeem it before painting the gate.

@@ -219,6 +219,7 @@ function fragmentRedirect(returnUrl, fragment){
 }
 
 function errorRedirect(returnUrl, reason){
+  console.log('auth.callback fail reason=' + reason + ' return=' + returnUrl);
   return fragmentRedirect(returnUrl, 'auth_error=' + encodeURIComponent(reason));
 }
 
@@ -486,6 +487,10 @@ async function handleCallback(request, env, origin, url){
   // primary delivery for every browser that CAN follow it, so a KV hiccup here must not
   // fail an otherwise-successful sign-in.
   const claimId = (stateData && typeof stateData.linkId === 'string' && CLAIM_ID_RE.test(stateData.linkId)) ? stateData.linkId : null;
+  // Visible via `wrangler tail` — the server half of the sign-in diagnostics the client
+  // keeps in localStorage. No token, no email: just enough to see WHERE a flow died.
+  console.log('auth.callback ok user=' + userId.slice(0, 8) + ' slot=' + (attachMemberSlot || '?')
+    + ' return=' + returnOrigin + ' ticket=' + (claimId ? claimId.slice(0, 8) : 'none'));
   if(claimId){
     try{
       await env.MESA_KV.put(CLAIM_KV_PREFIX + claimId, token, {expirationTtl: CLAIM_TTL_SECONDS});
@@ -770,8 +775,10 @@ async function handleClaim(request, env, origin, url){
     return json({error: 'not_ready'}, 404, origin);
   }
   if(!token){
+    console.log('auth.claim miss ticket=' + linkId.slice(0, 8));
     return json({error: 'not_ready'}, 404, origin);
   }
+  console.log('auth.claim hit ticket=' + linkId.slice(0, 8));
   // Single use — delete before handing it out so a replayed request can't get it twice.
   try{ await env.MESA_KV.delete(CLAIM_KV_PREFIX + linkId); }catch(e){}
 

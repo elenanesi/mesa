@@ -132,6 +132,18 @@ function regenerate(src, newCacheLine, newShellBlock){
   return out;
 }
 
+// js/auth.js carries an AUTH_BUILD stamp that this script writes (so the
+// sign-in diagnostics can report which build is running). Like CACHE, it must
+// be neutralised before hashing or the stamp would feed into the hash that
+// produces it — a value that can never converge.
+const AUTH_JS_REL = 'js/auth.js';
+const AUTH_BUILD_RE = /const AUTH_BUILD = '[^']*';/;
+
+function authJsForHash(){
+  const raw = fs.readFileSync(path.join(APP_DIR, AUTH_JS_REL));
+  return Buffer.from(String(raw).replace(AUTH_BUILD_RE, "const AUTH_BUILD = '';"));
+}
+
 // Hash (path + raw bytes) of every shell file in `files`, in order,
 // plus the given sw.js text (which must have its CACHE value already
 // excluded so the hash never feeds back into itself).
@@ -140,11 +152,27 @@ function computeHash(files, swTextForHash){
   files.forEach(function(rel){
     hash.update(rel);
     if(rel !== './'){
-      hash.update(fs.readFileSync(path.join(APP_DIR, rel)));
+      hash.update(rel === AUTH_JS_REL ? authJsForHash() : fs.readFileSync(path.join(APP_DIR, rel)));
     }
   });
   hash.update(swTextForHash);
   return hash.digest('hex');
+}
+
+// Write the freshly computed cache id into js/auth.js's AUTH_BUILD stamp.
+// Returns true if the file changed.
+function stampAuthBuild(newCache){
+  const authPath = path.join(APP_DIR, AUTH_JS_REL);
+  let src;
+  try{ src = fs.readFileSync(authPath, 'utf8'); }catch(e){ return false; }
+  if(!AUTH_BUILD_RE.test(src)){
+    console.warn('build-sw: no AUTH_BUILD stamp found in ' + AUTH_JS_REL + ' — skipping');
+    return false;
+  }
+  const updated = src.replace(AUTH_BUILD_RE, "const AUTH_BUILD = '" + newCache + "';");
+  if(updated === src) return false;
+  fs.writeFileSync(authPath, updated);
+  return true;
 }
 
 function main(){
@@ -171,6 +199,7 @@ function main(){
 
   const unchanged = updated === original;
   if(!unchanged) fs.writeFileSync(SW_PATH, updated);
+  const stamped = stampAuthBuild(newCache);
 
   const oldSet = new Set(oldFiles);
   const newSet = new Set(newFiles);
@@ -178,6 +207,7 @@ function main(){
   const removed = oldFiles.filter(function(f){ return !newSet.has(f); });
 
   console.log('CACHE: ' + (oldCache || '(none)') + ' -> ' + (unchanged ? 'unchanged' : newCache));
+  console.log('AUTH_BUILD stamp: ' + (stamped ? 'updated to ' + newCache : 'unchanged'));
   console.log('SHELL_FILES: ' + newFiles.length + ' files (was ' + oldFiles.length + ')');
   if(added.length){
     console.log('ADDED (' + added.length + '):');
