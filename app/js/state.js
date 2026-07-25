@@ -92,13 +92,17 @@ const LEGACY_RECIPE_IDS = ['yogurt', 'omelette', 'lentil', 'salmon', 'skyrbowl',
 // The mockup's hand-written "why this fits you" copy, kept verbatim per recipe id so
 // nothing user-visible degrades for the 10 legacy recipes (task C3 replaces this with
 // template text generated from tags × goals for the full RECIPES_DB).
+// Task B2 (generic identity): omelette/eggsturkey used to name-drop "Andrea" (these were
+// originally the partner slot's default breakfasts) — reworded to plain second-person
+// copy rather than interpolating PROF.partner.displayName, since this object is a plain
+// string map (not per-render functions) and the plain rewrite reads naturally either way.
 const LEGACY_WHY = {
   yogurt: 'Greek yogurt brings casein and whey protein plus gut-friendly probiotics; berries add skin-supporting antioxidants at a low glycemic load. Naturally low in iodine — an easy fit alongside a Hashimoto\'s-aware day. <i>General guidance, not medical advice.</i>',
-  omelette: 'Eggs bring complete protein plus choline and selenium; rye toast adds fiber and slow-release carbs to start Andrea\'s day with steady energy for training. <i>General guidance, not medical advice.</i>',
+  omelette: 'Eggs bring complete protein plus choline and selenium; rye toast adds fiber and slow-release carbs for steady energy through a day of training. <i>General guidance, not medical advice.</i>',
   lentil: 'Lentils bring plant-based iron, B-vitamins and slow-release carbs; roasted veg add fiber and polyphenols, while a little feta gives calcium without loading up on dairy. A heart-smart, high-fiber midday reset. <i>General guidance, not medical advice.</i>',
   salmon: 'Salmon delivers omega-3 and vitamin D for skin and thyroid; quinoa is a gluten-free, lower-GI carb; leafy greens add iron + folate. Iodine stays moderate — good for Hashimoto\'s balance. <i>General guidance, not medical advice.</i>',
   skyrbowl: 'Skyr packs even more protein than Greek yogurt for barely any fat; mixed seeds add omega-3 and a little crunch. Naturally low in iodine — an easy fit for a higher-protein, thyroid-aware morning. <i>General guidance, not medical advice.</i>',
-  eggsturkey: 'Eggs and lean turkey stack complete protein to fuel training; rye brings fiber and slow-release carbs. A higher-protein spin on Andrea\'s usual morning. <i>General guidance, not medical advice.</i>',
+  eggsturkey: 'Eggs and lean turkey stack complete protein to fuel training; rye brings fiber and slow-release carbs. A higher-protein spin on your usual morning. <i>General guidance, not medical advice.</i>',
   chickenfarro: 'Grilled chicken breast is a lean, high-protein anchor; farro adds fiber and a nutty bite with a lower glycemic load than white grains. A satisfying, muscle-supporting midday reset. <i>General guidance, not medical advice.</i>',
   chiapudding: 'Chia seeds soak up coconut milk into a creamy, low-carb pudding rich in omega-3 and fiber; berries keep it low-GI and skin-supporting. A gentle, thyroid-friendly start with steady energy. <i>General guidance, not medical advice.</i>',
   tunasalad: 'Tuna is lean, high-protein and rich in omega-3; avocado swaps in healthy fat for starchy carbs, keeping this lunch low-carb without losing staying power. Heart-smart with moderate iodine — Hashimoto\'s-friendly. <i>General guidance, not medical advice.</i>',
@@ -246,6 +250,29 @@ const TAG_PILL_MAP = {
 };
 
 function capitalizeFirst(s){ return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ===================================================================
+   generic identity (Phase 3B task B2)
+
+   DISPLAY_NAME_DEFAULTS: the neutral, per-slot fallback a FRESH household starts with
+   (no user has typed a real name yet) — 'You' for the slot the device's own owner
+   almost always lands on first, 'Partner' for the other. Never user-visible-Elena/
+   Andrea (ground rule: slot keys 'elena'/'partner' are opaque ids, see
+   PHASE3B-generic-spec.md's "Ground rule — slot keys stay").
+   DISPLAY_NAME_MAX_LEN caps what commitDisplayName() (render.js) will store — long
+   enough for a real name, short enough to never overflow the segment-button/avatar UI.
+   avatarInitial(name): the single-character avatar/segment initial PROF[key].av derives
+   from (engine.js:recomputeProf). Array.from() splits on Unicode CODE POINTS rather than
+   UTF-16 code units, so a name that starts with an emoji or a multibyte character (e.g. a
+   combining accent) yields one whole character, not half of one the way charAt(0)/
+   String indexing would; '?' is the fallback for an empty/whitespace-only name. */
+const DISPLAY_NAME_DEFAULTS = {elena: 'You', partner: 'Partner'};
+const DISPLAY_NAME_MAX_LEN = 24;
+function avatarInitial(name){
+  const trimmed = (typeof name === 'string' ? name : '').trim();
+  if(!trimmed) return '?';
+  return Array.from(trimmed)[0].toUpperCase();
+}
 
 /* meal-slot lookup for shared-meals logic — RECIPE_SLOT_DB (data/recipes.js) already
    covers every id in RECIPES_DB (the 10 legacy ids plus everything added in B2), so it
@@ -396,47 +423,61 @@ function avoidLabel(key){ return AVOID_LABELS[key] || capitalizeFirst(key); }
 // Per-profile goal checklist (task B1 — fixes the bug where unchecking "Gentle fat
 // loss" did nothing and Andrea saw Elena's fat-loss goal). Single copy source for
 // render.js:renderGoalsEditor() ("Profile" screen) — each entry's key is a boolean on
-// PROF[key].goals (defaults below reproduce today's behavior exactly: all true).
-// Only elena.fatLoss and partner.muscleGain move recommendedCal() (engine.js:
-// deriveGoalAdj) — the rest change copy/whyText only, never numbers.
-const GOAL_DEFS = {
-  elena: [
-    {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance'},
-    {key:'muscle', title:'Muscle & protein', desc:'Protein-forward macro split · ~1.8–2 g/kg'},
-    {key:'heart', title:'Heart & metabolic', desc:'High fiber, low sodium, Mediterranean base'},
-    {key:'skin', title:'Beautiful skin', desc:'Low-GI, omega-3 up, dairy/sugar down'},
-    {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Selenium, moderate iodine, anti-inflammatory'}
-  ],
-  partner: [
-    {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance · protein-forward split'},
-    {key:'heart', title:'Heart & metabolic', desc:'High fiber, low sodium, Mediterranean base'}
-  ]
-};
+// PROF[key].goals.
+// Task B2 (generic identity): both slots now offer the SAME union of six goals — one
+// shared array, not a per-slot list — since a slot is just "slot 1"/"slot 2" (ground
+// rule: opaque ids), not "the fat-loss person" vs "the muscle-gain person". Only
+// elena.fatLoss and partner.muscleGain still move recommendedCal() (engine.js:
+// deriveGoalAdj/CALORIE_GOAL_KEY dispatch on the SLOT, not on which keys happen to be in
+// `goals` — see that file) — every other goal here (including a slot picking the OTHER
+// slot's calorie goal) only changes copy/whyText, never numbers. In-code defaults are
+// all-false (see PROF below) — a brand-new household starts with nothing toggled;
+// loadState() restores a returning user's real saved booleans over these on top.
+const GOAL_DEFS_UNION = [
+  {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance'},
+  {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance · protein-forward split'},
+  {key:'muscle', title:'Muscle & protein', desc:'Protein-forward macro split · ~1.8–2 g/kg'},
+  {key:'heart', title:'Heart & metabolic', desc:'High fiber, low sodium, Mediterranean base'},
+  {key:'skin', title:'Beautiful skin', desc:'Low-GI, omega-3 up, dairy/sugar down'},
+  {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Selenium, moderate iodine, anti-inflammatory'}
+];
+const GOAL_DEFS = {elena: GOAL_DEFS_UNION, partner: GOAL_DEFS_UNION};
 
+// Task B2: neutral in-code defaults for a FRESH household (no saved localStorage data at
+// all) — displayName 'You'/'Partner' (state.js:DISPLAY_NAME_DEFAULTS), every goal off,
+// hashi off, no fat-loss/muscle-gain preset. `seg`/`av` are no longer hand-typed literals:
+// engine.js:recomputeProf() derives both from `displayName` every call (same pattern as
+// goalAdj/goalName/goalTag below), so they're omitted here entirely — leaving them off
+// the object until first recompute would read as `undefined` for exactly one tick if
+// anything looked before boot's first applyProf() ever ran, so a plain string placeholder
+// (immediately overwritten) is safer than omitting the fields.
+// A returning user's real saved values (weights, goals, displayName — anything in
+// PERSIST_PROFILE_FIELDS) always load OVER these in loadState() below; these literals are
+// only ever seen as-is by an install with zero prior localStorage state.
 const PROF = {
-  elena:   {seg:'Elena', av:'E',
+  elena:   {seg:DISPLAY_NAME_DEFAULTS.elena, av:avatarInitial(DISPLAY_NAME_DEFAULTS.elena), displayName:DISPLAY_NAME_DEFAULTS.elena,
             sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,
             activity:1.55,
             calCustom:null, calNote:'',
-            coachT:'Today leans thyroid-friendly 🦋', hashi:true,
-            // goals (task B1): source of truth for goalAdj/goalName/goalTag, all derived
+            coachT:'Today leans thyroid-friendly 🦋', hashi:false,
+            // goals (task B1/B2): source of truth for goalAdj/goalName/goalTag, all derived
             // by engine.js:recomputeProf() every call — see deriveGoalAdj/deriveGoalName/
             // deriveGoalTag. Never set goalAdj etc. here: a stored magic number next to a
             // derivation function is exactly the drift this batch removes.
-            goals: {fatLoss:true, muscle:true, heart:true, skin:true, hashi:true},
+            goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
             coachD:'Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.',
             kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'],
             // consumed*/consumedKcal start at zero (task D1): they're overwritten by
             // planner.js:recomputeConsumed() from real logHistory entries before first
             // paint (applyProf() at boot always runs it first) — no demo numbers linger.
             consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:41,F:33}, splitNote:'', coachOverrideT:null, coachOverrideD:null},
-  partner: {seg:'Andrea', av:'A',
+  partner: {seg:DISPLAY_NAME_DEFAULTS.partner, av:avatarInitial(DISPLAY_NAME_DEFAULTS.partner), displayName:DISPLAY_NAME_DEFAULTS.partner,
             sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
             activity:1.375,
             calCustom:null, calNote:'',
             coachT:'Today is built for muscle 💪', hashi:false,
-            goals: {muscleGain:true, heart:true},
-            coachD:'Higher protein and a small surplus. Same Mediterranean base as Elena, scaled up — shared cooking, two targets.',
+            goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
+            coachD:'Higher protein and a small surplus. Same Mediterranean base, scaled up — shared cooking, two targets.',
             kP:26, kC:43, kF:31, avoid:[],
             consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
 };
@@ -677,13 +718,17 @@ function todayISO(){
 }
 
 // Fields copied verbatim between PROF[key] and the store. Deliberately excludes
-// goalAdj/goalName/goalTag (task B1: fully derived from `goals` — see engine.js:
-// deriveGoalAdj/deriveGoalName/deriveGoalTag) and everything else on PROF (consumed,
-// targets, ring/bar strings, coach text…) which is recomputed by
-// recomputeProf()/applyProf() every render, never stored. `avoid` (task C2) and `goals`
-// (task B1) are non-scalar fields, handled specially below (PROFILE_FIELD_TYPE / the
-// load loop) since every other persisted profile field is a plain string/number.
-const PERSIST_PROFILE_FIELDS = ['sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid', 'goals'];
+// goalAdj/goalName/goalTag/seg/av (task B1/B2: fully derived — goalAdj/goalName/goalTag
+// from `goals`, seg/av from `displayName` — see engine.js: deriveGoalAdj/deriveGoalName/
+// deriveGoalTag/recomputeProf) and everything else on PROF (consumed, targets, ring/bar
+// strings, coach text…) which is recomputed by recomputeProf()/applyProf() every render,
+// never stored. `avoid` (task C2) and `goals` (task B1) are non-scalar fields, handled
+// specially below (PROFILE_FIELD_TYPE / the load loop) since every other persisted
+// profile field (displayName included, task B2) is a plain string/number — reused
+// verbatim by js/sync.js's profileSectionData()/applyProfileSectionData(), so adding
+// `displayName` here is the ENTIRE change needed to make a rename persist AND sync
+// exactly like weightKg/calNote already do — no separate sync-side code.
+const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid', 'goals'];
 
 function buildSnapshot(){
   const profiles = {};
@@ -834,10 +879,14 @@ function loadState(){
   // number, calCustom is special-cased since null is its valid "no override" value,
   // avoid (task C2) must be an array of strings, and goals (task B1) is an object of
   // booleans handled separately below (a store predating this batch has no `goals` key
-  // at all, and PROF[key].goals already carries the all-true defaults, so that case is a
-  // silent no-op — no store-version bump needed).
+  // at all, and PROF[key].goals already carries the in-code defaults, so that case is a
+  // silent no-op — no store-version bump needed). displayName (task B2) is 'string' like
+  // sex/calNote, but see the extra non-empty guard below it — an old store simply lacks
+  // this key (same no-op-and-keep-the-in-code-default path as a pre-`goals` store), so a
+  // returning user's blank/never-set name safely falls back to DISPLAY_NAME_DEFAULTS
+  // rather than ever showing "" or `undefined`.
   const PROFILE_FIELD_TYPE = {
-    sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
+    displayName: 'string', sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
     activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
     avoid: 'string[]', goals: 'object'
   };
@@ -859,6 +908,14 @@ function loadState(){
               if(typeof v[gk] === 'boolean') p.goals[gk] = v[gk];
             });
           }
+          return;
+        }
+        // displayName: reject empty/whitespace-only (never persist a blank name — the
+        // commitDisplayName() write path (render.js) already guarantees this, but a
+        // hand-edited backup/import (task F2) could still carry one) and cap defensively
+        // to the same DISPLAY_NAME_MAX_LEN the editor enforces, trimming either way.
+        if(f === 'displayName'){
+          if(typeof v === 'string' && v.trim()) p.displayName = v.trim().slice(0, DISPLAY_NAME_MAX_LEN);
           return;
         }
         const ok = want === 'number|null' ? (v === null || typeof v === 'number')

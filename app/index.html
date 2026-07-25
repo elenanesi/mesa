@@ -29,10 +29,10 @@
         </div>
         <div class="top-actions">
           <div class="seg" id="profSeg">
-            <button class="on" data-prof="elena">Elena</button>
-            <button data-prof="partner">Andrea</button>
+            <button class="on" data-prof="elena">You</button>
+            <button data-prof="partner">Partner</button>
           </div>
-          <button class="profile-icon-btn" aria-label="Open profile" onclick="go('profile')"><span id="topProfAv">E</span></button>
+          <button class="profile-icon-btn" aria-label="Open profile" onclick="go('profile')"><span id="topProfAv">Y</span></button>
         </div>
       </div>
 
@@ -216,19 +216,19 @@
       <h2>Servings</h2>
       <div class="serve-row" id="serveRowShared">
         <div class="serve-card" id="serveElena">
-          <div class="sv-name">Elena</div>
+          <div class="sv-name">You</div>
           <div class="sv-stepper">
-            <button onclick="adjServe('elena',-0.5)" aria-label="Decrease Elena's portion">–</button>
+            <button onclick="adjServe('elena',-0.5)" aria-label="Decrease your portion">–</button>
             <span class="sv-val" id="svElenaVal">1×</span>
-            <button onclick="adjServe('elena',0.5)" aria-label="Increase Elena's portion">+</button>
+            <button onclick="adjServe('elena',0.5)" aria-label="Increase your portion">+</button>
           </div>
         </div>
         <div class="serve-card" id="serveAndrea">
-          <div class="sv-name">Andrea</div>
+          <div class="sv-name">Partner</div>
           <div class="sv-stepper">
-            <button onclick="adjServe('andrea',-0.5)" aria-label="Decrease Andrea's portion">–</button>
+            <button onclick="adjServe('andrea',-0.5)" aria-label="Decrease your partner’s portion">–</button>
             <span class="sv-val" id="svAndreaVal">1.5×</span>
-            <button onclick="adjServe('andrea',0.5)" aria-label="Increase Andrea's portion">+</button>
+            <button onclick="adjServe('andrea',0.5)" aria-label="Increase your partner’s portion">+</button>
           </div>
         </div>
       </div>
@@ -348,7 +348,7 @@
     <!-- ============ INSIGHTS ============ -->
     <section class="screen" id="insights">
       <h1>Insights</h1>
-      <p class="sub">How your eating is trending — for you and Andrea.</p>
+      <p class="sub">How your eating is trending this week.</p>
 
       <!-- FIX 3 (feedback): both cards below moved here from the Week screen — coverage
            first, then the last-week reflection, above the stat tiles. Same markup + ids,
@@ -404,7 +404,7 @@
     <section class="screen" id="profile">
       <div class="row between" style="margin-top:6px">
         <h1 style="margin:0">Profile</h1>
-        <div class="avatar" id="profAv">E</div>
+        <div class="avatar" id="profAv">Y</div>
       </div>
       <p class="sub">This is what makes the plans <i>yours</i>. Mesa recalculates whenever you change something here.</p>
 
@@ -429,12 +429,26 @@
 
       <h2 id="sec-whose" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5"/><path d="M10 20c0-3 3-5 6-5s6 2 6 5"/></svg>Whose plan</h2>
       <div class="seg" id="profWhoSeg" style="width:100%">
-        <button class="on" style="flex:1" onclick="setProf('elena',this)">Elena</button>
-        <button style="flex:1" onclick="setProf('partner',this)">Andrea</button>
+        <button class="on" style="flex:1" onclick="setProf('elena',this)">You</button>
+        <button style="flex:1" onclick="setProf('partner',this)">Partner</button>
       </div>
 
       <h2 id="sec-basics" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>Basics</h2>
       <p class="sub">Edit anything here — Mesa recomputes your recommended calories and rebuilds your targets. Every number below is formula, not guesswork.</p>
+      <!-- Task B2 (generic identity): displayName editor — same commit-on-blur/Enter
+           wiring and .sv-stepper/.sv-val 16px-input convention as Height/Weight/Calories
+           below (iOS auto-zooms any input under 16px on focus, hence the shared class
+           rather than a bare <input>). commitDisplayName() (render.js) trims, caps to
+           DISPLAY_NAME_MAX_LEN (state.js, mirrored here by maxlength), and falls back to
+           the slot's neutral default on empty input. -->
+      <div class="field"><label>Name</label>
+        <div class="inp"><span>Name</span>
+          <span class="sv-stepper" style="margin:0">
+            <input class="sv-val" id="displayNameVal" type="text" maxlength="24" style="width:8.5em" value="You" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitDisplayName(this.value)" aria-label="Your display name">
+          </span>
+        </div>
+        <div class="cap-note">Shown on your profile, avatar and shared meal plans.</div>
+      </div>
       <div class="field"><label>Sex</label>
         <div class="seg" style="width:100%;margin-top:6px">
           <button id="sexBtnF" class="on" style="flex:1;min-height:38px" onclick="setSex('female')">Female</button>
@@ -604,10 +618,23 @@
         <p class="sub" style="text-align:center">Eat well together. Mesa builds one weekly menu that quietly tilts to fit each of you — same table, different needs.</p>
       </div>
       <div class="ob-slide">
-        <h1 style="text-align:center">Who's this for?</h1>
-        <p class="sub" style="text-align:center">Pick a profile to preview your starting goals. You can fine-tune everything later.</p>
-        <div class="opt sel" id="obElena" onclick="obPick('elena')"><div class="ck">✓</div><div><div class="ot">I'm Elena</div><div class="od">Female · 29 · gentle fat loss</div></div></div>
-        <div class="opt" id="obAndrea" onclick="obPick('partner')"><div class="ck"></div><div><div class="ot">I'm Andrea</div><div class="od">Male · 31 · muscle & protein</div></div></div>
+        <h1 style="text-align:center">What should we call you?</h1>
+        <p class="sub" style="text-align:center">Shown on your profile, avatar and shared meal plans. You can change it anytime in Profile → Basics.</p>
+        <!-- Task B2 (generic identity): a brand-new user is no longer asked "are you Elena
+             or Andrea" — just their own name, using the same commit-on-blur/Enter input
+             convention as the Basics "Name" field (render.js:commitDisplayName), reused
+             verbatim so a name typed here lands in PROF.elena.displayName through the exact
+             same trim/cap/persist/sync path (no separate logic to keep in sync). obPick()
+             (js/app.js) still runs underneath (fired from maybeShowOnboarding()/
+             replayOnboarding()) to prefill this field and keep the goals preview below it
+             working; it just no longer has a two-person picker to drive. -->
+        <div class="field" style="margin-top:14px"><label>Your name</label>
+          <div class="inp"><span>Name</span>
+            <span class="sv-stepper" style="margin:0">
+              <input class="sv-val" id="obNameVal" type="text" maxlength="24" style="width:8.5em" placeholder="You" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitDisplayName(this.value)" aria-label="Your display name">
+            </span>
+          </div>
+        </div>
         <div class="row" id="obGoalsPreview" style="gap:7px;flex-wrap:wrap;margin-top:14px"></div>
       </div>
       <div class="ob-slide">

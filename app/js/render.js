@@ -526,7 +526,11 @@ function updateServings(){
     total = +(svE + svM).toFixed(1);
     const viewerIsPartner = (recipeServingCtx && recipeServingCtx.person)
       ? recipeServingCtx.person === 'partner' : currentProf === 'partner';
-    const viewerName = viewerIsPartner ? 'Andrea' : 'Elena';
+    // Task B2 (generic identity): the viewer's own displayName, not a hardcoded person name
+    // — nutHeader below is only ever assigned to .textContent (updateNutritionGrid), never
+    // innerHTML, so no escapeHtml is needed here the way rebalanceSuggestionLabel's `who`
+    // (further down this file) needs one.
+    const viewerName = viewerIsPartner ? PROF.partner.displayName : PROF.elena.displayName;
     nutServings = viewerIsPartner ? svM : svE;
     document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
     document.getElementById('ingHeader').innerHTML = 'Ingredients · for the whole dish (' + total + ' servings)';
@@ -2251,7 +2255,10 @@ function renderRebalanceSheet(){
     + '<b style="font-size:13px">Suggestions</b>';
   rebalanceProposal.suggestions.forEach(function(s, i){
     const accepted = s.accepted !== false;
-    const who = s.unit.shared ? '' : (s.unit.person === 'elena' ? ' (Elena)' : ' (Andrea)');
+    // Task B2 (generic identity): displayName instead of a hardcoded person name — this
+    // whole suggestion line is built into `html` and painted via innerHTML further down, so
+    // (unlike the plain-textContent viewerName above) it must go through escapeHtml.
+    const who = s.unit.shared ? '' : (' (' + escapeHtml(s.unit.person === 'elena' ? PROF.elena.displayName : PROF.partner.displayName) + ')');
     const last = i === rebalanceProposal.suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'swap' : 'side';
     const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
@@ -3178,6 +3185,8 @@ function renderTodayMeals(){
 // computed/custom state, restore action and transparent formula line.
 function renderBasics(){
   const p = PROF[currentProf];
+  const nameEl = document.getElementById('displayNameVal');
+  if(nameEl) nameEl.value = p.displayName;
   document.getElementById('sexBtnF').classList.toggle('on', p.sex === 'female');
   document.getElementById('sexBtnM').classList.toggle('on', p.sex === 'male');
   document.getElementById('pfDob').textContent = 'Born ' + MONTHS[p.dobM-1] + ' ' + p.dobY + ' · ' + ageOf(p);
@@ -3271,6 +3280,25 @@ function stepBody(field, delta){
 // the same band stepBody() uses (height integer 120–230cm, weight 1-decimal 30–250kg) —
 // so "type 64,5" lands on exactly the same weightKg a stepper run would, and every
 // downstream recompute (BMR, target calories, macro grams) fires the same way either way.
+// Task B2 (generic identity): commits the Profile → Basics "Name" field the same way
+// commitHeight/commitWeight (right below) commit theirs — parse/clamp on blur or Enter,
+// then run the SAME afterBasicsChange-less applyProf() cascade every other Basics edit
+// uses (recompute -> repaint -> persist). Unlike height/weight there's no numeric parse:
+// trim, cap to DISPLAY_NAME_MAX_LEN (state.js), and an empty/whitespace-only input falls
+// back to this slot's neutral default (DISPLAY_NAME_DEFAULTS) rather than ever storing a
+// blank name. `displayName` already round-trips through localStorage AND the couple-sync
+// profile:<slot> section for free (state.js:PERSIST_PROFILE_FIELDS — the same list
+// weightKg/calNote use), so there is no separate persist/sync call here: applyProf() ->
+// persist() -> sync.js's onMesaBeforePersist hook detects the section changed and bumps
+// its rev/timestamp exactly like any other Basics edit does.
+function commitDisplayName(raw){
+  const p = PROF[currentProf];
+  const trimmed = (typeof raw === 'string' ? raw : '').trim().slice(0, DISPLAY_NAME_MAX_LEN);
+  p.displayName = trimmed || DISPLAY_NAME_DEFAULTS[currentProf] || DISPLAY_NAME_DEFAULTS.elena;
+  applyProf(currentProf); // recomputeProf() re-derives seg/av from the new displayName; applyProf() -> syncPersonLabels() repaints every "shows both names" spot
+  toast('✓ Name updated');
+}
+
 function commitHeight(raw){
   const p = PROF[currentProf];
   const n = parseDecimalInput(raw);
@@ -3608,6 +3636,7 @@ function applyProf(key){
   renderRecipeMealStrip();
   syncServeHighlight();
   syncProfileToggle(key);
+  syncPersonLabels(); // task B2: profSeg/profWhoSeg/serve-card NAMES — see its doc below
   persist();
 }
 
@@ -3622,6 +3651,63 @@ function syncProfileToggle(key){
     if(btns[0]) btns[0].classList.toggle('on', key === 'elena');
     if(btns[1]) btns[1].classList.toggle('on', key === 'partner');
   }
+}
+
+// Task B2 (generic identity): the ONLY spots left that show a person's NAME rather than
+// just their avatar initial (which applyProf() above already repaints via the derived
+// p.av) — the "whose plan" segmented controls (top tabbar #profSeg, Profile screen
+// #profWhoSeg) and the shared-dinner serve cards, all of which show BOTH people's names
+// at once, not just the currently-active one. That's why this reads PROF.elena/partner.
+// displayName directly rather than relying on p.seg (recomputeProf only derives seg/av
+// for whichever slot applyProf(key) is currently rendering, i.e. the INACTIVE profile's
+// derived p.seg can be stale) — the raw displayName field itself is always a valid,
+// already-trimmed/capped string (state.js: PROF defaults + loadState()'s guard,
+// render.js:commitDisplayName()'s own trim/cap), so no derivation is needed to read it
+// safely here. Every assignment below is .textContent/.setAttribute, never innerHTML, so
+// no separate escapeHtml() call is needed (DOM text/attribute assignment can't be
+// interpreted as markup the way an innerHTML string built by hand would). Called from
+// applyProf() (covers boot, profile switch, every Basics edit) and directly from
+// commitDisplayName()'s cascade and auth.js's Google-name seed.
+// 'You' -> 'your', 'Partner' -> 'your partner’s', a real name -> "Sofia’s". Used for the
+// serve-card aria-labels, which read as a sentence to a screen reader.
+function possessiveName(name){
+  const n = (name || '').trim();
+  if(n.toLowerCase() === 'you') return 'your';
+  if(n.toLowerCase() === 'partner') return 'your partner’s';
+  return n + '’s';
+}
+
+function syncPersonLabels(){
+  const nameE = PROF.elena.displayName || DISPLAY_NAME_DEFAULTS.elena;
+  const nameP = PROF.partner.displayName || DISPLAY_NAME_DEFAULTS.partner;
+
+  document.querySelectorAll('#profSeg button[data-prof="elena"]').forEach(function(b){ b.textContent = nameE; });
+  document.querySelectorAll('#profSeg button[data-prof="partner"]').forEach(function(b){ b.textContent = nameP; });
+
+  const whoSeg = document.getElementById('profWhoSeg');
+  if(whoSeg){
+    const btns = whoSeg.querySelectorAll('button');
+    if(btns[0]) btns[0].textContent = nameE;
+    if(btns[1]) btns[1].textContent = nameP;
+  }
+
+  const svNameE = document.querySelector('#serveElena .sv-name');
+  if(svNameE) svNameE.textContent = nameE;
+  const svNameP = document.querySelector('#serveAndrea .sv-name');
+  if(svNameP) svNameP.textContent = nameP;
+
+  // "You" is the default display name for the slot you're setting up, and a screen reader
+  // saying "Decrease You's portion" is nonsense — the default names are pronouns, so they
+  // need the pronoun possessive rather than the apostrophe-s a real name takes.
+  // Decrease/Increase portion aria-labels on the same two serve cards — positional (index
+  // 0/1 within each card's .sv-stepper), same convention syncProfileToggle() above uses
+  // for profWhoSeg's two buttons, since these were never given stable per-button ids.
+  const serveEBtns = document.querySelectorAll('#serveElena .sv-stepper button');
+  if(serveEBtns[0]) serveEBtns[0].setAttribute('aria-label', 'Decrease ' + possessiveName(nameE) + ' portion');
+  if(serveEBtns[1]) serveEBtns[1].setAttribute('aria-label', 'Increase ' + possessiveName(nameE) + ' portion');
+  const servePBtns = document.querySelectorAll('#serveAndrea .sv-stepper button');
+  if(servePBtns[0]) servePBtns[0].setAttribute('aria-label', 'Decrease ' + possessiveName(nameP) + ' portion');
+  if(servePBtns[1]) servePBtns[1].setAttribute('aria-label', 'Increase ' + possessiveName(nameP) + ' portion');
 }
 
 // profile screen switch

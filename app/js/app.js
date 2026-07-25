@@ -86,12 +86,25 @@ function renderObGoals(key){
   document.getElementById('obGoalsPreview').innerHTML = goals.map(function(g){ return '<span class="pill">'+g+'</span>'; }).join('');
 }
 
+// Task B2 (generic identity): obPick(key) picks which slot's goals preview the onboarding
+// "name" slide shows and, via finishOnboarding()'s applyProf(obProfile), which profile the
+// app lands on. maybeShowOnboarding() always calls obPick('elena') for a first-ever run (the
+// person setting up the app takes slot 'elena' — see PHASE3B-generic-spec.md B2); only
+// replayOnboarding() (Profile → About → "Replay intro") can pass 'partner', when the second
+// household member replays the intro from their own already-active profile. The obElena/
+// obAndrea option cards this used to toggle are gone (a brand-new user is no longer asked
+// "are you Elena or Andrea" — see index.html's onboarding slide 2), so those two lookups are
+// guarded rather than removed outright, in case an older cached index.html is still served.
 function obPick(key){
   obProfile = key;
-  document.getElementById('obElena').classList.toggle('sel', key === 'elena');
-  document.getElementById('obElena').querySelector('.ck').textContent = key === 'elena' ? '✓' : '';
-  document.getElementById('obAndrea').classList.toggle('sel', key === 'partner');
-  document.getElementById('obAndrea').querySelector('.ck').textContent = key === 'partner' ? '✓' : '';
+  const obElenaEl = document.getElementById('obElena');
+  if(obElenaEl){ obElenaEl.classList.toggle('sel', key === 'elena'); const ck = obElenaEl.querySelector('.ck'); if(ck) ck.textContent = key === 'elena' ? '✓' : ''; }
+  const obAndreaEl = document.getElementById('obAndrea');
+  if(obAndreaEl){ obAndreaEl.classList.toggle('sel', key === 'partner'); const ck2 = obAndreaEl.querySelector('.ck'); if(ck2) ck2.textContent = key === 'partner' ? '✓' : ''; }
+  // Prefill the name field from this slot's current displayName (state.js PERSIST_PROFILE_
+  // FIELDS) — 'You' for a genuinely fresh install, or the real saved name when replaying.
+  const nameInput = document.getElementById('obNameVal');
+  if(nameInput && typeof PROF !== 'undefined' && PROF[key]) nameInput.value = PROF[key].displayName || '';
   renderObGoals(key);
 }
 

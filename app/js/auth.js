@@ -112,7 +112,7 @@ function consumeAuthHash(){
 }
 
 function authErrorMessage(reason){
-  if(reason === 'not_invited') return 'Mesa is invite-only right now — ask Elena to add your email.';
+  if(reason === 'not_invited') return 'Mesa is invite-only right now — ask the person who runs this Mesa to invite you.';
   if(reason === 'full') return "Mesa is at capacity and can't take new accounts.";
   return 'Sign-in didn’t work — please try again.';
 }
@@ -172,6 +172,13 @@ function refreshAuthMe(){
     setAuthUser(body.user);
     renderAccountSection();
     updateLoginGate();
+    // Task B2 (generic identity): a Google account carries a real name — seed it onto the
+    // active slot's displayName the first time we see it, but ONLY while that slot is
+    // still on its untouched neutral default. Runs before maybeAdoptHousehold() below;
+    // if that call goes on to pull an existing household's own synced profile data, its
+    // LWW apply is free to overwrite this local guess with the real synced value, exactly
+    // as it would for any other profile field — no special-casing needed here for that.
+    maybeSeedDisplayNameFromGoogle(body.user);
     // Phase 3A.2: a signed-in account now carries its household mapping — silently attach
     // this device to it (or note a mismatch) so Elena/Andrea never land on an empty Mesa.
     maybeAdoptHousehold(body.householdCode, body.memberSlot);
@@ -227,6 +234,33 @@ function authSignOut(){
    so a Google-login restore behaves identically rather than
    reimplementing the join/merge logic here.
    =================================================================== */
+/* ===================================================================
+   Task B2 — seed the active slot's name from Google on first sign-in
+
+   Guarded like every other cross-file call in this file: state.js/render.js/engine.js
+   ship alongside auth.js in every real build, but never assumed at the cost of crashing
+   sign-in. "Untouched default" is checked against DISPLAY_NAME_DEFAULTS (state.js) so a
+   name the user (or their partner, via couple sync) already set is never clobbered —
+   this only ever fires for a slot that's still sitting on 'You'/'Partner'.
+   =================================================================== */
+function maybeSeedDisplayNameFromGoogle(user){
+  if(!user || typeof user.displayName !== 'string' || !user.displayName.trim()) return;
+  if(typeof PROF === 'undefined' || typeof currentProf === 'undefined' || typeof DISPLAY_NAME_DEFAULTS === 'undefined') return;
+  const slot = currentProf;
+  const p = PROF[slot];
+  if(!p) return;
+  const untouchedDefault = DISPLAY_NAME_DEFAULTS[slot];
+  if(!untouchedDefault || p.displayName !== untouchedDefault) return; // already renamed locally or via sync — never overwrite
+
+  const cap = (typeof DISPLAY_NAME_MAX_LEN === 'number') ? DISPLAY_NAME_MAX_LEN : 24;
+  const firstWord = user.displayName.trim().split(/\s+/)[0].slice(0, cap);
+  if(!firstWord) return;
+
+  p.displayName = firstWord;
+  if(typeof applyProf === 'function') applyProf(currentProf); // recomputes seg/av, repaints, persists (state.js:persist() drives the couple-sync rev bump)
+  else if(typeof persist === 'function') persist();
+}
+
 function maybeAdoptHousehold(householdCode, memberSlot){
   if(typeof householdCode !== 'string' || !householdCode) return; // older cached /auth/me shape, or a worker not yet on 3A.2 — no-op
   // Guarded like every other cross-file call in this file: sync.js ships alongside auth.js

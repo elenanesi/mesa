@@ -262,8 +262,12 @@ function testGoalToggles(ctx){
   assert(recCalP === round10(maintP + 60), 'goal toggle: partner muscleGain back on -> recommendedCal restores the +60 offset', 'got ' + recCalP + ', expected ' + round10(maintP + 60));
 
   // Persistence round-trip (task B1: `goals` joins PERSIST_PROFILE_FIELDS as an
-  // object-field special case, mirroring how `avoid` is already handled).
-  run(ctx, 'PROF.elena.goals.hashi = false; PROF.elena.goals.skin = false; persist();');
+  // object-field special case, mirroring how `avoid` is already handled). muscle/heart
+  // are set explicitly to `true` here (task B2: PROF's in-code goals defaults are now
+  // neutral/all-false for a fresh household — see state.js — so this test can no longer
+  // lean on an ambient "true" default the way it could pre-B2) so the assertion below
+  // still exercises a `true` value surviving the round trip, not just hashi/skin's `false`.
+  run(ctx, 'PROF.elena.goals.hashi = false; PROF.elena.goals.skin = false; PROF.elena.goals.muscle = true; PROF.elena.goals.heart = true; persist();');
   run(ctx, 'PROF.elena.goals.hashi = true; PROF.elena.goals.skin = true;'); // scramble in-memory before reload
   run(ctx, 'loadState();');
   const goalsAfterLoad = get(ctx, 'PROF.elena.goals');
