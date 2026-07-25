@@ -417,7 +417,7 @@
         <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
         <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
         <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
-        <button onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
+        <button id="navChipMeals" onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
         <button onclick="jumpToProfileSection('sec-avoid',this)">Foods to avoid</button>
         <button onclick="jumpToProfileSection('sec-connections',this)">Connections</button>
         <button onclick="jumpToProfileSection('sec-library',this)">Food library</button>
@@ -448,6 +448,17 @@
           </span>
         </div>
         <div class="cap-note">Shown on your profile, avatar and shared meal plans.</div>
+      </div>
+      <!-- Task B3 (solo households): manual override for householdSize — same .seg/.field
+           convention as the Sex toggle just below. setHouseholdSize() (render.js) persists,
+           stamps householdSizeManual + the sync timestamp (via persist()'s onMesaBeforePersist
+           hook, same as every other Basics edit), and repaints via applyProf(). -->
+      <div class="field"><label>I cook for</label>
+        <div class="seg" style="width:100%;margin-top:6px">
+          <button id="householdSizeBtn1" style="flex:1;min-height:38px" onclick="setHouseholdSize(1)">Just me</button>
+          <button id="householdSizeBtn2" class="on" style="flex:1;min-height:38px" onclick="setHouseholdSize(2)">Me + partner</button>
+        </div>
+        <div class="cap-note">Solo hides the partner profile, portions and plans everywhere in Mesa.</div>
       </div>
       <div class="field"><label>Sex</label>
         <div class="seg" style="width:100%;margin-top:6px">
@@ -556,12 +567,17 @@
            "Gentle fat loss" as Andrea did nothing, and he saw a fat-loss goal he doesn't have). -->
       <div id="goalsList"></div>
 
+      <!-- Task B3: no meaning without a second person — applyHouseholdSizeVisibility()
+           (render.js) hides this whole section (and its jump-nav chip, #navChipMeals) for a
+           one-person household. -->
+      <div id="mealsShareSection">
       <h2 id="sec-meals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="12" r="7"/><circle cx="15" cy="12" r="7"/></svg>Meals we share</h2>
       <p class="sub">Shared meals use one recipe with a portion for each of you. Solo meals are planned per person.</p>
       <div class="opt" id="shareBreakfast" onclick="toggleShared('breakfast',this)"><div class="ck"></div><div><div class="ot">Breakfast</div><div class="od">Solo (default)</div></div></div>
       <div class="opt" id="shareLunch" onclick="toggleShared('lunch',this)"><div class="ck"></div><div><div class="ot">Lunch</div><div class="od">Solo (default)</div></div></div>
       <div class="opt sel" id="shareDinner" onclick="toggleShared('dinner',this)"><div class="ck">✓</div><div><div class="ot">Dinner</div><div class="od">Shared (default)</div></div></div>
       <div class="opt" id="shareSnack" onclick="toggleShared('snack',this)"><div class="ck"></div><div><div class="ot">Snack</div><div class="od">Solo (default)</div></div></div>
+      </div>
 
       <h2 id="sec-avoid" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/></svg>Foods to avoid</h2>
       <p class="sub">Mesa will never suggest a recipe that contains these.</p>
@@ -614,8 +630,8 @@
     <div class="ob-slides" id="obSlides">
       <div class="ob-slide active">
         <div class="ob-emoji">🥗🍽️</div>
-        <h1>One plan, two targets</h1>
-        <p class="sub" style="text-align:center">Eat well together. Mesa builds one weekly menu that quietly tilts to fit each of you — same table, different needs.</p>
+        <h1>A week of meals that fit you</h1>
+        <p class="sub" style="text-align:center">Mesa builds one weekly menu around your goals. Cooking for yourself, or sharing the table with someone whose needs are different? Both work — same meals, portions that quietly tilt to each of you.</p>
       </div>
       <div class="ob-slide">
         <h1 style="text-align:center">What should we call you?</h1>

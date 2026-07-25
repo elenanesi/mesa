@@ -638,6 +638,20 @@ function makePlanEntry(recipeId, portion, stamp, opts){
   return entry;
 }
 
+// Task B3 (solo households): the shape a meal cell's partner half takes in a one-person
+// household — "empty/zeroed, NOT ghost-planned" per PHASE3B-generic-spec.md. Reuses the
+// SAME {recipeId:null, portion:1, kcal:0, protein:0} shape the generator already falls back
+// to when a candidate pool comes up empty (pickSoloMeal/pickSharedMeal below) — every
+// existing reader already tolerates it: planEntryComponents/planEntryNutrition/
+// refreshPlanEntryNutrition/planEntryRecipeValid all treat a null recipeId as "nothing
+// here" (see their own guards), so it contributes zero to shopping/pantry aggregation,
+// nutrition totals and coverage without any of them needing a partner-aware special case.
+// A fresh object every call — never a shared reference two different cells could both
+// mutate.
+function emptyPlanEntry(){
+  return {recipeId: null, portion: 1, kcal: 0, protein: 0};
+}
+
 function refreshPlanEntryNutrition(entry){
   if(!entry || !entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
   const nut = recipeNutrition(entry.recipeId, entry.portion, entry.opts).totals;
@@ -1080,10 +1094,16 @@ function regenerateWeekPreservingLocks(monday){
 function applyMealRulesToPlan(plan){
   if(!plan || !Array.isArray(plan.days) || !mealRules.length) return false;
   let changed = false;
+  // Task B3 (solo households): a mealRule targeting 'partner' can still be sitting in
+  // storage (created before switching to solo, or synced from a two-person device) — apply
+  // it to elena's units only, never partner's, or it would write a real recipe into the
+  // (intentionally empty) partner cell every time the plan regenerates. Two-person
+  // households: soloHousehold is always false, so this is byte-identical to before.
+  const soloHousehold = isSoloHousehold();
   plan.days.forEach(function(day, dayIndex){
     SLOT_ORDER.forEach(function(slot){
       const meal = day.meals[slot];
-      const units = meal.shared ? ['shared'] : ['elena', 'partner'];
+      const units = meal.shared ? ['shared'] : (soloHousehold ? ['elena'] : ['elena', 'partner']);
       units.forEach(function(person){
         if(isMealPinned(plan.weekStartDate, dayIndex, slot, person)) return;
         mealRules.forEach(function(rule){
@@ -1401,6 +1421,9 @@ function generateWeek(seed){
   const weekStartDate = seed.weekStartDate;
   const signature = seed.signature;
   const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
+  // Task B3 (solo households): computed once per generation, read by the per-slot loop
+  // below. Two-person households: always false, so every branch it guards is untouched.
+  const soloHousehold = isSoloHousehold();
   const dayTarget = {
     elena: {kcal: PROF.elena.calGoalNum, protein: PROF.elena.targetP},
     partner: {kcal: PROF.partner.calGoalNum, protein: PROF.partner.targetP}
@@ -1464,8 +1487,25 @@ function generateWeek(seed){
       // against the household SHARED[slot] default and that choice persists through
       // regeneration (mealShareOverrides), so this reads the EFFECTIVE state, not the raw
       // household toggle.
-      const shared = effectiveMealShared(weekStartDate, d, slot);
-      if(shared){
+      const shared = !soloHousehold && effectiveMealShared(weekStartDate, d, slot);
+      if(soloHousehold){
+        // Task B3 (solo households): plan/keep ONLY elena's portion — reuses the exact same
+        // pickSoloMeal() call the two-person "else" branch below already makes for elena's
+        // half of a non-shared slot (same pools/avoid-list/history/scoring), so a one-person
+        // household's picks are computed by the identical, already-battle-tested code path,
+        // just never paired with a second pick for 'partner'. The partner cell is the
+        // intentionally empty placeholder (emptyPlanEntry(), NOT ghost-planned) — no pool
+        // lookup, no history recording, no target deduction happens for 'partner' at all.
+        const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
+        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        dayMeals[slot] = {shared: false, elena: chE, partner: emptyPlanEntry()};
+        const soloNutE = planEntryNutrition(chE);
+        remainingKcal.elena -= soloNutE.kcal;
+        remainingProtein.elena -= soloNutE.protein;
+        history.elena[slot][d] = chE.recipeId;
+        recordCompositionUsage(history, chE, 'elena', slot, d);
+        recordDayUsage(history, chE, 'elena', d);
+      } else if(shared){
         const avoidBoth = unionAvoid(avoidList.elena, avoidList.partner);
         const pool = candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner']);
         // For shared slots both people ate the same dish last week — Elena's entry stands
@@ -1816,9 +1856,14 @@ function computePlanSignature(){
     (a.avoid || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
     SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
-    nextWeekTuning // task C2 (2026-07-18): changing the tuning goal must regenerate future
-                   // (non-logged, non-pinned) days exactly like any other signature input —
-                   // 'none' is just another value here, no special-cased branch.
+    nextWeekTuning, // task C2 (2026-07-18): changing the tuning goal must regenerate future
+                    // (non-logged, non-pinned) days exactly like any other signature input —
+                    // 'none' is just another value here, no special-cased branch.
+    householdSize // task B3 (solo households): flipping "Just me"/"Me + partner" must
+                  // regenerate — going solo needs the partner cells cleared, going back to
+                  // two needs them filled in again. Two-person households never see this
+                  // field change (it's always 2), so their plans regenerate exactly as
+                  // often as they always did.
   ].join('|');
 }
 
@@ -1837,6 +1882,13 @@ function planSignatureMatches(planSignature, currentSignature){
 
 function planReferencesMissingRecipe(plan){
   if(!plan || !Array.isArray(plan.days)) return true;
+  // Task B3 (solo households): every meal cell's partner half is INTENTIONALLY the empty
+  // {recipeId:null,...} placeholder (emptyPlanEntry()) in a one-person household — that's
+  // not a dangling reference to fix, it's the whole point. Checking RECIPES_DB[null] against
+  // it would read "missing" forever and force ensureWeekPlan to regenerate on every single
+  // call (silently reverting any of elena's un-pinned/un-logged swaps each time) — so the
+  // partner half is skipped here whenever solo.
+  const soloHousehold = isSoloHousehold();
   for(let d = 0; d < plan.days.length; d++){
     const meals = plan.days[d] && plan.days[d].meals;
     if(!meals) return true;
@@ -1845,7 +1897,8 @@ function planReferencesMissingRecipe(plan){
       const m = meals[slot];
       if(!m || !m.elena || !m.partner) return true;
       if(m.shared && m.recipeId && !RECIPES_DB[m.recipeId]) return true;
-      if(!RECIPES_DB[m.elena.recipeId] || !RECIPES_DB[m.partner.recipeId]) return true;
+      if(!RECIPES_DB[m.elena.recipeId]) return true;
+      if(!soloHousehold && !RECIPES_DB[m.partner.recipeId]) return true;
     }
   }
   return false;
@@ -2857,7 +2910,11 @@ function computeWeeklyCoverage(plan){
 // comparable; the "worst gap" is whichever is largest. Fiber is per-person by spec, so
 // this reports whichever of the two people is currently worse off.
 function coverageGaps(cov){
-  const worstFiberPerson = cov.fiberAvgPerDay.elena <= cov.fiberAvgPerDay.partner ? 'elena' : 'partner';
+  // Task B3 (solo households): cov.fiberAvgPerDay.partner is always 0 there (the empty
+  // partner cell contributes nothing) — comparing against a phantom 0g/day "person" would
+  // make fiber look like a permanent, maxed-out gap regardless of elena's real intake.
+  const worstFiberPerson = isSoloHousehold() ? 'elena'
+    : (cov.fiberAvgPerDay.elena <= cov.fiberAvgPerDay.partner ? 'elena' : 'partner');
   const worstFiberVal = cov.fiberAvgPerDay[worstFiberPerson];
   const satPct = cov.satFatShareOfFat * 100;
   const sugarPct = cov.freeSugarShareOfKcal * 100;
@@ -2965,6 +3022,13 @@ function summarizeWeekPlan(plan, personKey){
 
 function enumerateSwapUnits(plan){
   const units = [];
+  // Task B3 (solo households): canAutoMutateUnit only checks logged/pinned status, not
+  // whether the unit's entry is a real recipe — without this guard, the weekly re-balance
+  // solver (proposeRebalanceSuggestions) would happily swap a REAL recipe into the
+  // (intentionally empty) partner cell of every non-shared slot, i.e. ghost-plan the
+  // partner via re-balance. Two-person households: soloHousehold is always false, so this
+  // is byte-identical to the pre-B3 behavior.
+  const soloHousehold = isSoloHousehold();
   for(let d = 0; d < 7; d++){
     SLOT_ORDER.forEach(function(slot){
       const m = plan.days[d].meals[slot];
@@ -2974,9 +3038,11 @@ function enumerateSwapUnits(plan){
       }
       else {
         const elenaUnit = {dayIndex: d, slot: slot, shared: false, person: 'elena'};
-        const partnerUnit = {dayIndex: d, slot: slot, shared: false, person: 'partner'};
         if(canAutoMutateUnit(plan, elenaUnit)) units.push(elenaUnit);
-        if(canAutoMutateUnit(plan, partnerUnit)) units.push(partnerUnit);
+        if(!soloHousehold){
+          const partnerUnit = {dayIndex: d, slot: slot, shared: false, person: 'partner'};
+          if(canAutoMutateUnit(plan, partnerUnit)) units.push(partnerUnit);
+        }
       }
     });
   }

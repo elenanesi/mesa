@@ -508,7 +508,16 @@ function refreshAfterRecipeServingOverride(dateISO){
 }
 
 function updateServings(){
-  const shared = recipeServingCtx ? recipeServingCtx.shared : isShared(currentRecipeKey);
+  // Task B3 (solo households): a plan-backed recipeServingCtx already carries shared:false
+  // for every meal in a one-person household (planner.js:generateWeek never produces a
+  // shared cell there), but the CONTEXT-LESS fallback (isShared(currentRecipeKey), reached
+  // when a recipe is opened without a specific day/slot — e.g. straight from the library)
+  // reads the raw household SHARED[slot] default, which is unaware of household size. Force
+  // false here so the second serve card can never appear for a one-person household via
+  // that path either.
+  const shared = (typeof isSoloHousehold === 'function' && isSoloHousehold())
+    ? false
+    : (recipeServingCtx ? recipeServingCtx.shared : isShared(currentRecipeKey));
   document.getElementById('serveRowShared').style.display = shared ? 'flex' : 'none';
   document.getElementById('sharedCaption').style.display = shared ? 'block' : 'none';
   document.getElementById('serveRowSolo').style.display = shared ? 'none' : 'flex';
@@ -1046,7 +1055,7 @@ function openRegenerateSheet(){
 function buildRegenerateSheet(){
   const label = weekScreenShowsNext ? 'next week' : 'this week';
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Regenerate ' + label + '?</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub" style="margin-top:10px">Rebuilds ' + label + '’s plan for both of you using the latest recipes and rules. '
+    + '<p class="sub" style="margin-top:10px">Rebuilds ' + label + '’s plan ' + (isSoloHousehold() ? 'for you' : 'for both of you') + ' using the latest recipes and rules. '
     + '<b>Pinned meals and anything you’ve already logged or skipped stay exactly as they are</b> — only the other meals are replaced. Any un-pinned manual swaps on ' + label + ' will be redone.</p>'
     + '<button class="cta" onclick="confirmRegenerateWeek()">↻ Regenerate ' + label + '</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
@@ -1541,16 +1550,21 @@ function openAddMealSheetForContext(ctx){
   // through regeneration via mealShareOverrides. Same sheet, so it's reachable from every
   // Week row AND every Today card. Splitting keeps tonight's dish for both, then each is
   // swappable on its own; merging gives both the current viewer's dish at each own portion.
-  const cellShared = (function(){
-    const pl = ensureWeekPlan(addMealCtx.weekStartDate);
-    const mm = pl.days[addMealCtx.dayIndex] && pl.days[addMealCtx.dayIndex].meals[addMealCtx.slot];
-    return !!(mm && mm.shared);
-  })();
-  const slotWord = (SLOT_LABEL[addMealCtx.slot] || addMealCtx.slot).toLowerCase();
-  html += '<button class="cta ghostbtn" onclick="toggleMealShareFromSheet()">'
-    + (cellShared ? '🍽️ Eat different — split into two ' + slotWord + 's'
-                  : '👥 Eat together — one ' + slotWord + ' for both')
-    + '</button>';
+  // Task B3: this control (and mergeMealCell, which it can trigger) only makes sense with a
+  // real second person — a one-person household never sees it, so mergeMealCell can never
+  // be reached to write a real recipe into the (intentionally empty) partner cell.
+  if(!(typeof isSoloHousehold === 'function' && isSoloHousehold())){
+    const cellShared = (function(){
+      const pl = ensureWeekPlan(addMealCtx.weekStartDate);
+      const mm = pl.days[addMealCtx.dayIndex] && pl.days[addMealCtx.dayIndex].meals[addMealCtx.slot];
+      return !!(mm && mm.shared);
+    })();
+    const slotWord = (SLOT_LABEL[addMealCtx.slot] || addMealCtx.slot).toLowerCase();
+    html += '<button class="cta ghostbtn" onclick="toggleMealShareFromSheet()">'
+      + (cellShared ? '🍽️ Eat different — split into two ' + slotWord + 's'
+                    : '👥 Eat together — one ' + slotWord + ' for both')
+      + '</button>';
+  }
 
   html += '<div class="shop-cat">In this meal</div>';
   allComponents.forEach(function(c, i){
@@ -2107,7 +2121,7 @@ function buildShopSheet(){
     + '<button style="flex:1" class="'+(shopWeekMode === 'current' ? 'on' : '')+'" onclick="setShopWeek(\'current\')">This week</button>'
     + '<button style="flex:1" class="'+(shopWeekMode === 'next' ? 'on' : '')+'" onclick="setShopWeek(\'next\')">Next week</button>'
     + '</div>'
-    + '<p class="sub" style="margin-top:10px"><b>' + weekRange + '</b> · For both of you · 7 days · totals summed from ' + weekLabel + ' plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
+    + '<p class="sub" style="margin-top:10px"><b>' + weekRange + '</b> · ' + (isSoloHousehold() ? 'For you' : 'For both of you') + ' · 7 days · totals summed from ' + weekLabel + ' plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
   // PANTRY-plan.md P3: a row the pantry fully covers is dropped from the list below, but
   // never silently — this short summary says where it went (the plan is explicit that
   // silent disappearance is indistinguishable from a bug).
@@ -3143,7 +3157,10 @@ function renderTodayMeals(){
 
   function tagsHtml(recipeId, slot, pillId){
     let html = recipeDisplayPills(recipeId).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-    html += '<span class="pill together mini" id="'+pillId+'" style="display:'+(SHARED[slot]?'inline-flex':'none')+'">👥 Together</span>';
+    // Task B3: SHARED[slot] is the household DEFAULT, unaware of household size — a
+    // one-person household must never show a "together" pill, regardless of that default.
+    const showTogetherPill = SHARED[slot] && !(typeof isSoloHousehold === 'function' && isSoloHousehold());
+    html += '<span class="pill together mini" id="'+pillId+'" style="display:'+(showTogetherPill?'inline-flex':'none')+'">👥 Together</span>';
     return html;
   }
 
@@ -3596,6 +3613,12 @@ function refreshRingAndBars(){
 }
 
 function applyProf(key){
+  // Task B3 (solo households): the partner slot is hidden everywhere user-visible, so a
+  // one-person household can never be VIEWING it — force back to 'elena' regardless of what
+  // was asked for (a stale currentProf from before "Just me" was set, a synced value from a
+  // two-person household, etc.). Every caller of applyProf/setProf goes through here, so
+  // this is the single funnel — no other call site needs its own guard.
+  if(typeof isSoloHousehold === 'function' && isSoloHousehold() && key === 'partner') key = 'elena';
   currentProf = key;
   const p=PROF[key];
   ensureWeekPlan();       // regenerate the plan first if its inputs changed (task C2)
@@ -3637,6 +3660,7 @@ function applyProf(key){
   syncServeHighlight();
   syncProfileToggle(key);
   syncPersonLabels(); // task B2: profSeg/profWhoSeg/serve-card NAMES — see its doc below
+  applyHouseholdSizeVisibility(); // task B3: hide/show every partner-facing surface for the current household size
   persist();
 }
 
@@ -3708,6 +3732,65 @@ function syncPersonLabels(){
   const servePBtns = document.querySelectorAll('#serveAndrea .sv-stepper button');
   if(servePBtns[0]) servePBtns[0].setAttribute('aria-label', 'Decrease ' + possessiveName(nameP) + ' portion');
   if(servePBtns[1]) servePBtns[1].setAttribute('aria-label', 'Increase ' + possessiveName(nameP) + ' portion');
+}
+
+/* ===================================================================
+   Task B3 (solo households) — hide every partner-facing surface
+
+   Called from applyProf() (every profile switch, boot, and Basics edit) and from
+   setHouseholdSize() right after a manual toggle, so it's always in sync with the live
+   householdSize. Toggles VISIBILITY only — the underlying data-level guarantee ("partner
+   is never ghost-planned/double-counted") lives in planner.js (generateWeek/
+   enumerateSwapUnits/applyMealRulesToPlan/planReferencesMissingRecipe/coverageGaps, all
+   gated on isSoloHousehold()), not here. Two-person households: every branch below is a
+   no-op restore to the normal 'flex'/'' display, so nothing changes for them.
+   =================================================================== */
+function applyHouseholdSizeVisibility(){
+  const solo = typeof isSoloHousehold === 'function' && isSoloHousehold();
+
+  // Top tabbar + Profile screen "whose plan" segmented toggles: hide the partner button
+  // entirely rather than disable it — there's nothing to switch to.
+  document.querySelectorAll('#profSeg button[data-prof="partner"]').forEach(function(b){ b.style.display = solo ? 'none' : ''; });
+  const whoSeg = document.getElementById('profWhoSeg');
+  if(whoSeg){
+    const btns = whoSeg.querySelectorAll('button');
+    if(btns[1]) btns[1].style.display = solo ? 'none' : '';
+  }
+
+  // Recipe-screen second serve card: driven per-recipe by updateServings() (which itself
+  // forces `shared=false` whenever solo — see that function) every time the recipe screen
+  // repaints, so nothing to force here.
+  if(solo && typeof currentRecipeKey !== 'undefined' && document.getElementById('recipe') && document.getElementById('recipe').classList.contains('active')){
+    updateServings();
+  }
+
+  // "Meals we share" (Profile section) — a household default for splitting/merging a dish
+  // between two people has no meaning for one. Hides the section AND its jump-nav chip.
+  const mealsSection = document.getElementById('mealsShareSection');
+  if(mealsSection) mealsSection.style.display = solo ? 'none' : '';
+  const mealsNavChip = document.getElementById('navChipMeals');
+  if(mealsNavChip) mealsNavChip.style.display = solo ? 'none' : '';
+
+  // "I cook for" control itself (Basics) — keep the ON state in sync even though it's
+  // always visible (this is the control that SETS householdSize, so it can't hide itself).
+  const btnJustMe = document.getElementById('householdSizeBtn1');
+  const btnMePlus = document.getElementById('householdSizeBtn2');
+  if(btnJustMe) btnJustMe.classList.toggle('on', solo);
+  if(btnMePlus) btnMePlus.classList.toggle('on', !solo);
+}
+
+// Profile → Basics "I cook for: Just me / Me + partner" — the manual override control (B3
+// spec: "a manual override control ... for safety, synced"). Setting it stamps
+// householdSizeManual so a later /auth/me poll (auth.js:maybeSetHouseholdSizeFromServer)
+// never silently reverts a deliberate "Just me" choice back to 2 just because the server
+// still only counts one signed-in account — see that function's doc for the exact rule.
+function setHouseholdSize(size){
+  size = (size === 1) ? 1 : 2;
+  if(householdSize === size && householdSizeManual) return;
+  householdSize = size;
+  householdSizeManual = true;
+  applyProf(currentProf); // recompute plan/UI for the new size (forces currentProf back to 'elena' when solo) + persist()
+  toast(size === 1 ? '✓ Planning for one' : '✓ Planning for two');
 }
 
 // profile screen switch

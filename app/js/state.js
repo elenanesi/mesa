@@ -292,6 +292,34 @@ const HOUSEHOLD_STYLES = ['balanced', 'protein', 'lowcarb'];
 let householdStyle = 'balanced';
 let activeMenu = null;
 
+/* ---------------- household size (Phase 3B, B3 — solo households) ----------------
+   NAMING WARNING: 'solo' is already taken by mealShareOverrides' per-MEAL concept
+   ('solo' | 'shared' = "we each eat something different tonight" vs "we share one dish",
+   see state.js above). householdSize (1|2) is a completely different, HOUSEHOLD-level
+   concept — whether slot 'partner' is a real second person at all — so it's never spelled
+   'solo' in code; helpers/comments say "one-person household" instead. A slot is opaque
+   (ground rule, PHASE3B-generic-spec.md) — 'partner' stays the internal id for the second
+   member-slot even in a one-person household; it's simply unused there.
+
+   Persisted + synced exactly like householdStyle right above (same localStorage top-level
+   field, same 'plans' sync section, same LWW rule — see buildSnapshot/loadState below and
+   js/sync.js:plansSectionData/applyPlansSectionData). Default resolution (loadState()):
+     - an EXISTING install (hadStoredStateOnBoot true) that predates this field defaults to
+       2 — never silently convert Elena/Andrea's real two-person household to solo just
+       because it was saved before this batch shipped.
+     - a genuinely FRESH install (nothing in localStorage at all) defaults to 1.
+   Once a value is actually stored, it always wins over both defaults.
+
+   householdSizeManual: set by the Profile → Basics "I cook for" control (render.js:
+   setHouseholdSize()) whenever a person explicitly picks "Just me"/"Me + partner". Read by
+   auth.js's maybeSetHouseholdSizeFromServer() so an server-reported single-member household
+   (memberSlot count) never auto-downgrades a household that manually opted into solo mode
+   back and forth — see that function's doc for the exact rule. A server-reported 2-member
+   household always wins (partner really did attach), regardless of this flag. */
+let householdSize = 2;
+let householdSizeManual = false;
+function isSoloHousehold(){ return householdSize === 1; }
+
 /* ---------------- next-week tuning goal (task C2, 2026-07-18 batch) ----------------
    Household-level (same rationale as householdStyle above — plans are shared, not
    per-person), replacing the fake Mesa-coach banner's toast-only "Tune next week"
@@ -751,6 +779,8 @@ function buildSnapshot(){
     currentProf: currentProf,
     onboarded: onboarded,
     householdStyle: householdStyle,
+    householdSize: householdSize,
+    householdSizeManual: householdSizeManual,
     nextWeekTuning: nextWeekTuning,
     shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
     servings: { svE: svE, svM: svM, svS: svS },
@@ -859,6 +889,15 @@ function loadState(){
 
   if(typeof saved.currentProf === 'string' && PROF[saved.currentProf]) currentProf = saved.currentProf;
   if(typeof saved.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(saved.householdStyle) !== -1) householdStyle = saved.householdStyle;
+  // Task B3 (solo households): a stored, explicit value always wins. Otherwise, default by
+  // install freshness (see the householdSize doc block above) — hadStoredStateOnBoot is
+  // already known at this point (set just above), so this is a pure lookup, not a guess.
+  if(saved.householdSize === 1 || saved.householdSize === 2){
+    householdSize = saved.householdSize;
+  } else {
+    householdSize = hadStoredStateOnBoot ? 2 : 1;
+  }
+  if(typeof saved.householdSizeManual === 'boolean') householdSizeManual = saved.householdSizeManual;
   // task C2 (2026-07-18): invalid/unknown/missing stored values normalize to the 'none'
   // in-code default above — no store-version bump needed (same pattern as householdStyle).
   if(typeof saved.nextWeekTuning === 'string' && NEXT_WEEK_TUNING_KEYS.indexOf(saved.nextWeekTuning) !== -1) nextWeekTuning = saved.nextWeekTuning;

@@ -4986,6 +4986,118 @@ function testShoppingListDecompositionParity(ctx){
 }
 
 /* ===================================================================
+   Phase 3B (B3) — solo households. householdSize (1|2) governs whether
+   generateWeek() plans/keeps a partner portion at all. Two invariants matter most:
+     (1) a one-person household's plan never "ghost-plans" the partner — every
+         meal cell's partner half stays the empty {recipeId:null,portion:1,
+         kcal:0,protein:0} placeholder (planner.js:emptyPlanEntry()), never a
+         real recipe — and computeShoppingList/pantry aggregation therefore
+         count ONLY elena's portion (no doubling). The weekly re-balance
+         solver (enumerateSwapUnits) must also never target the partner half.
+     (2) a two-person household is completely unaffected — regenerating with
+         householdSize back at 2 reproduces the SAME plan the very first
+         (never-solo) generation produced, byte for byte.
+   =================================================================== */
+function testHouseholdSizeSoloMode(ctx){
+  const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  const savedHouseholdSize = get(ctx, 'householdSize');
+  const savedHouseholdSizeManual = get(ctx, 'householdSizeManual');
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; logHistory = {}; pantry = {}; weekPlans = {}; weekPlan = null; householdSize = 2; householdSizeManual = false;");
+    const twoPersonPlan = call(ctx, 'ensureWeekPlan', []);
+    const twoPersonJSON = JSON.stringify(twoPersonPlan);
+    const twoPersonList = call(ctx, 'computeShoppingList', [twoPersonPlan.weekStartDate]);
+    assert(Object.keys(twoPersonList.totals).length > 0,
+      'B3 setup: the two-person baseline week produced a non-empty shopping list', 'keys=' + Object.keys(twoPersonList.totals).length);
+
+    // Flip to solo — householdSize is part of computePlanSignature(), so this MUST
+    // regenerate (never silently reuse the two-person plan's cells).
+    run(ctx, 'weekPlans = {}; weekPlan = null; householdSize = 1; householdSizeManual = true;');
+    const soloPlan = call(ctx, 'ensureWeekPlan', []);
+
+    let allNotShared = true, allPartnerEmpty = true, partnerRecipeCount = 0;
+    soloPlan.days.forEach(function(day){
+      SLOT_ORDER.forEach(function(slot){
+        const m = day.meals[slot];
+        if(m.shared) allNotShared = false;
+        if(!m.partner || m.partner.recipeId !== null || m.partner.kcal !== 0) allPartnerEmpty = false;
+        if(m.partner && m.partner.recipeId) partnerRecipeCount++;
+      });
+    });
+    assert(allNotShared, 'B3: a solo-household plan never marks a meal cell shared:true');
+    assert(allPartnerEmpty,
+      'B3: a solo-household plan\'s partner half is always the empty {recipeId:null,...} placeholder (never ghost-planned)',
+      'partnerRecipeCount=' + partnerRecipeCount);
+
+    // planReferencesMissingRecipe() must NOT treat the (intentionally null) partner half as
+    // a dangling reference, or ensureWeekPlan() would regenerate on every single call,
+    // silently reverting any un-pinned/un-logged swap of elena's each time.
+    assert(call(ctx, 'planReferencesMissingRecipe', [soloPlan]) === false,
+      'B3: planReferencesMissingRecipe() does not flag a solo plan\'s empty partner cells as missing recipes');
+    const soloPlanAgain = call(ctx, 'ensureWeekPlan', []);
+    assert(JSON.stringify(soloPlanAgain) === JSON.stringify(soloPlan),
+      'B3: re-calling ensureWeekPlan() on an unchanged solo household does not regenerate (proves no every-call regen loop)');
+
+    // Shopping/pantry aggregation: solo totals equal an independently rebuilt
+    // foodQuantitiesForComponents() pass over ELENA-ONLY components — i.e. no doubling
+    // (mirrors testShoppingListDecompositionParity's two-person parity check above).
+    const soloList = call(ctx, 'computeShoppingList', [soloPlan.weekStartDate]);
+    const soloRebuilt = JSON.parse(run(ctx, [
+      '(function(){',
+      '  var p = weekPlans[' + JSON.stringify(soloPlan.weekStartDate) + '];',
+      '  var allComponents = [];',
+      '  p.days.forEach(function(day){',
+      '    SLOT_ORDER.forEach(function(slot){',
+      '      planEntryComponents(day.meals[slot].elena).forEach(function(c){ allComponents.push(c); });',
+      '    });',
+      '  });',
+      '  var qtyByFood = foodQuantitiesForComponents(allComponents);',
+      '  var rebuilt = {};',
+      '  Object.keys(qtyByFood).forEach(function(foodId){',
+      '    var food = FOODS[foodId];',
+      '    if(!food) return;',
+      '    var name = food.name;',
+      '    if(!rebuilt[name]) rebuilt[name] = {qty: 0, unit: food.unit === "piece" ? "" : food.unit, foodIds: []};',
+      '    rebuilt[name].qty += qtyByFood[foodId];',
+      '    if(rebuilt[name].foodIds.indexOf(foodId) === -1) rebuilt[name].foodIds.push(foodId);',
+      '  });',
+      '  return JSON.stringify(rebuilt);',
+      '})()'
+    ].join('\n')));
+    assert(Object.keys(soloList.totals).length > 0,
+      'B3 setup: the solo week also produced a non-empty shopping list', 'keys=' + Object.keys(soloList.totals).length);
+    assert(JSON.stringify(soloList.totals) === JSON.stringify(soloRebuilt),
+      'B3: computeShoppingList totals for a solo household equal an elena-only component rebuild (no partner-half doubling)',
+      'computeShoppingList keys=' + Object.keys(soloList.totals).length + ' rebuilt keys=' + Object.keys(soloRebuilt).length);
+
+    // Weekly re-balance (enumerateSwapUnits) must never propose a 'partner'-targeted unit
+    // for a solo household — canAutoMutateUnit alone (logged/pinned checks) would otherwise
+    // happily accept one, letting the solver ghost-plan a real recipe into the empty cell.
+    const units = call(ctx, 'enumerateSwapUnits', [soloPlan]);
+    const partnerUnits = units.filter(function(u){ return u.person === 'partner'; });
+    assert(partnerUnits.length === 0,
+      'B3: enumerateSwapUnits() never proposes a partner-targeted unit for a solo household (re-balance can\'t ghost-plan the partner)',
+      'partnerUnits=' + partnerUnits.length);
+
+    // Round-trip: flipping back to householdSize:2 with everything else unchanged
+    // regenerates the EXACT plan the original (never-solo) generation produced — proves
+    // couple households see zero change from this feature.
+    run(ctx, 'weekPlans = {}; weekPlan = null; householdSize = 2; householdSizeManual = false;');
+    const backToTwoPlan = call(ctx, 'ensureWeekPlan', []);
+    assert(JSON.stringify(backToTwoPlan) === twoPersonJSON,
+      'B3: a two-person household regenerates byte-identically after a solo round-trip (zero regression for couples)');
+  } finally {
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'householdSize = ' + JSON.stringify(savedHouseholdSize) + '; householdSizeManual = ' + JSON.stringify(savedHouseholdSizeManual) + ';');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+  }
+}
+
+/* ===================================================================
    PANTRY-plan.md P3: computeShoppingList() — Q1 (already-logged/skipped slots excluded
    from the CURRENT week only), pantry subtraction (fully/partially covered rows), and the
    next-week projection (pantryProjectedForNextWeek, js/pantry.js). Uses a dedicated fixture
@@ -6888,6 +7000,7 @@ function main(){
   runTest('foodQuantitiesForComponents decomposition (PANTRY-plan.md P1)', function(){ testFoodQuantitiesForComponents(ctx); });
   runTest('computeShoppingList decomposition parity (PANTRY-plan.md P1)', function(){ testShoppingListDecompositionParity(ctx); });
   runTest('computeShoppingList: Q1 logged-exclusion + pantry subtraction + next-week projection (PANTRY-plan.md P3)', function(){ testShoppingListLoggedExclusionAndPantrySubtraction(ctx); });
+  runTest('solo households: no ghost-planned partner, no shopping doubling, two-person round-trip byte-identical (Phase 3B B3)', function(){ testHouseholdSizeSoloMode(ctx); });
   runTest('restockTickedShopItems: Add ticked items to pantry (PANTRY-plan.md P3 Q2)', function(){ testRestockTickedShopItems(ctx); });
   runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });

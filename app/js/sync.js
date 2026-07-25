@@ -20,7 +20,8 @@
                              cell carries a `t` stamp; newer cell wins), so
                              two phones swapping DIFFERENT meals both keep
                              their swap. SHARED + householdStyle + servings +
-                             nextWeekTuning (task C2, 2026-07-18) stay LWW
+                             nextWeekTuning (task C2, 2026-07-18) + householdSize/
+                             householdSizeManual (task B3) stay LWW
                              (remote wins), as do weeks whose signatures
                              differ (a regenerated week replaces wholesale —
                              cell stamps aren't comparable across
@@ -130,6 +131,8 @@ function plansSectionData(){
     mealRules: clone(mealRules),
     SHARED: {breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack},
     householdStyle: householdStyle,
+    householdSize: householdSize, // task B3 (solo households): household-level, LWW like householdStyle
+    householdSizeManual: householdSizeManual,
     nextWeekTuning: nextWeekTuning, // task C2 (2026-07-18): household-level, LWW like householdStyle
     servings: {svE: svE, svM: svM, svS: svS}
   };
@@ -217,6 +220,9 @@ function applyPlansSectionData(data){
     Object.keys(SHARED).forEach(function(k){ if(typeof data.SHARED[k] === 'boolean') SHARED[k] = data.SHARED[k]; });
   }
   if(typeof data.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(data.householdStyle) !== -1) householdStyle = data.householdStyle;
+  // task B3 (solo households): same LWW rule as householdStyle above.
+  if(data.householdSize === 1 || data.householdSize === 2) householdSize = data.householdSize;
+  if(typeof data.householdSizeManual === 'boolean') householdSizeManual = data.householdSizeManual;
   // task C2 (2026-07-18): same LWW rule as householdStyle above (merged.* already carries
   // remote's value via mergePlansSection's `clone(remote || {})` base for non-weekPlans
   // fields — this just validates + applies it, same as every other plans-section field).

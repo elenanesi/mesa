@@ -182,6 +182,9 @@ function refreshAuthMe(){
     // Phase 3A.2: a signed-in account now carries its household mapping — silently attach
     // this device to it (or note a mismatch) so Elena/Andrea never land on an empty Mesa.
     maybeAdoptHousehold(body.householdCode, body.memberSlot);
+    // Phase 3B (B3, solo households): server-confirmed member count, when the worker sends
+    // it — see maybeSetHouseholdSizeFromServer's own doc for the upgrade/downgrade rule.
+    maybeSetHouseholdSizeFromServer(body.householdMembers);
     return true;
   }).catch(function(err){
     // Offline, worker briefly unreachable, etc. — keep whatever's cached; nothing to undo.
@@ -286,6 +289,44 @@ function maybeAdoptHousehold(householdCode, memberSlot){
     }
     toast('✓ Signed in — your data is synced');
   });
+}
+
+/* ===================================================================
+   Phase 3B (B3) — auto-upgrade householdSize from the server's member count
+
+   PHASE3B-generic-spec.md B3: "auto-upgrades to 2 when the partner's account
+   attaches; a manual override control in Profile → Basics ... for safety".
+   `members` is /auth/me's `householdMembers` (worker/auth.js — a plain
+   COUNT of users sharing this household_code), read defensively since an
+   older/not-yet-redeployed worker simply omits the field (typeof guard, no
+   crash, no-op).
+
+   Rule (deliberately asymmetric):
+     - members === 2: ALWAYS set householdSize = 2, even over a manual solo
+       override — a real second account attached, so hiding them would be
+       actively wrong, not just a stale default.
+     - members === 1: set householdSize = 1 ONLY when householdSizeManual is
+       false — a household that manually chose "Me + partner" (e.g. before
+       the partner's account exists yet) must never be silently demoted to
+       solo just because the server currently counts one user.
+   Repaints via applyProf(currentProf) (render.js) — the same full-cascade
+   used everywhere else in this file after a state change that affects the
+   plan/UI — but only when something actually changed, so a routine /auth/me
+   poll on an already-correct household size does nothing visible (no toast:
+   this runs silently on every boot with a token, like the rest of refreshAuthMe).
+   =================================================================== */
+function maybeSetHouseholdSizeFromServer(members){
+  if(typeof members !== 'number') return; // older worker — field not sent yet
+  if(typeof householdSize === 'undefined') return; // state.js not loaded — guard like the rest of this file
+  let changed = false;
+  if(members === 2){
+    if(householdSize !== 2){ householdSize = 2; changed = true; }
+  } else if(members === 1){
+    if(!householdSizeManual && householdSize !== 1){ householdSize = 1; changed = true; }
+  }
+  if(!changed) return;
+  if(typeof applyProf === 'function') applyProf(currentProf);
+  else if(typeof persist === 'function') persist();
 }
 
 /* ===================================================================
