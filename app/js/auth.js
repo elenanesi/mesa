@@ -387,13 +387,137 @@ function renderAccountSection(){
   // the same syncState.code check js/sync.js's own renderCoupleSync() uses below it.
   const householdLine = (typeof syncState !== 'undefined' && syncState.code) ? 'Household: linked' : 'Household: not linked yet';
 
+  // Task B4: householdSize is the B3 (state.js) "I cook for" state — the household-level
+  // (not per-slot) signal of how many people are in this Mesa. 1 = room for a partner
+  // invite; 2 = already a couple, so show the linked state instead of an invite form. The
+  // typeof guard matches every other cross-file read in this file (state.js ships
+  // alongside auth.js in every real build, but is never hard-depended on here).
+  let partnerSectionHtml = '';
+  if(typeof householdSize !== 'undefined'){
+    if(householdSize === 1) partnerSectionHtml = invitePartnerBlockHtml();
+    else if(householdSize === 2) partnerSectionHtml = '<p class="cap-note" style="margin-top:4px">Partner linked</p>';
+  }
+
   el.innerHTML = '<div class="row" style="align-items:center">'
     + avatarHtml
     + '<div style="min-width:0"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis">' + name + '</div>'
     + '<div class="cap-note" style="min-height:0;overflow:hidden;text-overflow:ellipsis">' + email + '</div></div>'
     + '</div>'
     + '<p class="cap-note" style="margin-top:8px">' + householdLine + '</p>'
+    + partnerSectionHtml
     + '<button class="cta ghostbtn" style="margin-top:14px" onclick="authSignOut()">Sign out</button>';
+}
+
+/* ===================================================================
+   Task B4 — partner invite flow
+
+   Shown in the Account section only when signed in AND householdSize===1
+   (see renderAccountSection above — "room" for a partner per the spec).
+   Talks to worker/auth.js's POST /auth/invite-partner (Bearer required,
+   body {email}); see PHASE3B-generic-spec.md B4 for the exact request/
+   response contract this was built against.
+
+   Deliberately does NOT re-run renderAccountSection() while a request is
+   in flight or after it resolves (success/known-error cases) — that
+   would wipe the input's in-progress value and steal focus, the same
+   reason js/sync.js's joinHousehold() flow manipulates its own form's
+   DOM directly rather than repainting Couple sync mid-edit. The one
+   exception is a 401: authSessionExpired() (this file) always repaints
+   the whole Account section back to signed-out, which is correct here
+   too (there is no "invite" affordance for someone no longer signed in).
+   =================================================================== */
+function invitePartnerBlockHtml(){
+  return '<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--line)">'
+    + '<p class="sub" style="margin:0 0 8px">Invite your partner — when they sign in with Google using this email, they’ll join your household and meal plan automatically.</p>'
+    // type=email + inputmode=email for the right mobile keyboard; font-size:16px inline
+    // per the repo's iOS convention (index.html:438-441 / mesa.css .sv-val — anything
+    // under 16px makes iOS Safari auto-zoom the page on focus). Styled to match
+    // js/sync.js's joinCodeInput (.inp + inline border/width) plus the .field .inp
+    // padding/background/radius so it doesn't look like a bare unstyled input sitting
+    // outside a .field wrapper.
+    + '<input class="inp" id="invitePartnerEmail" type="email" inputmode="email" autocomplete="email" autocapitalize="off" spellcheck="false" placeholder="partner@email.com" '
+    + 'style="width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:16px;background:rgba(255,250,240,.95);color:var(--ink)" '
+    + 'onkeydown="if(event.key===\'Enter\'){this.blur();sendPartnerInvite();}">'
+    + '<button class="cta" id="invitePartnerBtn" style="margin-top:8px" onclick="sendPartnerInvite()">Send invite</button>'
+    + '<p class="cap-note" id="invitePartnerMsg" style="margin-top:8px;min-height:0"></p>'
+    + '</div>';
+}
+
+// Inline feedback lives in its own paragraph (never a toast — the spec calls out that the
+// user is already reading this section) and is set via textContent, not innerHTML, so no
+// escapeHtml() call is needed here: every string passed in is one of this function's own
+// fixed copy literals below, never user-derived (the typed email is never echoed back).
+function setInvitePartnerMessage(text, isError){
+  const msg = document.getElementById('invitePartnerMsg');
+  if(!msg) return;
+  msg.textContent = text || '';
+  msg.style.color = isError ? 'var(--terra)' : '';
+}
+
+function setInvitePartnerBusy(busy){
+  const btn = document.getElementById('invitePartnerBtn');
+  const input = document.getElementById('invitePartnerEmail');
+  if(btn){ btn.disabled = busy; btn.textContent = busy ? 'Sending…' : 'Send invite'; }
+  if(input) input.disabled = busy;
+}
+
+function sendPartnerInvite(){
+  const input = document.getElementById('invitePartnerEmail');
+  if(!input) return; // block not in the DOM (signed out / two-person household) — nothing to do
+  const email = input.value.trim();
+
+  if(typeof fetch !== 'function'){
+    setInvitePartnerMessage('Couldn’t reach Mesa — check your connection and try again.', true);
+    return;
+  }
+
+  setInvitePartnerBusy(true);
+  setInvitePartnerMessage('', false);
+
+  fetch(SYNC_URL + '/auth/invite-partner', {
+    method: 'POST',
+    headers: Object.assign({'Content-Type': 'application/json'}, authHeader()),
+    body: JSON.stringify({email: email})
+  }).then(function(res){
+    if(res.status === 401){
+      // The one path allowed to conclude the session is dead (see authSessionExpired's own
+      // doc) — repaints the Account section back to signed-out, which removes this whole
+      // block, so there's nothing left here to re-enable/report into.
+      authSessionExpired();
+      return {handled: true};
+    }
+    return res.json().catch(function(){ return {}; }).then(function(body){
+      return {handled: false, body: (body && typeof body === 'object') ? body : {}};
+    });
+  }).then(function(result){
+    setInvitePartnerBusy(false);
+    if(result.handled) return;
+    const body = result.body;
+    if(body.ok){
+      if(body.already){
+        setInvitePartnerMessage('They’re already part of your Mesa.', false);
+      } else {
+        setInvitePartnerMessage('Invited — when they sign in with Google they’ll join your meal plan automatically.', false);
+        input.value = '';
+      }
+      return;
+    }
+    const code = body.error;
+    if(code === 'invalid_email') setInvitePartnerMessage('That doesn’t look like an email address.', true);
+    else if(code === 'self_invite') setInvitePartnerMessage('That’s your own account.', true);
+    else if(code === 'taken') setInvitePartnerMessage('That email already belongs to another Mesa household.', true);
+    else if(code === 'household_full') setInvitePartnerMessage('Your Mesa already has two people.', true);
+    else if(code === 'rate_limited') setInvitePartnerMessage('Too many invites today — try again tomorrow.', true);
+    // Anything else (no_household, an unrecognized/future error code, a malformed body) —
+    // the spec's copy list doesn't cover these explicitly; fall back to the same "couldn't
+    // reach it" family of copy used for actual network failures below rather than surface
+    // a code the user can't act on.
+    else setInvitePartnerMessage('Couldn’t reach Mesa — check your connection and try again.', true);
+  }).catch(function(err){
+    console.warn('Mesa auth: invite-partner request failed', err);
+    setInvitePartnerBusy(false);
+    setInvitePartnerMessage('Couldn’t reach Mesa — check your connection and try again.', true);
+  });
 }
 
 /* ===================================================================

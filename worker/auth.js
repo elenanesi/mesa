@@ -44,6 +44,48 @@
      POST /auth/logout        (Authorization: Bearer <token>)
        -> these two DO return JSON (they're called via fetch() from the
           already-loaded app, not via top-level navigation).
+     POST /auth/invite-partner (Authorization: Bearer <token>, body {email})
+       -> Phase 3B/B4: lets a signed-in user invite their partner by email,
+          replacing the earlier manual-D1-row-per-person admin flow. Writes
+          an allowed_emails row so the invitee's NEXT Google sign-in attaches
+          them straight into the inviter's household, on the other member
+          slot from the inviter's own. Failure modes, in the order checked:
+            401 {error:'unauthorized'}   no/dead session.
+            429 {error:'rate_limited'}   more than 5 calls/day for this user
+                                          id (checked early/cheaply, right
+                                          after auth, before touching D1).
+            400 {error:'invalid_email'}  not a string, empty after trim, over
+                                          254 chars, or fails a conservative
+                                          shape check (NOT full RFC 5322).
+            409 {error:'no_household'}   caller has no household_code (or an
+                                          unrecognized member_slot) — normally
+                                          impossible post-3A.2 attach, guarded
+                                          defensively anyway.
+            400 {error:'self_invite'}    email is the caller's own.
+            200 {ok:true, already:true}  email already belongs to a USER who
+                                          is already in the caller's
+                                          household — idempotent no-op.
+            409 {error:'taken'}          email belongs to a user in a
+                                          DIFFERENT household, OR to an
+                                          existing allowed_emails row already
+                                          pointed at a different household
+                                          (never steals someone else's
+                                          pending invite).
+            409 {error:'household_full'} caller's household already has 2
+                                          members (counted the same way
+                                          handleMe's householdMembers is).
+            200 {ok:true, email,
+                 memberSlot}             success — an allowed_emails row is
+                                          INSERT OR REPLACEd for the target
+                                          email: {note:'partner-invite',
+                                          household_code: caller's,
+                                          member_slot: the OTHER slot from
+                                          the caller's own ('elena'<->
+                                          'partner')}. A row already pointing
+                                          at the SAME household (or with no
+                                          household yet) is fine to update in
+                                          place — same idempotent contract as
+                                          re-running the whole call.
 
    Session tokens: 32 random bytes, hex-encoded, handed to the browser
    once (in the callback redirect fragment — fragments never reach the
@@ -65,6 +107,12 @@ const LAST_SEEN_STALE_MS = 60 * 60 * 1000; // only write last_seen_at once per h
 
 const CALLBACK_RATE_LIMIT = 30; // per IP per window — the callback does a real Google token
 const CALLBACK_RATE_WINDOW_SECONDS = 3600; // exchange + D1 writes, worth throttling more than reads
+
+const INVITE_RATE_LIMIT = 5; // per user per day — plenty for real use, cheap to throttle abuse
+const INVITE_RATE_WINDOW_SECONDS = 86400; // 24h
+const INVITE_EMAIL_MAX_LEN = 254; // RFC 5321 practical mailbox length cap
+const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // conservative shape check — NOT full RFC 5322
+const OTHER_MEMBER_SLOT = {elena: 'partner', partner: 'elena'}; // the app's two opaque slot ids (see PHASE3B spec's "ground rule")
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -532,6 +580,110 @@ async function handleLogout(request, env, origin){
   return json({ok: true}, 200, origin);
 }
 
+// Phase 3B/B4: POST /auth/invite-partner — see the doc-comment block in the
+// module header for the full list of status codes this can return. Reuses
+// loadSessionUser (auth) and loadUserRow (inviter's own email, for the
+// self-invite check) rather than re-deriving either.
+async function handleInvitePartner(request, env, origin){
+  const sessionUser = await loadSessionUser(request, env);
+  if(!sessionUser){
+    return json({error: 'unauthorized'}, 401, origin);
+  }
+
+  // Shape-check the email BEFORE the rate limit. Validation is pure string work —
+  // no KV, no D1 — so rejecting a typo costs nothing and must not burn a day's
+  // invite budget: five fat-fingered attempts would otherwise lock a legitimate
+  // user out of inviting their partner for 24h. The limit below still guards
+  // every path that actually touches storage.
+  let body;
+  try{ body = await request.json(); }catch(e){ body = null; }
+  const rawEmail = (isPlainObject(body) && typeof body.email === 'string') ? body.email.trim().toLowerCase() : '';
+  if(!rawEmail || rawEmail.length > INVITE_EMAIL_MAX_LEN || !INVITE_EMAIL_RE.test(rawEmail)){
+    return json({error: 'invalid_email'}, 400, origin);
+  }
+
+  // Rate limit before any D1 work, so a burst of well-formed but abusive
+  // requests still only costs one cheap KV read+write per attempt.
+  if(await rateLimited(env, 'invite-partner-rate:' + sessionUser.userId, INVITE_RATE_LIMIT, INVITE_RATE_WINDOW_SECONDS)){
+    return json({error: 'rate_limited'}, 429, origin);
+  }
+
+  // Household + slot are attached together (see handleCallback) so in
+  // practice these are null/non-null in lockstep, but guard both — an
+  // unrecognized member_slot has nowhere sensible to assign the OTHER slot
+  // either, same class of "not really attached yet" as a null household.
+  const targetSlot = OTHER_MEMBER_SLOT[sessionUser.memberSlot];
+  if(!sessionUser.householdCode || !targetSlot){
+    return json({error: 'no_household'}, 409, origin);
+  }
+
+  if(!d1Available(env)){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  const inviter = await loadUserRow(env, sessionUser.userId);
+  if(!inviter){
+    return json({error: 'unauthorized'}, 401, origin);
+  }
+  if(rawEmail === inviter.email){
+    return json({error: 'self_invite'}, 400, origin);
+  }
+
+  let existingUser;
+  try{
+    existingUser = await env.MESA_DB.prepare(
+      'SELECT id, household_code FROM users WHERE email = ? AND deleted_at IS NULL'
+    ).bind(rawEmail).first();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+  if(existingUser){
+    if(existingUser.household_code === sessionUser.householdCode){
+      return json({ok: true, already: true}, 200, origin);
+    }
+    return json({error: 'taken'}, 409, origin);
+  }
+
+  // household_full — counted the same way handleMe's householdMembers is.
+  let countRow;
+  try{
+    countRow = await env.MESA_DB.prepare(
+      'SELECT COUNT(*) AS c FROM users WHERE household_code = ? AND deleted_at IS NULL'
+    ).bind(sessionUser.householdCode).first();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+  const householdMembers = (countRow && typeof countRow.c === 'number') ? countRow.c : 1;
+  if(householdMembers >= 2){
+    return json({error: 'household_full'}, 409, origin);
+  }
+
+  // Don't steal an invite: a pending allowed_emails row already pointed at a
+  // DIFFERENT household is left alone (409 taken). A row with no household
+  // yet, or already pointed at THIS household, is fair game to (re)write.
+  let existingAllowed;
+  try{
+    existingAllowed = await env.MESA_DB.prepare(
+      'SELECT email, household_code FROM allowed_emails WHERE email = ?'
+    ).bind(rawEmail).first();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+  if(existingAllowed && existingAllowed.household_code && existingAllowed.household_code !== sessionUser.householdCode){
+    return json({error: 'taken'}, 409, origin);
+  }
+
+  try{
+    await env.MESA_DB.prepare(
+      'INSERT OR REPLACE INTO allowed_emails (email, note, added_at, household_code, member_slot) VALUES (?, ?, ?, ?, ?)'
+    ).bind(rawEmail, 'partner-invite', Date.now(), sessionUser.householdCode, targetSlot).run();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  return json({ok: true, email: rawEmail, memberSlot: targetSlot}, 200, origin);
+}
+
 // Single entry point sync.js routes every "/auth/*" pathname to.
 export async function handleAuthRoute(request, env, origin, url){
   const pathname = url.pathname;
@@ -547,6 +699,9 @@ export async function handleAuthRoute(request, env, origin, url){
   }
   if(pathname === '/auth/logout' && request.method === 'POST'){
     return handleLogout(request, env, origin);
+  }
+  if(pathname === '/auth/invite-partner' && request.method === 'POST'){
+    return handleInvitePartner(request, env, origin);
   }
 
   return json({error: 'not_found'}, 404, origin);
