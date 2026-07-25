@@ -478,6 +478,24 @@ async function handleMe(request, env, origin){
     return json({error: 'unauthorized'}, 401, origin);
   }
 
+  // householdMembers (Phase 3B, B3): count of non-deleted users sharing this
+  // user's household_code — 1 means solo, 2 means a couple. The client uses
+  // this to decide whether to show/hide partner-facing UI (per-meal eat-
+  // together controls, "both" summaries, shopping/pantry aggregation) without
+  // guessing from memberSlot alone. No household_code (not yet attached) has
+  // nobody to share with, so it's a solo household of 1.
+  let householdMembers = 1;
+  if(user.household_code){
+    try{
+      const countRow = await env.MESA_DB.prepare(
+        'SELECT COUNT(*) AS c FROM users WHERE household_code = ? AND deleted_at IS NULL'
+      ).bind(user.household_code).first();
+      householdMembers = (countRow && typeof countRow.c === 'number') ? countRow.c : 1;
+    }catch(e){
+      householdMembers = 1;
+    }
+  }
+
   return json({
     user: {
       id: user.id,
@@ -487,6 +505,7 @@ async function handleMe(request, env, origin){
     },
     householdCode: user.household_code || null,
     memberSlot: user.member_slot || null,
+    householdMembers: householdMembers,
     expiresAt: session.expires_at
   }, 200, origin);
 }
