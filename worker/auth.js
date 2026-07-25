@@ -99,6 +99,24 @@
 import { ALLOWED_ORIGINS, corsHeaders, json, isPlainObject, generateHouseholdCode } from './sync.js';
 
 const STATE_KV_PREFIX = 'authstate:';
+/* Claim tickets (iOS-installed-PWA sign-in).
+
+   An installed PWA on iOS cannot navigate cross-origin in place: tapping "Sign in with
+   Google" hands the whole OAuth round trip to Safari, and Safari's storage jar is NOT the
+   PWA's. The callback's #auth=<token> redirect therefore lands in the browser, correctly,
+   while the PWA that started the flow never sees a token — an unbreakable login loop on
+   phones even though everything works on desktop.
+
+   So the token is ALSO parked here under a client-generated one-time id, and the PWA
+   claims it directly (GET /auth/claim) when the user comes back to it. The id is 32
+   random bytes minted client-side, lives for 5 minutes, and is deleted on first read, so
+   it is the same class of bearer secret as the fragment it replaces — just fetched
+   instead of redirected. */
+const CLAIM_KV_PREFIX = 'authclaim:';
+const CLAIM_TTL_SECONDS = 300;
+const CLAIM_ID_RE = /^[a-f0-9]{32,128}$/;
+const CLAIM_RATE_LIMIT = 120; // generous: the client polls while waiting for the user to switch apps
+const CLAIM_RATE_WINDOW_SECONDS = 600;
 const STATE_TTL_SECONDS = 600; // 10 minutes — plenty for a consent-screen round trip
 
 const SESSION_TTL_MS = 90 * 24 * 60 * 60 * 1000; // 90 days
@@ -221,9 +239,15 @@ async function handleStart(request, env, origin, url){
     return json({error: 'invalid_return_to'}, 400, origin);
   }
 
+  // Optional: the caller's claim ticket id (see CLAIM_KV_PREFIX). Carried through the
+  // state blob so the callback can park a copy of the token for a PWA that will never
+  // receive the redirect itself.
+  const rawLink = (url.searchParams.get('link_id') || '').toLowerCase();
+  const linkId = CLAIM_ID_RE.test(rawLink) ? rawLink : null;
+
   const state = randomHex(32);
   try{
-    await env.MESA_KV.put(STATE_KV_PREFIX + state, JSON.stringify({returnUrl: returnUrl}), {expirationTtl: STATE_TTL_SECONDS});
+    await env.MESA_KV.put(STATE_KV_PREFIX + state, JSON.stringify({returnUrl: returnUrl, linkId: linkId}), {expirationTtl: STATE_TTL_SECONDS});
   }catch(e){
     return json({error: 'storage_failed'}, 500, origin);
   }
@@ -457,6 +481,17 @@ async function handleCallback(request, env, origin, url){
   // Token goes in the URL FRAGMENT, not a query string: fragments are never
   // sent to the server by the browser on subsequent navigations and are
   // stripped before appearing in most server access logs / Referer headers.
+  // Park a copy for the claim flow when this sign-in was started by a client that can't
+  // receive the redirect (installed PWA). Best-effort: the fragment below is still the
+  // primary delivery for every browser that CAN follow it, so a KV hiccup here must not
+  // fail an otherwise-successful sign-in.
+  const claimId = (stateData && typeof stateData.linkId === 'string' && CLAIM_ID_RE.test(stateData.linkId)) ? stateData.linkId : null;
+  if(claimId){
+    try{
+      await env.MESA_KV.put(CLAIM_KV_PREFIX + claimId, token, {expirationTtl: CLAIM_TTL_SECONDS});
+    }catch(e){ /* fragment delivery still works; the PWA will just keep waiting */ }
+  }
+
   return fragmentRedirect(returnOrigin, 'auth=' + token);
 }
 
@@ -709,6 +744,40 @@ async function handleInvitePartner(request, env, origin){
   return json({ok: true, email: rawEmail, memberSlot: targetSlot}, 200, origin);
 }
 
+/* GET /auth/claim?link_id=<id> — one-time pickup of a token parked by the callback.
+   200 {token} and the ticket is destroyed; 404 {error:'not_ready'} while the user is
+   still completing (or abandoned) the Google flow. Deliberately gives the same 404 for
+   "never existed", "expired" and "already claimed" so a guesser learns nothing about
+   which ids are real. */
+async function handleClaim(request, env, origin, url){
+  const linkId = (url.searchParams.get('link_id') || '').toLowerCase();
+  if(!CLAIM_ID_RE.test(linkId)){
+    return json({error: 'invalid_link_id'}, 400, origin);
+  }
+  if(!env || !env.MESA_KV){
+    return json({error: 'not_ready'}, 404, origin);
+  }
+
+  const ip = request.headers.get('CF-Connecting-IP') || 'unknown';
+  if(await rateLimited(env, 'auth-claim-rate:' + ip, CLAIM_RATE_LIMIT, CLAIM_RATE_WINDOW_SECONDS)){
+    return json({error: 'rate_limited'}, 429, origin);
+  }
+
+  let token = null;
+  try{
+    token = await env.MESA_KV.get(CLAIM_KV_PREFIX + linkId);
+  }catch(e){
+    return json({error: 'not_ready'}, 404, origin);
+  }
+  if(!token){
+    return json({error: 'not_ready'}, 404, origin);
+  }
+  // Single use — delete before handing it out so a replayed request can't get it twice.
+  try{ await env.MESA_KV.delete(CLAIM_KV_PREFIX + linkId); }catch(e){}
+
+  return json({token: token}, 200, origin);
+}
+
 // Single entry point sync.js routes every "/auth/*" pathname to.
 export async function handleAuthRoute(request, env, origin, url){
   const pathname = url.pathname;
@@ -718,6 +787,9 @@ export async function handleAuthRoute(request, env, origin, url){
   }
   if(pathname === '/auth/google/callback' && request.method === 'GET'){
     return handleCallback(request, env, origin, url);
+  }
+  if(pathname === '/auth/claim' && request.method === 'GET'){
+    return handleClaim(request, env, origin, url);
   }
   if(pathname === '/auth/me' && request.method === 'GET'){
     return handleMe(request, env, origin);

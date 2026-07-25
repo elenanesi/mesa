@@ -107,6 +107,113 @@ function setMyMemberSlot(slot){
   }catch(e){ console.error('Mesa auth: could not persist member slot', e); }
 }
 
+/* ===================================================================
+   Claim tickets — the only way an installed iOS PWA can sign in
+
+   In standalone mode iOS refuses to navigate the PWA itself to another
+   origin, so "Sign in with Google" hands the entire round trip to
+   Safari. Safari completes it perfectly and stores the token in
+   SAFARI's localStorage; the PWA has its own, sees nothing, shows the
+   gate again, and the user taps sign-in forever. (Desktop is fine —
+   there the redirect comes back to the same context that started it.)
+
+   So before leaving, the client mints a random ticket id, hands it to
+   the worker, and the callback parks a copy of the token under it. When
+   the user switches back to the PWA we redeem the ticket over a normal
+   fetch — no navigation involved, so the storage jar problem disappears.
+   The ticket is single-use, expires in 5 minutes server-side, and is
+   dropped locally as soon as it is redeemed or a session arrives by any
+   other route.
+   =================================================================== */
+const AUTH_PENDING_KEY = 'mesaAuthPending';
+const CLAIM_POLL_MS = 2500;
+const CLAIM_GIVE_UP_MS = 5 * 60 * 1000; // matches the worker's ticket TTL — after this the ticket is gone anyway
+
+function newClaimId(){
+  try{
+    const bytes = new Uint8Array(32);
+    crypto.getRandomValues(bytes);
+    let out = '';
+    for(let i = 0; i < bytes.length; i++) out += bytes[i].toString(16).padStart(2, '0');
+    return out;
+  }catch(e){ return null; } // no crypto (ancient browser) — fall back to redirect-only delivery
+}
+
+function pendingClaim(){
+  try{
+    const raw = localStorage.getItem(AUTH_PENDING_KEY);
+    if(!raw) return null;
+    const p = JSON.parse(raw);
+    if(!p || typeof p.id !== 'string' || typeof p.at !== 'number') return null;
+    if(Date.now() - p.at > CLAIM_GIVE_UP_MS){ setPendingClaim(null); return null; }
+    return p;
+  }catch(e){ return null; }
+}
+
+function setPendingClaim(id){
+  try{
+    if(id) localStorage.setItem(AUTH_PENDING_KEY, JSON.stringify({id: id, at: Date.now()}));
+    else localStorage.removeItem(AUTH_PENDING_KEY);
+  }catch(e){ /* storage unavailable — sign-in still works anywhere the redirect lands */ }
+}
+
+let claimPollTimer = null;
+
+function stopClaimPolling(){
+  if(claimPollTimer){ clearInterval(claimPollTimer); claimPollTimer = null; }
+}
+
+/* Redeem the ticket once. Resolves true when a session was obtained. 404 is the normal
+   "not finished yet" answer and must stay silent — this runs on a timer. */
+function claimPendingSignIn(){
+  const pending = pendingClaim();
+  if(!pending || authToken()) return Promise.resolve(false);
+  if(typeof fetch !== 'function') return Promise.resolve(false);
+
+  return fetch(SYNC_URL + '/auth/claim?link_id=' + encodeURIComponent(pending.id), {
+    method: 'GET',
+    headers: {'Accept': 'application/json'},
+    cache: 'no-store'
+  }).then(function(res){
+    if(res.status === 404) return false; // still waiting on the user to finish in the browser
+    if(!res.ok) return false;
+    return res.json().then(function(body){
+      if(!body || typeof body.token !== 'string' || !body.token) return false;
+      setAuthToken(body.token);
+      setPendingClaim(null);
+      stopClaimPolling();
+      updateLoginGate();
+      renderAccountSection();
+      refreshAuthMe();
+      toast('✓ Signed in');
+      return true;
+    });
+  }).catch(function(){ return false; }); // offline/unreachable — the timer tries again
+}
+
+/* Poll while a ticket is outstanding. Also fires on visibilitychange, which is the moment
+   that actually matters: the user finishes in Safari and switches back to Mesa. */
+function startClaimPolling(){
+  if(claimPollTimer || !pendingClaim() || authToken()) return;
+  claimPollTimer = setInterval(function(){
+    if(!pendingClaim() || authToken()){ stopClaimPolling(); updateLoginGate(); return; }
+    claimPendingSignIn();
+  }, CLAIM_POLL_MS);
+}
+
+function initClaimWatch(){
+  if(typeof document === 'undefined' || !document.addEventListener) return;
+  document.addEventListener('visibilitychange', function(){
+    if(document.visibilityState !== 'visible') return;
+    if(authToken() || !pendingClaim()) return;
+    claimPendingSignIn().then(function(got){ if(!got) startClaimPolling(); });
+  });
+  // Same trigger for browsers that restore the page without a visibility change.
+  window.addEventListener('pageshow', function(){
+    if(!authToken() && pendingClaim()) claimPendingSignIn().then(function(got){ if(!got) startClaimPolling(); });
+  });
+}
+
 /* ---------------- hash-fragment token pickup ---------------- */
 // '#auth=<token>' / '#auth_error=<reason>' arrive from worker/auth.js's callback redirect
 // (see file header). Matched with an anchored regex (not a plain indexOf) so a token that
@@ -125,7 +232,12 @@ function consumeAuthHash(){
 
   if(authMatch){
     const token = decodeURIComponent(authMatch[1] || '');
-    if(token) setAuthToken(token);
+    if(token){
+      setAuthToken(token);
+      // The redirect got here, so this context never needs its claim ticket — drop it
+      // rather than leaving a live one-time secret sitting in storage.
+      setPendingClaim(null);
+    }
     return 'token';
   }
   const reason = decodeURIComponent(errMatch[1] || '');
@@ -240,7 +352,14 @@ function authSignIn(){
   // fragment — which is where the worker returns the session token. Sending the real path
   // makes the callback land directly on the app. pathname only (no query/hash) so nothing
   // from the current URL is reflected back through the redirect.
-  location.href = SYNC_URL + '/auth/google/start?return_to=' + encodeURIComponent(location.origin + location.pathname);
+  const returnTo = encodeURIComponent(location.origin + location.pathname);
+  // Mint a claim ticket for the same sign-in (see claimPendingSignIn). On an installed
+  // iOS PWA the whole OAuth trip happens in Safari and its result never reaches this
+  // storage jar, so the redirect alone can never sign the PWA in.
+  const linkId = newClaimId();
+  if(linkId) setPendingClaim(linkId);
+  location.href = SYNC_URL + '/auth/google/start?return_to=' + returnTo
+    + (linkId ? '&link_id=' + encodeURIComponent(linkId) : '');
 }
 
 // Clears local session state immediately (so the UI feels instant and works even offline),
@@ -600,11 +719,19 @@ function updateLoginGate(){
   const gate = document.getElementById('loginGate');
   if(!gate) return; // markup not present (older cached index.html) — never let this throw
 
-  // The button is generated (not duplicated as static markup — see googleSignInButtonHtml's
-  // doc) into its own slot every call; cheap and keeps it byte-for-byte identical to the
-  // Account section's signed-out button.
+  // index.html ships this button as static markup so the gate is usable before/without
+  // JS; repainting it here keeps it identical if that markup ever drifts.
+  const waiting = !authToken() && !!pendingClaim();
   const btnSlot = document.getElementById('loginGateButton');
-  if(btnSlot) btnSlot.innerHTML = googleSignInButtonHtml('authSignIn()');
+  if(btnSlot){
+    btnSlot.innerHTML = waiting
+      // Mid-flight on a device where the OAuth trip happens outside this app (installed
+      // iOS PWA): say so, and offer a manual retry for anyone who beats the poller back.
+      ? '<button class="cta ghostbtn" onclick="claimPendingSignIn()">I\u2019ve signed in \u2014 continue</button>'
+      : googleSignInButtonHtml('authSignIn()');
+  }
+  const waitNote = document.getElementById('loginGateError');
+  if(waitNote && waiting) waitNote.textContent = 'Finish signing in with Google in your browser, then come back here.';
 
   const show = !authToken();
   gate.hidden = !show;
@@ -622,6 +749,12 @@ function updateLoginGate(){
 // reconciles with the server if there's a token to check.
 function initAuth(){
   consumeAuthHash();
+  // A ticket left over from a sign-in started before this launch (the iOS PWA case: the
+  // user finished in Safari and reopened Mesa) — redeem it before painting the gate.
+  if(!authToken() && pendingClaim()){
+    claimPendingSignIn().then(function(got){ if(!got) startClaimPolling(); });
+  }
+  initClaimWatch();
   renderAccountSection();
   updateLoginGate();
   // Open on this device's own profile using the CACHED slot, before /auth/me is asked
