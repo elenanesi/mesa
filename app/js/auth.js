@@ -54,7 +54,7 @@
    appears not to work, since an installed PWA or a Safari cache can
    easily still be running last week's JavaScript.
    =================================================================== */
-const AUTH_BUILD = 'mesa-c74a726cd83a'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
+const AUTH_BUILD = 'mesa-e1040a461708'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
 const AUTH_LOG_KEY = 'mesaAuthLog';
 const AUTH_LOG_MAX = 40;
 
@@ -823,7 +823,22 @@ function renderAuthDiagnostics(){
 // guard style — a no-op if this file somehow isn't loaded). Paints from whatever's cached
 // immediately (works offline, matches Couple sync's own paint-then-fetch shape), then
 // reconciles with the server if there's a token to check.
-function initAuth(){
+/* initAuthEarly() — everything needed to GET A USER IN, run as soon as this script
+   parses and deliberately NOT waiting for the app to boot.
+
+   This split exists because of a real, user-visible failure: initAuth() used to be the
+   last statement of bootMesaApp()'s promise chain, which begins with a network fetch for
+   the recipe catalog. Any stall or throw anywhere in that chain meant consumeAuthHash()
+   never ran — so a token arriving in the URL fragment was silently discarded, the gate
+   stayed up, and sign-in looped forever with no error anywhere. The diagnostics log made
+   it obvious: `signin.start` with no `boot` line after it, on a build that logs one on
+   every load.
+
+   Reading a returned token, redeeming a claim ticket and lowering the gate must depend on
+   NOTHING except this file. Anything that needs loaded app state (the profile display,
+   which slot to open on, re-validating the session) stays in initAuth() below, called
+   from the boot chain where PROF and friends actually exist. */
+function initAuthEarly(){
   authLog('boot', 'hash=' + (location.hash ? location.hash.slice(0, 12) + '…' : 'none')
     + ' token=' + (authToken() ? 'yes' : 'no')
     + ' ticket=' + (pendingClaim() ? 'yes' : 'no')
@@ -835,6 +850,13 @@ function initAuth(){
     claimPendingSignIn().then(function(got){ if(!got) startClaimPolling(); });
   }
   initClaimWatch();
+  updateLoginGate();
+}
+
+/* initAuth() — the parts that need loaded app state. Called from bootMesaApp(); if boot
+   fails, the user is still signed in and past the gate, they just don't get the Account
+   card or the open-on-your-own-profile behaviour until the underlying boot bug is fixed. */
+function initAuth(){
   renderAccountSection();
   updateLoginGate();
   // Open on this device's own profile using the CACHED slot, before /auth/me is asked
@@ -843,3 +865,7 @@ function initAuth(){
   applyOwnMemberSlot(myMemberSlot());
   if(authToken()) refreshAuthMe();
 }
+
+// Run the gate-critical half immediately. This file is loaded at the end of <body>, after
+// the gate markup, so the DOM it touches already exists.
+try{ initAuthEarly(); }catch(e){ try{ authLog('early.err', e && e.message); }catch(_){} }

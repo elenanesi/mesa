@@ -182,8 +182,18 @@ function renderTodayHeader(){
 // signature + same week) or regenerates it deterministically, then persists; it also
 // runs renderLogPlan(), which replays today's persisted confirms via restoreTodayLog().
 function bootMesaApp(){
-  loadState();
-  applyCustomFoods();     // js/library.js — merge customFoods into FOODS before recipes need them
+  try{
+    loadState();
+    applyCustomFoods();   // js/library.js — merge customFoods into FOODS before recipes need them
+  }catch(err){
+    // These run before the promise chain below, so a throw here escaped bootMesaApp
+    // entirely and left no trace at all. Record it, then re-throw: the app genuinely
+    // cannot continue without state, but now the failure is visible in the gate's
+    // diagnostics instead of only in a console nobody can open on a phone.
+    console.error('Mesa boot failed (state load)', err);
+    if(typeof authLog === 'function') authLog('boot.fail', 'state: ' + ((err && err.message) || String(err)));
+    throw err;
+  }
 
   const catalogPromise = (typeof fetchBuiltinRecipeCatalogFromD1 === 'function')
     ? fetchBuiltinRecipeCatalogFromD1()
@@ -212,7 +222,14 @@ function bootMesaApp(){
     // Phase 3A (account sign-in): a no-op wherever js/auth.js isn't loaded or no session
     // token is stored — sign-in never gates anything, so this runs independently of initSync().
     if(typeof initAuth === 'function') initAuth();
-  }).catch(function(err){ console.error('Mesa boot failed', err); });
+  }).catch(function(err){
+    console.error('Mesa boot failed', err);
+    // Surface it in the sign-in diagnostics too: a failed boot used to take the whole
+    // auth layer down with it (initAuth ran at the end of this chain), and even now that
+    // sign-in is independent, a boot failure is exactly the kind of thing that is
+    // invisible on a phone. See js/auth.js:initAuthEarly's doc.
+    if(typeof authLog === 'function') authLog('boot.fail', (err && err.message) || String(err));
+  });
 }
 
 bootMesaApp();
