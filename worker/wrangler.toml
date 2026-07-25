@@ -23,5 +23,5 @@ database_id = "660c50ce-13b5-433f-a00b-68349ac5e851"
 #   npx wrangler secret put GOOGLE_CLIENT_SECRET
 # For local dev, put GOOGLE_CLIENT_SECRET in worker/.dev.vars instead (gitignored).
 [vars]
-GOOGLE_CLIENT_ID = ""
+GOOGLE_CLIENT_ID = "242945555602-09h5e3eofta1a9hb3123sa03k40drtp2.apps.googleusercontent.com"
 MAX_USERS = "20"
