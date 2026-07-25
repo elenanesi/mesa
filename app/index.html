@@ -647,6 +647,17 @@
   </nav>
 </div>
 
+<!-- login gate (Phase 3A.2): full-viewport overlay, blocks the app until a token is
+     stored in localStorage mesaAuth. Shown/hidden entirely from js/auth.js's
+     updateLoginGate() — see that function's doc for exactly which signals flip it. -->
+<div class="login-gate" id="loginGate" hidden>
+  <div class="login-gate-emoji">🥗🍽️</div>
+  <h1>Mesa</h1>
+  <p class="sub" style="text-align:center">Sign in to see your plan, shopping list and log.</p>
+  <div id="loginGateButton"></div>
+  <p class="cap-note" id="loginGateError" style="text-align:center"></p>
+</div>
+
 <script src="data/foods.js"></script>
 <script src="data/recipes.js"></script>
 <script src="data/validate.js"></script>

@@ -101,7 +101,13 @@ function consumeAuthHash(){
     return 'token';
   }
   const reason = decodeURIComponent(errMatch[1] || '');
-  toast(authErrorMessage(reason));
+  const msg = authErrorMessage(reason);
+  toast(msg);
+  // With the login gate (Phase 3A.2) enabled, a failed sign-in usually lands the user
+  // right back on the gate (never inside the app), so the toast alone would be easy to
+  // miss — mirror the same copy into the gate's own error line if it's present.
+  const gateErr = document.getElementById('loginGateError');
+  if(gateErr) gateErr.textContent = msg;
   return 'error';
 }
 
@@ -127,10 +133,14 @@ function refreshAuthMe(){
   }).then(function(res){
     if(res.status === 401){
       // Session gone server-side (revoked, expired, or logged out elsewhere) — the local
-      // token is now dead weight; drop it so the UI stops claiming to be signed in.
+      // token is now dead weight; drop it so the UI stops claiming to be signed in. This is
+      // the ONE definitive signal the login gate (Phase 3A.2) reacts to — a network error a
+      // few lines down in .catch() must NOT do this, or an offline PWA with a perfectly
+      // valid stored token would get locked out the moment it loses signal.
       setAuthToken(null);
       setAuthUser(null);
       renderAccountSection();
+      updateLoginGate();
       return false;
     }
     if(!res.ok) throw new Error('auth/me http ' + res.status);
@@ -139,6 +149,10 @@ function refreshAuthMe(){
     if(!body || !body.user || typeof body.user !== 'object') return false;
     setAuthUser(body.user);
     renderAccountSection();
+    updateLoginGate();
+    // Phase 3A.2: a signed-in account now carries its household mapping — silently attach
+    // this device to it (or note a mismatch) so Elena/Andrea never land on an empty Mesa.
+    maybeAdoptHousehold(body.householdCode, body.memberSlot);
     return true;
   }).catch(function(err){
     // Offline, worker briefly unreachable, etc. — keep whatever's cached; nothing to undo.
@@ -163,6 +177,7 @@ function authSignOut(){
   setAuthToken(null);
   setAuthUser(null);
   renderAccountSection();
+  updateLoginGate();
   toast('✓ Signed out');
   if(token && typeof fetch === 'function'){
     fetch(SYNC_URL + '/auth/logout', {
@@ -170,6 +185,51 @@ function authSignOut(){
       headers: {Authorization: 'Bearer ' + token}
     }).catch(function(err){ console.warn('Mesa auth: logout request failed (already signed out on this device)', err); });
   }
+}
+
+/* ===================================================================
+   Phase 3A.2 — automatic household attach
+
+   A signed-in Google account now carries the household its /auth/me
+   response resolved server-side (worker/auth.js: every user always has
+   a household_code after first login — copied from an allowed_emails
+   invite row, or freshly generated). This device should silently pick
+   that up UNLESS it already has its own household configured, in which
+   case the local one wins (Phase 3B reconciles cross-device mismatches;
+   this phase never clobbers).
+
+   Reuses js/sync.js's pullHouseholdFirst(code) verbatim — the exact
+   same "normalize -> GET the full remote state -> applySyncResponse ->
+   persist the code" path js/sync.js's own bootstrapAccessHousehold()
+   already uses to restore a household after a Cloudflare Access login,
+   so a Google-login restore behaves identically rather than
+   reimplementing the join/merge logic here.
+   =================================================================== */
+function maybeAdoptHousehold(householdCode, memberSlot){
+  if(typeof householdCode !== 'string' || !householdCode) return; // older cached /auth/me shape, or a worker not yet on 3A.2 — no-op
+  // Guarded like every other cross-file call in this file: sync.js ships alongside auth.js
+  // in every real build, but never assume it at the cost of crashing sign-in.
+  if(typeof syncState === 'undefined' || typeof normalizeHouseholdCode !== 'function' || typeof pullHouseholdFirst !== 'function') return;
+
+  const serverCode = normalizeHouseholdCode(householdCode);
+  if(!serverCode) return;
+
+  if(syncState.code){
+    if(syncState.code !== serverCode){
+      // Per spec: keep local, never clobber — just leave a breadcrumb for later debugging.
+      // Truncated (not the full code) since this can land in a shared/remote console log.
+      console.warn('Mesa auth: signed-in account\'s household (' + serverCode.slice(0, 4) + '…) differs from this device\'s local household (' + syncState.code.slice(0, 4) + '…) — keeping local; Phase 3B reconciles this.');
+    }
+    return;
+  }
+
+  pullHouseholdFirst(serverCode).then(function(restored){
+    if(!restored) return;
+    if((memberSlot === 'elena' || memberSlot === 'partner') && typeof applyProf === 'function'){
+      applyProf(memberSlot);
+    }
+    toast('✓ Signed in — your data is synced');
+  });
 }
 
 /* ===================================================================
@@ -196,6 +256,13 @@ const GOOGLE_G_LOGO_SVG = '<svg width="18" height="18" viewBox="0 0 18 18" aria-
   + '<path fill="#EA4335" d="M9 3.579c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.167 6.656 3.579 9 3.579z"/>'
   + '</svg>';
 
+// Shared by renderAccountSection() (signed-out state) and the login gate (Phase 3A.2) —
+// factored out so the two spots that need "Sign in with Google" never drift apart.
+function googleSignInButtonHtml(onclick){
+  return '<button class="cta" style="background:#fff;color:#3c4043;border:1.5px solid #dadce0;box-shadow:none;display:flex;align-items:center;justify-content:center;gap:10px" onclick="' + onclick + '">'
+    + GOOGLE_G_LOGO_SVG + '<span>Sign in with Google</span></button>';
+}
+
 function renderAccountSection(){
   const el = document.getElementById('accountSection');
   if(!el) return; // Profile screen markup not present (shouldn't happen, but don't crash)
@@ -203,8 +270,7 @@ function renderAccountSection(){
   const user = authUser();
   if(!user){
     el.innerHTML = '<p class="sub">Sign in to attach an account to your Mesa — this is separate from Couple sync below and doesn’t change how the app works.</p>'
-      + '<button class="cta" style="background:#fff;color:#3c4043;border:1.5px solid #dadce0;box-shadow:none;display:flex;align-items:center;justify-content:center;gap:10px" onclick="authSignIn()">'
-      + GOOGLE_G_LOGO_SVG + '<span>Sign in with Google</span></button>';
+      + googleSignInButtonHtml('authSignIn()');
     return;
   }
 
@@ -220,12 +286,49 @@ function renderAccountSection(){
     ? '<img src="' + escapeHtml(user.picture) + '" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex:0 0 auto">'
     : '<div style="width:44px;height:44px;border-radius:50%;background:var(--sage-tint);color:var(--sage-deep);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;flex:0 0 auto">' + initial + '</div>';
 
+  // Phase 3A.2: a quick "is this account attached to a shared household" hint — mirrors
+  // the same syncState.code check js/sync.js's own renderCoupleSync() uses below it.
+  const householdLine = (typeof syncState !== 'undefined' && syncState.code) ? 'Household: linked' : 'Household: not linked yet';
+
   el.innerHTML = '<div class="row" style="align-items:center">'
     + avatarHtml
     + '<div style="min-width:0"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis">' + name + '</div>'
     + '<div class="cap-note" style="min-height:0;overflow:hidden;text-overflow:ellipsis">' + email + '</div></div>'
     + '</div>'
+    + '<p class="cap-note" style="margin-top:8px">' + householdLine + '</p>'
     + '<button class="cta ghostbtn" style="margin-top:14px" onclick="authSignOut()">Sign out</button>';
+}
+
+/* ===================================================================
+   Phase 3A.2 — login gate
+
+   A full-viewport overlay (static markup: index.html #loginGate) that
+   blocks the app until a token is present in localStorage. Deliberately
+   dumb: the ONLY signal it reacts to is "is there a stored token", never
+   "did /auth/me confirm it" — a stored token has to hide the gate the
+   instant it's saved (spec: "hidden immediately after a token is
+   stored"), and a network hiccup while re-checking that token must NOT
+   re-show it (spec: "network errors do NOT gate" — this is an
+   offline-first PWA; refreshAuthMe()'s own 401 branch is the only path
+   that clears a token, and it always calls this right after).
+   =================================================================== */
+function updateLoginGate(){
+  const gate = document.getElementById('loginGate');
+  if(!gate) return; // markup not present (older cached index.html) — never let this throw
+
+  // The button is generated (not duplicated as static markup — see googleSignInButtonHtml's
+  // doc) into its own slot every call; cheap and keeps it byte-for-byte identical to the
+  // Account section's signed-out button.
+  const btnSlot = document.getElementById('loginGateButton');
+  if(btnSlot) btnSlot.innerHTML = googleSignInButtonHtml('authSignIn()');
+
+  const show = !authToken();
+  gate.hidden = !show;
+  try{ document.body.classList.toggle('gate-open', show); }catch(e){ /* non-browser env */ }
+  if(!show){
+    const err = document.getElementById('loginGateError');
+    if(err) err.textContent = '';
+  }
 }
 
 /* ---------------- boot ---------------- */
@@ -236,5 +339,6 @@ function renderAccountSection(){
 function initAuth(){
   consumeAuthHash();
   renderAccountSection();
+  updateLoginGate();
   if(authToken()) refreshAuthMe();
 }

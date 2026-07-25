@@ -488,3 +488,15 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .ob-dots{display:flex;justify-content:center;gap:7px;margin:18px 0 4px;}
 .ob-dots .d{width:7px;height:7px;border-radius:50%;background:var(--line);transition:.2s;}
 .ob-dots .d.on{background:var(--sage);width:20px;border-radius:4px;}
+
+/* login gate (Phase 3A.2) — fixed so it blocks the whole viewport regardless of where it
+   sits in the DOM; :not([hidden]) rather than a bare .login-gate{display:flex} because an
+   author-stylesheet display rule would otherwise outrank the UA's own [hidden]{display:none}
+   in the cascade and defeat the hidden attribute entirely. */
+.login-gate{position:fixed;inset:0;z-index:95;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;padding:24px;text-align:center;}
+.login-gate:not([hidden]){display:flex;}
+.login-gate-emoji{font-size:56px;margin-bottom:8px;}
+.login-gate h1{margin-bottom:2px;}
+.login-gate #loginGateButton{width:100%;max-width:300px;}
+.login-gate #loginGateError{color:var(--terra);min-height:0;}
+body.gate-open{overflow:hidden;}

@@ -112,3 +112,68 @@ allowing the `Authorization` request header.
    No JS origins needed (server-side flow).
 3. Paste client ID into wrangler.toml GOOGLE_CLIENT_ID; run
    `npx wrangler secret put GOOGLE_CLIENT_SECRET`; redeploy worker.
+
+---
+
+# Phase 3A.2 — Login gate + automatic household attach (spec addendum)
+
+Two requirements on top of 3A: (1) the app is inaccessible until signed in;
+(2) a signing-in user is automatically attached to their existing household
+data (Elena/Andrea must not start from scratch). Sync itself stays on the
+household code (server-side session-gating of /sync is Phase 3B) — so the
+gate is client-side; the attach mapping is server-side and authoritative.
+
+## D1 migration `worker/migrations/0004_household_attach.sql`
+
+```sql
+ALTER TABLE users ADD COLUMN household_code TEXT;
+ALTER TABLE users ADD COLUMN member_slot TEXT;
+ALTER TABLE allowed_emails ADD COLUMN household_code TEXT;
+ALTER TABLE allowed_emails ADD COLUMN member_slot TEXT;
+```
+
+`allowed_emails.household_code/member_slot` are OPTIONAL signup defaults: when
+an invited email signs in for the first time, its user row copies them — this
+is how an invited partner lands in an existing household with the right
+profile slot. member_slot vocabulary is the app's current PROF keys:
+`'elena'` (primary) | `'partner'` (second member). Yes, legacy naming — the
+generic member model renames these in Phase 3B; do not rename anything now.
+
+## Worker (auth.js) changes
+
+- On user CREATION in the callback: copy household_code + member_slot from the
+  matching allowed_emails row; where NULL, generate a fresh household code
+  (export generateHouseholdCode from sync.js — do not duplicate it) and slot
+  'elena'. Every user therefore always has a household after first login
+  (solo users get a fresh empty one).
+- BACKFILL on every login (callback) for an EXISTING user whose
+  household_code IS NULL: same copy-from-allowed_emails-else-generate logic.
+  (Covers a user created before this migration.)
+- `GET /auth/me` response gains top-level `householdCode` and `memberSlot`.
+
+## Client changes
+
+- **Login gate**: a full-viewport fixed overlay (id `loginGate`, z-index above
+  everything, app-styled: Mesa wordmark/emoji, one welcoming line, the same
+  white-pill Google button, and an error line fed by #auth_error). Shown when
+  NO token is stored in localStorage `mesaAuth`, or when /auth/me returns a
+  definitive 401 (network errors do NOT gate — an offline PWA with a stored
+  token must keep working). Hidden immediately after a token is stored /
+  auth confirmed. Sign-out clears the token and shows the gate again.
+  Implement in js/auth.js + a static div in index.html; block scroll behind.
+- **Auto-attach** after a successful /auth/me that carries householdCode:
+  - If NO local household is configured (syncState.code null): silently adopt
+    householdCode through the exact same code path joinHousehold() uses
+    (normalize, fetch full state, applySyncResponse, persist code), WITHOUT
+    prompting, then if memberSlot is 'elena'/'partner' switch the active
+    profile to it, and toast that their data is restored.
+  - If a local household code exists and DIFFERS from the server's: keep
+    local, console.warn both (Phase 3B reconciles) — do not clobber.
+- Account section signed-in card additionally shows "Household: linked" state.
+
+## Ops at deploy (main session, not agents)
+
+1. Apply 0004 remotely; deploy worker; Pages deploy with new sw build.
+2. Read the current household code from KV `access-bootstrap:v2:mesa-household`
+   and UPDATE allowed_emails (elena → slot 'elena') + Andrea's row when his
+   email is known (slot 'partner'); also backfill users rows if they exist.

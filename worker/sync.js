@@ -138,7 +138,7 @@ function normalizeHouseholdCode(raw){
   return String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 }
 
-function generateHouseholdCode(){
+export function generateHouseholdCode(){
   let out = '';
   const bytes = new Uint8Array(CODE_LENGTH);
   crypto.getRandomValues(bytes);

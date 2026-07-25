@@ -13,6 +13,14 @@
    keep working exactly as before, unauthenticated, on the household
    code. Sessions become the sync auth in Phase 3B.
 
+   Phase 3A.2 addendum: every user is automatically attached to a
+   household on first login — copied from their allowed_emails row
+   (invited partners land in the household they were invited into) or,
+   if unset, a freshly generated code (solo signups get an empty one).
+   Existing users missing a household_code get backfilled the same way
+   on their next login. /auth/me exposes householdCode/memberSlot so the
+   client can auto-join without prompting.
+
    Endpoints:
      GET  /auth/google/start?return_to=<origin>
        -> 503 if GOOGLE_CLIENT_ID isn't configured (no GCP client yet).
@@ -46,7 +54,7 @@
    time either.
    =================================================================== */
 
-import { ALLOWED_ORIGINS, corsHeaders, json, isPlainObject } from './sync.js';
+import { ALLOWED_ORIGINS, corsHeaders, json, isPlainObject, generateHouseholdCode } from './sync.js';
 
 const STATE_KV_PREFIX = 'authstate:';
 const STATE_TTL_SECONDS = 600; // 10 minutes — plenty for a consent-screen round trip
@@ -278,7 +286,7 @@ async function handleCallback(request, env, origin, url){
 
   let allowedRow;
   try{
-    allowedRow = await env.MESA_DB.prepare('SELECT email FROM allowed_emails WHERE email = ?').bind(email).first();
+    allowedRow = await env.MESA_DB.prepare('SELECT email, household_code, member_slot FROM allowed_emails WHERE email = ?').bind(email).first();
   }catch(e){
     return errorRedirect(returnOrigin, 'server');
   }
@@ -293,10 +301,17 @@ async function handleCallback(request, env, origin, url){
 
   let userRow;
   try{
-    userRow = await env.MESA_DB.prepare('SELECT id FROM users WHERE email = ? AND deleted_at IS NULL').bind(email).first();
+    userRow = await env.MESA_DB.prepare('SELECT id, household_code FROM users WHERE email = ? AND deleted_at IS NULL').bind(email).first();
   }catch(e){
     return errorRedirect(returnOrigin, 'server');
   }
+
+  // Household attach (Phase 3A.2): an invited email can carry a household
+  // code/slot on its allowed_emails row (how a partner lands directly in an
+  // existing household), else everyone still gets SOME household — a fresh
+  // one — so there's always exactly one attach path, never a null case.
+  const attachHouseholdCode = (allowedRow && allowedRow.household_code) ? allowedRow.household_code : generateHouseholdCode();
+  const attachMemberSlot = (allowedRow && allowedRow.member_slot) ? allowedRow.member_slot : 'elena';
 
   let userId;
   if(userRow && userRow.id){
@@ -307,6 +322,18 @@ async function handleCallback(request, env, origin, url){
       ).bind(googleSub, displayName, pictureUrl, userId).run();
     }catch(e){
       return errorRedirect(returnOrigin, 'server');
+    }
+    // Backfill: a user created before the 0004 migration (or otherwise
+    // missing a household) gets attached on their next login, same logic
+    // as a brand-new signup would have used.
+    if(!userRow.household_code){
+      try{
+        await env.MESA_DB.prepare(
+          'UPDATE users SET household_code = ?, member_slot = ? WHERE id = ?'
+        ).bind(attachHouseholdCode, attachMemberSlot, userId).run();
+      }catch(e){
+        return errorRedirect(returnOrigin, 'server');
+      }
     }
   } else {
     let countRow;
@@ -323,8 +350,8 @@ async function handleCallback(request, env, origin, url){
     userId = crypto.randomUUID();
     try{
       await env.MESA_DB.prepare(
-        'INSERT INTO users (id, email, google_sub, display_name, picture_url, created_at, deleted_at) VALUES (?, ?, ?, ?, ?, ?, NULL)'
-      ).bind(userId, email, googleSub, displayName, pictureUrl, now).run();
+        'INSERT INTO users (id, email, google_sub, display_name, picture_url, created_at, deleted_at, household_code, member_slot) VALUES (?, ?, ?, ?, ?, ?, NULL, ?, ?)'
+      ).bind(userId, email, googleSub, displayName, pictureUrl, now, attachHouseholdCode, attachMemberSlot).run();
     }catch(e){
       return errorRedirect(returnOrigin, 'server');
     }
@@ -416,7 +443,7 @@ async function handleMe(request, env, origin){
   let user;
   try{
     user = await env.MESA_DB.prepare(
-      'SELECT id, email, display_name, picture_url FROM users WHERE id = ? AND deleted_at IS NULL'
+      'SELECT id, email, display_name, picture_url, household_code, member_slot FROM users WHERE id = ? AND deleted_at IS NULL'
     ).bind(session.user_id).first();
   }catch(e){
     return json({error: 'unauthorized'}, 401, origin);
@@ -432,6 +459,8 @@ async function handleMe(request, env, origin){
       displayName: user.display_name,
       picture: user.picture_url
     },
+    householdCode: user.household_code || null,
+    memberSlot: user.member_slot || null,
     expiresAt: session.expires_at
   }, 200, origin);
 }
