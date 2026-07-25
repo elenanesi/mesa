@@ -235,7 +235,12 @@ function refreshAuthMe(){
 // this exact origin so the worker's ALLOWED_ORIGINS check (server-side) accepts it and the
 // callback redirect lands back on the same app instance that started the flow.
 function authSignIn(){
-  location.href = SYNC_URL + '/auth/google/start?return_to=' + encodeURIComponent(location.origin);
+  // origin + pathname, NOT origin alone: the deployed app lives at /app/, and the origin
+  // root is a meta-refresh shim that bounces there while silently dropping the URL
+  // fragment — which is where the worker returns the session token. Sending the real path
+  // makes the callback land directly on the app. pathname only (no query/hash) so nothing
+  // from the current URL is reflected back through the redirect.
+  location.href = SYNC_URL + '/auth/google/start?return_to=' + encodeURIComponent(location.origin + location.pathname);
 }
 
 // Clears local session state immediately (so the UI feels instant and works even offline),

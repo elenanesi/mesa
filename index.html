@@ -3,8 +3,21 @@
 <head>
   <meta charset="utf-8">
   <title>Mesa</title>
-  <meta http-equiv="refresh" content="0; url=./app/">
   <link rel="canonical" href="./app/">
+  <script>
+    /* Forward to the app CARRYING any URL fragment. A plain meta-refresh (which this
+       page used to rely on alone) drops the fragment, and the sign-in callback returns
+       the session token in exactly that fragment — so anyone landing here mid-login lost
+       their token and bounced back to the login screen forever. The worker now returns
+       straight to /app/, so this is belt-and-braces for bookmarks and older clients.
+       Runs before the noscript meta-refresh below can fire. */
+    (function(){
+      try{
+        location.replace('./app/' + (location.hash || ''));
+      }catch(e){ /* fall through to the meta refresh */ }
+    })();
+  </script>
+  <noscript><meta http-equiv="refresh" content="0; url=./app/"></noscript>
 </head>
 <body>
   <p>Opening Mesa… <a href="./app/">Tap here if nothing happens.</a></p>

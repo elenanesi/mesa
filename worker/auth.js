@@ -174,11 +174,34 @@ async function rateLimited(env, key, limit, windowSeconds){
   return false;
 }
 
-function errorRedirect(returnOrigin, reason){
+/* return_to is a full app URL (origin + path), not just an origin.
+
+   It used to be just the origin, and the callback redirected to `<origin>/#auth=<token>`.
+   On the real deploy the app does NOT live at the origin root — the root is a
+   meta-refresh shim that bounces to /app/ — and a meta refresh DROPS the URL fragment.
+   The token was therefore destroyed exactly one hop before the app could read it, so
+   sign-in succeeded server-side (a user row and a session were created every time) and
+   still landed the user back on the login gate: an infinite loop.
+
+   Both helpers below take the whole return URL. Anti-open-redirect is unchanged in
+   spirit: the ORIGIN is still matched against ALLOWED_ORIGINS, and only the path is
+   carried along (query and fragment are dropped rather than reflected). */
+function safeReturnUrl(raw){
+  let u;
+  try{ u = new URL(String(raw)); }catch(e){ return null; }
+  if(ALLOWED_ORIGINS.indexOf(u.origin) === -1) return null;
+  return u.origin + u.pathname; // deliberately without search/hash — we append our own fragment
+}
+
+function fragmentRedirect(returnUrl, fragment){
   return new Response(null, {
     status: 302,
-    headers: {'Location': returnOrigin + '/#auth_error=' + encodeURIComponent(reason)}
+    headers: {'Location': returnUrl + '#' + fragment}
   });
+}
+
+function errorRedirect(returnUrl, reason){
+  return fragmentRedirect(returnUrl, 'auth_error=' + encodeURIComponent(reason));
 }
 
 // -----------------------------------------------------------------------
@@ -191,14 +214,16 @@ async function handleStart(request, env, origin, url){
     return json({error: 'auth_not_configured'}, 503, origin);
   }
 
-  const returnTo = url.searchParams.get('return_to') || '';
-  if(ALLOWED_ORIGINS.indexOf(returnTo) === -1){
+  // Accepts a full app URL now (see safeReturnUrl). A bare origin still works — its
+  // pathname is '/' — so an older cached client keeps functioning.
+  const returnUrl = safeReturnUrl(url.searchParams.get('return_to') || '');
+  if(!returnUrl){
     return json({error: 'invalid_return_to'}, 400, origin);
   }
 
   const state = randomHex(32);
   try{
-    await env.MESA_KV.put(STATE_KV_PREFIX + state, JSON.stringify({origin: returnTo}), {expirationTtl: STATE_TTL_SECONDS});
+    await env.MESA_KV.put(STATE_KV_PREFIX + state, JSON.stringify({returnUrl: returnUrl}), {expirationTtl: STATE_TTL_SECONDS});
   }catch(e){
     return json({error: 'storage_failed'}, 500, origin);
   }
@@ -222,10 +247,13 @@ async function handleStart(request, env, origin, url){
 }
 
 async function handleCallback(request, env, origin, url){
-  // Fallback origin used only when we can't recover the real one from the
+  // Fallback used only when we can't recover the real return URL from the
   // state nonce (missing/expired/tampered state) — we still have to send the
   // browser SOMEWHERE, and an ALLOWED_ORIGINS member is the only safe choice.
-  const fallbackOrigin = ALLOWED_ORIGINS[0];
+  // Note this lands on the origin ROOT, which on the real deploy meta-refreshes
+  // to /app/ and drops the fragment — acceptable ONLY because every path that
+  // uses it is already an error path with no token to lose.
+  const fallbackOrigin = ALLOWED_ORIGINS[0] + '/';
 
   const code = url.searchParams.get('code');
   const state = url.searchParams.get('state');
@@ -247,9 +275,9 @@ async function handleCallback(request, env, origin, url){
 
   let stateData = null;
   try{ stateData = JSON.parse(stateRaw); }catch(e){ stateData = null; }
-  const returnOrigin = (stateData && typeof stateData.origin === 'string' && ALLOWED_ORIGINS.indexOf(stateData.origin) !== -1)
-    ? stateData.origin
-    : fallbackOrigin;
+  // Re-validate the stored URL rather than trusting KV blindly, and accept the older
+  // {origin} shape so a flow started before this fix still completes.
+  const returnOrigin = (stateData && safeReturnUrl(stateData.returnUrl || stateData.origin || '')) || fallbackOrigin;
 
   // Rate-limit per IP AFTER state is confirmed real — an attacker spraying
   // bogus states already dead-ends above without touching this budget, so it
@@ -429,10 +457,7 @@ async function handleCallback(request, env, origin, url){
   // Token goes in the URL FRAGMENT, not a query string: fragments are never
   // sent to the server by the browser on subsequent navigations and are
   // stripped before appearing in most server access logs / Referer headers.
-  return new Response(null, {
-    status: 302,
-    headers: {'Location': returnOrigin + '/#auth=' + token}
-  });
+  return fragmentRedirect(returnOrigin, 'auth=' + token);
 }
 
 // Shared by /auth/me and /auth/logout: pulls the bearer token out of the
