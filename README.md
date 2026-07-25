@@ -36,6 +36,15 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
    `CLOUDFLARE_API_TOKEN=$(security find-generic-password -a mesa -s cloudflare-token -w) CLOUDFLARE_ACCOUNT_ID=84766baa4ad939ee067626830dd2f8dc npx wrangler pages deploy . --project-name=mesa --branch=main --commit-dirty=true`
    (token perms: Pages Edit + Access Edit only). Access team domain: lively-unit-4aa5.cloudflareaccess.com.
 
+### Auth admin (Phase 3A, invite-only Google sign-in)
+
+New `worker/migrations/0003_users_auth.sql` needs applying once (from `worker/`):
+`npx wrangler d1 migrations apply mesa-library --remote`.
+
+Mesa is invite-only — a Google account can only sign in once its email is in the
+`allowed_emails` D1 table. To invite someone (from `worker/`):
+`npx wrangler d1 execute mesa-library --remote --command "INSERT OR IGNORE INTO allowed_emails (email, note, added_at) VALUES ('x@y.z','friend',strftime('%s','now')*1000)"`
+
 ## Docs
 
 - `PWA-MVP-plan.md` — Phase 1 build plan (DONE) + ground rules (living)

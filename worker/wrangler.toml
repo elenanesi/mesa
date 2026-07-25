@@ -15,3 +15,13 @@ kv_namespaces = [
 binding = "MESA_DB"
 database_name = "mesa-library"
 database_id = "660c50ce-13b5-433f-a00b-68349ac5e851"
+
+# Phase 3A user accounts (Google sign-in). GOOGLE_CLIENT_ID is a placeholder until
+# Elena's manual GCP step (OAuth consent screen + client) is done — see
+# PHASE3A-auth-spec.md. The matching secret is NOT set here (secrets don't belong in
+# wrangler.toml / version control) — at deploy time run:
+#   npx wrangler secret put GOOGLE_CLIENT_SECRET
+# For local dev, put GOOGLE_CLIENT_SECRET in worker/.dev.vars instead (gitignored).
+[vars]
+GOOGLE_CLIENT_ID = ""
+MAX_USERS = "20"

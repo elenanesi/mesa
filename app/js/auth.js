@@ -1,0 +1,240 @@
+/* ===================================================================
+   auth.js — Google sign-in client (Phase 3A)
+
+   Talks to worker/auth.js (imported + routed from worker/sync.js — see
+   PHASE3A-auth-spec.md) for real user accounts. This is a Profile-screen
+   convenience layer ONLY: per the spec, "No gating and no sync changes
+   yet" — signing in/out never changes what the app can do. Nothing here
+   is a precondition for anything else in the codebase; every function
+   below is defensive about network failure, missing storage, and a
+   worker that hasn't been redeployed with the auth routes yet (all of
+   which degrade to "acts signed out", never a crash.
+
+   Flow:
+     1. Profile -> "Sign in with Google" -> authSignIn() bounces the
+        whole page to the worker's /auth/google/start, which redirects to
+        Google, which redirects back to the worker's /auth/google/callback,
+        which redirects back HERE with the result in the URL fragment
+        (never a query string / server log: '#auth=<token>' on success,
+        '#auth_error=<reason>' on failure).
+     2. On next boot (app.js calls initAuth() alongside initSync(), same
+        guarded-optional style), consumeAuthHash() picks that fragment
+        off location.hash, stores the token, and strips the hash via
+        history.replaceState so it never lingers in the URL bar / history
+        / a reload.
+     3. The session token lives in localStorage (mesaAuth); the last-known
+        user record is cached alongside it (mesaAuthUser) so the Account
+        section can render the signed-in state instantly and offline,
+        the same "paint from cache first" shape js/sync.js's Couple sync
+        section already uses for syncState.
+     4. Every boot with a stored token re-confirms it against GET
+        /auth/me — this doubles as the server's sliding-renewal trigger
+        (worker extends a session past 45 days-left only when /auth/me is
+        actually called), so a signed-in user who opens Mesa regularly
+        never gets silently logged out at the 90-day mark. A 401 here
+        means the session is gone (revoked/expired) and clears local
+        state; any OTHER failure (offline, worker briefly down) leaves
+        the cached user exactly as-is — the whole point of caching it.
+   =================================================================== */
+
+/* ---------------- storage ---------------- */
+// Two keys, per the spec: the bearer token itself, and a small cached copy
+// of the user record for offline/instant display. Kept separate (not one
+// JSON blob) so a corrupt/missing user cache can never take the token down
+// with it, or vice versa.
+const AUTH_TOKEN_KEY = 'mesaAuth';
+const AUTH_USER_KEY = 'mesaAuthUser';
+
+function authToken(){
+  try{
+    const t = localStorage.getItem(AUTH_TOKEN_KEY);
+    return (typeof t === 'string' && t) ? t : null;
+  }catch(e){ return null; } // storage unavailable (private mode, quota) — behave signed-out
+}
+
+function setAuthToken(token){
+  try{
+    if(token) localStorage.setItem(AUTH_TOKEN_KEY, token);
+    else localStorage.removeItem(AUTH_TOKEN_KEY);
+  }catch(e){ console.error('Mesa auth: could not persist session token', e); }
+}
+
+// authUser() — the ONE global other files (render.js et al) should read to ask "who's
+// signed in, if anyone". Returns null for "signed out" in every failure mode (missing key,
+// corrupt JSON, wrong shape) rather than ever throwing — callers never need a try/catch.
+function authUser(){
+  try{
+    const raw = localStorage.getItem(AUTH_USER_KEY);
+    if(!raw) return null;
+    const u = JSON.parse(raw);
+    if(!u || typeof u !== 'object' || typeof u.id !== 'string' || typeof u.email !== 'string') return null;
+    return u;
+  }catch(e){ return null; }
+}
+
+function setAuthUser(user){
+  try{
+    if(user) localStorage.setItem(AUTH_USER_KEY, JSON.stringify(user));
+    else localStorage.removeItem(AUTH_USER_KEY);
+  }catch(e){ console.error('Mesa auth: could not persist cached user', e); }
+}
+
+/* ---------------- hash-fragment token pickup ---------------- */
+// '#auth=<token>' / '#auth_error=<reason>' arrive from worker/auth.js's callback redirect
+// (see file header). Matched with an anchored regex (not a plain indexOf) so a token that
+// happens to contain '&'-adjacent characters can't confuse the split, and so this is a
+// no-op (returns null) for every other hash the app already uses (jump-to-section anchors
+// etc.) instead of misfiring on them.
+function consumeAuthHash(){
+  const hash = location.hash || '';
+  const authMatch = /^#auth=([^&]*)/.exec(hash);
+  const errMatch = /^#auth_error=([^&]*)/.exec(hash);
+  if(!authMatch && !errMatch) return null;
+
+  // Strip the fragment immediately either way — a token must never sit in the URL bar /
+  // history longer than one tick, and an error fragment shouldn't survive a refresh either.
+  try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){ /* non-browser env — ignore */ }
+
+  if(authMatch){
+    const token = decodeURIComponent(authMatch[1] || '');
+    if(token) setAuthToken(token);
+    return 'token';
+  }
+  const reason = decodeURIComponent(errMatch[1] || '');
+  toast(authErrorMessage(reason));
+  return 'error';
+}
+
+function authErrorMessage(reason){
+  if(reason === 'not_invited') return 'Mesa is invite-only right now — ask Elena to add your email.';
+  if(reason === 'full') return "Mesa is at capacity and can't take new accounts.";
+  return 'Sign-in didn’t work — please try again.';
+}
+
+/* ---------------- server round-trips ---------------- */
+// GET /auth/me — confirms the stored token is still valid, refreshes the cached user (name/
+// picture can change on Google's side), and rides the server's sliding-renewal (see file
+// header). Called on every boot that has a token, and once right after a fresh hash pickup.
+// Silent by design (like js/sync.js's background performSync(false)) — this runs on every
+// page load, so a toast on every transient network hiccup would be noise; a real 401 (session
+// actually gone) still needs to flip the UI back to signed-out, which it does via renderAccountSection().
+function refreshAuthMe(){
+  const token = authToken();
+  if(!token || typeof fetch !== 'function') return Promise.resolve(false);
+  return fetch(SYNC_URL + '/auth/me', {
+    method: 'GET',
+    headers: {Authorization: 'Bearer ' + token}
+  }).then(function(res){
+    if(res.status === 401){
+      // Session gone server-side (revoked, expired, or logged out elsewhere) — the local
+      // token is now dead weight; drop it so the UI stops claiming to be signed in.
+      setAuthToken(null);
+      setAuthUser(null);
+      renderAccountSection();
+      return false;
+    }
+    if(!res.ok) throw new Error('auth/me http ' + res.status);
+    return res.json();
+  }).then(function(body){
+    if(!body || !body.user || typeof body.user !== 'object') return false;
+    setAuthUser(body.user);
+    renderAccountSection();
+    return true;
+  }).catch(function(err){
+    // Offline, worker briefly unreachable, etc. — keep whatever's cached; nothing to undo.
+    console.warn('Mesa auth: /auth/me check failed, keeping cached session', err);
+    return false;
+  });
+}
+
+/* ---------------- globals used by the Account UI ---------------- */
+// Full-page redirect (server-side OAuth flow, no popup/JS SDK — see spec). return_to must be
+// this exact origin so the worker's ALLOWED_ORIGINS check (server-side) accepts it and the
+// callback redirect lands back on the same app instance that started the flow.
+function authSignIn(){
+  location.href = SYNC_URL + '/auth/google/start?return_to=' + encodeURIComponent(location.origin);
+}
+
+// Clears local session state immediately (so the UI feels instant and works even offline),
+// then best-effort tells the server to drop the session row too. Order matters: local clear
+// first means a flaky network never leaves the user stuck "signed in" on their own device.
+function authSignOut(){
+  const token = authToken();
+  setAuthToken(null);
+  setAuthUser(null);
+  renderAccountSection();
+  toast('✓ Signed out');
+  if(token && typeof fetch === 'function'){
+    fetch(SYNC_URL + '/auth/logout', {
+      method: 'POST',
+      headers: {Authorization: 'Bearer ' + token}
+    }).catch(function(err){ console.warn('Mesa auth: logout request failed (already signed out on this device)', err); });
+  }
+}
+
+/* ===================================================================
+   Profile -> "Account" UI
+
+   Signed out: one explanatory line + a white-pill "Sign in with Google"
+   button carrying the official multicolor G mark (inline SVG — no
+   external asset/CDN, matches the app's offline-first constraint).
+   Signed in: avatar (or an initial-letter fallback when there's no
+   picture) + display name + email + a ghost "Sign out" button. Every
+   user-derived string goes through escapeHtml() (state.js) — this data
+   ultimately comes from Google's id_token via the worker, so it must be
+   treated as untrusted the same as any other stored-XSS-prone field
+   (recipe names, avoid-list entries, etc. elsewhere in render.js/sync.js).
+   =================================================================== */
+
+// Official Google "G" mark, per Google's brand guidelines for "Sign in with Google" buttons
+// (four flat paths, no gradients/filters) — inlined so the button renders with zero network
+// dependency, consistent with the rest of this offline-first app.
+const GOOGLE_G_LOGO_SVG = '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style="flex:0 0 auto">'
+  + '<path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>'
+  + '<path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>'
+  + '<path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/>'
+  + '<path fill="#EA4335" d="M9 3.579c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.167 6.656 3.579 9 3.579z"/>'
+  + '</svg>';
+
+function renderAccountSection(){
+  const el = document.getElementById('accountSection');
+  if(!el) return; // Profile screen markup not present (shouldn't happen, but don't crash)
+
+  const user = authUser();
+  if(!user){
+    el.innerHTML = '<p class="sub">Sign in to attach an account to your Mesa — this is separate from Couple sync below and doesn’t change how the app works.</p>'
+      + '<button class="cta" style="background:#fff;color:#3c4043;border:1.5px solid #dadce0;box-shadow:none;display:flex;align-items:center;justify-content:center;gap:10px" onclick="authSignIn()">'
+      + GOOGLE_G_LOGO_SVG + '<span>Sign in with Google</span></button>';
+    return;
+  }
+
+  // Untrusted (came from Google via the worker) — escape before it ever touches innerHTML.
+  const name = escapeHtml(user.displayName || user.email || 'Signed in');
+  const email = escapeHtml(user.email || '');
+  // Only ever emit the picture URL if it's actually https:// — anything else (javascript:,
+  // data:, a bare string someone jammed into the DB) is dropped in favor of the initial-letter
+  // fallback rather than risked in a src attribute.
+  const hasPicture = typeof user.picture === 'string' && user.picture.indexOf('https://') === 0;
+  const initial = escapeHtml(((user.displayName || user.email || '?').trim().charAt(0) || '?').toUpperCase());
+  const avatarHtml = hasPicture
+    ? '<img src="' + escapeHtml(user.picture) + '" alt="" style="width:44px;height:44px;border-radius:50%;object-fit:cover;flex:0 0 auto">'
+    : '<div style="width:44px;height:44px;border-radius:50%;background:var(--sage-tint);color:var(--sage-deep);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:17px;flex:0 0 auto">' + initial + '</div>';
+
+  el.innerHTML = '<div class="row" style="align-items:center">'
+    + avatarHtml
+    + '<div style="min-width:0"><div style="font-weight:700;overflow:hidden;text-overflow:ellipsis">' + name + '</div>'
+    + '<div class="cap-note" style="min-height:0;overflow:hidden;text-overflow:ellipsis">' + email + '</div></div>'
+    + '</div>'
+    + '<button class="cta ghostbtn" style="margin-top:14px" onclick="authSignOut()">Sign out</button>';
+}
+
+/* ---------------- boot ---------------- */
+// Called once from app.js's boot sequence, alongside initSync() (same "typeof === function"
+// guard style — a no-op if this file somehow isn't loaded). Paints from whatever's cached
+// immediately (works offline, matches Couple sync's own paint-then-fetch shape), then
+// reconciles with the server if there's a token to check.
+function initAuth(){
+  consumeAuthHash();
+  renderAccountSection();
+  if(authToken()) refreshAuthMe();
+}

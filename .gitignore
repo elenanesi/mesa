@@ -1,3 +1,4 @@
 .claude/
 .wrangler/
 .DS_Store
+.dev.vars

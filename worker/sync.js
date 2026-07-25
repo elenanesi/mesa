@@ -50,6 +50,10 @@
                           client bug in one section shouldn't wedge
                           every other section's sync).
      OPTIONS *         -> CORS preflight (204, no body).
+     /auth/*           -> dispatched to worker/auth.js (Phase 3A user accounts,
+                          Google sign-in). See that module's doc comment —
+                          unrelated to the household-code sync/library model
+                          above; doesn't gate anything here (yet).
      anything else     -> 404 {error}.
 
    CORS: only the app's known origins (mesa-9y5.pages.dev + the two
@@ -58,7 +62,9 @@
    response without it, so the browser blocks it client-side.
    =================================================================== */
 
-const ALLOWED_ORIGINS = [
+import { handleAuthRoute } from './auth.js';
+
+export const ALLOWED_ORIGINS = [
   'https://mesa-9y5.pages.dev',
   'http://127.0.0.1:8322',
   'http://localhost:8322'
@@ -76,10 +82,15 @@ const ICON_180_PNG_BASE64 = 'iVBORw0KGgoAAAANSUhEUgAAALQAAAC0CAIAAACyr5FlAACvMEl
 // JSON.parse, so an oversized payload is rejected without ever paying to parse it.
 const MAX_PAYLOAD_BYTES = 1024 * 1024;
 
-function corsHeaders(origin){
+// Exported (along with json/isPlainObject/ALLOWED_ORIGINS below) so worker/auth.js
+// can reuse the exact same CORS/JSON behavior instead of drifting its own copy —
+// there must be exactly one place that decides which origins are trusted.
+export function corsHeaders(origin){
   const headers = {
     'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-    'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion',
+    // Authorization is here for /auth/me and /auth/logout (Bearer session tokens,
+    // Phase 3A) — the sync/library/bootstrap routes don't use it themselves.
+    'Access-Control-Allow-Headers': 'Content-Type, Cf-Access-Jwt-Assertion, Authorization',
     'Access-Control-Max-Age': '86400',
     'Vary': 'Origin'
   };
@@ -89,14 +100,14 @@ function corsHeaders(origin){
   return headers;
 }
 
-function json(data, status, origin){
+export function json(data, status, origin){
   return new Response(JSON.stringify(data), {
     status: status || 200,
     headers: Object.assign({'Content-Type': 'application/json'}, corsHeaders(origin))
   });
 }
 
-function isPlainObject(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
+export function isPlainObject(v){ return !!v && typeof v === 'object' && !Array.isArray(v); }
 
 // One stored/incoming section entry: {rev: number, updatedAt: number, data: <anything>}.
 // `data` is deliberately unvalidated beyond "present" — the Worker doesn't know or care
@@ -563,6 +574,13 @@ export default {
 
     if(url.pathname === '/bootstrap' && request.method === 'POST'){
       return handleBootstrap(request, env, origin);
+    }
+
+    // Phase 3A user accounts (Google sign-in) — dispatched to a separate module
+    // BEFORE the sync/library routes below since it's a wholly separate concern
+    // (accounts) from the household-code-based sync/library storage.
+    if(url.pathname.startsWith('/auth/')){
+      return handleAuthRoute(request, env, origin, url);
     }
 
     const libraryCode = matchLibraryRoute(url.pathname);

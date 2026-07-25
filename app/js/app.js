@@ -195,6 +195,10 @@ function bootMesaApp(){
     // never configured (syncState.code stays null — see state.js) — no network calls happen
     // in that case, per the ground rule that sync is an enhancement, never a dependency.
     if(typeof initSync === 'function') initSync();
+
+    // Phase 3A (account sign-in): a no-op wherever js/auth.js isn't loaded or no session
+    // token is stored — sign-in never gates anything, so this runs independently of initSync().
+    if(typeof initAuth === 'function') initAuth();
   }).catch(function(err){ console.error('Mesa boot failed', err); });
 }
 
