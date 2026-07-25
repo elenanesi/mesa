@@ -567,8 +567,15 @@ function mirrorLibraryCatalogToD1(){
   lastMirroredCatalogSignature = sig;
   fetch(SYNC_URL + '/library/' + encodeURIComponent(syncState.code), {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    // Phase 3B: authHeader() (auth.js) rides along whenever a session is signed in; sync.js
+    // must not hard-depend on auth.js being loaded, hence the typeof guard.
+    headers: Object.assign({'Content-Type': 'application/json'}, (typeof authHeader === 'function' ? authHeader() : {})),
     body: JSON.stringify(payload)
+  }).then(function(res){
+    // Session died server-side (REQUIRE_SESSION mode) — clear it and show the login gate.
+    // Only a 401 with a token actually stored means this; any other status is untouched,
+    // existing error handling below (this call never checked status before 3B).
+    if(res.status === 401 && typeof authToken === 'function' && authToken() && typeof authSessionExpired === 'function') authSessionExpired();
   }).catch(function(err){
     lastMirroredCatalogSignature = null;
     console.warn('Mesa sync: D1 library mirror failed, will retry later', err);
@@ -581,10 +588,16 @@ function fetchBuiltinRecipeCatalogFromD1(){
   const timer = controller ? setTimeout(function(){ controller.abort(); }, 4500) : null;
   return fetch(SYNC_URL + '/library/GLOBAL', {
     method: 'GET',
-    headers: {'Accept': 'application/json'},
+    // Phase 3B: /library/GLOBAL stays a public route server-side (fetched pre-login), but
+    // the header still rides along like every other SYNC_URL call for consistency — it's a
+    // no-op there when a session exists.
+    headers: Object.assign({'Accept': 'application/json'}, (typeof authHeader === 'function' ? authHeader() : {})),
     cache: 'no-store',
     signal: controller ? controller.signal : undefined
   }).then(function(res){
+    // See performSync's identical check — a stray 401 here shouldn't happen (GLOBAL is
+    // public), but handle it the same defensive way rather than assume.
+    if(res.status === 401 && typeof authToken === 'function' && authToken() && typeof authSessionExpired === 'function') authSessionExpired();
     if(!res.ok) throw new Error('catalog http ' + res.status);
     return res.json();
   }).then(function(payload){
@@ -902,9 +915,14 @@ function performSync(manual){
   const sent = buildSyncPayload();
   fetch(SYNC_URL + '/sync/' + encodeURIComponent(syncState.code), {
     method: 'POST',
-    headers: {'Content-Type': 'application/json'},
+    // Phase 3B: same authHeader() guard as the /library POST above.
+    headers: Object.assign({'Content-Type': 'application/json'}, (typeof authHeader === 'function' ? authHeader() : {})),
     body: JSON.stringify({sections: sent})
   }).then(function(res){
+    // Session died server-side (REQUIRE_SESSION mode) — reuse auth.js's exact 401 path
+    // (clears token+user, shows the login gate). Network errors and other statuses (a sync
+    // response can legitimately be e.g. 404 for an unknown code) are untouched below.
+    if(res.status === 401 && typeof authToken === 'function' && authToken() && typeof authSessionExpired === 'function') authSessionExpired();
     if(!res.ok) throw new Error('sync http ' + res.status);
     return res.json();
   }).then(function(body){
@@ -936,8 +954,12 @@ function pullHouseholdFirst(code){
   const sent = buildSyncPayload();
 
   return fetch(SYNC_URL + '/sync/' + encodeURIComponent(normalized), {
-    method: 'GET'
+    method: 'GET',
+    // Phase 3B: same authHeader() guard as performSync's POST above.
+    headers: (typeof authHeader === 'function' ? authHeader() : {})
   }).then(function(res){
+    // See performSync's identical check/comment just above.
+    if(res.status === 401 && typeof authToken === 'function' && authToken() && typeof authSessionExpired === 'function') authSessionExpired();
     if(res.status === 404){
       seedSyncBookkeeping(1);
       persist();
@@ -1119,7 +1141,10 @@ function bootstrapAccessHousehold(){
   if(!jwt) return Promise.resolve(false);
   return fetch(SYNC_URL + '/bootstrap', {
     method: 'POST',
-    headers: {'Content-Type': 'application/json', 'Cf-Access-Jwt-Assertion': jwt},
+    // Phase 3B: authHeader() rides along here too for consistency (every SYNC_URL fetch
+    // does), though /bootstrap itself is untouched server-side (retired in B5) and keyed off
+    // the Access JWT above, not the Bearer session — so no 401-clears-session handling here.
+    headers: Object.assign({'Content-Type': 'application/json', 'Cf-Access-Jwt-Assertion': jwt}, (typeof authHeader === 'function' ? authHeader() : {})),
     body: JSON.stringify({existingCode: syncState.code || null})
   }).then(function(res){
     if(!res.ok) throw new Error('bootstrap http ' + res.status);

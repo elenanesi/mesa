@@ -117,6 +117,29 @@ function authErrorMessage(reason){
   return 'Sign-in didn’t work — please try again.';
 }
 
+/* ---------------- Phase 3B: shared with sync.js ---------------- */
+// authHeader() — spread this into any fetch to SYNC_URL: {Authorization:'Bearer <token>'}
+// when a session token is stored, else {} (always safe to Object.assign/spread — never
+// produces an "Authorization: Bearer null"). sync.js calls this behind a typeof guard since
+// it must not hard-depend on auth.js being loaded.
+function authHeader(){
+  const token = authToken();
+  return token ? {Authorization: 'Bearer ' + token} : {};
+}
+
+// authSessionExpired() — the one path allowed to conclude "this stored token is dead":
+// drops the token + cached user and repaints the Account section + login gate. Factored out
+// of refreshAuthMe()'s 401 branch (Phase 3A) so the Phase 3B sync/library 401 checks in
+// sync.js (also behind a typeof guard) can reuse it verbatim instead of duplicating it.
+// Callers must only invoke this for an actual 401 with a token stored — never for a network
+// error or any other status (see refreshAuthMe's doc for why).
+function authSessionExpired(){
+  setAuthToken(null);
+  setAuthUser(null);
+  renderAccountSection();
+  updateLoginGate();
+}
+
 /* ---------------- server round-trips ---------------- */
 // GET /auth/me — confirms the stored token is still valid, refreshes the cached user (name/
 // picture can change on Google's side), and rides the server's sliding-renewal (see file
@@ -136,11 +159,10 @@ function refreshAuthMe(){
       // token is now dead weight; drop it so the UI stops claiming to be signed in. This is
       // the ONE definitive signal the login gate (Phase 3A.2) reacts to — a network error a
       // few lines down in .catch() must NOT do this, or an offline PWA with a perfectly
-      // valid stored token would get locked out the moment it loses signal.
-      setAuthToken(null);
-      setAuthUser(null);
-      renderAccountSection();
-      updateLoginGate();
+      // valid stored token would get locked out the moment it loses signal. (Phase 3B:
+      // sync.js's own 401 checks on /sync and /library reuse this exact same path via
+      // authSessionExpired() rather than duplicating it.)
+      authSessionExpired();
       return false;
     }
     if(!res.ok) throw new Error('auth/me http ' + res.status);

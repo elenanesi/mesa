@@ -17,6 +17,19 @@
    knows the code can read/write that household's data, same trust
    model as "share this code with your partner".
 
+   Phase 3B (B1) session gating, dual-mode: /sync/:code and /library/:code
+   (all methods, except GET /library/GLOBAL — the public built-in catalog,
+   fetched before login) now run through requireHouseholdAccess() below.
+   A present-and-VALID session (Authorization: Bearer <token>, resolved via
+   worker/auth.js's loadSessionUser) pins the caller to their own household —
+   mismatch is 403 {error:'wrong_household'} — regardless of REQUIRE_SESSION.
+   Only the "no valid session at all" case reads env.REQUIRE_SESSION: "0"
+   (today's default) falls back to the household-code-is-the-auth trust model
+   above unchanged; "1" (the eventual flip, once every existing device has
+   signed in — see PHASE3B-generic-spec.md B5) instead 401s with
+   {error:'session_required'}. This lets sessions roll out without locking
+   out devices that haven't signed in yet.
+
    Endpoints:
      POST /bootstrap -> header 'Cf-Access-Jwt-Assertion': <JWT>, body
                        {existingCode?}. The JWT is the Cloudflare Access
@@ -62,7 +75,7 @@
    response without it, so the browser blocks it client-side.
    =================================================================== */
 
-import { handleAuthRoute } from './auth.js';
+import { handleAuthRoute, loadSessionUser } from './auth.js';
 
 export const ALLOWED_ORIGINS = [
   'https://mesa-9y5.pages.dev',
@@ -144,6 +157,32 @@ export function generateHouseholdCode(){
   crypto.getRandomValues(bytes);
   for(let i = 0; i < CODE_LENGTH; i++) out += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
   return out;
+}
+
+// Phase 3B B1 session gate — the single guard both the /sync/:code and
+// /library/:code route branches call (see module doc above for the
+// dual-mode behavior this implements). `code` is compared normalized on
+// both sides: the /library/ branch already normalizes its code before
+// calling this, but the /sync/ branch passes the raw path segment as-is
+// (pre-existing behavior, unrelated to B1 — left untouched), so this
+// normalizes internally rather than assuming the caller already did.
+// Returns a Response to send back immediately, or null to let the route proceed.
+async function requireHouseholdAccess(request, env, code, origin){
+  if(request.headers.get('Authorization')){
+    const sessionUser = await loadSessionUser(request, env);
+    if(sessionUser){
+      if(normalizeHouseholdCode(sessionUser.householdCode) !== normalizeHouseholdCode(code)){
+        return json({error: 'wrong_household'}, 403, origin);
+      }
+      return null; // valid session, matches this household
+    }
+    // Authorization header present but didn't resolve (expired/bad token) —
+    // falls through and is treated the same as "no session" below.
+  }
+  if(env && env.REQUIRE_SESSION === '1'){
+    return json({error: 'session_required'}, 401, origin);
+  }
+  return null; // no valid session, REQUIRE_SESSION not yet flipped — legacy trust
 }
 
 function iconResponse(){
@@ -586,6 +625,14 @@ export default {
     const libraryCode = matchLibraryRoute(url.pathname);
     if(libraryCode && libraryCode.trim()){
       const code = normalizeHouseholdCode(libraryCode);
+      // GET /library/GLOBAL is the public built-in catalog, fetched before
+      // login — stays ungated. POST to GLOBAL is NOT special-cased: it goes
+      // through the same guard as any other household code.
+      const isPublicGlobalCatalog = code === 'GLOBAL' && request.method === 'GET';
+      if(!isPublicGlobalCatalog){
+        const denied = await requireHouseholdAccess(request, env, code, origin);
+        if(denied) return denied;
+      }
       if(request.method === 'GET') return handleLibraryGet(env, code, origin, url.searchParams.get('includeDeleted') === '1');
       if(request.method === 'POST') return handleLibraryPost(request, env, code, origin);
       return json({error: 'method_not_allowed'}, 405, origin);
@@ -595,6 +642,9 @@ export default {
     if(!code || !code.trim()){
       return json({error: 'not_found'}, 404, origin);
     }
+
+    const syncDenied = await requireHouseholdAccess(request, env, code, origin);
+    if(syncDenied) return syncDenied;
 
     if(request.method === 'GET') return handleGet(env, code, origin);
     if(request.method === 'POST') return handlePost(request, env, code, origin);

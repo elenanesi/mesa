@@ -434,20 +434,46 @@ async function loadSessionFromRequest(request, env){
   return session;
 }
 
+// Shared by handleMe and loadSessionUser: the one SELECT that turns a
+// sessions.user_id into a live user row. Kept separate from
+// loadSessionFromRequest (which resolves the bearer token to that user_id)
+// so both callers do exactly one query each, with nothing duplicated.
+async function loadUserRow(env, userId){
+  try{
+    return await env.MESA_DB.prepare(
+      'SELECT id, email, display_name, picture_url, household_code, member_slot FROM users WHERE id = ? AND deleted_at IS NULL'
+    ).bind(userId).first();
+  }catch(e){
+    return null;
+  }
+}
+
+// Resolves a request's "Authorization: Bearer <token>" all the way to
+// {userId, householdCode, memberSlot}, or null for anything invalid (no/bad
+// header, dead/expired session, deleted user) — same "null for anything
+// wrong" contract as loadSessionFromRequest. This is the one code path
+// worker/sync.js (Phase 3B session gating on /sync/:code and /library/:code)
+// and any other module needing "who is this request's household" should
+// use, rather than re-deriving it from loadSessionFromRequest themselves.
+export async function loadSessionUser(request, env){
+  const session = await loadSessionFromRequest(request, env);
+  if(!session) return null;
+  const user = await loadUserRow(env, session.user_id);
+  if(!user) return null;
+  return {
+    userId: user.id,
+    householdCode: user.household_code || null,
+    memberSlot: user.member_slot || null
+  };
+}
+
 async function handleMe(request, env, origin){
   const session = await loadSessionFromRequest(request, env);
   if(!session){
     return json({error: 'unauthorized'}, 401, origin);
   }
 
-  let user;
-  try{
-    user = await env.MESA_DB.prepare(
-      'SELECT id, email, display_name, picture_url, household_code, member_slot FROM users WHERE id = ? AND deleted_at IS NULL'
-    ).bind(session.user_id).first();
-  }catch(e){
-    return json({error: 'unauthorized'}, 401, origin);
-  }
+  const user = await loadUserRow(env, session.user_id);
   if(!user){
     return json({error: 'unauthorized'}, 401, origin);
   }
