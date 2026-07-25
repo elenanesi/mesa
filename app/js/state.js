@@ -274,6 +274,45 @@ function avatarInitial(name){
   return Array.from(trimmed)[0].toUpperCase();
 }
 
+/* Viewer-relative fallback names (bug fix, 2026-07-25).
+
+   B2 shipped 'You'/'Partner' as STORED displayName defaults, which was wrong: displayName
+   SYNCS between the two phones, but "You" only means something relative to whoever is
+   looking. Real symptom — the partner-slot member opened his own phone and was labelled
+   "Partner", with his wife labelled "You".
+
+   Split the two ideas apart instead:
+     - a REAL name (someone typed it, or it was seeded from their Google account) is shared
+       data: every device shows it for that slot, unchanged;
+     - a PLACEHOLDER (never set, or one of the legacy 'You'/'Partner' literals a previous
+       build persisted) resolves at RENDER time against the viewer's own slot, so each
+       phone says "You" for its own owner and "Partner" for the other.
+   isPlaceholderDisplayName() therefore also treats the two legacy literals as unset, which
+   is the migration path for stores already carrying them. The trade-off: someone who
+   genuinely types "You" as their name keeps getting the viewer-relative treatment — an
+   acceptable loss for a name nobody chooses.
+
+   The viewer's own slot comes from auth.js:myMemberSlot() (the signed-in account's
+   member_slot, cached device-locally — deliberately NOT part of the synced profile), and
+   is read through a typeof guard so state.js keeps working with auth.js absent (tests,
+   signed-out boots). Falls back to 'elena' = "this device's owner" when unknown, which is
+   what a solo/never-signed-in install has always assumed. */
+function isPlaceholderDisplayName(name){
+  const trimmed = (typeof name === 'string' ? name : '').trim();
+  if(!trimmed) return true;
+  return trimmed === DISPLAY_NAME_DEFAULTS.elena || trimmed === DISPLAY_NAME_DEFAULTS.partner;
+}
+function viewerMemberSlot(){
+  const slot = (typeof myMemberSlot === 'function') ? myMemberSlot() : null;
+  return (slot === 'elena' || slot === 'partner') ? slot : 'elena';
+}
+function resolveDisplayName(key){
+  const p = (typeof PROF !== 'undefined' && PROF) ? PROF[key] : null;
+  const stored = p && typeof p.displayName === 'string' ? p.displayName.trim() : '';
+  if(!isPlaceholderDisplayName(stored)) return stored.slice(0, DISPLAY_NAME_MAX_LEN);
+  return (key === viewerMemberSlot()) ? DISPLAY_NAME_DEFAULTS.elena : DISPLAY_NAME_DEFAULTS.partner;
+}
+
 /* meal-slot lookup for shared-meals logic — RECIPE_SLOT_DB (data/recipes.js) already
    covers every id in RECIPES_DB (the 10 legacy ids plus everything added in B2), so it
    is the single source of truth here; nothing app-specific needs to be re-listed. */
@@ -441,6 +480,10 @@ const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack
 // avoid" editor (task C3) — see AVOID_KEYS/avoidLabel() + render.js:renderAvoidEditor().
 // Elena's defaults match the pills already in the Profile screen mockup; Andrea has none.
 let currentProf = 'elena';
+// Session-only (never persisted): set by render.js:setProf() when the PERSON picks a
+// profile, so auth.js:applyOwnMemberSlot() knows not to override a deliberate choice with
+// "open on your own slot" once /auth/me resolves a moment later.
+let profileSwitchedByUser = false;
 
 // The supported avoid keys (task C3): free-text isn't in MVP scope, so the editor is a
 // closed picker over exactly these — the same keys recipes.js's `avoid` arrays carry.
@@ -949,12 +992,13 @@ function loadState(){
           }
           return;
         }
-        // displayName: reject empty/whitespace-only (never persist a blank name — the
-        // commitDisplayName() write path (render.js) already guarantees this, but a
-        // hand-edited backup/import (task F2) could still carry one) and cap defensively
-        // to the same DISPLAY_NAME_MAX_LEN the editor enforces, trimming either way.
+        // displayName: a blank/whitespace-only value is a legitimate stored state now —
+        // it's the PLACEHOLDER ("nobody has named this slot"), which resolveDisplayName()
+        // renders viewer-relatively. So accept a string of any length here (capping a real
+        // one defensively, since a hand-edited backup/import could carry an overlong one)
+        // and let '' through rather than dropping it and leaving a stale prior name.
         if(f === 'displayName'){
-          if(typeof v === 'string' && v.trim()) p.displayName = v.trim().slice(0, DISPLAY_NAME_MAX_LEN);
+          if(typeof v === 'string') p.displayName = v.trim().slice(0, DISPLAY_NAME_MAX_LEN);
           return;
         }
         const ok = want === 'number|null' ? (v === null || typeof v === 'number')

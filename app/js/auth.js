@@ -79,6 +79,34 @@ function setAuthUser(user){
   }catch(e){ console.error('Mesa auth: could not persist cached user', e); }
 }
 
+/* myMemberSlot() — WHICH of the household's two profile slots this DEVICE's signed-in
+   account occupies ('elena' = slot 1, 'partner' = slot 2; opaque ids, see the spec's
+   ground rule). Cached device-locally next to the user record, deliberately OUTSIDE the
+   synced profile sections: it is a fact about the viewer, not about the household, and
+   syncing it would make each phone claim the other's identity.
+
+   state.js:resolveDisplayName() reads this (through a typeof guard) to decide whose
+   unnamed slot renders as "You" and whose as "Partner", which is what stops the
+   slot-2 member from being labelled "Partner" on their own phone. Returns null when
+   signed out or when talking to a worker too old to send member_slot — callers treat
+   that as "assume this device's owner is slot 1", the historical single-device
+   assumption. */
+const AUTH_SLOT_KEY = 'mesaAuthSlot';
+
+function myMemberSlot(){
+  try{
+    const s = localStorage.getItem(AUTH_SLOT_KEY);
+    return (s === 'elena' || s === 'partner') ? s : null;
+  }catch(e){ return null; }
+}
+
+function setMyMemberSlot(slot){
+  try{
+    if(slot === 'elena' || slot === 'partner') localStorage.setItem(AUTH_SLOT_KEY, slot);
+    else localStorage.removeItem(AUTH_SLOT_KEY);
+  }catch(e){ console.error('Mesa auth: could not persist member slot', e); }
+}
+
 /* ---------------- hash-fragment token pickup ---------------- */
 // '#auth=<token>' / '#auth_error=<reason>' arrive from worker/auth.js's callback redirect
 // (see file header). Matched with an anchored regex (not a plain indexOf) so a token that
@@ -178,10 +206,19 @@ function refreshAuthMe(){
     // if that call goes on to pull an existing household's own synced profile data, its
     // LWW apply is free to overwrite this local guess with the real synced value, exactly
     // as it would for any other profile field — no special-casing needed here for that.
-    maybeSeedDisplayNameFromGoogle(body.user);
+    // Which slot THIS device's account occupies — persisted before anything renders, since
+    // resolveDisplayName()/applyOwnMemberSlot() below both key off it.
+    setMyMemberSlot(body.memberSlot);
+    maybeSeedDisplayNameFromGoogle(body.user, body.memberSlot);
     // Phase 3A.2: a signed-in account now carries its household mapping — silently attach
-    // this device to it (or note a mismatch) so Elena/Andrea never land on an empty Mesa.
+    // this device to it (or note a mismatch) so nobody lands on an empty Mesa.
     maybeAdoptHousehold(body.householdCode, body.memberSlot);
+    // Open on the viewer's OWN profile. Previously this only happened inside
+    // maybeAdoptHousehold's first-adoption branch, so a phone that ALREADY had the
+    // household code (the normal case for a returning device) kept opening on slot 1
+    // regardless of who was signed in — the second household member's phone showed them
+    // their partner's profile.
+    applyOwnMemberSlot(body.memberSlot);
     // Phase 3B (B3, solo households): server-confirmed member count, when the worker sends
     // it — see maybeSetHouseholdSizeFromServer's own doc for the upgrade/downgrade rule.
     maybeSetHouseholdSizeFromServer(body.householdMembers);
@@ -246,22 +283,43 @@ function authSignOut(){
    name the user (or their partner, via couple sync) already set is never clobbered —
    this only ever fires for a slot that's still sitting on 'You'/'Partner'.
    =================================================================== */
-function maybeSeedDisplayNameFromGoogle(user){
+function maybeSeedDisplayNameFromGoogle(user, memberSlot){
   if(!user || typeof user.displayName !== 'string' || !user.displayName.trim()) return;
-  if(typeof PROF === 'undefined' || typeof currentProf === 'undefined' || typeof DISPLAY_NAME_DEFAULTS === 'undefined') return;
-  const slot = currentProf;
+  if(typeof PROF === 'undefined' || typeof isPlaceholderDisplayName !== 'function') return;
+  // Seed the slot THIS ACCOUNT occupies, not whichever profile happens to be on screen:
+  // seeding the active slot wrote the signed-in person's name onto their PARTNER's profile
+  // whenever the device was showing the other profile at sign-in time.
+  const slot = (memberSlot === 'elena' || memberSlot === 'partner') ? memberSlot : null;
+  if(!slot) return;
   const p = PROF[slot];
   if(!p) return;
-  const untouchedDefault = DISPLAY_NAME_DEFAULTS[slot];
-  if(!untouchedDefault || p.displayName !== untouchedDefault) return; // already renamed locally or via sync — never overwrite
+  if(!isPlaceholderDisplayName(p.displayName)) return; // a real name is already set (typed here or synced from their phone) — never overwrite
 
   const cap = (typeof DISPLAY_NAME_MAX_LEN === 'number') ? DISPLAY_NAME_MAX_LEN : 24;
   const firstWord = user.displayName.trim().split(/\s+/)[0].slice(0, cap);
-  if(!firstWord) return;
+  if(!firstWord || (typeof isPlaceholderDisplayName === 'function' && isPlaceholderDisplayName(firstWord))) return;
 
   p.displayName = firstWord;
-  if(typeof applyProf === 'function') applyProf(currentProf); // recomputes seg/av, repaints, persists (state.js:persist() drives the couple-sync rev bump)
+  if(typeof applyProf === 'function' && typeof currentProf !== 'undefined') applyProf(currentProf); // recomputes seg/av, repaints, persists (state.js:persist() drives the couple-sync rev bump)
   else if(typeof persist === 'function') persist();
+}
+
+/* Point the device at its OWN owner's profile after sign-in. Deliberately does nothing if
+   the person has already switched profiles themselves during this session — being yanked
+   back mid-look would be worse than opening on the "wrong" one. B3's one-person rule still
+   wins: a solo household has only slot 1 on screen, so there is nothing to switch to. */
+let lastAppliedOwnSlot = null;
+function applyOwnMemberSlot(memberSlot){
+  const slot = (memberSlot === 'elena' || memberSlot === 'partner') ? memberSlot : null;
+  // Re-applying the SAME slot is a no-op (initAuth's cached-value call and the later
+  // /auth/me call usually agree), but a slot that genuinely CHANGED server-side must still
+  // win — hence tracking the last applied value rather than a one-shot boolean.
+  if(!slot || slot === lastAppliedOwnSlot) return;
+  lastAppliedOwnSlot = slot;
+  if(typeof isSoloHousehold === 'function' && isSoloHousehold()) return;
+  if(typeof currentProf === 'undefined' || currentProf === slot) return;
+  if(typeof profileSwitchedByUser !== 'undefined' && profileSwitchedByUser) return;
+  if(typeof applyProf === 'function') applyProf(slot);
 }
 
 function maybeAdoptHousehold(householdCode, memberSlot){
@@ -561,5 +619,9 @@ function initAuth(){
   consumeAuthHash();
   renderAccountSection();
   updateLoginGate();
+  // Open on this device's own profile using the CACHED slot, before /auth/me is asked
+  // anything. Waiting for the network would mean an offline launch (or just a slow one)
+  // shows the second member their partner's profile first and then swaps under them.
+  applyOwnMemberSlot(myMemberSlot());
   if(authToken()) refreshAuthMe();
 }

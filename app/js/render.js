@@ -539,7 +539,7 @@ function updateServings(){
     // — nutHeader below is only ever assigned to .textContent (updateNutritionGrid), never
     // innerHTML, so no escapeHtml is needed here the way rebalanceSuggestionLabel's `who`
     // (further down this file) needs one.
-    const viewerName = viewerIsPartner ? PROF.partner.displayName : PROF.elena.displayName;
+    const viewerName = viewerIsPartner ? resolveDisplayName('partner') : resolveDisplayName('elena');
     nutServings = viewerIsPartner ? svM : svE;
     document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
     document.getElementById('ingHeader').innerHTML = 'Ingredients · for the whole dish (' + total + ' servings)';
@@ -2272,7 +2272,7 @@ function renderRebalanceSheet(){
     // Task B2 (generic identity): displayName instead of a hardcoded person name — this
     // whole suggestion line is built into `html` and painted via innerHTML further down, so
     // (unlike the plain-textContent viewerName above) it must go through escapeHtml.
-    const who = s.unit.shared ? '' : (' (' + escapeHtml(s.unit.person === 'elena' ? PROF.elena.displayName : PROF.partner.displayName) + ')');
+    const who = s.unit.shared ? '' : (' (' + escapeHtml(resolveDisplayName(s.unit.person === 'elena' ? 'elena' : 'partner')) + ')');
     const last = i === rebalanceProposal.suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'swap' : 'side';
     const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
@@ -3203,7 +3203,10 @@ function renderTodayMeals(){
 function renderBasics(){
   const p = PROF[currentProf];
   const nameEl = document.getElementById('displayNameVal');
-  if(nameEl) nameEl.value = p.displayName;
+  // Placeholders ('You'/'Partner'/unset) show as an EMPTY field: they aren't the user's
+  // name, and pre-filling them invites someone to "keep" a label that only makes sense
+  // relative to whoever is looking (see state.js:resolveDisplayName).
+  if(nameEl) nameEl.value = isPlaceholderDisplayName(p.displayName) ? '' : p.displayName;
   document.getElementById('sexBtnF').classList.toggle('on', p.sex === 'female');
   document.getElementById('sexBtnM').classList.toggle('on', p.sex === 'male');
   document.getElementById('pfDob').textContent = 'Born ' + MONTHS[p.dobM-1] + ' ' + p.dobY + ' · ' + ageOf(p);
@@ -3311,7 +3314,9 @@ function stepBody(field, delta){
 function commitDisplayName(raw){
   const p = PROF[currentProf];
   const trimmed = (typeof raw === 'string' ? raw : '').trim().slice(0, DISPLAY_NAME_MAX_LEN);
-  p.displayName = trimmed || DISPLAY_NAME_DEFAULTS[currentProf] || DISPLAY_NAME_DEFAULTS.elena;
+  // Clearing the field stores '' (a placeholder), NOT a 'You'/'Partner' literal — storing
+  // one would sync a viewer-relative word to the other person's phone.
+  p.displayName = trimmed;
   applyProf(currentProf); // recomputeProf() re-derives seg/av from the new displayName; applyProf() -> syncPersonLabels() repaints every "shows both names" spot
   toast('✓ Name updated');
 }
@@ -3702,8 +3707,8 @@ function possessiveName(name){
 }
 
 function syncPersonLabels(){
-  const nameE = PROF.elena.displayName || DISPLAY_NAME_DEFAULTS.elena;
-  const nameP = PROF.partner.displayName || DISPLAY_NAME_DEFAULTS.partner;
+  const nameE = resolveDisplayName('elena');
+  const nameP = resolveDisplayName('partner');
 
   document.querySelectorAll('#profSeg button[data-prof="elena"]').forEach(function(b){ b.textContent = nameE; });
   document.querySelectorAll('#profSeg button[data-prof="partner"]').forEach(function(b){ b.textContent = nameP; });
@@ -3795,6 +3800,10 @@ function setHouseholdSize(size){
 
 // profile screen switch
 function setProf(key, el){
+  // Records that the person deliberately chose a profile this session, so auth.js's
+  // applyOwnMemberSlot() (which opens the device on its own owner's profile once
+  // /auth/me resolves) won't yank them back out of a switch they just made.
+  profileSwitchedByUser = true;
   el.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
   el.classList.add('on'); applyProf(key);
   // sync top control

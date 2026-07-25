@@ -100,10 +100,14 @@ function recomputeProf(key){
   // pattern as goalAdj/goalName/goalTag above deriving from `goals`. The trim/non-empty
   // guard mirrors loadState()'s (state.js) — recomputeProf() can run against a bare test
   // fixture too, so it can't assume loadState() already validated p.displayName.
-  const dn = (typeof p.displayName === 'string' && p.displayName.trim())
-    ? p.displayName.trim().slice(0, DISPLAY_NAME_MAX_LEN)
-    : (DISPLAY_NAME_DEFAULTS[key] || DISPLAY_NAME_DEFAULTS.elena);
-  p.displayName = dn;
+  // A REAL stored name is normalized and kept as-is; a placeholder (unset, or a legacy
+  // 'You'/'Partner' literal from the B2 build) is left UNTOUCHED in p.displayName so it
+  // never gets promoted into shared/synced data, and only the display fields resolve
+  // viewer-relatively — see state.js:resolveDisplayName's doc for why the two differ.
+  if(typeof p.displayName === 'string' && p.displayName.trim() && !isPlaceholderDisplayName(p.displayName)){
+    p.displayName = p.displayName.trim().slice(0, DISPLAY_NAME_MAX_LEN);
+  }
+  const dn = resolveDisplayName(key);
   p.seg = dn;
   p.av = avatarInitial(dn);
   // Daily target: the Mifflin-St Jeor recommendation unless a manual override is set.

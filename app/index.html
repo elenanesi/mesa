@@ -691,15 +691,38 @@
 </div>
 
 <!-- login gate (Phase 3A.2): full-viewport overlay, blocks the app until a token is
-     stored in localStorage mesaAuth. Shown/hidden entirely from js/auth.js's
-     updateLoginGate() — see that function's doc for exactly which signals flip it. -->
-<div class="login-gate" id="loginGate" hidden>
+     stored in localStorage mesaAuth. Thereafter shown/hidden from js/auth.js's
+     updateLoginGate() — see that function's doc for exactly which signals flip it.
+
+     It renders VISIBLE by default (no `hidden` attribute) and the inline script below
+     removes it synchronously for an already-signed-in device. That ordering is the whole
+     point: js/auth.js only runs after the app's own boot finishes, so a gate that started
+     hidden left the full app usable for that window — which is exactly how a signed-out
+     person reached the Profile screen and signed in from there instead of being stopped
+     at the door. Failing CLOSED also means a JS error can only over-gate (annoying, and
+     recoverable by signing in) rather than silently exposing someone's data. -->
+<div class="login-gate" id="loginGate">
   <div class="login-gate-emoji">🥗🍽️</div>
   <h1>Mesa</h1>
   <p class="sub" style="text-align:center">Sign in to see your plan, shopping list and log.</p>
   <div id="loginGateButton"></div>
   <p class="cap-note" id="loginGateError" style="text-align:center"></p>
 </div>
+<script>
+  /* Runs before any app script: a device that already holds a session token must never
+     see the gate flash. Kept deliberately tiny and dependency-free (no helpers exist yet
+     at this point in the document) and wrapped in try/catch because localStorage throws
+     outright in some private-browsing modes — in which case the gate simply stays up and
+     js/auth.js sorts it out a moment later. */
+  try{
+    var mesaTok = localStorage.getItem('mesaAuth');
+    if(typeof mesaTok === 'string' && mesaTok){
+      document.getElementById('loginGate').hidden = true;
+    } else {
+      document.body.classList.add('gate-open');
+    }
+  }catch(e){}
+</script>
 
 <script src="data/foods.js"></script>
 <script src="data/recipes.js"></script>
