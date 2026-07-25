@@ -36,14 +36,52 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
    `CLOUDFLARE_API_TOKEN=$(security find-generic-password -a mesa -s cloudflare-token -w) CLOUDFLARE_ACCOUNT_ID=84766baa4ad939ee067626830dd2f8dc npx wrangler pages deploy . --project-name=mesa --branch=main --commit-dirty=true`
    (token perms: Pages Edit + Access Edit only). Access team domain: lively-unit-4aa5.cloudflareaccess.com.
 
-### Auth admin (Phase 3A, invite-only Google sign-in)
+### Auth & accounts (Phase 3A/3B — invite-only Google sign-in)
 
-New `worker/migrations/0003_users_auth.sql` needs applying once (from `worker/`):
-`npx wrangler d1 migrations apply mesa-library --remote`.
+**Model.** A `users` row is one Google account. Every user belongs to exactly one
+household (`users.household_code`) in one of two slots (`users.member_slot`,
+values `elena` | `partner` — OPAQUE legacy ids meaning "slot 1" / "slot 2", never
+shown to users, never rename them). A one-person household is just a household
+with a single member; there is no separate solo code path. Household DATA still
+lives under the household code (KV sections + D1 library rows) exactly as before
+accounts existed — accounts are a layer of identity and access on top of it, not
+a new storage model.
 
-Mesa is invite-only — a Google account can only sign in once its email is in the
-`allowed_emails` D1 table. To invite someone (from `worker/`):
+**Sign-in flow.** PWA → `GET /auth/google/start` → Google consent →
+`GET /auth/google/callback` (verifies aud/iss/exp/email_verified, checks
+`allowed_emails`, enforces `MAX_USERS`) → redirects back with `#auth=<token>`.
+The token is a 90-day sliding session; only its SHA-256 hash is stored in D1.
+`GET /auth/me` returns the user, `householdCode`, `memberSlot`, and
+`householdMembers` (1 = solo, 2 = couple — drives partner-UI visibility).
+
+**Access control.** `/sync/:code` and `/library/:code` run through
+`requireHouseholdAccess()`: a presented session must match the household being
+accessed (403 `wrong_household` otherwise). `REQUIRE_SESSION` (wrangler.toml
+vars) decides what happens with NO session — `"0"` allows it (legacy
+household-code trust, the pre-accounts behavior), `"1"` rejects it with 401
+`session_required`. `GET /library/GLOBAL` is always public (the built-in catalog
+is fetched before login). Flip to `"1"` only once every existing device has
+signed in, or those devices lose sync.
+
+**Migrations.** Apply once, from `worker/`:
+`npx wrangler d1 migrations apply mesa-library --remote`
+(`0003_users_auth.sql` = users/sessions/allowed_emails,
+`0004_household_attach.sql` = household_code/member_slot columns).
+
+**Config.** `GOOGLE_CLIENT_ID` + `MAX_USERS` + `REQUIRE_SESSION` are vars in
+`worker/wrangler.toml`; `GOOGLE_CLIENT_SECRET` is a secret — from `worker/`:
+`npx wrangler secret put GOOGLE_CLIENT_SECRET`. The OAuth client lives in Google
+Cloud Console with redirect URI
+`https://mesa-sync.elenanesi55.workers.dev/auth/google/callback`.
+
+**Invites.** Mesa is invite-only: a Google account can only sign in once its
+email is in `allowed_emails`. An invite row may carry a household_code +
+member_slot, which is how an invited partner lands in an existing household in
+the right slot on first login (users invited without one get a fresh household
+of their own). From `worker/` — plain invite:
 `npx wrangler d1 execute mesa-library --remote --command "INSERT OR IGNORE INTO allowed_emails (email, note, added_at) VALUES ('x@y.z','friend',strftime('%s','now')*1000)"`
+Invite into an existing household as the second member:
+`npx wrangler d1 execute mesa-library --remote --command "UPDATE allowed_emails SET household_code='<CODE>', member_slot='partner' WHERE email='x@y.z'"`
 
 ## Docs
 
