@@ -171,6 +171,20 @@ function base64UrlDecodeJSON(b64url){
 
 function d1Available(env){ return !!(env && env.MESA_DB); }
 
+// Phase 3C, C1: first whitespace-delimited word of a display_name, capped at
+// 24 chars (matches the client's DISPLAY_NAME_MAX_LEN) so both devices agree
+// on the same short label without either computing it independently. Null
+// in, null out — a user with no name on file (or an all-whitespace one)
+// gets no firstName rather than an empty string.
+function firstNameOf(displayName){
+  if(typeof displayName !== 'string') return null;
+  const trimmed = displayName.trim();
+  if(!trimmed) return null;
+  const first = trimmed.split(/\s+/)[0];
+  if(!first) return null;
+  return first.length > 24 ? first.slice(0, 24) : first;
+}
+
 // Same shape as sync.js's bootstrapRateLimited (cheap KV TTL counter, fails
 // OPEN on any KV error) but parameterized by key/limit/window so both the
 // bootstrap endpoint and this one can use their own budgets independently.
@@ -591,22 +605,65 @@ async function handleMe(request, env, origin){
     return json({error: 'unauthorized'}, 401, origin);
   }
 
-  // householdMembers (Phase 3B, B3): count of non-deleted users sharing this
-  // user's household_code — 1 means solo, 2 means a couple. The client uses
-  // this to decide whether to show/hide partner-facing UI (per-meal eat-
-  // together controls, "both" summaries, shopping/pantry aggregation) without
-  // guessing from memberSlot alone. No household_code (not yet attached) has
-  // nobody to share with, so it's a solo household of 1.
+  // householdMembers (Phase 3B, B3) + members (Phase 3C, C1): both come from
+  // the same one SELECT of every non-deleted row sharing this user's
+  // household_code, so there's exactly one query pattern for "who's in my
+  // household" rather than a count query and a roster query duplicating each
+  // other. householdMembers is just the row count — 1 means solo, 2 means a
+  // couple; the client uses it to decide whether to show partner-facing UI
+  // (per-meal eat-together controls, "both" summaries, shopping/pantry
+  // aggregation) without guessing from memberSlot alone. No household_code
+  // (not yet attached) has nobody to share with, so it's a solo household of
+  // 1 with no members rows to fetch.
+  //
+  // members is the household roster the client needs to show BOTH people's
+  // real names and Google photos on EITHER phone, without depending on
+  // couple-sync to propagate a name the other person typed locally (see
+  // PHASE3C-identity-plan.md, C1/C2) — e.g. so Andrea's phone can label
+  // Elena "Elena" instead of falling back to "Partner" if her own device
+  // never finished syncing a name. Deliberately slot/name/picture only, no
+  // email: a household roster doesn't need to leak the partner's address,
+  // and nothing in the UI shows it. Rows with an unrecognized/null
+  // member_slot are omitted. The caller's own entry is always first.
   let householdMembers = 1;
+  let members = [];
   if(user.household_code){
+    let memberRows = null;
     try{
-      const countRow = await env.MESA_DB.prepare(
-        'SELECT COUNT(*) AS c FROM users WHERE household_code = ? AND deleted_at IS NULL'
-      ).bind(user.household_code).first();
-      householdMembers = (countRow && typeof countRow.c === 'number') ? countRow.c : 1;
+      const res = await env.MESA_DB.prepare(
+        'SELECT id, display_name, picture_url, member_slot FROM users WHERE household_code = ? AND deleted_at IS NULL'
+      ).bind(user.household_code).all();
+      memberRows = (res && Array.isArray(res.results)) ? res.results : [];
     }catch(e){
-      householdMembers = 1;
+      memberRows = null;
     }
+    if(memberRows){
+      householdMembers = memberRows.length || 1;
+      const self = [];
+      const others = [];
+      for(let i = 0; i < memberRows.length; i++){
+        const row = memberRows[i];
+        if(row.member_slot !== 'elena' && row.member_slot !== 'partner') continue;
+        const entry = {
+          slot: row.member_slot,
+          displayName: row.display_name,
+          firstName: firstNameOf(row.display_name),
+          picture: row.picture_url,
+          isSelf: row.id === user.id
+        };
+        (entry.isSelf ? self : others).push(entry);
+      }
+      members = self.concat(others);
+    }
+  } else if(user.member_slot === 'elena' || user.member_slot === 'partner'){
+    // No household yet: the roster is just the caller themselves.
+    members = [{
+      slot: user.member_slot,
+      displayName: user.display_name,
+      firstName: firstNameOf(user.display_name),
+      picture: user.picture_url,
+      isSelf: true
+    }];
   }
 
   return json({
@@ -619,7 +676,8 @@ async function handleMe(request, env, origin){
     householdCode: user.household_code || null,
     memberSlot: user.member_slot || null,
     householdMembers: householdMembers,
-    expiresAt: session.expires_at
+    expiresAt: session.expires_at,
+    members: members
   }, 200, origin);
 }
 
