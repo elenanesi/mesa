@@ -1,5 +1,5 @@
 /* ===================================================================
-   render.js — all DOM-writing functions
+   render.js — all DOM-writing functions (v2)
    Everything that reads state (state.js) / computed values (engine.js,
    planner.js) and paints it into the DOM: screen renderers, sheet
    builders, the toast helper, and the profile/basics/macro-split
