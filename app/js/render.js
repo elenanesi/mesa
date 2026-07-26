@@ -3617,6 +3617,46 @@ function refreshRingAndBars(){
   document.getElementById('fatSplit').textContent = '💚 ' + p.fatGood + 'g good fats · ' + p.fatSat + 'g sat.';
 }
 
+/* ===================================================================
+   Phase 3C (C3) — avatar photo-or-initial helper
+
+   The ONE place that decides what goes INSIDE an avatar slot: a member's Google photo
+   when memberInfo(slot) (js/auth.js, typeof-guarded — degrades cleanly to the initial
+   letter when auth.js is absent or the roster has no entry for this slot) has an
+   https:// picture URL, else the initial-letter text this app has always shown
+   (state.js:avatarInitial via PROF[slot].av, recomputed every applyProf by
+   engine.js:recomputeProf). Every avatar call site assigns the RETURNED STRING via
+   .innerHTML to an existing, already-sized/round CONTAINER (mesa.css .avatar,
+   .profile-icon-btn span) — this only ever changes what's inside that container, never
+   its size or shape, so it stays a drop-in replacement for the old `.textContent = p.av`.
+
+   Picture URL is validated (must start with 'https://') and escaped for the src
+   attribute with htmlAttr() (state.js) before it ever touches innerHTML — same
+   stored-XSS discipline renderAccountSection() (js/auth.js) already applies to this
+   exact field. The onerror handler swaps the <img> back to the initial letter via
+   outerHTML — jsAttr() (state.js) is the right escaper here because the string crosses
+   two parsers: it's a JS string literal (the outerHTML assignment) sitting inside an
+   HTML attribute (onerror="..."), which is exactly what jsAttr's doc says it's for —
+   so an expired/blocked/offline Google URL degrades to the same initial circle rather
+   than leaving a blank hole. */
+function avatarSlotHtml(slot){
+  const p = (typeof PROF !== 'undefined' && PROF) ? PROF[slot] : null;
+  const rawInitial = (p && typeof p.av === 'string' && p.av)
+    ? p.av
+    : avatarInitial(typeof resolveDisplayName === 'function' ? resolveDisplayName(slot) : '');
+  const info = (typeof memberInfo === 'function') ? memberInfo(slot) : null;
+  const picture = (info && typeof info.picture === 'string' && info.picture.indexOf('https://') === 0) ? info.picture : null;
+  if(!picture) return escapeHtml(rawInitial);
+  // Deliberately NOT loading="lazy": these two avatars are always on screen (Today header
+  // and Profile), so deferring a ~40px image buys nothing, and lazy loading measurably
+  // hurts here — the request can be postponed indefinitely when the element is written by
+  // script rather than scrolled into view, which also postpones the onerror fallback and
+  // leaves an empty circle instead of the initial letter.
+  return '<img src="' + htmlAttr(picture) + '" alt="" referrerpolicy="no-referrer" '
+    + 'style="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block" '
+    + "onerror=\"this.outerHTML='" + jsAttr(rawInitial) + "'\">";
+}
+
 function applyProf(key){
   // Task B3 (solo households): the partner slot is hidden everywhere user-visible, so a
   // one-person household can never be VIEWING it — force back to 'elena' regardless of what
@@ -3635,9 +3675,9 @@ function applyProf(key){
   const coachD = document.getElementById('coachD');
   if(coachT) coachT.textContent=p.coachOverrideT || p.coachT;
   if(coachD) coachD.textContent=p.coachOverrideD || p.coachD;
-  document.getElementById('profAv').textContent=p.av;
+  document.getElementById('profAv').innerHTML=avatarSlotHtml(key);
   const topAv = document.getElementById('topProfAv');
-  if(topAv) topAv.textContent = p.av;
+  if(topAv) topAv.innerHTML = avatarSlotHtml(key);
   renderBasics();
   const pKcal = Math.round(p.calGoalNum * p.kP / 100);
   const cKcal = Math.round(p.calGoalNum * p.kC / 100);
