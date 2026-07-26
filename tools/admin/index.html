@@ -481,6 +481,7 @@
         return;
       }
       if(res.ok && res.body && res.body.ok){
+        alertInline('✓ Access revoked. ' + email + ' is signed out on all devices.');
         loadUsers();
         return;
       }

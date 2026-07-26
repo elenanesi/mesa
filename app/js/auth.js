@@ -347,9 +347,9 @@ function consumeAuthHash(){
 }
 
 function authErrorMessage(reason){
-  if(reason === 'not_invited') return 'Mesa is invite-only right now — ask the person who runs this Mesa to invite you.';
-  if(reason === 'full') return "Mesa is at capacity and can't take new accounts.";
-  return 'Sign-in didn’t work — please try again.';
+  if(reason === ‘not_invited’) return ‘Your access to Mesa has been revoked or you haven’t been invited yet. Contact the person running this Mesa to restore access.’;
+  if(reason === ‘full’) return "Mesa is at capacity and can’t take new accounts.";
+  return ‘Sign-in didn’t work — please try again.’;
 }
 
 /* ---------------- Phase 3B: shared with sync.js ---------------- */
