@@ -1,0 +1,579 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mesa — Admin</title>
+<meta name="robots" content="noindex, nofollow">
+<style>
+  :root{
+    --bg:#f4eddf;
+    --card:#fffaf0;
+    --paper:#fbf5e8;
+    --ink:#342d25;
+    --ink-soft:#6e6253;
+    --muted:#998d7d;
+    --line:#dfd1bb;
+    --sage:#7f9364;
+    --sage-deep:#566b43;
+    --sage-tint:#edf1df;
+    --terra:#be6c45;
+    --terra-tint:#f4dfcf;
+    --terra-deep:#9c4d2c;
+    --gold:#c79a48;
+    --berry:#9a665e;
+    --shadow:0 10px 24px rgba(73,54,32,.10);
+    --shadow-soft:0 3px 10px rgba(73,54,32,.07);
+    --radius:14px;
+    --font-serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+    --font-script:"Snell Roundhand","Bradley Hand","Segoe Script",cursive;
+  }
+  *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+  html,body{margin:0;padding:0;}
+  body{
+    font-family:var(--font-serif);
+    background:
+      radial-gradient(circle at 18% 12%, rgba(255,255,255,.62) 0 1px, transparent 1.5px),
+      radial-gradient(circle at 78% 42%, rgba(116,87,44,.08) 0 1px, transparent 1.6px),
+      linear-gradient(90deg, rgba(109,79,42,.035) 1px, transparent 1px),
+      var(--bg);
+    background-size:22px 22px, 31px 31px, 34px 34px, auto;
+    color:var(--ink);
+    min-height:100vh;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:28px 20px 80px;}
+  header.top{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px;}
+  h1{font-family:var(--font-script);font-size:36px;line-height:1.05;margin:0 0 2px;font-weight:500;color:#2f281f;}
+  .sub{color:var(--muted);font-size:13.5px;margin:0;}
+  .eyebrow{font-size:11px;font-weight:700;letter-spacing:1.7px;text-transform:uppercase;color:var(--sage-deep);margin:0 0 4px;}
+
+  .card{background:rgba(255,250,240,.92);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:20px;margin-top:14px;border:1px solid rgba(176,146,105,.38);}
+  .row{display:flex;align-items:center;gap:12px;}
+  .between{justify-content:space-between;flex-wrap:wrap;}
+
+  .cta{font:inherit;font-size:14.5px;font-weight:700;padding:12px 20px;border-radius:999px;border:0;cursor:pointer;background:var(--sage);color:#fff;box-shadow:var(--shadow-soft);transition:transform .12s ease;}
+  .cta:active{transform:scale(.96);}
+  .cta:disabled{opacity:.55;cursor:default;transform:none;}
+  .cta.ghostbtn{background:transparent;color:var(--ink-soft);border:1.5px solid var(--line);box-shadow:none;}
+  .cta.danger{background:var(--terra-deep);color:#fff;}
+  .cta.small{padding:8px 14px;font-size:12.5px;}
+
+  .pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:5px 9px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);border:1px solid rgba(127,147,100,.16);}
+  .pill.terra{background:var(--terra-tint);color:#b25e35;}
+  .pill.ghost{background:#eef0ec;color:var(--ink-soft);}
+  .pill.gold{background:#f6edd6;color:#9a7414;}
+
+  .inp{width:100%;box-sizing:border-box;border:1px solid var(--line);border-radius:12px;padding:12px 14px;font-size:15px;background:rgba(255,250,240,.95);color:var(--ink);font-family:inherit;}
+  .inp:focus{outline:2px solid var(--sage);outline-offset:1px;}
+
+  .msg{font-size:13px;margin-top:10px;min-height:0;}
+  .msg.error{color:var(--terra-deep);}
+  .msg.ok{color:var(--sage-deep);}
+
+  .avatar{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;font-size:15px;background:linear-gradient(135deg,var(--sage),var(--sage-deep));flex:0 0 auto;}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;}
+  th{text-align:left;font-size:10.5px;letter-spacing:.6px;text-transform:uppercase;color:var(--muted);font-weight:700;padding:0 10px 8px;border-bottom:1px solid var(--line);}
+  td{padding:10px;border-bottom:1px solid rgba(223,209,187,.6);vertical-align:middle;}
+  tr:last-child td{border-bottom:0;}
+  .tbl-wrap{overflow-x:auto;margin-top:14px;-webkit-overflow-scrolling:touch;}
+  .mono{font-variant-numeric:tabular-nums;color:var(--ink-soft);}
+  .muted{color:var(--muted);}
+
+  .confirm-row{background:var(--terra-tint);}
+  .confirm-row td{padding:12px 10px;}
+
+  .empty-state{text-align:center;padding:40px 20px;color:var(--muted);}
+  .spinner-line{color:var(--muted);font-size:13.5px;padding:20px 0;text-align:center;}
+
+  .gsi-btn{background:#fff;color:#3c4043;border:1.5px solid #dadce0;box-shadow:none;display:flex;align-items:center;justify-content:center;gap:10px;}
+
+  footer.note{margin-top:26px;font-size:11.5px;color:var(--muted);line-height:1.5;}
+  a{color:var(--sage-deep);}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <p class="eyebrow">Mesa</p>
+      <h1>Admin</h1>
+      <p class="sub">Household seats &amp; access control — local tool, not part of the app.</p>
+    </div>
+    <div id="topRight"></div>
+  </header>
+
+  <div id="app"></div>
+
+  <footer class="note">
+    Served locally on <span class="mono">127.0.0.1:8322</span> — this origin is allow-listed by the
+    Mesa sync worker for sign-in redirects. Only a Mesa account with admin rights can see anything
+    beyond the sign-in screen.
+  </footer>
+</div>
+
+<script>
+(function(){
+  'use strict';
+
+  var SYNC_URL = 'https://mesa-sync.elenanesi55.workers.dev';
+  var TOKEN_KEY = 'mesaAdminAuth'; // distinct from the app's 'mesaAuth' — different origin anyway, but keep it unambiguous
+
+  var appEl = document.getElementById('app');
+  var topRightEl = document.getElementById('topRight');
+
+  /* ---------------- tiny local helpers (no dependency on app/js/*) ---------------- */
+
+  function escapeHtml(s){
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function getToken(){
+    try{
+      var t = localStorage.getItem(TOKEN_KEY);
+      return (typeof t === 'string' && t) ? t : null;
+    }catch(e){ return null; }
+  }
+  function setToken(t){
+    try{
+      if(t) localStorage.setItem(TOKEN_KEY, t);
+      else localStorage.removeItem(TOKEN_KEY);
+    }catch(e){ /* storage unavailable — sign-in just won't persist across reloads */ }
+  }
+
+  function fmtDate(ms){
+    if(typeof ms !== 'number' || !ms) return '—';
+    try{ return new Date(ms).toLocaleString(); }catch(e){ return '—'; }
+  }
+
+  var GOOGLE_G_LOGO_SVG = '<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" style="flex:0 0 auto">'
+    + '<path fill="#4285F4" d="M17.64 9.2c0-.637-.057-1.251-.164-1.84H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.874 2.684-6.615z"/>'
+    + '<path fill="#34A853" d="M9 18c2.43 0 4.467-.806 5.956-2.184l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18z"/>'
+    + '<path fill="#FBBC05" d="M3.964 10.706A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.706V4.962H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.038l3.007-2.332z"/>'
+    + '<path fill="#EA4335" d="M9 3.579c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.962L3.964 7.294C4.672 5.167 6.656 3.579 9 3.579z"/>'
+    + '</svg>';
+
+  /* ---------------- hash-fragment pickup (same shape as app/js/auth.js) ---------------- */
+
+  function consumeAuthHash(){
+    var hash = location.hash || '';
+    var authMatch = /^#auth=([^&]*)/.exec(hash);
+    var errMatch = /^#auth_error=([^&]*)/.exec(hash);
+    if(!authMatch && !errMatch) return null;
+
+    try{ history.replaceState(null, '', location.pathname + location.search); }catch(e){ /* ignore */ }
+
+    if(authMatch){
+      var token = decodeURIComponent(authMatch[1] || '');
+      if(token) setToken(token);
+      return 'token';
+    }
+    var reason = decodeURIComponent(errMatch[1] || '');
+    return {error: reason};
+  }
+
+  function authErrorMessage(reason){
+    if(reason === 'not_invited') return 'That Google account isn’t invited to Mesa — this admin tool needs an existing Mesa admin account.';
+    if(reason === 'full') return 'Mesa is at capacity and can’t take new accounts.';
+    return 'Sign-in didn’t work — please try again.';
+  }
+
+  function authSignIn(){
+    var returnTo = encodeURIComponent(location.origin + location.pathname);
+    location.href = SYNC_URL + '/auth/google/start?return_to=' + returnTo;
+  }
+
+  /* ---------------- fetch wrapper: every call sends the bearer token, a 401 signs out ---------------- */
+
+  // Returns a promise resolving to {ok, status, body} — never rejects for HTTP-level
+  // failures. On 401 it clears the token and re-renders signed-out BEFORE resolving, so
+  // callers that check `sessionDied` can just stop (no need to duplicate the recovery).
+  function api(path, opts){
+    opts = opts || {};
+    var token = getToken();
+    var headers = Object.assign({}, opts.headers || {});
+    if(token) headers.Authorization = 'Bearer ' + token;
+    if(opts.body && !headers['Content-Type']) headers['Content-Type'] = 'application/json';
+
+    if(typeof fetch !== 'function'){
+      return Promise.resolve({ok: false, status: 0, body: {}, networkError: true});
+    }
+
+    return fetch(SYNC_URL + path, {
+      method: opts.method || 'GET',
+      headers: headers,
+      body: opts.body,
+      cache: 'no-store'
+    }).then(function(res){
+      if(res.status === 401){
+        setToken(null);
+        renderSignedOut();
+        return {ok: false, status: 401, body: {error: 'unauthorized'}, sessionDied: true};
+      }
+      return res.json().catch(function(){ return {}; }).then(function(body){
+        return {ok: res.ok, status: res.status, body: (body && typeof body === 'object') ? body : {}};
+      });
+    }).catch(function(err){
+      console.warn('Mesa admin: request failed', path, err);
+      return {ok: false, status: 0, body: {}, networkError: true};
+    });
+  }
+
+  /* ---------------- top-right sign-out control ---------------- */
+
+  function renderTopRight(user){
+    if(!user){ topRightEl.innerHTML = ''; return; }
+    var name = escapeHtml(user.displayName || user.email || 'Signed in');
+    var email = escapeHtml(user.email || '');
+    topRightEl.innerHTML = '<div class="row" style="gap:10px">'
+      + '<div style="text-align:right">'
+      + '<div style="font-weight:700;font-size:13.5px">' + name + '</div>'
+      + '<div class="muted" style="font-size:11.5px">' + email + '</div>'
+      + '</div>'
+      + '<button class="cta ghostbtn small" id="topSignOutBtn" type="button">Sign out</button>'
+      + '</div>';
+    var btn = document.getElementById('topSignOutBtn');
+    if(btn) btn.addEventListener('click', signOut);
+  }
+
+  function signOut(){
+    var token = getToken();
+    setToken(null);
+    renderSignedOut();
+    if(token){
+      api('/auth/logout', {method: 'POST'}).catch(function(){}); // best-effort; local clear already happened
+    }
+  }
+
+  /* ---------------- signed-out state ---------------- */
+
+  function renderSignedOut(message, isError){
+    renderTopRight(null);
+    var msgHtml = message
+      ? '<p class="msg ' + (isError ? 'error' : '') + '">' + escapeHtml(message) + '</p>'
+      : '';
+    appEl.innerHTML = '<div class="card">'
+      + '<p class="sub" style="margin:0 0 14px">Sign in with the Google account that runs this Mesa to manage seats and invites.</p>'
+      + '<button class="cta gsi-btn" id="signInBtn" type="button">' + GOOGLE_G_LOGO_SVG + '<span>Sign in with Google</span></button>'
+      + msgHtml
+      + '</div>';
+    var btn = document.getElementById('signInBtn');
+    if(btn) btn.addEventListener('click', authSignIn);
+  }
+
+  function renderLoading(){
+    renderTopRight(null);
+    appEl.innerHTML = '<div class="card"><p class="spinner-line">Checking your session…</p></div>';
+  }
+
+  function renderNonAdmin(user){
+    renderTopRight(user);
+    appEl.innerHTML = '<div class="card">'
+      + '<p class="sub" style="margin:0 0 10px">Signed in as <b>' + escapeHtml(user.email || '') + '</b>.</p>'
+      + '<p style="margin:0 0 16px">This account isn’t a Mesa admin, so there’s nothing to show here.</p>'
+      + '<button class="cta ghostbtn" id="nonAdminSignOutBtn" type="button">Sign out</button>'
+      + '</div>';
+    var btn = document.getElementById('nonAdminSignOutBtn');
+    if(btn) btn.addEventListener('click', signOut);
+  }
+
+  /* ---------------- admin state ---------------- */
+
+  var adminState = {
+    selfEmail: null,
+    seatsUsed: 0,
+    seatsMax: 0,
+    rows: [],
+    confirmEmail: null // email currently in the two-step revoke-confirm row, or null
+  };
+
+  function renderAdminShell(user){
+    renderTopRight(user);
+    adminState.selfEmail = (user.email || '').toLowerCase();
+    appEl.innerHTML = ''
+      + '<div class="card" id="seatsCard">'
+      + '  <p class="sub" style="margin:0 0 6px">Seats</p>'
+      + '  <p style="margin:0;font-size:20px;font-weight:700" id="seatsLine">…</p>'
+      + '</div>'
+
+      + '<div class="card">'
+      + '  <p class="sub" style="margin:0 0 10px">Invite someone new</p>'
+      + '  <div class="row" style="align-items:flex-start;gap:10px;flex-wrap:wrap">'
+      + '    <input class="inp" id="inviteEmailInput" type="email" inputmode="email" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="friend@email.com" style="flex:1;min-width:220px">'
+      + '    <button class="cta" id="inviteBtn" type="button">Send invite</button>'
+      + '  </div>'
+      + '  <p class="msg" id="inviteMsg"></p>'
+      + '</div>'
+
+      + '<div class="card">'
+      + '  <div class="row between">'
+      + '    <p class="sub" style="margin:0">People</p>'
+      + '    <button class="cta ghostbtn small" id="refreshBtn" type="button">Refresh</button>'
+      + '  </div>'
+      + '  <div id="tableHost"></div>'
+      + '</div>';
+
+    var inviteBtn = document.getElementById('inviteBtn');
+    var inviteInput = document.getElementById('inviteEmailInput');
+    if(inviteBtn) inviteBtn.addEventListener('click', sendInvite);
+    if(inviteInput) inviteInput.addEventListener('keydown', function(ev){
+      if(ev.key === 'Enter'){ ev.preventDefault(); sendInvite(); }
+    });
+    var refreshBtn = document.getElementById('refreshBtn');
+    if(refreshBtn) refreshBtn.addEventListener('click', function(){ loadUsers(); });
+  }
+
+  function setSeatsLine(used, max){
+    adminState.seatsUsed = used;
+    adminState.seatsMax = max;
+    var el = document.getElementById('seatsLine');
+    if(el) el.textContent = used + ' of ' + max + ' seats used';
+  }
+
+  function setInviteBusy(busy){
+    var btn = document.getElementById('inviteBtn');
+    var input = document.getElementById('inviteEmailInput');
+    if(btn){ btn.disabled = busy; btn.textContent = busy ? 'Sending…' : 'Send invite'; }
+    if(input) input.disabled = busy;
+  }
+
+  function setInviteMsg(text, isError){
+    var el = document.getElementById('inviteMsg');
+    if(!el) return;
+    el.textContent = text || '';
+    el.className = 'msg' + (isError ? ' error' : (text ? ' ok' : ''));
+  }
+
+  function sendInvite(){
+    var input = document.getElementById('inviteEmailInput');
+    if(!input) return;
+    var email = input.value.trim();
+    if(!email){
+      setInviteMsg('Enter an email address first.', true);
+      return;
+    }
+    setInviteBusy(true);
+    setInviteMsg('', false);
+
+    api('/auth/invite-user', {method: 'POST', body: JSON.stringify({email: email})}).then(function(res){
+      setInviteBusy(false);
+      if(res.sessionDied) return;
+      if(res.networkError){
+        setInviteMsg('Couldn’t reach Mesa — check your connection and try again.', true);
+        return;
+      }
+      if(res.ok && res.body && res.body.ok){
+        setInviteMsg('Invited ' + res.body.email + '.', false);
+        input.value = '';
+        if(typeof res.body.seatsUsed === 'number' && typeof res.body.seatsMax === 'number'){
+          setSeatsLine(res.body.seatsUsed, res.body.seatsMax);
+        }
+        loadUsers();
+        return;
+      }
+      var code = res.body && res.body.error;
+      if(code === 'invalid_email') setInviteMsg('That doesn’t look like a valid email address.', true);
+      else if(code === 'not_admin') setInviteMsg('This account isn’t an admin.', true);
+      else if(code === 'taken') setInviteMsg('That email is already a user or already invited.', true);
+      else if(code === 'full') setInviteMsg('All seats are full — no room for new invites.', true);
+      else if(code === 'rate_limited') setInviteMsg('Too many invites today — try again tomorrow.', true);
+      else setInviteMsg('Couldn’t send the invite — please try again.', true);
+    });
+  }
+
+  function statusPillHtml(row){
+    return row.signedUp
+      ? '<span class="pill">Signed up</span>'
+      : '<span class="pill gold">Invited</span>';
+  }
+
+  function renderTable(){
+    var host = document.getElementById('tableHost');
+    if(!host) return;
+    var rows = adminState.rows;
+
+    if(!rows.length){
+      host.innerHTML = '<div class="empty-state">No one invited yet.</div>';
+      return;
+    }
+
+    var body = rows.map(function(row, idx){
+      var email = escapeHtml(row.email);
+      var isSelf = (row.email || '').toLowerCase() === adminState.selfEmail;
+      var confirming = adminState.confirmEmail === row.email;
+
+      if(confirming){
+        return '<tr class="confirm-row" data-idx="' + idx + '">'
+          + '<td colspan="8">'
+          + '<div class="row between" style="flex-wrap:wrap;gap:10px">'
+          + '<span>Revoke access for <b>' + email + '</b>? They’ll be signed out on every device. Their meal data is kept — re-inviting undoes this.</span>'
+          + '<div class="row" style="gap:8px">'
+          + '<button class="cta danger small" data-action="revoke-confirm" data-idx="' + idx + '" type="button">Yes, revoke</button>'
+          + '<button class="cta ghostbtn small" data-action="revoke-cancel" data-idx="' + idx + '" type="button">Cancel</button>'
+          + '</div></div></td></tr>';
+      }
+
+      var revokeBtn = isSelf
+        ? '<button class="cta ghostbtn small" disabled title="You can’t revoke your own access here">Revoke</button>'
+        : '<button class="cta ghostbtn small" data-action="revoke-start" data-idx="' + idx + '" type="button">Revoke</button>';
+
+      return '<tr data-idx="' + idx + '">'
+        + '<td>' + email + (isSelf ? ' <span class="pill ghost">you</span>' : '') + '</td>'
+        + '<td>' + statusPillHtml(row) + '</td>'
+        + '<td class="mono">' + escapeHtml(row.memberSlot || '—') + '</td>'
+        + '<td class="mono">' + escapeHtml(row.householdShort || '—') + '</td>'
+        + '<td class="mono">' + (typeof row.sessions === 'number' ? row.sessions : 0) + '</td>'
+        + '<td class="mono">' + fmtDate(row.lastSeenAt) + '</td>'
+        + '<td>' + (row.isAdmin ? '<span class="pill terra">Admin</span>' : '') + '</td>'
+        + '<td>' + revokeBtn + '</td>'
+        + '</tr>';
+    }).join('');
+
+    host.innerHTML = '<div class="tbl-wrap"><table>'
+      + '<thead><tr>'
+      + '<th>Email</th><th>Status</th><th>Slot</th><th>Household</th><th>Live sessions</th><th>Last seen</th><th>Admin</th><th></th>'
+      + '</tr></thead>'
+      + '<tbody id="tableBody">' + body + '</tbody>'
+      + '</table></div>';
+
+    var tbody = document.getElementById('tableBody');
+    if(tbody) tbody.addEventListener('click', onTableClick);
+  }
+
+  function onTableClick(ev){
+    var btn = ev.target.closest('button[data-action]');
+    if(!btn) return;
+    var idx = parseInt(btn.getAttribute('data-idx'), 10);
+    var row = adminState.rows[idx];
+    if(!row) return;
+    var action = btn.getAttribute('data-action');
+
+    if(action === 'revoke-start'){
+      adminState.confirmEmail = row.email;
+      renderTable();
+      return;
+    }
+    if(action === 'revoke-cancel'){
+      adminState.confirmEmail = null;
+      renderTable();
+      return;
+    }
+    if(action === 'revoke-confirm'){
+      doRevoke(row.email, btn);
+      return;
+    }
+  }
+
+  function doRevoke(email, btnEl){
+    if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Revoking…'; }
+    api('/auth/admin/revoke', {method: 'POST', body: JSON.stringify({email: email})}).then(function(res){
+      if(res.sessionDied) return;
+      adminState.confirmEmail = null;
+      if(res.networkError){
+        setInviteMsg('', false);
+        alertInline('Couldn’t reach Mesa — check your connection and try again.');
+        renderTable();
+        return;
+      }
+      if(res.ok && res.body && res.body.ok){
+        loadUsers();
+        return;
+      }
+      var code = res.body && res.body.error;
+      var text = 'Couldn’t revoke that account — please try again.';
+      if(code === 'self_revoke') text = 'You can’t revoke your own account.';
+      else if(code === 'not_admin') text = 'This account isn’t an admin.';
+      else if(code === 'invalid_email') text = 'That email looks invalid.';
+      alertInline(text);
+      renderTable();
+    });
+  }
+
+  // Small transient banner above the table for revoke errors (the invite form has its
+  // own inline message; this mirrors it without a full alert() dialog).
+  function alertInline(text){
+    var host = document.getElementById('tableHost');
+    if(!host) return;
+    var el = document.createElement('p');
+    el.className = 'msg error';
+    el.textContent = text;
+    host.parentNode.insertBefore(el, host);
+    setTimeout(function(){ if(el.parentNode) el.parentNode.removeChild(el); }, 6000);
+  }
+
+  function loadUsers(){
+    var host = document.getElementById('tableHost');
+    if(host) host.innerHTML = '<p class="spinner-line">Loading…</p>';
+    return api('/auth/admin/users').then(function(res){
+      if(res.sessionDied) return;
+      if(res.networkError){
+        if(host) host.innerHTML = '<div class="empty-state">Couldn’t reach Mesa — check your connection and try again.</div>';
+        return;
+      }
+      if(!res.ok){
+        var code = res.body && res.body.error;
+        var text = code === 'not_admin' ? 'This account isn’t an admin.' : 'Couldn’t load the roster.';
+        if(host) host.innerHTML = '<div class="empty-state">' + escapeHtml(text) + '</div>';
+        return;
+      }
+      var body = res.body || {};
+      adminState.rows = Array.isArray(body.rows) ? body.rows : [];
+      adminState.confirmEmail = null;
+      if(typeof body.seatsUsed === 'number' && typeof body.seatsMax === 'number'){
+        setSeatsLine(body.seatsUsed, body.seatsMax);
+      }
+      renderTable();
+    });
+  }
+
+  /* ---------------- boot ---------------- */
+
+  function boot(){
+    var hashResult = consumeAuthHash();
+    var initialError = null;
+    if(hashResult && hashResult.error){
+      initialError = authErrorMessage(hashResult.error);
+    }
+
+    var token = getToken();
+    if(!token){
+      renderSignedOut(initialError, true);
+      return;
+    }
+
+    renderLoading();
+    api('/auth/me').then(function(res){
+      if(res.sessionDied) return; // already rendered signed-out
+      if(res.networkError){
+        renderSignedOut('Couldn’t reach Mesa — check your connection and try again.', true);
+        return;
+      }
+      if(!res.ok){
+        renderSignedOut('Sign-in check failed — please try again.', true);
+        return;
+      }
+      var body = res.body || {};
+      var user = (body.user && typeof body.user === 'object') ? body.user : {};
+      if(!body.isAdmin){
+        renderNonAdmin(user);
+        return;
+      }
+      renderAdminShell(user);
+      setSeatsLine(
+        typeof body.seatsUsed === 'number' ? body.seatsUsed : 0,
+        typeof body.seatsMax === 'number' ? body.seatsMax : 0
+      );
+      loadUsers();
+    });
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>

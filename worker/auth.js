@@ -92,6 +92,38 @@
                                           household yet) is fine to update in
                                           place — same idempotent contract as
                                           re-running the whole call.
+     GET  /auth/admin/users    (Authorization: Bearer <token>)
+       -> the small local admin tool's roster (NOT part of the app). Gated on
+          is_admin exactly like invite-user: 401 {error:'unauthorized'} for
+          no/dead session, 403 {error:'not_admin'} otherwise. Returns
+          {seatsUsed, seatsMax, rows:[...]}, one row per invited email PLUS
+          any user whose email isn't (or no longer is) in allowed_emails —
+          those aren't hidden, or an admin would have no way to see them.
+          Each row: {email, note, invitedAt, signedUp, isAdmin, memberSlot,
+          householdShort, createdAt, lastSeenAt, sessions}. householdShort is
+          the first 6 chars of household_code + an ellipsis, or null — never
+          the full code, which is still a bearer-ish secret for the
+          pre-session sync trust model (see sync.js's module header).
+          lastSeenAt/sessions come from a live (expires_at > now) count over
+          the sessions table. Sort: signed-up users first, then by email.
+          Built from exactly three queries (allowed_emails, users, sessions
+          GROUP BY user_id) joined in JS — never a query per row.
+     POST /auth/admin/revoke   (Authorization: Bearer <token>, body {email})
+       -> the admin tool's "lock this person out" action. Same auth/admin
+          gate as above (401/403). Deliberately data-preserving: deletes the
+          target's allowed_emails row (so they can't sign in again) and all
+          their sessions rows (so devices already signed in stop working on
+          their next request), but does NOT delete their users row and does
+          NOT touch their household's KV sections or D1 library rows — an
+          admin mis-click must not vaporize someone's meal history, and
+          re-inviting the same email is all it takes to undo a revoke.
+          400 {error:'invalid_email'} for a missing/empty email. 400
+          {error:'self_revoke'} for revoking your own email — an admin
+          locking themselves out of the admin tool has no recovery path.
+          200 {ok:true, email, sessionsKilled, wasInvited, wasUser} —
+          idempotent: revoking an email with no allowed_emails row and/or no
+          user is still 200, with wasInvited/wasUser reporting what was
+          actually there.
      POST /auth/invite-user   (Authorization: Bearer <token>, body {email, note?})
        -> Phase 3D, D1: lets an ADMIN issue a fresh invite to someone outside
           any existing household — the "invite a friend" flow, as opposed to
@@ -980,6 +1012,159 @@ async function handleInviteUser(request, env, origin){
   return json({ok: true, email: rawEmail, seatsUsed: seatsUsed, seatsMax: seatsMax}, 200, origin);
 }
 
+// Shared by handleAdminUsers and handleAdminRevoke: resolves the bearer
+// token to a live session's user row and confirms is_admin, or returns null
+// for anything wrong (no/dead session, deleted user, non-admin) — one place
+// so both admin endpoints check the same way loadSessionUser/loadUserRow are
+// already checked everywhere else in this file, rather than reinventing it.
+async function loadAdminCaller(request, env){
+  const sessionUser = await loadSessionUser(request, env);
+  if(!sessionUser) return {error: 'unauthorized', status: 401};
+  const caller = await loadUserRow(env, sessionUser.userId);
+  if(!caller) return {error: 'unauthorized', status: 401};
+  if(!caller.is_admin) return {error: 'not_admin', status: 403};
+  return {caller: caller};
+}
+
+// GET /auth/admin/users — see the module header doc block for the full
+// response shape. Three queries total (allowed_emails, non-deleted users,
+// sessions grouped by user_id), joined in JS by email/user id rather than
+// querying per row.
+async function handleAdminUsers(request, env, origin){
+  const gate = await loadAdminCaller(request, env);
+  if(gate.error){
+    return json({error: gate.error}, gate.status, origin);
+  }
+
+  if(!d1Available(env)){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  const now = Date.now();
+  let allowedRows, userRows, sessionRows;
+  try{
+    const [allowedRes, usersRes, sessionsRes] = await Promise.all([
+      env.MESA_DB.prepare('SELECT email, note, added_at, household_code, member_slot FROM allowed_emails').all(),
+      env.MESA_DB.prepare('SELECT id, email, display_name, household_code, member_slot, is_admin, created_at FROM users WHERE deleted_at IS NULL').all(),
+      env.MESA_DB.prepare('SELECT user_id, COUNT(*) AS cnt, MAX(last_seen_at) AS last_seen FROM sessions WHERE expires_at > ? GROUP BY user_id').bind(now).all()
+    ]);
+    allowedRows = (allowedRes && Array.isArray(allowedRes.results)) ? allowedRes.results : [];
+    userRows = (usersRes && Array.isArray(usersRes.results)) ? usersRes.results : [];
+    sessionRows = (sessionsRes && Array.isArray(sessionsRes.results)) ? sessionsRes.results : [];
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  const sessionByUserId = {};
+  for(let i = 0; i < sessionRows.length; i++){
+    const r = sessionRows[i];
+    sessionByUserId[r.user_id] = {count: r.cnt || 0, lastSeen: r.last_seen || null};
+  }
+
+  const allowedByEmail = {};
+  for(let i = 0; i < allowedRows.length; i++) allowedByEmail[allowedRows[i].email] = allowedRows[i];
+
+  const userByEmail = {};
+  for(let i = 0; i < userRows.length; i++) userByEmail[userRows[i].email] = userRows[i];
+
+  // Union of both sets of emails — a signed-up user whose email somehow
+  // isn't (or no longer is) in allowed_emails still needs to show up, or an
+  // admin auditing access would have no way to see them.
+  const emails = Object.keys(allowedByEmail);
+  for(let i = 0; i < userRows.length; i++){
+    if(!Object.prototype.hasOwnProperty.call(allowedByEmail, userRows[i].email)) emails.push(userRows[i].email);
+  }
+
+  const rows = [];
+  for(let i = 0; i < emails.length; i++){
+    const email = emails[i];
+    const allowed = allowedByEmail[email] || null;
+    const user = userByEmail[email] || null;
+    const householdCode = user ? (user.household_code || null) : (allowed ? (allowed.household_code || null) : null);
+    const sess = (user && sessionByUserId[user.id]) ? sessionByUserId[user.id] : null;
+    rows.push({
+      email: email,
+      note: allowed ? (allowed.note || null) : null,
+      invitedAt: allowed ? allowed.added_at : null,
+      signedUp: !!user,
+      isAdmin: !!(user && user.is_admin),
+      memberSlot: user ? (user.member_slot || null) : (allowed ? (allowed.member_slot || null) : null),
+      householdShort: householdCode ? (String(householdCode).slice(0, 6) + '…') : null,
+      createdAt: user ? user.created_at : null,
+      lastSeenAt: sess ? sess.lastSeen : null,
+      sessions: sess ? sess.count : 0
+    });
+  }
+
+  rows.sort(function(a, b){
+    if(a.signedUp !== b.signedUp) return a.signedUp ? -1 : 1;
+    if(a.email < b.email) return -1;
+    if(a.email > b.email) return 1;
+    return 0;
+  });
+
+  // seatsUsed reuses the users rows already fetched above (same "COUNT
+  // non-deleted users" definition handleMe/handleInviteUser use) rather than
+  // issuing a fourth query just to count what's already in hand.
+  return json({seatsUsed: userRows.length, seatsMax: maxUsersOf(env), rows: rows}, 200, origin);
+}
+
+// POST /auth/admin/revoke — see the module header doc block for the full
+// contract. Deliberately does NOT delete the users row or touch any
+// household data: revoking access must be recoverable (re-invite the same
+// email) and an admin mis-click must never destroy someone's meal history.
+async function handleAdminRevoke(request, env, origin){
+  const gate = await loadAdminCaller(request, env);
+  if(gate.error){
+    return json({error: gate.error}, gate.status, origin);
+  }
+
+  let body;
+  try{ body = await request.json(); }catch(e){ body = null; }
+  const rawEmail = (isPlainObject(body) && typeof body.email === 'string') ? body.email.trim().toLowerCase() : '';
+  if(!rawEmail){
+    return json({error: 'invalid_email'}, 400, origin);
+  }
+  if(rawEmail === gate.caller.email){
+    return json({error: 'self_revoke'}, 400, origin);
+  }
+
+  if(!d1Available(env)){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  // Look up the user row (if any) BEFORE deleting anything, so sessions can
+  // be deleted by user_id (sessions have no email column) and wasUser
+  // reflects reality even though the users row itself is left untouched.
+  let userRow;
+  try{
+    userRow = await env.MESA_DB.prepare('SELECT id FROM users WHERE email = ?').bind(rawEmail).first();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+  const wasUser = !!userRow;
+
+  let sessionsKilled = 0;
+  if(userRow && userRow.id){
+    try{
+      const delSessions = await env.MESA_DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(userRow.id).run();
+      sessionsKilled = (delSessions && delSessions.meta && typeof delSessions.meta.changes === 'number') ? delSessions.meta.changes : 0;
+    }catch(e){
+      return json({error: 'server_error'}, 500, origin);
+    }
+  }
+
+  let wasInvited = false;
+  try{
+    const delAllowed = await env.MESA_DB.prepare('DELETE FROM allowed_emails WHERE email = ?').bind(rawEmail).run();
+    wasInvited = !!(delAllowed && delAllowed.meta && delAllowed.meta.changes > 0);
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  return json({ok: true, email: rawEmail, sessionsKilled: sessionsKilled, wasInvited: wasInvited, wasUser: wasUser}, 200, origin);
+}
+
 /* GET /auth/claim?link_id=<id> — one-time pickup of a token parked by the callback.
    200 {token} and the ticket is destroyed; 404 {error:'not_ready'} while the user is
    still completing (or abandoned) the Google flow. Deliberately gives the same 404 for
@@ -1040,6 +1225,12 @@ export async function handleAuthRoute(request, env, origin, url){
   }
   if(pathname === '/auth/invite-user' && request.method === 'POST'){
     return handleInviteUser(request, env, origin);
+  }
+  if(pathname === '/auth/admin/users' && request.method === 'GET'){
+    return handleAdminUsers(request, env, origin);
+  }
+  if(pathname === '/auth/admin/revoke' && request.method === 'POST'){
+    return handleAdminRevoke(request, env, origin);
   }
 
   return json({error: 'not_found'}, 404, origin);
