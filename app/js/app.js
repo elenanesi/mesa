@@ -175,6 +175,39 @@ function renderTodayHeader(){
 }
 
 /* ---------------- init ---------------- */
+// Boot resilience (bug-hardening pass): bootMesaApp() used to be one long chain sharing a
+// single catch — a throw in ANY step (even a cosmetic one like renderTodayHeader) killed
+// every step after it, with nothing recorded anywhere a phone owner could see. auth used to
+// be the LAST link in that chain, so a boot failure silently took sign-in down with it; auth
+// now runs independently via initAuthEarly() (js/auth.js), but the rest of boot was still
+// all-or-nothing. bootStage()/bootSkip() below give each step its own blast radius: a throw
+// in one is caught, logged (console + authLog, so it lands in "Trouble signing in?"'s
+// on-device log — see js/auth.js authLogText()), and every OTHER step still runs.
+//
+// bootStage(name, fn): runs fn(), returns true on success. On throw: console.error (as
+// before) + authLog('boot.fail', '<name>: <message>') and returns false so a caller with a
+// genuine dependency on this step's result can skip its own dependent step instead of running
+// on broken state (see bootSkip below and the 'recipe' stage's use of profOk).
+function bootStage(name, fn){
+  try{
+    fn();
+    return true;
+  }catch(err){
+    console.error('Mesa boot failed (' + name + ')', err);
+    if(typeof authLog === 'function') authLog('boot.fail', name + ': ' + ((err && err.message) || String(err)));
+    return false;
+  }
+}
+
+// Records a step that was deliberately NOT run because a real upstream dependency failed
+// (as opposed to a step that ran and threw — that's bootStage above). Kept distinct from
+// boot.fail so the diagnostics log reads "X failed, so Y was skipped" rather than two
+// unexplained failures.
+function bootSkip(name, reason){
+  console.warn('Mesa boot: skipped ' + name + ' (' + reason + ')');
+  if(typeof authLog === 'function') authLog('boot.skip', name + ': ' + reason);
+}
+
 // Must run after data/foods.js, data/recipes.js and engine.js (recipeNutrition) have
 // all loaded, and before anything reads RECIPES_DB — see render.js's recipeDisplay*
 // helpers for how the recipe screen/Today cards read it directly (no compat view).
@@ -184,51 +217,85 @@ function renderTodayHeader(){
 function bootMesaApp(){
   try{
     loadState();
-    applyCustomFoods();   // js/library.js — merge customFoods into FOODS before recipes need them
   }catch(err){
-    // These run before the promise chain below, so a throw here escaped bootMesaApp
-    // entirely and left no trace at all. Record it, then re-throw: the app genuinely
-    // cannot continue without state, but now the failure is visible in the gate's
-    // diagnostics instead of only in a console nobody can open on a phone.
+    // Runs before every other stage, so a throw here escaped bootMesaApp entirely and left
+    // no trace at all. Record it, then re-throw: every stage below reads state.js globals
+    // (PROF, customRecipes, currentProf, ...), so the app genuinely cannot continue without
+    // it — this is the one stage that stays fatal by design (see task brief: "leave as is").
     console.error('Mesa boot failed (state load)', err);
     if(typeof authLog === 'function') authLog('boot.fail', 'state: ' + ((err && err.message) || String(err)));
     throw err;
   }
 
+  // applyCustomFoods() used to share loadState()'s try/catch above — a throw here (e.g. a
+  // corrupted customFoods entry) took the WHOLE boot down with it, even though every stage
+  // below can still run on the bundled FOODS alone. It's a merge into FOODS before recipes
+  // need them (js/library.js), not a hard prerequisite for anything past this point.
+  bootStage('foods', applyCustomFoods);
+
   const catalogPromise = (typeof fetchBuiltinRecipeCatalogFromD1 === 'function')
     ? fetchBuiltinRecipeCatalogFromD1()
     : Promise.resolve(false);
 
-  catalogPromise.then(function(){
-    applyCustomRecipes(); // merges D1-backed built-ins or bundled fallback + user recipes
-                           // (built-in and custom alike — every renderer reads RECIPES_DB directly)
+  // fetchBuiltinRecipeCatalogFromD1() (js/sync.js) already wraps its own fetch in an
+  // AbortController timeout + .catch that resolves false instead of rejecting, so a
+  // timeout/offline/abort should already fall through to the bundled fallback catalog on
+  // its own — but boot must not just assume that holds. If the promise ever DID reject
+  // (a future sync.js change, some edge case its .catch doesn't cover), catch it HERE,
+  // outside the stage chain below, so the rest of boot still runs on the bundled catalog
+  // rather than the entire .then(...) block being skipped the way the old bare
+  // .then(...).catch(...) chain would have skipped it (see file-header PROBLEM note).
+  catalogPromise.catch(function(err){
+    console.warn('Mesa boot: catalog fetch rejected unexpectedly, continuing on bundled fallback', err);
+    if(typeof authLog === 'function') authLog('boot.fail', 'catalog: ' + ((err && err.message) || String(err)));
+    return false;
+  }).then(function(){
+    bootStage('recipes', applyCustomRecipes); // merges D1-backed built-ins or bundled fallback +
+                                               // user recipes (every renderer reads RECIPES_DB directly)
+
     // One-shot cleanup migration (js/library.js) for the pre-`u`-stamp couple-sync duplication
-    // ratchet (see its doc block) — must run AFTER customRecipes is populated and BEFORE the
-    // first render, so a just-cleaned-up library is what the user sees on open, not the ~200
-    // duplicate rows for one frame. Idempotent and a no-op (toast-free) on an already-clean
-    // library, so it's safe to leave running on every boot.
-    if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
-    renderTodayHeader();
-    applyProf(currentProf);
-    renderRecipe('salmon');
-    recipeOrigin = 'today';
-    maybeShowOnboarding();
+    // ratchet (see its doc block) — must run AFTER customRecipes is populated (state.js, not
+    // dependent on the 'recipes' stage above) and BEFORE the first render, so a just-cleaned-up
+    // library is what the user sees on open, not the ~200 duplicate rows for one frame.
+    // Idempotent and a no-op (toast-free) on an already-clean library, so it's safe to leave
+    // running on every boot. Independent of the 'recipes' stage's outcome — it operates on the
+    // raw customRecipes/deletedRecipes state, not on RECIPES_DB.
+    bootStage('cleanup', function(){
+      if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
+    });
+
+    bootStage('today-header', renderTodayHeader);
+
+    // renderRecipe below reads currentProf-derived state (PROF[currentProf], recipe prefs,
+    // "why" personalization) that applyProf() is what actually populates/refreshes — a real
+    // dependency, not just ordering. If applyProf failed, rendering the recipe screen would
+    // run on stale/broken profile state, so skip it and record why instead of guessing.
+    const profOk = bootStage('prof', function(){ applyProf(currentProf); });
+    if(profOk){
+      bootStage('recipe', function(){
+        renderRecipe('salmon');
+        recipeOrigin = 'today';
+      });
+    } else {
+      bootSkip('recipe', 'applyProf failed');
+    }
+
+    bootStage('onboarding', maybeShowOnboarding);
 
     // Task S1 (couple sync): a no-op wherever js/sync.js isn't loaded or a household was
     // never configured (syncState.code stays null — see state.js) — no network calls happen
     // in that case, per the ground rule that sync is an enhancement, never a dependency.
-    if(typeof initSync === 'function') initSync();
+    bootStage('sync', function(){ if(typeof initSync === 'function') initSync(); });
 
     // Phase 3A (account sign-in): a no-op wherever js/auth.js isn't loaded or no session
-    // token is stored — sign-in never gates anything, so this runs independently of initSync().
-    if(typeof initAuth === 'function') initAuth();
-  }).catch(function(err){
-    console.error('Mesa boot failed', err);
-    // Surface it in the sign-in diagnostics too: a failed boot used to take the whole
-    // auth layer down with it (initAuth ran at the end of this chain), and even now that
-    // sign-in is independent, a boot failure is exactly the kind of thing that is
-    // invisible on a phone. See js/auth.js:initAuthEarly's doc.
-    if(typeof authLog === 'function') authLog('boot.fail', (err && err.message) || String(err));
+    // token is stored — sign-in never gates anything, so this runs independently of initSync()
+    // and of every stage above (initAuthEarly() already ran before app.js even loaded).
+    bootStage('auth', function(){ if(typeof initAuth === 'function') initAuth(); });
+
+    // A log that reaches this line proves boot ran to completion (whether or not individual
+    // stages above failed) — distinguishes "boot finished, some stages degraded" from a boot
+    // that died silently with nothing after it in the log at all.
+    if(typeof authLog === 'function') authLog('boot.ok', 'reached end of boot');
   });
 }
 
