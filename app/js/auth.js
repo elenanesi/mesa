@@ -54,7 +54,7 @@
    appears not to work, since an installed PWA or a Safari cache can
    easily still be running last week's JavaScript.
    =================================================================== */
-const AUTH_BUILD = 'mesa-cad0c865a9ea'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
+const AUTH_BUILD = 'mesa-2c397a5bc741'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
 const AUTH_LOG_KEY = 'mesaAuthLog';
 const AUTH_LOG_MAX = 40;
 
@@ -359,9 +359,9 @@ function consumeAuthHash(){
 }
 
 function authErrorMessage(reason){
-  if(reason === ‘not_invited’) return ‘Your access to Mesa has been revoked or you haven’t been invited yet. Contact the person running this Mesa to restore access.’;
-  if(reason === ‘full’) return "Mesa is at capacity and can’t take new accounts.";
-  return ‘Sign-in didn’t work — please try again.’;
+  if(reason === 'not_invited') return "Your access to Mesa has been revoked or you haven’t been invited yet. Contact the person running this Mesa to restore access.";
+  if(reason === 'full') return "Mesa is at capacity and can’t take new accounts.";
+  return "Sign-in didn’t work — please try again.";
 }
 
 /* ---------------- Phase 3B: shared with sync.js ---------------- */
