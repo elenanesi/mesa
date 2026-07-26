@@ -419,9 +419,15 @@
           + '</div></div></td></tr>';
       }
 
-      var revokeBtn = isSelf
-        ? '<button class="cta ghostbtn small" disabled title="You can’t revoke your own access here">Revoke</button>'
-        : '<button class="cta ghostbtn small" data-action="revoke-start" data-idx="' + idx + '" type="button">Revoke</button>';
+      var isRevoked = row.signedUp && !row.allowed;
+      var actionBtn;
+      if(isRevoked){
+        actionBtn = ‘<button class="cta small" data-action="restore" data-idx="’ + idx + ‘" type="button">Restore</button>’;
+      } else if(isSelf){
+        actionBtn = ‘<button class="cta ghostbtn small" disabled title="You can’t revoke your own access here">Revoke</button>’;
+      } else {
+        actionBtn = ‘<button class="cta ghostbtn small" data-action="revoke-start" data-idx="’ + idx + ‘" type="button">Revoke</button>’;
+      }
 
       return '<tr data-idx="' + idx + '">'
         + '<td>' + email + (isSelf ? ' <span class="pill ghost">you</span>' : '') + '</td>'
@@ -431,7 +437,7 @@
         + '<td class="mono">' + (typeof row.sessions === 'number' ? row.sessions : 0) + '</td>'
         + '<td class="mono">' + fmtDate(row.lastSeenAt) + '</td>'
         + '<td>' + (row.isAdmin ? '<span class="pill terra">Admin</span>' : '') + '</td>'
-        + '<td>' + revokeBtn + '</td>'
+        + '<td>' + actionBtn + '</td>'
         + '</tr>';
     }).join('');
 
@@ -468,6 +474,10 @@
       doRevoke(row.email, btn);
       return;
     }
+    if(action === 'restore'){
+      doRestore(row.email, btn);
+      return;
+    }
   }
 
   function doRevoke(email, btnEl){
@@ -491,6 +501,29 @@
       if(code === 'self_revoke') text = 'You can’t revoke your own account.';
       else if(code === 'not_admin') text = 'This account isn’t an admin.';
       else if(code === 'invalid_email') text = 'That email looks invalid.';
+      alertInline(text);
+      renderTable();
+    });
+  }
+
+  function doRestore(email, btnEl){
+    if(btnEl){ btnEl.disabled = true; btnEl.textContent = 'Restoring…'; }
+    api('/auth/invite-user', {method: 'POST', body: JSON.stringify({email: email, note: 'restored'})}).then(function(res){
+      if(res.sessionDied) return;
+      if(res.networkError){
+        alertInline('Couldn't reach Mesa — check your connection and try again.');
+        renderTable();
+        return;
+      }
+      if(res.ok && res.body && res.body.ok){
+        alertInline('✓ Access restored for ' + email + '.');
+        loadUsers();
+        return;
+      }
+      var code = res.body && res.body.error;
+      var text = 'Couldn't restore that account — please try again.';
+      if(code === 'not_admin') text = 'This account isn't an admin.';
+      else if(code === 'full') text = 'All seats are full — can't restore.';
       alertInline(text);
       renderTable();
     });

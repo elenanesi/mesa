@@ -981,7 +981,26 @@ async function handleInviteUser(request, env, origin){
     return json({error: 'server_error'}, 500, origin);
   }
   if(existingUser){
-    return json({error: 'taken'}, 409, origin);
+    let stillAllowed;
+    try{
+      stillAllowed = await env.MESA_DB.prepare('SELECT email FROM allowed_emails WHERE email = ?').bind(rawEmail).first();
+    }catch(e){
+      return json({error: 'server_error'}, 500, origin);
+    }
+    if(stillAllowed){
+      return json({error: 'taken'}, 409, origin);
+    }
+    // Revoked user: re-insert allowed_emails to restore access. Keep their
+    // existing household_code/member_slot so they land back in their old
+    // household on next sign-in rather than getting a fresh one.
+    try{
+      await env.MESA_DB.prepare(
+        'INSERT INTO allowed_emails (email, note, added_at, household_code, member_slot) VALUES (?, ?, ?, (SELECT household_code FROM users WHERE id = ?), (SELECT member_slot FROM users WHERE id = ?))'
+      ).bind(rawEmail, note || 'restored', Date.now(), existingUser.id, existingUser.id).run();
+    }catch(e){
+      return json({error: 'server_error'}, 500, origin);
+    }
+    return json({ok: true, email: rawEmail, restored: true}, 200, origin);
   }
 
   // Refuse when the household cap is already reached — same COUNT the signup
