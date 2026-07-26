@@ -41,6 +41,12 @@
           first ALLOWED_ORIGINS entry rather than failing with no
           response at all.
      GET  /auth/me            (Authorization: Bearer <token>)
+       -> Phase 3D, D1 addendum: also returns isAdmin (bool, from
+          users.is_admin), seatsUsed (COUNT of non-deleted users) and
+          seatsMax (env.MAX_USERS, default 20), appended after the existing
+          fields, so the client can show "N of M seats used" and only render
+          the invite-user box for admins. Every field that existed before
+          this batch is unchanged in name, value and position.
      POST /auth/logout        (Authorization: Bearer <token>)
        -> these two DO return JSON (they're called via fetch() from the
           already-loaded app, not via top-level navigation).
@@ -86,6 +92,52 @@
                                           household yet) is fine to update in
                                           place — same idempotent contract as
                                           re-running the whole call.
+     POST /auth/invite-user   (Authorization: Bearer <token>, body {email, note?})
+       -> Phase 3D, D1: lets an ADMIN issue a fresh invite to someone outside
+          any existing household — the "invite a friend" flow, as opposed to
+          invite-partner's "add a second person to MY household" flow. Gated
+          on users.is_admin (migration 0005_admin_flag.sql) rather than
+          household membership. Failure modes, in the order checked:
+            401 {error:'unauthorized'}   no/dead session.
+            403 {error:'not_admin'}      caller's is_admin is not 1. Checked
+                                          right after auth, before touching
+                                          the request body, so a non-admin
+                                          never gets to spend the rate budget
+                                          or learn anything from validation
+                                          errors either.
+            400 {error:'invalid_email'}  same shape check as invite-partner
+                                          (INVITE_EMAIL_MAX_LEN/INVITE_EMAIL_RE,
+                                          reused rather than reimplemented).
+                                          Checked BEFORE the rate limit —
+                                          same B4 lesson: free string
+                                          validation must never cost budget,
+                                          or a typo could lock an admin out
+                                          of inviting anyone for a day.
+            429 {error:'rate_limited'}   more than 10 calls/day for this
+                                          admin's user id (own KV prefix,
+                                          separate budget from invite-partner).
+            409 {error:'taken'}          a USER (not just an allowed_emails
+                                          row) already exists with this email.
+            409 {error:'full'}           COUNT(non-deleted users) is already
+                                          >= seatsMax (env.MAX_USERS, default
+                                          20) — refused before issuing an
+                                          invite that a subsequent sign-in
+                                          would just bounce with 'full' anyway.
+            200 {ok:true, email,
+                 seatsUsed, seatsMax}     success — an allowed_emails row is
+                                          INSERT OR REPLACEd for the target
+                                          email with household_code = NULL and
+                                          member_slot = NULL (note defaults to
+                                          'invite' when the caller doesn't
+                                          supply one). NULL/NULL is not "not
+                                          set up yet" — handleCallback reads
+                                          exactly that as "no household on
+                                          file", so the invitee mints their
+                                          OWN fresh household on first sign-in
+                                          instead of landing in the admin's.
+                                          Idempotent: inviting the same email
+                                          again just re-issues the same NULL/
+                                          NULL row.
 
    Session tokens: 32 random bytes, hex-encoded, handed to the browser
    once (in the callback redirect fragment — fragments never reach the
@@ -131,6 +183,15 @@ const INVITE_RATE_WINDOW_SECONDS = 86400; // 24h
 const INVITE_EMAIL_MAX_LEN = 254; // RFC 5321 practical mailbox length cap
 const INVITE_EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/; // conservative shape check — NOT full RFC 5322
 const OTHER_MEMBER_SLOT = {elena: 'partner', partner: 'elena'}; // the app's two opaque slot ids (see PHASE3B spec's "ground rule")
+
+// Phase 3D, D1: admin-issued invites (POST /auth/invite-user) — a separate,
+// more generous budget than the partner flow's INVITE_RATE_LIMIT since an
+// admin legitimately inviting several friends in a day shouldn't collide
+// with the partner-invite counter (different KV key prefix, see below).
+const ADMIN_INVITE_RATE_LIMIT = 10; // per admin user id per day
+const ADMIN_INVITE_RATE_WINDOW_SECONDS = 86400; // 24h
+const ADMIN_INVITE_NOTE_MAX_LEN = 200; // free-text admin note — generous but bounded
+const DEFAULT_MAX_USERS = 20; // fallback when env.MAX_USERS is unset/unparseable — matches handleCallback's signup cap
 
 const GOOGLE_AUTH_URL = 'https://accounts.google.com/o/oauth2/v2/auth';
 const GOOGLE_TOKEN_URL = 'https://oauth2.googleapis.com/token';
@@ -568,11 +629,18 @@ async function loadSessionFromRequest(request, env){
 async function loadUserRow(env, userId){
   try{
     return await env.MESA_DB.prepare(
-      'SELECT id, email, display_name, picture_url, household_code, member_slot FROM users WHERE id = ? AND deleted_at IS NULL'
+      'SELECT id, email, display_name, picture_url, household_code, member_slot, is_admin FROM users WHERE id = ? AND deleted_at IS NULL'
     ).bind(userId).first();
   }catch(e){
     return null;
   }
+}
+
+// Phase 3D, D1: seatsMax is env.MAX_USERS parsed as an int, same fallback
+// handleCallback's signup cap uses — one place both /auth/me and
+// /auth/invite-user read it from so they can never disagree on the cap.
+function maxUsersOf(env){
+  return (env && parseInt(env.MAX_USERS, 10)) || DEFAULT_MAX_USERS;
 }
 
 // Resolves a request's "Authorization: Bearer <token>" all the way to
@@ -666,6 +734,19 @@ async function handleMe(request, env, origin){
     }];
   }
 
+  // Phase 3D, D1: seatsUsed is the same "COUNT(*) non-deleted users" the
+  // signup cap in handleCallback enforces, so the UI's "N of M seats used"
+  // line always matches what would actually let/refuse the next signup.
+  // Best-effort like the rest of this handler's secondary queries — a
+  // failed count falls back to 0 rather than failing the whole /auth/me call.
+  let seatsUsed = 0;
+  try{
+    const seatCountRow = await env.MESA_DB.prepare('SELECT COUNT(*) AS c FROM users WHERE deleted_at IS NULL').first();
+    seatsUsed = (seatCountRow && typeof seatCountRow.c === 'number') ? seatCountRow.c : 0;
+  }catch(e){
+    seatsUsed = 0;
+  }
+
   return json({
     user: {
       id: user.id,
@@ -677,7 +758,10 @@ async function handleMe(request, env, origin){
     memberSlot: user.member_slot || null,
     householdMembers: householdMembers,
     expiresAt: session.expires_at,
-    members: members
+    members: members,
+    isAdmin: !!user.is_admin,
+    seatsUsed: seatsUsed,
+    seatsMax: maxUsersOf(env)
   }, 200, origin);
 }
 
@@ -807,6 +891,95 @@ async function handleInvitePartner(request, env, origin){
   return json({ok: true, email: rawEmail, memberSlot: targetSlot}, 200, origin);
 }
 
+// Phase 3D, D1: POST /auth/invite-user — see the doc-comment block in the
+// module header for the full list of status codes this can return. Mirrors
+// handleInvitePartner's structure (auth via loadSessionUser, free-string
+// validation before the rate-limit check, INSERT OR REPLACE into
+// allowed_emails) but is gated on is_admin rather than household membership,
+// and deliberately does NOT carry the caller's household_code/member_slot
+// onto the new row — the whole point is a FRESH household for the invitee.
+async function handleInviteUser(request, env, origin){
+  const sessionUser = await loadSessionUser(request, env);
+  if(!sessionUser){
+    return json({error: 'unauthorized'}, 401, origin);
+  }
+
+  const caller = await loadUserRow(env, sessionUser.userId);
+  if(!caller){
+    return json({error: 'unauthorized'}, 401, origin);
+  }
+  if(!caller.is_admin){
+    return json({error: 'not_admin'}, 403, origin);
+  }
+
+  // Shape-check the email (and cap the optional note) BEFORE the rate limit —
+  // same ordering lesson as handleInvitePartner: pure string validation costs
+  // nothing, so a typo must not burn a day's worth of an admin's invite budget.
+  let body;
+  try{ body = await request.json(); }catch(e){ body = null; }
+  const rawEmail = (isPlainObject(body) && typeof body.email === 'string') ? body.email.trim().toLowerCase() : '';
+  if(!rawEmail || rawEmail.length > INVITE_EMAIL_MAX_LEN || !INVITE_EMAIL_RE.test(rawEmail)){
+    return json({error: 'invalid_email'}, 400, origin);
+  }
+  const rawNote = (isPlainObject(body) && typeof body.note === 'string') ? body.note.trim().slice(0, ADMIN_INVITE_NOTE_MAX_LEN) : '';
+  const note = rawNote || 'invite';
+
+  // Rate limit AFTER validation, keyed on the admin's own user id — a
+  // separate KV prefix from invite-partner-rate so the two budgets never
+  // collide even if the same person both invites a partner and admin-invites
+  // friends on the same day.
+  if(await rateLimited(env, 'invite-user-rate:' + sessionUser.userId, ADMIN_INVITE_RATE_LIMIT, ADMIN_INVITE_RATE_WINDOW_SECONDS)){
+    return json({error: 'rate_limited'}, 429, origin);
+  }
+
+  if(!d1Available(env)){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  let existingUser;
+  try{
+    existingUser = await env.MESA_DB.prepare(
+      'SELECT id FROM users WHERE email = ? AND deleted_at IS NULL'
+    ).bind(rawEmail).first();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+  if(existingUser){
+    return json({error: 'taken'}, 409, origin);
+  }
+
+  // Refuse when the household cap is already reached — same COUNT the signup
+  // path in handleCallback checks, so an invite is never issued for a seat
+  // that a subsequent Google sign-in would just bounce with 'full' anyway.
+  let countRow;
+  try{
+    countRow = await env.MESA_DB.prepare('SELECT COUNT(*) AS c FROM users WHERE deleted_at IS NULL').first();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+  const seatsUsed = (countRow && typeof countRow.c === 'number') ? countRow.c : 0;
+  const seatsMax = maxUsersOf(env);
+  if(seatsUsed >= seatsMax){
+    return json({error: 'full'}, 409, origin);
+  }
+
+  // household_code/member_slot are deliberately NULL, not the caller's own —
+  // an admin-issued invite is for a brand-new person, not another seat in
+  // the admin's own household (that's what invite-partner is for). NULL
+  // here is exactly what handleCallback's attach logic reads as "no household
+  // on file yet", which is what makes it mint the invitee a fresh household
+  // code on their first sign-in instead of joining anyone else's.
+  try{
+    await env.MESA_DB.prepare(
+      'INSERT OR REPLACE INTO allowed_emails (email, note, added_at, household_code, member_slot) VALUES (?, ?, ?, NULL, NULL)'
+    ).bind(rawEmail, note, Date.now()).run();
+  }catch(e){
+    return json({error: 'server_error'}, 500, origin);
+  }
+
+  return json({ok: true, email: rawEmail, seatsUsed: seatsUsed, seatsMax: seatsMax}, 200, origin);
+}
+
 /* GET /auth/claim?link_id=<id> — one-time pickup of a token parked by the callback.
    200 {token} and the ticket is destroyed; 404 {error:'not_ready'} while the user is
    still completing (or abandoned) the Google flow. Deliberately gives the same 404 for
@@ -864,6 +1037,9 @@ export async function handleAuthRoute(request, env, origin, url){
   }
   if(pathname === '/auth/invite-partner' && request.method === 'POST'){
     return handleInvitePartner(request, env, origin);
+  }
+  if(pathname === '/auth/invite-user' && request.method === 'POST'){
+    return handleInviteUser(request, env, origin);
   }
 
   return json({error: 'not_found'}, 404, origin);
