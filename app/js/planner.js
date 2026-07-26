@@ -329,6 +329,17 @@ function recipeHitsAvoid(recipe, avoidList){
   if(!avoidList || !avoidList.length) return false;
   return recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; });
 }
+
+// Task D4: diet preference filter. Returns true if recipe violates the diet.
+// vegan: only recipes with 'veggie' tag are allowed.
+// lactose-intolerant: lactose already added to avoid list in commitDiet, so avoid check handles it.
+function recipeViolatesDiet(recipe, dietList){
+  if(!dietList || !dietList.length) return false;
+  // If ANY person has a vegan preference, recipe must have 'veggie' tag
+  const hasVegan = dietList.indexOf('vegan') !== -1;
+  if(hasVegan && !hasTag(recipe, 'veggie')) return true;
+  return false;
+}
 // PERSONAL-PREFS: recipePrefs (state.js) is now {elena:{},partner:{}} — reads always go
 // through one specific person. recipeFavoritedByAny/recipeDownedByAny are the "either
 // person" checks a SHARED slot needs (Decisions: "either-down excludes, either-favorite
@@ -345,8 +356,12 @@ function recipeDownedByAny(id, persons){
 // who this candidate pool is FOR — a shared slot passes both, a solo slot passes just the
 // one person — used only for the down-vote filter below (opts.includeThumbsDown bypasses
 // it regardless of persons, same as before this batch).
+// Task D4: also filters by diet preferences — if any person has a vegan diet, only 'veggie'
+// recipes are included. Lactose-intolerant is already handled by avoid list (added in commitDiet).
 function candidatesFor(slot, styleKey, avoidList, persons, opts){
   opts = opts || {};
+  // Task D4: build diet list from persons' preferences
+  const dietList = (persons || []).map(function(p){ return (PROF[p] && PROF[p].diet) || 'none'; }).filter(function(d){ return d !== 'none'; });
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return !r.occasional
@@ -358,6 +373,7 @@ function candidatesFor(slot, styleKey, avoidList, persons, opts){
       && !(slot === 'lunch' && recipeSlotList(r).indexOf('dinner') !== -1 && isDinnerOnlyProteinMain(id))
       && r.styles.indexOf(styleKey) !== -1
       && !recipeHitsAvoid(r, avoidList)
+      && !recipeViolatesDiet(r, dietList)
       && recipeOptionsViable(r, avoidList);
   }).sort();
 }
@@ -377,14 +393,18 @@ function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the re
 // B2 tagging handoff). Sides need not carry the current slot in `slots` — a side is a side
 // at lunch or dinner regardless of its own slot metadata (e.g. a side tagged only for
 // 'side'/'snack' can still compose into a lunch or dinner meal). Sorted id order.
+// Task D4: also filters by diet preferences.
 function sidePoolFor(avoidList, persons){
+  // Task D4: build diet list from persons' preferences
+  const dietList = (persons || []).map(function(p){ return (PROF[p] && PROF[p].diet) || 'none'; }).filter(function(d){ return d !== 'none'; });
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return r.role === 'side'
       && !r.occasional
       && !recipeDownedByAny(id, persons)
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
-      && !recipeHitsAvoid(r, avoidList);
+      && !recipeHitsAvoid(r, avoidList)
+      && !recipeViolatesDiet(r, dietList);
   }).sort();
 }
 

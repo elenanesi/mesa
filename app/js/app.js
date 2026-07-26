@@ -72,11 +72,15 @@ function obShow(i){
   obIndex = i;
   document.querySelectorAll('.ob-slide').forEach(function(s, idx){ s.classList.toggle('active', idx === i); });
   document.querySelectorAll('.ob-dots .d').forEach(function(d, idx){ d.classList.toggle('on', idx === i); });
-  document.getElementById('obNext').textContent = i === 2 ? "Let's go →" : 'Continue';
+  document.getElementById('obNext').textContent = i === 5 ? "Let's go →" : 'Continue';
+  // Task D3: populate body stats slide (slide 3) on first show
+  if(i === 3) obPopulateBodyStats();
+  // Task D4: populate diet slide (slide 4) on first show
+  if(i === 4) obPopulateDiet();
 }
 
 function obNext(){
-  if(obIndex < 2){ obShow(obIndex + 1); } else { finishOnboarding(); }
+  if(obIndex < 5){ obShow(obIndex + 1); } else { finishOnboarding(); }
 }
 
 function renderObGoals(key){
@@ -121,6 +125,104 @@ function replayOnboarding(){
   obPick(obProfile);
   obShow(0);
   document.getElementById('onboard').classList.remove('hidden');
+}
+
+function obPopulateBodyStats(){
+  // Task D3: populate year dropdown with sensible range (18-90 years old from today)
+  const select = document.getElementById('obDobY');
+  if(select){
+    const now = new Date().getFullYear();
+    for(let y = now - 18; y >= now - 90; y--){
+      const opt = document.createElement('option');
+      opt.value = y;
+      opt.textContent = y;
+      select.appendChild(opt);
+    }
+    if(typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].dobY){
+      select.value = PROF[obProfile].dobY;
+    }
+  }
+  // Populate month dropdown
+  const monthSelect = document.getElementById('obDobM');
+  if(monthSelect){
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    months.forEach(function(m, i){
+      const opt = document.createElement('option');
+      opt.value = i + 1;
+      opt.textContent = m;
+      monthSelect.appendChild(opt);
+    });
+    if(typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].dobM){
+      monthSelect.value = PROF[obProfile].dobM;
+    }
+  }
+  // Populate activity level dropdown
+  const actSelect = document.getElementById('obActivity');
+  if(actSelect){
+    ACTIVITY_LEVELS.forEach(function(a, i){
+      const opt = document.createElement('option');
+      opt.value = i;
+      opt.textContent = a.t + ' (' + a.d + ')';
+      actSelect.appendChild(opt);
+    });
+    if(typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].activity){
+      actSelect.value = ACTIVITY_LEVELS.findIndex(function(a){ return a.f === PROF[obProfile].activity; });
+    }
+  }
+  // Populate height and weight fields
+  if(typeof PROF !== 'undefined' && PROF[obProfile]){
+    const hField = document.getElementById('obHeightVal');
+    if(hField && PROF[obProfile].heightCm) hField.value = PROF[obProfile].heightCm;
+    const wField = document.getElementById('obWeightVal');
+    if(wField && PROF[obProfile].weightKg) wField.value = PROF[obProfile].weightKg;
+  }
+  // Populate sex radio buttons
+  if(typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].sex){
+    const radios = document.getElementsByName('obSex');
+    radios.forEach(function(r){ r.checked = r.value === PROF[obProfile].sex; });
+  }
+}
+
+function obPopulateDiet(){
+  // Task D4: populate diet radio buttons
+  if(typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].diet){
+    const radios = document.getElementsByName('obDiet');
+    radios.forEach(function(r){ r.checked = r.value === PROF[obProfile].diet; });
+  } else {
+    // Default to 'none' if not set
+    const radios = document.getElementsByName('obDiet');
+    radios.forEach(function(r){ r.checked = r.value === 'none'; });
+  }
+}
+
+function obSetSex(sex){
+  commitSex(obProfile, sex);
+}
+
+function obSetDob(){
+  const y = document.getElementById('obDobY');
+  const m = document.getElementById('obDobM');
+  if(y && y.value && m && m.value){
+    const dobY = parseInt(y.value);
+    const dobM = parseInt(m.value);
+    if(!isNaN(dobY) && !isNaN(dobM)){
+      commitDob(obProfile, dobY, dobM);
+    }
+  }
+}
+
+function obSetActivity(){
+  const select = document.getElementById('obActivity');
+  if(select && select.value !== ''){
+    const idx = parseInt(select.value);
+    if(!isNaN(idx) && ACTIVITY_LEVELS[idx]){
+      commitActivity(obProfile, idx);
+    }
+  }
+}
+
+function obSetDiet(diet){
+  commitDiet(obProfile, diet);
 }
 
 function maybeShowOnboarding(){

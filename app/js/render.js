@@ -3344,6 +3344,44 @@ function setActivity(i){
   afterBasicsChange(a.t + ' (×' + a.f + ')');
 }
 
+// Task D3: onboarding commit functions (body metrics & diet)
+function commitSex(prof, sex){
+  if(!PROF[prof]) return;
+  PROF[prof].sex = sex;
+  persist();
+}
+
+function commitDob(prof, dobY, dobM){
+  if(!PROF[prof]) return;
+  PROF[prof].dobY = dobY;
+  PROF[prof].dobM = dobM;
+  applyProf(prof);
+}
+
+function commitActivity(prof, i){
+  const a = ACTIVITY_LEVELS[i];
+  if(!PROF[prof] || !a) return;
+  PROF[prof].activity = a.f;
+  applyProf(prof);
+}
+
+function commitDiet(prof, diet){
+  if(!PROF[prof]) return;
+  if(DIET_KEYS.indexOf(diet) === -1) return;
+  PROF[prof].diet = diet;
+  // Lactose-intolerant: add lactose to avoid list if not already there
+  if(diet === 'lactose-intolerant'){
+    const avoid = PROF[prof].avoid || [];
+    if(avoid.indexOf('lactose') === -1){
+      avoid.push('lactose');
+      PROF[prof].avoid = avoid;
+    }
+  } else if(diet === 'vegan'){
+    // Vegan: no special avoid setup (filter happens in planner.js)
+  }
+  persist();
+}
+
 // Manual calorie override, ±50 per tap, clamped to a sane band with a friendly note.
 function stepCal(delta){
   const p = PROF[currentProf];

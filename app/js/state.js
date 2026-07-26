@@ -500,6 +500,12 @@ const AVOID_KEYS = ['lactose', 'gluten', 'shellfish', 'nuts', 'raw-onion', 'spic
 const AVOID_LABELS = {lactose: 'Lactose', gluten: 'Gluten', shellfish: 'Shellfish', nuts: 'Nuts', 'raw-onion': 'Raw onion', spicy: 'Spicy'};
 function avoidLabel(key){ return AVOID_LABELS[key] || capitalizeFirst(key); }
 
+// Per-person diet preference (task D4): none / vegan / lactose-intolerant.
+// Vegan = vegetarian (filters to 'veggie' recipes only). Lactose-intolerant adds 'lactose' to avoid.
+const DIET_KEYS = ['none', 'vegan', 'lactose-intolerant'];
+const DIET_LABELS = {none: 'None', vegan: 'Vegan (vegetarian)', 'lactose-intolerant': 'Lactose-intolerant'};
+function dietLabel(key){ return DIET_LABELS[key] || capitalizeFirst(key); }
+
 // Per-profile goal checklist (task B1 — fixes the bug where unchecking "Gentle fat
 // loss" did nothing and Andrea saw Elena's fat-loss goal). Single copy source for
 // render.js:renderGoalsEditor() ("Profile" screen) — each entry's key is a boolean on
@@ -538,6 +544,7 @@ const PROF = {
   elena:   {seg:DISPLAY_NAME_DEFAULTS.elena, av:avatarInitial(DISPLAY_NAME_DEFAULTS.elena), displayName:DISPLAY_NAME_DEFAULTS.elena,
             sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,
             activity:1.55,
+            diet:'none',
             calCustom:null, calNote:'',
             coachT:'Today leans thyroid-friendly 🦋', hashi:false,
             // goals (task B1/B2): source of truth for goalAdj/goalName/goalTag, all derived
@@ -554,6 +561,7 @@ const PROF = {
   partner: {seg:DISPLAY_NAME_DEFAULTS.partner, av:avatarInitial(DISPLAY_NAME_DEFAULTS.partner), displayName:DISPLAY_NAME_DEFAULTS.partner,
             sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
             activity:1.375,
+            diet:'none',
             calCustom:null, calNote:'',
             coachT:'Today is built for muscle 💪', hashi:false,
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
@@ -808,7 +816,7 @@ function todayISO(){
 // verbatim by js/sync.js's profileSectionData()/applyProfileSectionData(), so adding
 // `displayName` here is the ENTIRE change needed to make a rename persist AND sync
 // exactly like weightKg/calNote already do — no separate sync-side code.
-const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid', 'goals'];
+const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'diet', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid', 'goals'];
 
 function buildSnapshot(){
   const profiles = {};
@@ -978,7 +986,7 @@ function loadState(){
   // rather than ever showing "" or `undefined`.
   const PROFILE_FIELD_TYPE = {
     displayName: 'string', sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
-    activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
+    activity: 'number', diet: 'string', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
     avoid: 'string[]', goals: 'object'
   };
   if(saved.profiles && typeof saved.profiles === 'object'){
@@ -1013,7 +1021,10 @@ function loadState(){
         const ok = want === 'number|null' ? (v === null || typeof v === 'number')
           : want === 'string[]' ? (Array.isArray(v) && v.every(function(x){ return typeof x === 'string'; }))
           : (typeof v === want);
-        if(ok) p[f] = want === 'string[]' ? v.slice() : v;
+        if(ok){
+          if(f === 'diet' && DIET_KEYS.indexOf(v) === -1) return;
+          p[f] = want === 'string[]' ? v.slice() : v;
+        }
       });
     });
   }

@@ -24,6 +24,7 @@ function ageOf(p){
 }
 // Mifflin-St Jeor: male 10w + 6.25h − 5a + 5 · female 10w + 6.25h − 5a − 161
 function bmrOf(p){
+  if(p.sex == null || p.dobY == null || p.dobM == null || p.heightCm == null || p.weightKg == null) return NaN;
   const base = 10 * p.weightKg + 6.25 * p.heightCm - 5 * ageOf(p);
   return p.sex === 'male' ? base + 5 : base - 161;
 }
@@ -114,21 +115,34 @@ function recomputeProf(key){
   p.recCal = recommendedCal(p);
   if(p.calCustom !== null && p.calCustom === p.recCal) p.calCustom = null; // drifted back onto the recommendation
   p.calGoalNum = (p.calCustom !== null) ? p.calCustom : p.recCal;
-  p.calGoal = fmtKcal(p.calGoalNum);
-  p.cals = fmtKcal(p.calGoalNum) + ' kcal';
-  p.calLeft = fmtKcal(p.calGoalNum - p.consumedKcal);
-  p.off = Math.round(351.8 * Math.min(1, p.consumedKcal / p.calGoalNum)); // ring arc = fraction of kcal still left
-  const kcal = p.calGoalNum;
-  const targetP = Math.round(kcal * p.kP / 100 / 4);
-  const targetC = Math.round(kcal * p.kC / 100 / 4);
-  const targetF = Math.round(kcal * p.kF / 100 / 9);
-  p.targetP = targetP; p.targetC = targetC; p.targetF = targetF;
-  p.mp = p.consumed.p + ' / ' + targetP + ' g';
-  p.mc = p.consumed.c + ' / ' + targetC + ' g';
-  p.mf = p.consumed.f + ' / ' + targetF + ' g';
-  p.bp = Math.min(100, Math.round(p.consumed.p / targetP * 100)) + '%';
-  p.bc = Math.min(100, Math.round(p.consumed.c / targetC * 100)) + '%';
-  p.bff = Math.min(100, Math.round(p.consumed.f / targetF * 100)) + '%';
+  // Handle incomplete profiles (null body fields): show placeholder copy, no calorie targets.
+  if(!isFinite(p.calGoalNum)){
+    p.calGoal = '—';
+    p.cals = 'Complete your profile to set targets';
+    p.calLeft = '—';
+    p.off = 0;
+    p.targetP = 0; p.targetC = 0; p.targetF = 0;
+    p.mp = p.consumed.p + ' / — g';
+    p.mc = p.consumed.c + ' / — g';
+    p.mf = p.consumed.f + ' / — g';
+    p.bp = '—'; p.bc = '—'; p.bff = '—';
+  } else {
+    p.calGoal = fmtKcal(p.calGoalNum);
+    p.cals = fmtKcal(p.calGoalNum) + ' kcal';
+    p.calLeft = fmtKcal(p.calGoalNum - p.consumedKcal);
+    p.off = Math.round(351.8 * Math.min(1, p.consumedKcal / p.calGoalNum)); // ring arc = fraction of kcal still left
+    const kcal = p.calGoalNum;
+    const targetP = Math.round(kcal * p.kP / 100 / 4);
+    const targetC = Math.round(kcal * p.kC / 100 / 4);
+    const targetF = Math.round(kcal * p.kF / 100 / 9);
+    p.targetP = targetP; p.targetC = targetC; p.targetF = targetF;
+    p.mp = p.consumed.p + ' / ' + targetP + ' g';
+    p.mc = p.consumed.c + ' / ' + targetC + ' g';
+    p.mf = p.consumed.f + ' / ' + targetF + ' g';
+    p.bp = Math.min(100, Math.round(p.consumed.p / targetP * 100)) + '%';
+    p.bc = Math.min(100, Math.round(p.consumed.c / targetC * 100)) + '%';
+    p.bff = Math.min(100, Math.round(p.consumed.f / targetF * 100)) + '%';
+  }
   // Good/sat fat line (task D1 item 3 "Today = Log"): the REAL split of today's logged
   // fat (planner.js:recomputeConsumed sums satFat straight from each LogEntry, itself
   // computed at log time by recipeNutrition()/foodMacros()) — no more 75/25 target-based

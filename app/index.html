@@ -653,13 +653,52 @@
         </div>
         <div class="row" id="obGoalsPreview" style="gap:7px;flex-wrap:wrap;margin-top:14px"></div>
       </div>
+      <!-- Task D3: body metrics (sex, DOB, height, weight, activity level) -->
+      <div class="ob-slide">
+        <h1 style="text-align:center">Your body stats</h1>
+        <p class="sub" style="text-align:center">Used to calculate your personal calorie & nutrition targets.</p>
+        <div class="field" style="margin-top:14px"><label>Sex</label>
+          <div class="row" style="gap:8px;margin-top:6px">
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="obSex" value="female" onchange="obSetSex('female')"> Female</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="obSex" value="male" onchange="obSetSex('male')"> Male</label>
+            <label style="display:flex;align-items:center;gap:6px;cursor:pointer"><input type="radio" name="obSex" value="prefer-not" onchange="obSetSex('prefer-not')"> Prefer not to say</label>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Date of birth</label>
+          <div class="row" style="gap:8px;margin-top:6px">
+            <select id="obDobY" style="flex:1" onchange="obSetDob()"><option value="">Year</option></select>
+            <select id="obDobM" style="flex:1" onchange="obSetDob()"><option value="">Month</option></select>
+          </div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Height</label>
+          <div class="inp"><span>cm</span><input class="sv-val" id="obHeightVal" type="text" inputmode="decimal" style="width:5em" placeholder="168" onblur="commitHeight(this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"></div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Weight</label>
+          <div class="inp"><span>kg</span><input class="sv-val" id="obWeightVal" type="text" inputmode="decimal" style="width:5em" placeholder="64" onblur="commitWeight(this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"></div>
+        </div>
+        <div class="field" style="margin-top:12px"><label>Activity level</label>
+          <select id="obActivity" style="width:100%;margin-top:6px" onchange="obSetActivity()"><option value="">Choose activity level</option></select>
+        </div>
+      </div>
+      <!-- Task D4: dietary preference -->
+      <div class="ob-slide">
+        <h1 style="text-align:center">Dietary preference</h1>
+        <p class="sub" style="text-align:center">Shapes what meals the planner suggests. You can change this anytime in Profile → Basics.</p>
+        <div class="field" style="margin-top:14px"><label>Your preference</label>
+          <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="none" onchange="obSetDiet('none')"> No restriction</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="vegan" onchange="obSetDiet('vegan')"> Vegan (vegetarian recipes only)</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="lactose-intolerant" onchange="obSetDiet('lactose-intolerant')"> Lactose-intolerant</label>
+          </div>
+        </div>
+      </div>
       <div class="ob-slide">
         <div class="ob-emoji">✅</div>
         <h1>Your first week is ready</h1>
         <p class="sub" style="text-align:center">7 days, balanced meals, one shopping list — tap in any time to see why a meal fits you.</p>
       </div>
     </div>
-    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span></div>
+    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
     <button class="cta" id="obNext" onclick="obNext()">Continue</button>
   </div>
 
