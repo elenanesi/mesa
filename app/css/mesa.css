@@ -546,6 +546,18 @@ body.gate-open{overflow:hidden;}
 .eaten-chip.eaten-chip-add{border-style:dashed;opacity:.5;cursor:pointer;}
 .eaten-chip.eaten-chip-add .ec-icon{background:#eef0ec;}
 
+/* meal card action buttons row */
+.meal-actions-row{display:flex;align-items:center;gap:8px;flex-shrink:0;}
+.meal-act-btn{
+  width:36px;height:36px;border-radius:12px;border:1.5px solid var(--border);
+  background:var(--card);color:var(--muted);font-size:16px;
+  display:grid;place-items:center;cursor:pointer;flex-shrink:0;
+  transition:transform .12s, border-color .15s, color .15s;transform-origin:center;
+}
+.meal-act-btn:active{transform:scale(.88);}
+.meal-act-btn:hover{border-color:var(--sage);color:var(--sage);}
+.meal-act-btn.act-skip:hover{border-color:var(--muted);color:var(--text);}
+
 /* cute meal log button */
 .meal-log-btn{
   width:44px;height:44px;border-radius:14px;border:0;

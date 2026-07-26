@@ -2886,7 +2886,11 @@ function renderTodayCardActions(){
       // Remove any done badge
       var oldBadge = card3 ? card3.querySelector('.done-badge') : null;
       if(oldBadge) oldBadge.remove();
-      wrap.innerHTML = '<button class="meal-log-btn" aria-label="Log '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')" title="Mark as eaten"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-2.25-2.25h-1.5a2.25 2.25 0 0 0-2.15 1.586z"/><path d="M9.298 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 16.5 3h-.298"/><path d="m9 14 2 2 4-4"/></svg></button>';
+      wrap.innerHTML = '<div class="meal-actions-row">'
+        + '<button class="meal-act-btn act-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')" title="Skip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 14"/><path d="M19 5L5 19"/></svg></button>'
+        + '<button class="meal-act-btn act-swap" aria-label="Swap '+label+'" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)" title="Swap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg></button>'
+        + '<button class="meal-log-btn" aria-label="Log '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')" title="Mark as eaten"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-2.25-2.25h-1.5a2.25 2.25 0 0 0-2.15 1.586z"/><path d="M9.298 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 16.5 3h-.298"/><path d="m9 14 2 2 4-4"/></svg></button>'
+        + '</div>';
     }
   });
 }
@@ -3171,12 +3175,10 @@ function renderTodayMeals(){
   activeMenu = computeActiveMenu();
 
   function tagsHtml(recipeId, slot, pillId){
-    let html = recipeDisplayPills(recipeId).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
-    // Task B3: SHARED[slot] is the household DEFAULT, unaware of household size — a
-    // one-person household must never show a "together" pill, regardless of that default.
+    // Diet/trait pills (Plant-based, High fiber, etc.) hidden on Today summary cards —
+    // they stay visible in the recipe detail view (renderRecipeScreen).
     const showTogetherPill = SHARED[slot] && !(typeof isSoloHousehold === 'function' && isSoloHousehold());
-    html += '<span class="pill together mini" id="'+pillId+'" style="display:'+(showTogetherPill?'inline-flex':'none')+'">👥 Together</span>';
-    return html;
+    return '<span class="pill together mini" id="'+pillId+'" style="display:'+(showTogetherPill?'inline-flex':'none')+'">👥 Together</span>';
   }
 
   const bfv = todaySlotView('breakfast'), bf = bfv.recipe || MISSING_RECIPE_FALLBACK;
