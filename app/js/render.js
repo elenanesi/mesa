@@ -2847,31 +2847,46 @@ const TODAY_CARD_ACTION_EL = {breakfast: 'taBreakfast', lunch: 'taLunch', dinner
 
 function renderTodayCardActions(){
   SLOT_ORDER.forEach(function(slot){
-    const wrap = document.getElementById(TODAY_CARD_ACTION_EL[slot]);
+    var wrap = document.getElementById(TODAY_CARD_ACTION_EL[slot]);
     if(!wrap) return;
-    const status = slotLogStatus(todayISO(), currentProf, slot);
-    const label = SLOT_LABEL[slot] || slot;
-    // USER FEEDBACK item 3: the only path to removing an extra is this add button, which
-    // read as pure "add" — once the meal already has extras, relabel it "Edit" so removal
-    // is discoverable without adding a new button.
-    const hasExtras = todaySlotView(slot).extras.length > 0;
-    const addLabel = hasExtras ? '✎ Edit' : '＋ Add';
-    const addAria = (hasExtras ? 'Edit ' : 'Add to ') + label;
+    var status = slotLogStatus(todayISO(), currentProf, slot);
+    var label = SLOT_LABEL[slot] || slot;
+    var hasExtras = todaySlotView(slot).extras.length > 0;
+    var addLabel = hasExtras ? '✎ Edit' : '＋ Add';
+    var addAria = (hasExtras ? 'Edit ' : 'Add to ') + label;
     if(status === 'confirmed'){
-      wrap.innerHTML = '<div class="tag-row"><span class="confirmed-tag">✓ Logged</span>'
-        + '<span class="tag-controls"><button class="tag-undo" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)">↔ Swap</button>'
+      // Card state: done — show tag, undo, and swap/edit controls
+      var card = wrap.closest('.meal');
+      if(card){ card.classList.add('state-done'); card.classList.remove('state-skipped'); }
+      // Add badge to thumb
+      var thumb = card ? card.querySelector('.thumb') : null;
+      if(thumb && !thumb.querySelector('.done-badge')){
+        thumb.style.position = 'relative';
+        var badge = document.createElement('span');
+        badge.className = 'done-badge';
+        badge.textContent = '✓';
+        thumb.appendChild(badge);
+      }
+      wrap.innerHTML = '<div class="tag-row"><span class="state-tag tag-done">✓ Eaten</span>'
+        + '<span class="tag-controls"><button class="tag-undo" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)">↔</button>'
         + '<button class="tag-undo" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+addLabel+'</button>'
-        + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></span></div>';
+        + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺</button></span></div>';
     } else if(status === 'skipped'){
-      wrap.innerHTML = '<div class="tag-row"><span class="skipped-tag">Skipped for today</span>'
+      var card2 = wrap.closest('.meal');
+      if(card2){ card2.classList.add('state-skipped'); card2.classList.remove('state-done'); }
+      // Remove any done badge
+      var thumb2 = card2 ? card2.querySelector('.done-badge') : null;
+      if(thumb2) thumb2.remove();
+      wrap.innerHTML = '<div class="tag-row"><span class="state-tag tag-skipped">— Skipped</span>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
     } else {
-      wrap.innerHTML = '<div class="ta-actions">'
-        + '<button class="ta-btn ta-confirm" aria-label="Confirm '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')">✓</button>'
-        + '<button class="ta-btn ta-swap" aria-label="Swap '+label+'" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)">↔</button>'
-        + '<button class="ta-btn" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+(hasExtras ? '✎' : '＋')+'</button>'
-        + '<button class="ta-btn ta-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')">✕</button>'
-        + '</div>';
+      // Pending: cute single log button — swap/skip/extras live in recipe detail
+      var card3 = wrap.closest('.meal');
+      if(card3){ card3.classList.remove('state-done', 'state-skipped'); }
+      // Remove any done badge
+      var oldBadge = card3 ? card3.querySelector('.done-badge') : null;
+      if(oldBadge) oldBadge.remove();
+      wrap.innerHTML = '<button class="meal-log-btn" aria-label="Log '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')" title="Mark as eaten"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-2.25-2.25h-1.5a2.25 2.25 0 0 0-2.15 1.586z"/><path d="M9.298 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 16.5 3h-.298"/><path d="m9 14 2 2 4-4"/></svg></button>';
     }
   });
 }
@@ -3642,17 +3657,217 @@ function scheduleMenuRebuild(){
 // so logConfirm/chooseSwap/applyRebalance can refresh consumed-so-far numbers without
 // re-running the whole profile render cycle.
 function refreshRingAndBars(){
-  const p = PROF[currentProf];
-  document.getElementById('calLeft').textContent=p.calLeft;
-  document.getElementById('calGoal').textContent=p.calGoal;
-  document.getElementById('mp').textContent=p.mp;
-  document.getElementById('mc').textContent=p.mc;
-  document.getElementById('mf').textContent=p.mf;
-  document.getElementById('bp').style.width=p.bp;
-  document.getElementById('bc').style.width=p.bc;
-  document.getElementById('bff').style.width=p.bff;
-  document.getElementById('calRing').style.strokeDashoffset=p.off;
+  var p = PROF[currentProf];
+  document.getElementById('calLeft').textContent = p.calLeft;
+  document.getElementById('calGoal').textContent = p.calGoal;
+  document.getElementById('mp').textContent = p.mp;
+  document.getElementById('mc').textContent = p.mc;
+  document.getElementById('mf').textContent = p.mf;
+  document.getElementById('bp').style.width = p.bp;
+  document.getElementById('bc').style.width = p.bc;
+  document.getElementById('bff').style.width = p.bff;
+  // fat split line is hidden; fatSplit still set for recipe detail etc.
   document.getElementById('fatSplit').textContent = '💚 ' + p.fatGood + 'g good fats · ' + p.fatSat + 'g sat.';
+
+  // --- Segmented donut ---
+  var C = 351.8; // 2 * PI * 56
+  var kcal = p.calGoalNum || 0;
+  var pPct = p.kP || 0, cPct = p.kC || 0, fPct = p.kF || 0;
+  // Compute remaining kcal per macro
+  var pTarget = p.targetP || 0, cTarget = p.targetC || 0, fTarget = p.targetF || 0;
+  var pEaten = p.consumed ? p.consumed.p : 0;
+  var cEaten = p.consumed ? p.consumed.c : 0;
+  var fEaten = p.consumed ? p.consumed.f : 0;
+  var pLeft = Math.max(0, pTarget - pEaten);
+  var cLeft = Math.max(0, cTarget - cEaten);
+  var fLeft = Math.max(0, fTarget - fEaten);
+  var totalLeft = pLeft * 4 + cLeft * 4 + fLeft * 9;
+  // Arc lengths proportional to remaining kcal
+  var pArc, cArc, fArc;
+  if(totalLeft > 0){
+    pArc = (pLeft * 4 / totalLeft) * C;
+    cArc = (cLeft * 4 / totalLeft) * C;
+    fArc = (fLeft * 9 / totalLeft) * C;
+  } else {
+    pArc = 0; cArc = 0; fArc = 0;
+  }
+  // Scale arcs by how much of total kcal is remaining
+  var consumedFraction = kcal > 0 ? Math.min(1, p.consumedKcal / kcal) : 0;
+  var remainFraction = 1 - consumedFraction;
+  pArc *= remainFraction; cArc *= remainFraction; fArc *= remainFraction;
+  // Tiny gap between arcs
+  var gap = (pArc > 0 && cArc > 0 || cArc > 0 && fArc > 0 || pArc > 0 && fArc > 0) ? 3 : 0;
+  // Paint arcs: protein starts at top, then carbs, then fat
+  var pEl = document.getElementById('arcProtein');
+  var cEl = document.getElementById('arcCarbs');
+  var fEl = document.getElementById('arcFat');
+  if(pEl){
+    var pLen = Math.max(0, pArc - gap);
+    pEl.setAttribute('stroke-dasharray', pLen + ' ' + (C - pLen));
+    pEl.setAttribute('stroke-dashoffset', '0');
+  }
+  if(cEl){
+    var cLen = Math.max(0, cArc - gap);
+    var cOffset = -(pArc);
+    cEl.setAttribute('stroke-dasharray', cLen + ' ' + (C - cLen));
+    cEl.setAttribute('stroke-dashoffset', cOffset);
+  }
+  if(fEl){
+    var fLen = Math.max(0, fArc - gap);
+    var fOffset = -(pArc + cArc);
+    fEl.setAttribute('stroke-dasharray', fLen + ' ' + (C - fLen));
+    fEl.setAttribute('stroke-dashoffset', fOffset);
+  }
+
+  // Overeating indicator: center text turns terra when over
+  var calLeftEl = document.getElementById('calLeft');
+  var remaining = kcal - p.consumedKcal;
+  if(remaining < 0){
+    calLeftEl.classList.add('ring-over');
+  } else {
+    calLeftEl.classList.remove('ring-over');
+  }
+
+  // Over-eaten macro: bar turns full + add overflow indicator
+  // (handled by existing clamping in engine.js — bar stops at 100%)
+
+  // Inline percentages
+  var pctP = document.getElementById('pctP');
+  var pctC = document.getElementById('pctC');
+  var pctF = document.getElementById('pctF');
+  if(pctP) pctP.textContent = pPct + '%';
+  if(pctC) pctC.textContent = cPct + '%';
+  if(pctF) pctF.textContent = fPct + '%';
+
+  // --- Progress dots ---
+  renderProgressDots();
+
+  // --- Eaten chip strip ---
+  renderEatenStrip();
+}
+
+function renderProgressDots(){
+  var wrap = document.getElementById('progressDots');
+  if(!wrap) return;
+  var slots = ['breakfast', 'lunch', 'dinner', 'snack'];
+  var emojis = {};
+  var bfv = todaySlotView('breakfast');
+  var luv = todaySlotView('lunch');
+  var div_ = todaySlotView('dinner');
+  var snv = todaySlotView('snack');
+  emojis.breakfast = (bfv.recipe || {}).emoji || '🥣';
+  emojis.lunch = (luv.recipe || {}).emoji || '🥗';
+  emojis.dinner = (div_.recipe || {}).emoji || '🍽️';
+  emojis.snack = (snv.recipe || {}).emoji || '🌰';
+  var doneCount = 0;
+  var html = '';
+  slots.forEach(function(slot){
+    var status = slotLogStatus(todayISO(), currentProf, slot);
+    var cls = 'pdot';
+    if(status === 'confirmed'){ cls += ' pdot-done'; doneCount++; }
+    else if(status === 'skipped'){ cls += ' pdot-skipped'; doneCount++; }
+    html += '<div class="' + cls + '" onclick="scrollToMealCard(\'' + slot + '\')" title="' + slot + '">' + emojis[slot] + '</div>';
+  });
+  html += '<span class="pdot-label">' + doneCount + ' of 4 logged</span>';
+  wrap.innerHTML = html;
+}
+
+function scrollToMealCard(slot){
+  var ids = {breakfast:'todayBreakfastCard', lunch:'todayLunchCard', dinner:'todayDinnerCard', snack:'todaySnack'};
+  var el = document.getElementById(ids[slot]);
+  if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
+}
+
+function renderEatenStrip(){
+  var wrap = document.getElementById('eatenStripWrap');
+  var strip = document.getElementById('eatenStrip');
+  var label = document.getElementById('eatenStripLabel');
+  if(!wrap || !strip) return;
+  var raw = getDayLog(todayISO())[currentProf];
+  if(!raw || !raw.length){
+    wrap.style.display = 'none';
+    return;
+  }
+  wrap.style.display = '';
+  var total = raw.reduce(function(s, e){ return s + logEntryNutrition(e).kcal; }, 0);
+  if(label) label.textContent = 'Eaten so far · ' + Math.round(total) + ' kcal';
+  var html = '';
+  // Group by slot/food for compact display (reuse grouped records)
+  var groups = groupedTodayRecords();
+  groups.forEach(function(g){
+    var emoji, name;
+    if(g.kind === 'plan'){
+      var r = RECIPES_DB[g.entry.ref];
+      emoji = r ? r.emoji : '🍽️';
+      name = r ? r.title : 'Meal';
+      if(name.length > 14) name = name.slice(0, 13) + '…';
+    } else {
+      emoji = '🥄';
+      var food = FOODS[g.ref];
+      name = food ? food.name : 'Food';
+      if(name.length > 14) name = name.slice(0, 13) + '…';
+    }
+    var kcal = g.kind === 'plan' ? Math.round(logEntryNutrition(g.entry).kcal) : Math.round(g.kcal);
+    html += '<div class="eaten-chip"><span class="ec-icon">' + emoji + '</span>' + escapeHtml(name) + ' <span class="ec-kcal">' + kcal + '</span></div>';
+  });
+  html += '<div class="eaten-chip eaten-chip-add" onclick="go(\'log\')"><span class="ec-icon">+</span>Log</div>';
+  strip.innerHTML = html;
+}
+
+function showArcPopover(macro, event){
+  event.stopPropagation();
+  var pop = document.getElementById('arcPopover');
+  var dot = document.getElementById('apDot');
+  var nameEl = document.getElementById('apName');
+  var detailEl = document.getElementById('apDetail');
+  if(!pop) return;
+  var p = PROF[currentProf];
+  var kcal = p.calGoalNum || 0;
+  var colors = {protein: '#7f9364', carbs: '#c79a48', fat: '#be6c45'};
+  var names = {protein: 'Protein', carbs: 'Carbs', fat: 'Fat'};
+  var pcts = {protein: p.kP, carbs: p.kC, fat: p.kF};
+  var targets = {protein: p.targetP, carbs: p.targetC, fat: p.targetF};
+  var eaten = {protein: p.consumed.p, carbs: p.consumed.c, fat: p.consumed.f};
+  var multiplier = {protein: 4, carbs: 4, fat: 9};
+  var targetKcal = Math.round(kcal * pcts[macro] / 100);
+  var eatenKcal = Math.round(eaten[macro] * multiplier[macro]);
+  var leftKcal = targetKcal - eatenKcal;
+
+  dot.style.background = colors[macro];
+  nameEl.textContent = names[macro] + ' · ' + pcts[macro] + '%';
+  var detail = fmtKcal(targetKcal) + ' kcal target · ' + targets[macro] + 'g';
+  if(p.consumedKcal > 0){
+    detail += '\n' + eaten[macro] + 'g eaten (' + fmtKcal(eatenKcal) + ' kcal)';
+    if(leftKcal < 0){
+      detail += '\n⚠ ' + fmtKcal(Math.abs(leftKcal)) + ' kcal over target';
+    } else {
+      detail += '\n' + fmtKcal(leftKcal) + ' kcal remaining';
+    }
+  }
+  detailEl.textContent = detail;
+  // Use white-space pre-line for multiline
+  detailEl.style.whiteSpace = 'pre-line';
+
+  var ringEl = document.querySelector('.ring');
+  if(ringEl){
+    var ringRect = ringEl.getBoundingClientRect();
+    pop.style.left = (ringRect.left + ringRect.width / 2) + 'px';
+    pop.style.top = (ringRect.bottom + 8) + 'px';
+    pop.style.transform = 'translateX(-50%)';
+  }
+  pop.classList.add('show');
+
+  // Auto-dismiss after 4s or on next tap outside ring
+  clearTimeout(window._arcPopTimer);
+  window._arcPopTimer = setTimeout(function(){ pop.classList.remove('show'); }, 4000);
+  if(window._arcDismiss) document.removeEventListener('click', window._arcDismiss);
+  window._arcDismiss = function(e){
+    if(e.target.closest && e.target.closest('.center, .ring-arc')) return;
+    pop.classList.remove('show');
+    document.removeEventListener('click', window._arcDismiss);
+    window._arcDismiss = null;
+  };
+  setTimeout(function(){ document.addEventListener('click', window._arcDismiss); }, 50);
 }
 
 /* ===================================================================
@@ -3709,6 +3924,10 @@ function applyProf(key){
   recomputeProf(key);
   refreshRingAndBars();
   document.getElementById('goalTag').textContent=p.goalTag;
+  var stripe = document.getElementById('tintStripe');
+  if(stripe){
+    stripe.className = 'tint-stripe tint-' + key;
+  }
   const coachT = document.getElementById('coachT');
   const coachD = document.getElementById('coachD');
   if(coachT) coachT.textContent=p.coachOverrideT || p.coachT;

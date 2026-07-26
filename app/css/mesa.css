@@ -500,3 +500,80 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .login-gate #loginGateButton{width:100%;max-width:300px;}
 .login-gate #loginGateError{color:var(--terra);min-height:0;}
 body.gate-open{overflow:hidden;}
+
+/* ---------- segmented donut ring + arc popover + progress dots + eaten chips
+   + cute log button + meal state tags + profile tint stripe (home-screen redesign) ---------- */
+
+/* segmented donut ring */
+.ring-wrap{position:relative;}
+.ring-arc{}
+.macro-pct{font-size:10px;font-weight:700;opacity:.7;}
+.macro-pct-p{color:var(--sage-deep);}
+.macro-pct-c{color:#9a7414;}
+.macro-pct-f{color:#b25e35;}
+.ring-over{color:var(--terra);}
+
+/* arc tap popover */
+.arc-popover{
+  position:fixed;top:0;left:0;background:var(--card);border:1px solid var(--line);border-radius:12px;
+  padding:10px 14px;box-shadow:0 6px 20px rgba(73,54,32,.15);font-size:12px;z-index:100;
+  white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s;
+}
+.arc-popover.show{opacity:1;pointer-events:auto;}
+.arc-popover .ap-label{font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px;}
+.arc-popover .ap-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
+.arc-popover .ap-detail{color:var(--muted);font-size:11px;margin-top:3px;}
+
+/* progress dots (meal completion indicators) */
+.progress-dots{display:flex;gap:6px;align-items:center;margin-top:10px;}
+.pdot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:13px;border:1.5px solid var(--line);background:#fff;cursor:pointer;transition:all .15s;}
+.pdot.pdot-done{border-color:var(--sage);background:var(--sage-tint);}
+.pdot.pdot-skipped{border-color:var(--muted);background:#eee;opacity:.55;}
+.pdot-label{font-size:9px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+
+/* eaten chip strip (scrollable row of logged-food chips) */
+.eaten-strip-wrap{margin-top:10px;}
+.eaten-strip-label{font-size:10px;font-weight:700;color:var(--sage-deep);margin-bottom:3px;}
+.eaten-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 0;scrollbar-width:none;}
+.eaten-strip::-webkit-scrollbar{display:none;}
+.eaten-chip{
+  display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--ink-soft);
+  background:rgba(255,250,240,.8);border:1px solid rgba(176,146,105,.3);border-radius:999px;
+  padding:3px 9px 3px 4px;white-space:nowrap;flex-shrink:0;
+}
+.eaten-chip .ec-icon{width:20px;height:20px;border-radius:50%;background:var(--terra-tint);display:grid;place-items:center;font-size:10px;}
+.eaten-chip .ec-kcal{font-weight:800;color:var(--ink);}
+.eaten-chip.eaten-chip-add{border-style:dashed;opacity:.5;cursor:pointer;}
+.eaten-chip.eaten-chip-add .ec-icon{background:#eef0ec;}
+
+/* cute meal log button */
+.meal-log-btn{
+  width:44px;height:44px;border-radius:14px;border:0;
+  background:linear-gradient(135deg,var(--sage),var(--sage-deep));color:#fff;font-size:18px;
+  display:grid;place-items:center;cursor:pointer;flex-shrink:0;
+  box-shadow:0 3px 8px rgba(86,107,67,.28);transition:transform .12s;transform-origin:center;
+}
+.meal-log-btn:active{transform:scale(.88);}
+.meal-log-btn .log-icon{display:block;line-height:1;}
+
+/* meal card states (confirmed/skipped visual treatment) */
+.meal.state-done{border-left:3px solid var(--sage);opacity:.8;}
+.meal.state-done .thumb{position:relative;}
+.meal.state-skipped{opacity:.5;border-left:3px solid var(--muted);}
+.meal.state-skipped .thumb{filter:grayscale(.35);}
+.done-badge{
+  position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;
+  background:var(--sage);color:#fff;font-size:8px;font-weight:800;display:grid;place-items:center;
+  box-shadow:0 1px 3px rgba(0,0,0,.15);
+}
+.state-tag{font-size:10px;font-weight:700;margin-top:5px;}
+.state-tag.tag-done{color:var(--sage-deep);}
+.state-tag.tag-skipped{color:var(--muted);}
+
+/* profile color tint stripe */
+.tint-stripe{height:3px;border-radius:2px;margin:4px 0 2px;transition:background .3s;}
+.tint-stripe.tint-elena{background:var(--sage);}
+.tint-stripe.tint-partner{background:var(--gold);}
+
+/* remove the "Calories by macro" card (superseded by segmented donut ring) */
+#todayMacroCalCard{display:none !important;}

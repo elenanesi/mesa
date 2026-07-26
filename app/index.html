@@ -35,42 +35,55 @@
           <button class="profile-icon-btn" aria-label="Open profile" onclick="go('profile')"><span id="topProfAv">Y</span></button>
         </div>
       </div>
+      <div class="tint-stripe tint-elena" id="tintStripe"></div>
 
+      <div class="arc-popover" id="arcPopover">
+        <div class="ap-label"><span class="ap-dot" id="apDot"></span><span id="apName"></span></div>
+        <div class="ap-detail" id="apDetail"></div>
+      </div>
       <div class="card">
         <div class="ring-wrap">
           <div class="ring">
-            <svg width="128" height="128">
+            <svg width="128" height="128" viewBox="0 0 128 128">
               <circle cx="64" cy="64" r="56" fill="none" stroke="#eef0ec" stroke-width="13"/>
-              <circle id="calRing" cx="64" cy="64" r="56" fill="none" stroke="#6f8f76" stroke-width="13" stroke-linecap="round" stroke-dasharray="351.8" stroke-dashoffset="120"/>
+              <circle id="arcFat" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#be6c45" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('fat',event)"/>
+              <circle id="arcCarbs" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#c79a48" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('carbs',event)"/>
+              <circle id="arcProtein" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#7f9364" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('protein',event)"/>
             </svg>
-            <div class="center">
+            <div class="center" style="cursor:pointer" onclick="if(!window._acIdx)window._acIdx=0;showArcPopover(['protein','carbs','fat'][window._acIdx%3],event);window._acIdx++;">
               <span class="big" id="calLeft">1,420</span>
               <span class="lbl">kcal left of <span id="calGoal">1,820</span></span>
             </div>
           </div>
           <div class="macros">
             <div class="macro">
-              <div class="mhead"><span>Protein</span><b id="mp">28 / 110 g</b></div>
+              <div class="mhead"><span>Protein <span class="macro-pct macro-pct-p" id="pctP">26%</span></span><b id="mp">28 / 110 g</b></div>
               <div class="bar"><i class="b-p" id="bp" style="width:26%"></i></div>
             </div>
             <div class="macro">
-              <div class="mhead"><span>Carbs</span><b id="mc">34 / 170 g</b></div>
+              <div class="mhead"><span>Carbs <span class="macro-pct macro-pct-c" id="pctC">41%</span></span><b id="mc">34 / 170 g</b></div>
               <div class="bar"><i class="b-c" id="bc" style="width:20%"></i></div>
             </div>
             <div class="macro">
-              <div class="mhead"><span>Fat</span><b id="mf">12 / 62 g</b></div>
+              <div class="mhead"><span>Fat <span class="macro-pct macro-pct-f" id="pctF">33%</span></span><b id="mf">12 / 62 g</b></div>
               <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
-              <div class="sub" id="fatSplit" style="margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
+              <div class="sub" id="fatSplit" style="display:none;margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
             </div>
           </div>
         </div>
+        <div class="progress-dots" id="progressDots"></div>
         <div class="meta-line">
           <span id="goalTag">🎯 Gentle fat loss</span>
-          <span>🍽️ 4 meals planned</span>
+          <span id="mealsPlannedTag" style="display:none">🍽️ 4 meals planned</span>
         </div>
       </div>
 
-      <div class="card" style="padding:14px 16px">
+      <div class="eaten-strip-wrap" id="eatenStripWrap">
+        <div class="eaten-strip-label" id="eatenStripLabel">Eaten so far</div>
+        <div class="eaten-strip" id="eatenStrip"></div>
+      </div>
+
+      <div class="card" id="todayMacroCalCard" style="padding:14px 16px">
         <div class="row between" style="margin-bottom:2px"><b style="font-size:13px">Calories by macro</b><span class="chip-computed">✓ computed</span></div>
         <div class="macro-cal-list" style="margin-top:10px">
           <div class="macro-cal-row">
@@ -114,7 +127,7 @@
         </div>
       </div>
 
-      <div class="card meal" onclick="openLunchRecipe()">
+      <div class="card meal" id="todayLunchCard" onclick="openLunchRecipe()">
         <div class="thumb" id="lunchThumb">🥗</div>
         <div class="info">
           <div class="row between"><span class="t" id="lunchTitle">Lentil & roasted veg salad</span><span class="kcal" id="lunchKcal">430</span></div>
@@ -124,7 +137,7 @@
         </div>
       </div>
 
-      <div class="card meal" onclick="openDinnerRecipe()">
+      <div class="card meal" id="todayDinnerCard" onclick="openDinnerRecipe()">
         <div class="thumb" id="dinnerThumb">🐟</div>
         <div class="info">
           <div class="row between"><span class="t" id="dinnerTitle">Baked salmon, quinoa & greens</span><span class="kcal" id="dinnerKcal">520</span></div>
