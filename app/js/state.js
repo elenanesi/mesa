@@ -500,10 +500,13 @@ const AVOID_KEYS = ['lactose', 'gluten', 'shellfish', 'nuts', 'raw-onion', 'spic
 const AVOID_LABELS = {lactose: 'Lactose', gluten: 'Gluten', shellfish: 'Shellfish', nuts: 'Nuts', 'raw-onion': 'Raw onion', spicy: 'Spicy'};
 function avoidLabel(key){ return AVOID_LABELS[key] || capitalizeFirst(key); }
 
-// Per-person diet preference (task D4): none / vegan / lactose-intolerant.
-// Vegan = vegetarian (filters to 'veggie' recipes only). Lactose-intolerant adds 'lactose' to avoid.
-const DIET_KEYS = ['none', 'vegan', 'lactose-intolerant'];
-const DIET_LABELS = {none: 'None', vegan: 'Vegan (vegetarian)', 'lactose-intolerant': 'Lactose-intolerant'};
+// Per-person diet preference (task D4): none / vegan / vegetarian / pescatarian / gluten-free / lactose-intolerant.
+// Vegan and vegetarian both filter to 'veggie' recipes only (the recipe DB doesn't yet
+// distinguish the two). Pescatarian is a mock — no fish/meat tag exists yet, so it allows
+// all recipes. Gluten-free filters out recipes with 'gluten' in their avoid list.
+// Lactose-intolerant adds 'lactose' to avoid.
+const DIET_KEYS = ['none', 'vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'lactose-intolerant'];
+const DIET_LABELS = {none: 'None', vegan: 'Vegan', vegetarian: 'Vegetarian', pescatarian: 'Pescatarian', 'gluten-free': 'Gluten-free', 'lactose-intolerant': 'Lactose-intolerant'};
 function dietLabel(key){ return DIET_LABELS[key] || capitalizeFirst(key); }
 
 // Per-profile goal checklist (task B1 — fixes the bug where unchecking "Gentle fat

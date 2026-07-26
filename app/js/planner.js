@@ -331,13 +331,20 @@ function recipeHitsAvoid(recipe, avoidList){
 }
 
 // Task D4: diet preference filter. Returns true if recipe violates the diet.
-// vegan: only recipes with 'veggie' tag are allowed.
+// vegan / vegetarian: only recipes with 'veggie' tag are allowed (the recipe DB doesn't
+// distinguish vegan from vegetarian yet, so both use the same 'veggie' filter).
+// pescatarian: mock — there's no 'fish'/'meat' tag system yet, so this doesn't filter
+// anything. TODO: once recipes carry a fish/meat tag, exclude meat (non-fish) recipes.
+// gluten-free: recipe must NOT have 'gluten' in its avoid list.
 // lactose-intolerant: lactose already added to avoid list in commitDiet, so avoid check handles it.
 function recipeViolatesDiet(recipe, dietList){
   if(!dietList || !dietList.length) return false;
-  // If ANY person has a vegan preference, recipe must have 'veggie' tag
-  const hasVegan = dietList.indexOf('vegan') !== -1;
+  // If ANY person has a vegan or vegetarian preference, recipe must have 'veggie' tag
+  const hasVegan = dietList.indexOf('vegan') !== -1 || dietList.indexOf('vegetarian') !== -1;
   if(hasVegan && !hasTag(recipe, 'veggie')) return true;
+  // If ANY person is gluten-free, recipe must not contain gluten
+  const hasGlutenFree = dietList.indexOf('gluten-free') !== -1;
+  if(hasGlutenFree && recipe.avoid && recipe.avoid.indexOf('gluten') !== -1) return true;
   return false;
 }
 // PERSONAL-PREFS: recipePrefs (state.js) is now {elena:{},partner:{}} — reads always go

@@ -687,7 +687,10 @@
         <div class="field" style="margin-top:14px"><label>Your preference</label>
           <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="none" onchange="obSetDiet('none')"> No restriction</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="vegan" onchange="obSetDiet('vegan')"> Vegan (vegetarian recipes only)</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="vegan" onchange="obSetDiet('vegan')"> Vegan</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="vegetarian" onchange="obSetDiet('vegetarian')"> Vegetarian</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="pescatarian" onchange="obSetDiet('pescatarian')"> Pescatarian</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="gluten-free" onchange="obSetDiet('gluten-free')"> Gluten-free</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="lactose-intolerant" onchange="obSetDiet('lactose-intolerant')"> Lactose-intolerant</label>
           </div>
         </div>
@@ -698,7 +701,7 @@
         <p class="sub" style="text-align:center">7 days, balanced meals, one shopping list — tap in any time to see why a meal fits you.</p>
       </div>
     </div>
-    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
+    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
     <button class="cta" id="obNext" onclick="obNext()">Continue</button>
   </div>
 

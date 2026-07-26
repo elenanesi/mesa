@@ -72,15 +72,15 @@ function obShow(i){
   obIndex = i;
   document.querySelectorAll('.ob-slide').forEach(function(s, idx){ s.classList.toggle('active', idx === i); });
   document.querySelectorAll('.ob-dots .d').forEach(function(d, idx){ d.classList.toggle('on', idx === i); });
-  document.getElementById('obNext').textContent = i === 5 ? "Let's go →" : 'Continue';
-  // Task D3: populate body stats slide (slide 3) on first show
-  if(i === 3) obPopulateBodyStats();
-  // Task D4: populate diet slide (slide 4) on first show
-  if(i === 4) obPopulateDiet();
+  document.getElementById('obNext').textContent = i === 4 ? "Let's go →" : 'Continue';
+  // Task D3: populate body stats slide (slide 2) on first show
+  if(i === 2) obPopulateBodyStats();
+  // Task D4: populate diet slide (slide 3) on first show
+  if(i === 3) obPopulateDiet();
 }
 
 function obNext(){
-  if(obIndex < 5){ obShow(obIndex + 1); } else { finishOnboarding(); }
+  if(obIndex < 4){ obShow(obIndex + 1); } else { finishOnboarding(); }
 }
 
 function renderObGoals(key){
