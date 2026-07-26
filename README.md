@@ -1,8 +1,21 @@
-# Mesa — meal planner PWA for two
+# Mesa — meal planner PWA for a household of one or two
 
-A free, installable, offline-first PWA that plans a week of Mediterranean meals for Elena and Andrea (couple with different calorie/macro targets, shared dinners), generates one household shopping list, and logs what was actually eaten. **Every number is computed, never typed in** — Mifflin-St Jeor for targets, sums over the food DB for nutrition.
+A free, installable, offline-first PWA that plans a week of Mediterranean meals for a household — one person, or two with different calorie/macro targets and shared dinners — generates one shopping list, and logs what was actually eaten. **Every number is computed, never typed in** — Mifflin-St Jeor for targets, sums over the food DB for nutrition.
 
-**Live:** https://mesa-9y5.pages.dev/app/ (Cloudflare Pages, behind Cloudflare Access — only elenanesi55@gmail.com and angelucci88@gmail.com). Couple sync/catalog backend: https://mesa-sync.elenanesi55.workers.dev (Cloudflare Worker + KV + D1). Legacy public URL https://elenanesi.github.io/mesa/ (to be retired once Elena confirms Access login works → then make the GitHub repo private).
+Since Phase 3 it is a multi-user app: invite-only Google sign-in, one household
+per user, and no hardcoded people. Elena and Andrea are just the first
+household; nothing user-visible names them (see the Auth & accounts section).
+
+**Live:** https://mesa-9y5.pages.dev/app/ (Cloudflare Pages). Sign-in gates the app itself.
+
+⚠️ **Cloudflare Access still fronts the Pages project** with the original
+two-email allow-list, so an invited third person cannot even load the app yet —
+every request 302s to `lively-unit-4aa5.cloudflareaccess.com`. Removing it is
+the last step of Phase 3B and is deliberately sequenced AFTER
+`REQUIRE_SESSION="1"`, so the API stops trusting sessionless callers before the
+app becomes publicly reachable. Needs Elena's explicit go-ahead.
+
+Backend: https://mesa-sync.elenanesi55.workers.dev (Cloudflare Worker + KV + D1). Legacy public URL https://elenanesi.github.io/mesa/ (to be retired → then make the GitHub repo private).
 
 ## How agents work on this repo
 
@@ -28,13 +41,82 @@ A free, installable, offline-first PWA that plans a week of Mediterranean meals 
 - **Recipe images are separate from ingredient icons.** Shared recipe art lives under `app/assets/recipes/*.png`; `tools/build-sw.js` must include that directory, and `app/sw.js` must be regenerated before deploy. Recipe rows may carry a safe relative `imageUri` such as `assets/recipes/pizza.png`; `render.js` prefers that over `imageKey`. `imageKey` remains the picker/fallback vocabulary, while `recipeImageAssetForRecipe()` and `recipeHeroHtml()` enforce safe paths with default fallback to `assets/recipes/default-recipe.png`. Auto mode checks specific recipe art first, then soup/pasta/salad presentation, then fish/shellfish ingredients, then meal-slot defaults (`breakfast` bowl, `lunch` salad, `dinner` default), so tuna salad stays salad while non-salad fish dishes stay fish. Recipe detail must expose a clear `Change image` action; it opens the recipe editor with the Lead image picker expanded.
 - **Library recipe rows should open detail.** The recipe Library row body opens `openRecipe(id, 'libraryRecipes')`; only the small action buttons should favorite/thumbs-down/edit/delete. If a screenshot shows "Edit recipe" after tapping a row, the row tap handler regressed.
 
+## Agent handoff lessons from 2026-07-25/26 (accounts & sign-in)
+
+Sign-in cost far more debugging than the feature deserved, in four separate
+loops that all LOOKED identical from the outside ("tap sign in, land back on the
+login screen"). Each had a different cause. The lessons, in rough order of how
+much time they cost:
+
+- **Sign-in must not depend on the app booting.** The worst one. `initAuth()`
+  used to be the last statement of `bootMesaApp()`'s promise chain, which opens
+  with a network fetch for the D1 catalog. When anything in that chain stalled
+  or threw (it does on some Safari installs), the code that reads the returned
+  token off the URL never ran — the token was discarded unread and sign-in
+  looped forever with no error anywhere. Now `initAuthEarly()` (js/auth.js) runs
+  the moment the script parses and owns everything needed to GET A USER IN:
+  fragment pickup, claim-ticket redemption, the login gate. `initAuth()` keeps
+  only what needs loaded app state. **Never move token handling back behind
+  boot, a promise chain, or a network call.**
+- **URL fragments are fragile; anything that matters can't ride only in one.**
+  The root `index.html` is a redirect shim to `/app/`, and it used a
+  meta-refresh — which DROPS the `#fragment`. The callback returned
+  `<origin>/#auth=<token>`, so the token died one hop from the app. `return_to`
+  now carries origin + path so the callback lands on `/app/` directly, and the
+  shim forwards the fragment via `location.replace()`.
+- **An installed iOS PWA cannot complete an OAuth redirect.** Standalone mode
+  refuses cross-origin navigation, so the whole trip happens in Safari and the
+  token lands in SAFARI's storage — a different jar from the PWA's, which never
+  sees it. Fixed with claim tickets: the client mints a one-time id, the
+  callback parks a copy of the token under it in KV, and the PWA redeems it over
+  a plain fetch (`GET /auth/claim`) on visibilitychange/pageshow. Single-use,
+  5-minute TTL, identical 404 for unknown/expired/claimed.
+- **The login gate must fail closed AND be static.** It renders visible by
+  default with an inline script hiding it when a token exists, so a slow or
+  broken boot can never leave the app briefly usable. Consequence learned the
+  hard way: anything JS-generated inside the gate is missing exactly when it is
+  needed most — the "Sign in with Google" button is static markup in
+  `index.html` (kept byte-identical to `googleSignInButtonHtml()`), because a
+  phone can run new HTML against an older cached `js/auth.js`.
+- **Diagnose from the device, not from theory.** Three wrong hypotheses died the
+  moment real logs existed. `js/auth.js` keeps a ring buffer in localStorage,
+  surfaced by "Trouble signing in?" on the gate; every line carries `AUTH_BUILD`,
+  stamped by `tools/build-sw.js` from the same content hash as the sw `CACHE`
+  (neutralised before hashing so it can't feed its own hash). **"Which build is
+  actually running" is the first question** — an installed PWA or Safari cache
+  routinely serves week-old JavaScript. Worker side logs to `wrangler tail`
+  (`auth.callback ok/fail`, `auth.claim hit/miss`) with no tokens or emails.
+- **Viewer-relative words must never be stored in synced data.** `displayName`
+  defaulted to the literals 'You'/'Partner' and syncs between phones, so the
+  slot-2 member saw HIMSELF labelled "Partner". Real names are shared data;
+  only the FALLBACK for an unnamed slot is resolved per-viewer
+  (`state.js:resolveDisplayName`, against `auth.js:myMemberSlot()`, cached
+  device-locally and deliberately never synced). Legacy 'You'/'Partner' values
+  are treated as unset for migration.
+- **`wrangler secret put` takes the NAME, not the value.** Running
+  `wrangler secret put GOCSPX-…` reports success and creates a secret whose NAME
+  is your client secret — and names are listable in the dashboard and terminal
+  output. Rotate the credential if this happens. The correct form is
+  `npx wrangler secret put GOOGLE_CLIENT_SECRET`, pasting the value at the
+  prompt.
+- **Stage Pages deploys with `git archive HEAD`, from the repo root.** Deploying
+  the working tree publishes whatever another agent has half-finished. Two traps
+  hit in one session: the shell's cwd persists between commands (a `cd worker`
+  earlier made `git archive` produce nothing, and an EMPTY directory was
+  published to production for ~1 minute), and `--commit-dirty=true` hides both.
+  Always `find <stage> -type f | wc -l` before deploying.
+
 ## Deploy (both, in this order)
 
 1. **Run `node tools/build-sw.js`** — regenerates `app/sw.js`'s `SHELL_FILES` list from disk and stamps a content-hash `CACHE`, so a forgotten manual bump can no longer ship a stale shell. Commit the regenerated `sw.js`.
 2. Commit + `git push origin main` (GitHub repo `elenanesi/mesa`; creds in macOS keychain via `git credential fill`).
-3. Cloudflare: stage root `index.html` + `app/` into a temp dir, then
+3. Cloudflare: stage from the COMMIT, not the working tree, and always from the repo
+   root (the shell's cwd persists between commands — see the handoff lessons):
+   `STAGE=$(mktemp -d) && git archive HEAD index.html app | tar -x -C "$STAGE" && find "$STAGE" -type f | wc -l`
+   then from `$STAGE`:
    `CLOUDFLARE_API_TOKEN=$(security find-generic-password -a mesa -s cloudflare-token -w) CLOUDFLARE_ACCOUNT_ID=84766baa4ad939ee067626830dd2f8dc npx wrangler pages deploy . --project-name=mesa --branch=main --commit-dirty=true`
    (token perms: Pages Edit + Access Edit only). Access team domain: lively-unit-4aa5.cloudflareaccess.com.
+   The file count guard is not optional: an empty stage deploys an empty site without error.
 
 ### Auth & accounts (Phase 3A/3B — invite-only Google sign-in)
 
@@ -51,8 +133,20 @@ a new storage model.
 `GET /auth/google/callback` (verifies aud/iss/exp/email_verified, checks
 `allowed_emails`, enforces `MAX_USERS`) → redirects back with `#auth=<token>`.
 The token is a 90-day sliding session; only its SHA-256 hash is stored in D1.
-`GET /auth/me` returns the user, `householdCode`, `memberSlot`, and
-`householdMembers` (1 = solo, 2 = couple — drives partner-UI visibility).
+`GET /auth/me` returns the user, `householdCode`, `memberSlot`,
+`householdMembers` (1 = solo, 2 = couple — drives partner-UI visibility) and
+`members` (the household roster: slot, displayName, firstName, Google picture,
+isSelf — so either phone can show BOTH real names/photos without waiting for
+couple-sync to propagate a locally-typed name; no emails).
+
+**Two delivery paths for the token, both required.** The callback redirects to
+`<return_to>#auth=<token>` — `return_to` carries origin AND path, because the
+site root is a redirect shim that would drop the fragment. That covers desktop
+browsers. An installed iOS PWA can never receive that redirect (the OAuth trip
+happens in Safari, a different storage jar), so the same sign-in also parks a
+copy of the token in KV under a client-minted one-time ticket, redeemed by
+`GET /auth/claim?link_id=…` when the user returns to the app. Removing either
+path breaks a whole class of device — see the handoff lessons above.
 
 **Access control.** `/sync/:code` and `/library/:code` run through
 `requireHouseholdAccess()`: a presented session must match the household being

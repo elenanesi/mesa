@@ -54,7 +54,7 @@
    appears not to work, since an installed PWA or a Safari cache can
    easily still be running last week's JavaScript.
    =================================================================== */
-const AUTH_BUILD = 'mesa-e1040a461708'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
+const AUTH_BUILD = 'mesa-98b22ef4abfb'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
 const AUTH_LOG_KEY = 'mesaAuthLog';
 const AUTH_LOG_MAX = 40;
 
@@ -157,6 +157,47 @@ function setMyMemberSlot(slot){
     if(slot === 'elena' || slot === 'partner') localStorage.setItem(AUTH_SLOT_KEY, slot);
     else localStorage.removeItem(AUTH_SLOT_KEY);
   }catch(e){ console.error('Mesa auth: could not persist member slot', e); }
+}
+
+/* The household roster from /auth/me's `members` (Phase 3C, C1).
+
+   Cached device-locally like the other auth facts, NOT in the synced profile sections:
+   it is server-derived truth about who is in this household, so syncing it would just
+   create a second, staler copy. It exists because each device used to know only its OWN
+   Google name — the partner's name had to arrive by couple-sync, and until it did, the
+   second member's phone labelled them "Partner". Now both names (and both Google photos)
+   come straight from the server on every /auth/me.
+
+   memberInfo(slot) is read by state.js:resolveDisplayName() through a typeof guard, so
+   everything degrades to the old viewer-relative fallback when this file is absent or the
+   worker is too old to send `members`. */
+const AUTH_MEMBERS_KEY = 'mesaAuthMembers';
+
+function memberDirectory(){
+  try{
+    const raw = localStorage.getItem(AUTH_MEMBERS_KEY);
+    if(!raw) return [];
+    const arr = JSON.parse(raw);
+    if(!Array.isArray(arr)) return [];
+    return arr.filter(function(m){
+      return m && typeof m === 'object' && (m.slot === 'elena' || m.slot === 'partner');
+    });
+  }catch(e){ return []; } // corrupt/unavailable — behave as "no roster known"
+}
+
+function memberInfo(slot){
+  const dir = memberDirectory();
+  for(let i = 0; i < dir.length; i++){
+    if(dir[i].slot === slot) return dir[i];
+  }
+  return null;
+}
+
+function setMemberDirectory(members){
+  try{
+    if(Array.isArray(members)) localStorage.setItem(AUTH_MEMBERS_KEY, JSON.stringify(members));
+    else localStorage.removeItem(AUTH_MEMBERS_KEY);
+  }catch(e){ /* storage unavailable — names fall back to the viewer-relative default */ }
 }
 
 /* ===================================================================
@@ -365,6 +406,9 @@ function refreshAuthMe(){
   }).then(function(body){
     if(!body || !body.user || typeof body.user !== 'object') return false;
     setAuthUser(body.user);
+    // Roster first: everything below that renders a name reads it.
+    setMemberDirectory(Array.isArray(body.members) ? body.members : null);
+    authLog('me.ok', 'slot=' + (body.memberSlot || '?') + ' members=' + (Array.isArray(body.members) ? body.members.length : 'absent'));
     renderAccountSection();
     updateLoginGate();
     // Task B2 (generic identity): a Google account carries a real name — seed it onto the
@@ -376,16 +420,15 @@ function refreshAuthMe(){
     // Which slot THIS device's account occupies — persisted before anything renders, since
     // resolveDisplayName()/applyOwnMemberSlot() below both key off it.
     setMyMemberSlot(body.memberSlot);
-    maybeSeedDisplayNameFromGoogle(body.user, body.memberSlot);
     // Phase 3A.2: a signed-in account now carries its household mapping — silently attach
     // this device to it (or note a mismatch) so nobody lands on an empty Mesa.
     maybeAdoptHousehold(body.householdCode, body.memberSlot);
-    // Open on the viewer's OWN profile. Previously this only happened inside
-    // maybeAdoptHousehold's first-adoption branch, so a phone that ALREADY had the
-    // household code (the normal case for a returning device) kept opening on slot 1
-    // regardless of who was signed in — the second household member's phone showed them
-    // their partner's profile.
-    applyOwnMemberSlot(body.memberSlot);
+    // Everything that touches PROF/currentProf is deferred: /auth/me can resolve BEFORE
+    // the app has loaded its state (that's the whole point of running it early now), and
+    // writing profile fields at that moment would be writing into defaults that loadState()
+    // is about to replace. applyIdentityToAppState() is idempotent and is called again from
+    // initAuth() once state exists, so whichever finishes second does the real work.
+    applyIdentityToAppState();
     // Phase 3B (B3, solo households): server-confirmed member count, when the worker sends
     // it — see maybeSetHouseholdSizeFromServer's own doc for the upgrade/downgrade rule.
     maybeSetHouseholdSizeFromServer(body.householdMembers);
@@ -425,6 +468,8 @@ function authSignOut(){
   const token = authToken();
   setAuthToken(null);
   setAuthUser(null);
+  setMemberDirectory(null);
+  setMyMemberSlot(null);
   renderAccountSection();
   updateLoginGate();
   toast('✓ Signed out');
@@ -463,25 +508,50 @@ function authSignOut(){
    name the user (or their partner, via couple sync) already set is never clobbered —
    this only ever fires for a slot that's still sitting on 'You'/'Partner'.
    =================================================================== */
-function maybeSeedDisplayNameFromGoogle(user, memberSlot){
-  if(!user || typeof user.displayName !== 'string' || !user.displayName.trim()) return;
-  if(typeof PROF === 'undefined' || typeof isPlaceholderDisplayName !== 'function') return;
-  // Seed the slot THIS ACCOUNT occupies, not whichever profile happens to be on screen:
-  // seeding the active slot wrote the signed-in person's name onto their PARTNER's profile
-  // whenever the device was showing the other profile at sign-in time.
-  const slot = (memberSlot === 'elena' || memberSlot === 'partner') ? memberSlot : null;
-  if(!slot) return;
-  const p = PROF[slot];
-  if(!p) return;
-  if(!isPlaceholderDisplayName(p.displayName)) return; // a real name is already set (typed here or synced from their phone) — never overwrite
+/* applyIdentityToAppState() — the half of identity that needs PROF/currentProf loaded.
 
-  const cap = (typeof DISPLAY_NAME_MAX_LEN === 'number') ? DISPLAY_NAME_MAX_LEN : 24;
-  const firstWord = user.displayName.trim().split(/\s+/)[0].slice(0, cap);
-  if(!firstWord || (typeof isPlaceholderDisplayName === 'function' && isPlaceholderDisplayName(firstWord))) return;
+   Called from BOTH refreshAuthMe() (which may resolve before the app has booted, since it
+   now runs early on purpose) and initAuth() (which runs once state exists). Idempotent, so
+   whichever lands second does the real work and the other is a cheap no-op. Never touches
+   anything if PROF isn't populated yet.
 
-  p.displayName = firstWord;
-  if(typeof applyProf === 'function' && typeof currentProf !== 'undefined') applyProf(currentProf); // recomputes seg/av, repaints, persists (state.js:persist() drives the couple-sync rev bump)
-  else if(typeof persist === 'function') persist();
+   Seeds each slot's displayName from the SERVER ROSTER rather than only from the local
+   Google account, so a device learns its partner's name too — that is what stops the
+   second member's phone showing "Partner" for a person who has a perfectly good name on
+   file. A name the user typed themselves always wins and is never overwritten. */
+function applyIdentityToAppState(){
+  if(typeof PROF === 'undefined' || !PROF || typeof isPlaceholderDisplayName !== 'function') return;
+
+  const dir = memberDirectory();
+  let changed = false;
+  for(let i = 0; i < dir.length; i++){
+    const m = dir[i];
+    const p = PROF[m.slot];
+    if(!p) continue;
+    if(!isPlaceholderDisplayName(p.displayName)) continue; // typed/synced real name wins
+    const first = (typeof m.firstName === 'string' && m.firstName.trim()) ? m.firstName.trim() : '';
+    if(!first || isPlaceholderDisplayName(first)) continue;
+    const cap = (typeof DISPLAY_NAME_MAX_LEN === 'number') ? DISPLAY_NAME_MAX_LEN : 24;
+    p.displayName = first.slice(0, cap);
+    changed = true;
+  }
+
+  // Deliberately silent: commitDisplayName()'s toast belongs to an interactive rename, not
+  // to boot. persist() is what makes the name durable AND queues the couple-sync rev bump,
+  // exactly as any Basics edit would.
+  if(changed){
+    authLog('names.seeded', dir.map(function(m){ return m.slot + '=' + (m.firstName || '?'); }).join(' '));
+    if(typeof persist === 'function') persist();
+  }
+
+  // Open on the viewer's OWN profile (see applyOwnMemberSlot's doc) and repaint whatever
+  // shows a name, whether or not a name changed — the roster may have arrived after the
+  // first paint.
+  applyOwnMemberSlot(myMemberSlot());
+  if(changed || dir.length){
+    if(typeof applyProf === 'function' && typeof currentProf !== 'undefined') applyProf(currentProf);
+    else if(typeof syncPersonLabels === 'function') syncPersonLabels();
+  }
 }
 
 /* Point the device at its OWN owner's profile after sign-in. Deliberately does nothing if
@@ -851,6 +921,12 @@ function initAuthEarly(){
   }
   initClaimWatch();
   updateLoginGate();
+  // Re-validate the session (and fetch the roster) HERE rather than from the boot chain:
+  // this is what caches memberSlot + members, and a device whose app boot fails must still
+  // resolve its identity — otherwise the second household member is labelled "Partner"
+  // forever. Everything it triggers that needs loaded state is deferred through
+  // applyIdentityToAppState(), which initAuth() calls again once state exists.
+  if(authToken()) refreshAuthMe();
 }
 
 /* initAuth() — the parts that need loaded app state. Called from bootMesaApp(); if boot
@@ -859,11 +935,11 @@ function initAuthEarly(){
 function initAuth(){
   renderAccountSection();
   updateLoginGate();
-  // Open on this device's own profile using the CACHED slot, before /auth/me is asked
-  // anything. Waiting for the network would mean an offline launch (or just a slow one)
-  // shows the second member their partner's profile first and then swaps under them.
-  applyOwnMemberSlot(myMemberSlot());
-  if(authToken()) refreshAuthMe();
+  // Apply whatever identity is already cached (slot + roster names) the moment app state
+  // exists — no network wait, so an offline launch still opens on the right profile with
+  // the right names. initAuthEarly()'s /auth/me may land before or after this; both call
+  // the same idempotent applier.
+  applyIdentityToAppState();
 }
 
 // Run the gate-critical half immediately. This file is loaded at the end of <body>, after

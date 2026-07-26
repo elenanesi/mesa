@@ -306,10 +306,19 @@ function viewerMemberSlot(){
   const slot = (typeof myMemberSlot === 'function') ? myMemberSlot() : null;
   return (slot === 'elena' || slot === 'partner') ? slot : 'elena';
 }
+// Phase 3C (C2): precedence is (1) a real name someone actually typed/synced into
+// PROF[key].displayName, (2) the household roster's firstName for that slot (auth.js:
+// memberInfo() — server-sourced, shared data, boot-independent per that file's doc), (3)
+// the viewer-relative You/Partner fallback. memberInfo() is read through a typeof guard,
+// same as myMemberSlot() below, so this keeps working with auth.js absent (tools/check.js's
+// harness, a signed-out boot, or an older cached build that predates the roster).
 function resolveDisplayName(key){
   const p = (typeof PROF !== 'undefined' && PROF) ? PROF[key] : null;
   const stored = p && typeof p.displayName === 'string' ? p.displayName.trim() : '';
   if(!isPlaceholderDisplayName(stored)) return stored.slice(0, DISPLAY_NAME_MAX_LEN);
+  const info = (typeof memberInfo === 'function') ? memberInfo(key) : null;
+  const firstName = info && typeof info.firstName === 'string' ? info.firstName.trim() : '';
+  if(firstName && !isPlaceholderDisplayName(firstName)) return firstName.slice(0, DISPLAY_NAME_MAX_LEN);
   return (key === viewerMemberSlot()) ? DISPLAY_NAME_DEFAULTS.elena : DISPLAY_NAME_DEFAULTS.partner;
 }
 
