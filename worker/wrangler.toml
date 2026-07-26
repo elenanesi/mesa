@@ -25,7 +25,12 @@ database_id = "660c50ce-13b5-433f-a00b-68349ac5e851"
 [vars]
 GOOGLE_CLIENT_ID = "242945555602-09h5e3eofta1a9hb3123sa03k40drtp2.apps.googleusercontent.com"
 MAX_USERS = "20"
-# Phase 3B (B1) dual-mode session gating on /sync/:code and /library/:code (see
-# worker/sync.js module doc). Flip to "1" only after every existing device has
-# signed in (see PHASE3B-generic-spec.md B5) — flipping early locks out sessionless clients.
-REQUIRE_SESSION = "0"
+# Phase 3B (B1/B5) session gating on /sync/:code and /library/:code (see worker/sync.js
+# module doc). FLIPPED to "1" on 2026-07-26: both existing accounts had signed in and both
+# users' household_code matched the code their devices sync under (verified against the KV
+# access-bootstrap value before flipping), so no device was left stranded. From here a
+# request with no valid session gets 401 session_required — knowing a household code is no
+# longer enough to read or write a household's data. GET /library/GLOBAL stays public (the
+# built-in catalog is fetched before login).
+# Setting this back to "0" re-opens every household to anyone holding its code. Don't.
+REQUIRE_SESSION = "1"
