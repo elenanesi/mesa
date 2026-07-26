@@ -499,6 +499,10 @@ async function handleCallback(request, env, origin, url){
     return errorRedirect(returnOrigin, 'server');
   }
   if(!allowedRow){
+    const claimIdEarly = (stateData && typeof stateData.linkId === 'string' && CLAIM_ID_RE.test(stateData.linkId)) ? stateData.linkId : null;
+    if(claimIdEarly && env && env.MESA_KV){
+      try{ await env.MESA_KV.put(CLAIM_KV_PREFIX + claimIdEarly, 'error:not_invited', {expirationTtl: CLAIM_TTL_SECONDS}); }catch(e){}
+    }
     return errorRedirect(returnOrigin, 'not_invited');
   }
 
@@ -1087,6 +1091,7 @@ async function handleAdminUsers(request, env, origin){
       note: allowed ? (allowed.note || null) : null,
       invitedAt: allowed ? allowed.added_at : null,
       signedUp: !!user,
+      allowed: !!allowed,
       isAdmin: !!(user && user.is_admin),
       memberSlot: user ? (user.member_slot || null) : (allowed ? (allowed.member_slot || null) : null),
       householdShort: householdCode ? (String(householdCode).slice(0, 6) + '…') : null,

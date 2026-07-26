@@ -87,8 +87,9 @@ function renderObGoals(key){
   // Task D3: for new onboarding users, don't show Elena's hardcoded goals—they should be
   // chosen by the user after completing profile setup. Only show goals when replaying
   // onboarding (non-fresh install), where PROF[key] already has saved preferences.
-  const isReplay = hadStoredStateOnBoot && PROF[key] && PROF[key].goals;
-  if(!isReplay){
+  const g = PROF[key] && PROF[key].goals;
+  const hasAnyGoal = g && (g.fatLoss || g.muscle || g.hashimoto || g.skin || g.heart);
+  if(!hadStoredStateOnBoot || !hasAnyGoal){
     document.getElementById('obGoalsPreview').innerHTML = '';
     return;
   }
