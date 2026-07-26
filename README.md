@@ -6,14 +6,22 @@ Since Phase 3 it is a multi-user app: invite-only Google sign-in, one household
 per user, and no hardcoded people. Elena and Andrea are just the first
 household; nothing user-visible names them (see the Auth & accounts section).
 
-**Live:** https://mesa-9y5.pages.dev/app/ (Cloudflare Pages). Sign-in gates the app itself.
+**Live:** https://mesa-9y5.pages.dev/app/ (Cloudflare Pages) — publicly reachable, gated
+by the app's own Google sign-in.
 
-⚠️ **Cloudflare Access still fronts the Pages project** with the original
-two-email allow-list, so an invited third person cannot even load the app yet —
-every request 302s to `lively-unit-4aa5.cloudflareaccess.com`. Removing it is
-the last step of Phase 3B and is deliberately sequenced AFTER
-`REQUIRE_SESSION="1"`, so the API stops trusting sessionless callers before the
-app becomes publicly reachable. Needs Elena's explicit go-ahead.
+**Cloudflare Access was REMOVED on 2026-07-26** (app id a9027db1…, team domain
+lively-unit-4aa5.cloudflareaccess.com) so invited users other than the first two
+could load the app at all. It was deliberately removed only AFTER
+`REQUIRE_SESSION="1"` was live and verified, so the API never sat exposed. Four
+layers now protect real data, and NONE of them is Access:
+1. the app shell is public but contains no user data;
+2. the login gate blocks the UI without a session (fails closed);
+3. `/sync` + `/library` reject any request without a valid session, and a session
+   may only touch ITS OWN household (403 `wrong_household`);
+4. sign-up is invite-only (`allowed_emails`) and capped by `MAX_USERS`.
+Re-adding Access would be the fastest way to lock everyone out again — if the app
+ever needs to be closed off in a hurry, prefer emptying `allowed_emails` and
+deleting rows from `sessions`.
 
 Backend: https://mesa-sync.elenanesi55.workers.dev (Cloudflare Worker + KV + D1). Legacy public URL https://elenanesi.github.io/mesa/ (to be retired → then make the GitHub repo private).
 
