@@ -34,3 +34,10 @@ MAX_USERS = "20"
 # built-in catalog is fetched before login).
 # Setting this back to "0" re-opens every household to anyone holding its code. Don't.
 REQUIRE_SESSION = "1"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false

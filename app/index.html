@@ -16,6 +16,8 @@
 </head>
 <body>
 
+<div id="bootLoader" aria-hidden="true"><div class="boot-mark">Mesa</div><div class="boot-spinner"></div></div>
+
 <div class="phone">
 
   <div class="app">
@@ -118,8 +120,8 @@
       <div class="card meal" id="todayBreakfastCard" onclick="openBreakfastRecipe()">
         <div class="thumb" id="bfEmoji">🥣</div>
         <div class="info">
-          <div class="row between"><span class="t" id="bfTitle">Greek yogurt & berry bowl</span><span class="kcal" id="bfKcal">320</span></div>
-          <div class="d" id="bfDesc">Breakfast · 24g protein</div>
+          <div class="row between"><span class="t" id="bfTitle"></span><span class="kcal" id="bfKcal"></span></div>
+          <div class="d" id="bfDesc"></div>
           <div class="tags" id="bfTags"></div>
           <div class="today-actions" id="taBreakfast"></div>
         </div>
@@ -128,8 +130,8 @@
       <div class="card meal" id="todayLunchCard" onclick="openLunchRecipe()">
         <div class="thumb" id="lunchThumb">🥗</div>
         <div class="info">
-          <div class="row between"><span class="t" id="lunchTitle">Lentil & roasted veg salad</span><span class="kcal" id="lunchKcal">430</span></div>
-          <div class="d" id="lunchDesc">Lunch · 19g protein</div>
+          <div class="row between"><span class="t" id="lunchTitle"></span><span class="kcal" id="lunchKcal"></span></div>
+          <div class="d" id="lunchDesc"></div>
           <div class="tags" id="lunchTags"></div>
           <div class="today-actions" id="taLunch"></div>
         </div>
@@ -138,8 +140,8 @@
       <div class="card meal" id="todayDinnerCard" onclick="openDinnerRecipe()">
         <div class="thumb" id="dinnerThumb">🐟</div>
         <div class="info">
-          <div class="row between"><span class="t" id="dinnerTitle">Baked salmon, quinoa & greens</span><span class="kcal" id="dinnerKcal">520</span></div>
-          <div class="d" id="dinnerDesc">Dinner · 38g protein</div>
+          <div class="row between"><span class="t" id="dinnerTitle"></span><span class="kcal" id="dinnerKcal"></span></div>
+          <div class="d" id="dinnerDesc"></div>
           <div class="tags" id="dinnerTags"></div>
           <div class="today-actions" id="taDinner"></div>
         </div>
@@ -148,8 +150,8 @@
       <div class="card meal" id="todaySnack" style="cursor:default">
         <div class="thumb" id="snackThumbEl" style="background:var(--terra-tint)">🌰</div>
         <div class="info">
-          <div class="row between"><span class="t" id="snackTitleEl">Snack · 2 Brazil nuts + apple</span><span class="kcal" id="snackKcalEl">130</span></div>
-          <div class="d" id="snackDescEl">Covers your daily selenium target</div>
+          <div class="row between"><span class="t" id="snackTitleEl"></span><span class="kcal" id="snackKcalEl"></span></div>
+          <div class="d" id="snackDescEl"></div>
           <div class="tags" id="snackTags"></div>
           <div class="today-actions" id="taSnack"></div>
         </div>

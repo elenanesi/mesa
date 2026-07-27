@@ -408,63 +408,65 @@ function catalogScopeForRow(row, fallbackCode){
 // 'builtin'-sourced row and overwrite the authoritative catalog for every household.
 function isHttpWritableScope(scope){ return scope !== 'global'; }
 
-async function upsertFoodRow(env, code, row){
-  if(!row || !isPlainObject(row)) return;
+function prepareFoodStmt(env, code, row){
+  if(!row || !isPlainObject(row)) return null;
   const id = cleanCatalogId(row.id);
   const source = row.source === 'custom' ? 'custom' : (row.source === 'builtin' ? 'builtin' : null);
   const data = isPlainObject(row.data) ? row.data : null;
-  if(!id || !source || !data) return;
+  if(!id || !source || !data) return null;
   const scope = catalogScopeForRow(row, code);
-  if(!validCatalogScope(scope) || !isHttpWritableScope(scope)) return;
+  if(!validCatalogScope(scope) || !isHttpWritableScope(scope)) return null;
   const name = String(row.name || data.name || id).slice(0, 240);
   const category = row.category || data.cat || null;
   const season = normalizeSeason(row.season || data.season);
   const updatedAt = typeof row.updatedAt === 'number' && isFinite(row.updatedAt) ? row.updatedAt : Date.now();
-  await env.MESA_DB.prepare(
+  return env.MESA_DB.prepare(
     'INSERT INTO foods (scope,id,source,name,category,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
     'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,name=excluded.name,category=excluded.category,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
-  ).bind(scope, id, source, name, category, season, updatedAt, safeJSONStringify(data)).run();
+  ).bind(scope, id, source, name, category, season, updatedAt, safeJSONStringify(data));
 }
 
-async function upsertRecipeRow(env, code, row){
-  if(!row || !isPlainObject(row)) return;
+function prepareRecipeStmt(env, code, row){
+  if(!row || !isPlainObject(row)) return null;
   const id = cleanCatalogId(row.id);
   const source = row.source === 'custom' || row.source === 'override' ? row.source : (row.source === 'builtin' ? 'builtin' : null);
   const data = isPlainObject(row.data) ? row.data : null;
-  if(!id || !source || !data) return;
+  if(!id || !source || !data) return null;
   const scope = catalogScopeForRow(row, code);
-  if(!validCatalogScope(scope) || !isHttpWritableScope(scope)) return;
+  if(!validCatalogScope(scope) || !isHttpWritableScope(scope)) return null;
   const title = String(row.title || data.title || id).slice(0, 240);
   const primarySlot = row.primarySlot || data.slot || null;
   const season = normalizeSeason(row.season || data.season);
   const updatedAt = typeof row.updatedAt === 'number' && isFinite(row.updatedAt) ? row.updatedAt : Date.now();
-  await env.MESA_DB.prepare(
+  return env.MESA_DB.prepare(
     'INSERT INTO recipes (scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
     'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,title=excluded.title,primary_slot=excluded.primary_slot,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
-  ).bind(scope, id, source, title, primarySlot, season, updatedAt, safeJSONStringify(data)).run();
+  ).bind(scope, id, source, title, primarySlot, season, updatedAt, safeJSONStringify(data));
 }
 
-async function upsertRecipePref(env, code, recipeId, pref){
-  if(pref !== 'favorite' && pref !== 'down') return;
+function preparePrefStmt(env, code, recipeId, pref){
+  if(pref !== 'favorite' && pref !== 'down') return null;
   recipeId = cleanCatalogId(recipeId);
-  if(!recipeId) return;
-  await env.MESA_DB.prepare(
+  if(!recipeId) return null;
+  return env.MESA_DB.prepare(
     'INSERT INTO recipe_prefs (household_code,recipe_id,pref,updated_at) VALUES (?,?,?,?) ' +
     'ON CONFLICT(household_code,recipe_id) DO UPDATE SET pref=excluded.pref,updated_at=excluded.updated_at'
-  ).bind(code, recipeId, pref, Date.now()).run();
+  ).bind(code, recipeId, pref, Date.now());
 }
 
-async function upsertTombstone(env, code, itemType, itemId, deletedAt){
+function prepareTombstoneStmts(env, code, itemType, itemId, deletedAt){
   itemId = cleanCatalogId(itemId);
-  if(!itemId || (itemType !== 'food' && itemType !== 'recipe')) return;
+  if(!itemId || (itemType !== 'food' && itemType !== 'recipe')) return [];
   const t = typeof deletedAt === 'number' && isFinite(deletedAt) ? deletedAt : Date.now();
-  await env.MESA_DB.prepare(
-    'INSERT INTO library_tombstones (household_code,item_type,item_id,deleted_at) VALUES (?,?,?,?) ' +
-    'ON CONFLICT(household_code,item_type,item_id) DO UPDATE SET deleted_at=max(library_tombstones.deleted_at, excluded.deleted_at)'
-  ).bind(code, itemType, itemId, t).run();
   const table = itemType === 'food' ? 'foods' : 'recipes';
-  await env.MESA_DB.prepare('UPDATE ' + table + ' SET deleted_at=? WHERE scope=? AND id=?')
-    .bind(t, code, itemId).run();
+  return [
+    env.MESA_DB.prepare(
+      'INSERT INTO library_tombstones (household_code,item_type,item_id,deleted_at) VALUES (?,?,?,?) ' +
+      'ON CONFLICT(household_code,item_type,item_id) DO UPDATE SET deleted_at=max(library_tombstones.deleted_at, excluded.deleted_at)'
+    ).bind(code, itemType, itemId, t),
+    env.MESA_DB.prepare('UPDATE ' + table + ' SET deleted_at=? WHERE scope=? AND id=?')
+      .bind(t, code, itemId)
+  ];
 }
 
 async function handleLibraryPost(request, env, code, origin){
@@ -480,16 +482,29 @@ async function handleLibraryPost(request, env, code, origin){
 
   const foods = Array.isArray(parsed.foods) ? parsed.foods : [];
   const recipes = Array.isArray(parsed.recipes) ? parsed.recipes : [];
-  for(let i = 0; i < foods.length; i++) await upsertFoodRow(env, code, foods[i]);
-  for(let i = 0; i < recipes.length; i++) await upsertRecipeRow(env, code, recipes[i]);
+
+  const stmts = [];
+  for(let i = 0; i < foods.length; i++){
+    const s = prepareFoodStmt(env, code, foods[i]);
+    if(s) stmts.push(s);
+  }
+  for(let i = 0; i < recipes.length; i++){
+    const s = prepareRecipeStmt(env, code, recipes[i]);
+    if(s) stmts.push(s);
+  }
 
   const prefs = isPlainObject(parsed.recipePrefs) ? parsed.recipePrefs : {};
-  for(const recipeId of Object.keys(prefs)) await upsertRecipePref(env, code, recipeId, prefs[recipeId]);
+  for(const recipeId of Object.keys(prefs)){
+    const s = preparePrefStmt(env, code, recipeId, prefs[recipeId]);
+    if(s) stmts.push(s);
+  }
 
   const deletedFoods = isPlainObject(parsed.deletedFoods) ? parsed.deletedFoods : {};
-  for(const id of Object.keys(deletedFoods)) await upsertTombstone(env, code, 'food', id, deletedFoods[id]);
+  for(const id of Object.keys(deletedFoods)) stmts.push(...prepareTombstoneStmts(env, code, 'food', id, deletedFoods[id]));
   const deletedRecipes = isPlainObject(parsed.deletedRecipes) ? parsed.deletedRecipes : {};
-  for(const id of Object.keys(deletedRecipes)) await upsertTombstone(env, code, 'recipe', id, deletedRecipes[id]);
+  for(const id of Object.keys(deletedRecipes)) stmts.push(...prepareTombstoneStmts(env, code, 'recipe', id, deletedRecipes[id]));
+
+  if(stmts.length > 0) await env.MESA_DB.batch(stmts);
 
   return json({ok: true, foods: foods.length, recipes: recipes.length}, 200, origin);
 }
@@ -503,20 +518,23 @@ function parseD1JSONRow(row){
 
 async function handleLibraryGet(env, code, origin, includeDeleted){
   if(!d1Available(env)) return json({error: 'd1_not_configured'}, 503, origin);
-  const foodRows = await env.MESA_DB.prepare(
-    'SELECT scope,id,source,name,category,season,updated_at,deleted_at,data_json FROM foods ' +
-    'WHERE scope IN (?,?)' + (includeDeleted ? '' : ' AND deleted_at IS NULL') + ' ORDER BY name COLLATE NOCASE'
-  ).bind('global', code).all();
-  const recipeRows = await env.MESA_DB.prepare(
-    'SELECT scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json FROM recipes ' +
-    'WHERE scope IN (?,?)' + (includeDeleted ? '' : ' AND deleted_at IS NULL') + ' ORDER BY title COLLATE NOCASE'
-  ).bind('global', code).all();
-  const prefs = await env.MESA_DB.prepare(
-    'SELECT recipe_id,pref,updated_at FROM recipe_prefs WHERE household_code=? ORDER BY recipe_id'
-  ).bind(code).all();
-  const tombstones = await env.MESA_DB.prepare(
-    'SELECT item_type,item_id,deleted_at FROM library_tombstones WHERE household_code=? ORDER BY item_type,item_id'
-  ).bind(code).all();
+  const delFilter = includeDeleted ? '' : ' AND deleted_at IS NULL';
+  const [foodRows, recipeRows, prefs, tombstones] = await env.MESA_DB.batch([
+    env.MESA_DB.prepare(
+      'SELECT scope,id,source,name,category,season,updated_at,deleted_at,data_json FROM foods ' +
+      'WHERE scope IN (?,?)' + delFilter + ' ORDER BY name COLLATE NOCASE'
+    ).bind('global', code),
+    env.MESA_DB.prepare(
+      'SELECT scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json FROM recipes ' +
+      'WHERE scope IN (?,?)' + delFilter + ' ORDER BY title COLLATE NOCASE'
+    ).bind('global', code),
+    env.MESA_DB.prepare(
+      'SELECT recipe_id,pref,updated_at FROM recipe_prefs WHERE household_code=? ORDER BY recipe_id'
+    ).bind(code),
+    env.MESA_DB.prepare(
+      'SELECT item_type,item_id,deleted_at FROM library_tombstones WHERE household_code=? ORDER BY item_type,item_id'
+    ).bind(code)
+  ]);
   return json({
     foods: ((foodRows && foodRows.results) || []).map(parseD1JSONRow),
     recipes: ((recipeRows && recipeRows.results) || []).map(parseD1JSONRow),

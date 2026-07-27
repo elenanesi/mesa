@@ -370,6 +370,14 @@ function bootMesaApp(){
 
   bootStage('auth', function(){ if(typeof initAuth === 'function') initAuth(); });
 
+  // Hide the boot loading overlay now that the real Today content is painted.
+  // Runs regardless of whether earlier stages threw (bootStage isolates it),
+  // and does not wait on the D1 catalog fetch below, which is network-bound.
+  bootStage('boot-loader-hide', function(){
+    const bootLoader = document.getElementById('bootLoader');
+    if(bootLoader) bootLoader.classList.add('gone');
+  });
+
   if(typeof authLog === 'function') authLog('boot.ok', 'reached end of boot');
 
   // D1 catalog fetch: replaces bundled built-in recipes with the authoritative
