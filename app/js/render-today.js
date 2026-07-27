@@ -958,6 +958,7 @@ function refreshAfterLogChange(){
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
+  renderTodayMeals();
   renderLogPlan(); // rebuilds cards + replays statuses, then updates pill + "Today so far"
   renderTodayRecords();
   renderBeverageCounts();
@@ -1314,10 +1315,10 @@ const MISSING_RECIPE_FALLBACK = {emoji: '❓', title: 'Meal unavailable'};
 function renderTodayMeals(){
   activeMenu = computeActiveMenu();
 
-  function tagsHtml(recipeId, slot, pillId){
+  function tagsHtml(recipeId, slot, pillId, shared){
     // Diet/trait pills (Plant-based, High fiber, etc.) hidden on Today summary cards —
     // they stay visible in the recipe detail view (renderRecipeScreen).
-    const showTogetherPill = SHARED[slot] && !(typeof isSoloHousehold === 'function' && isSoloHousehold());
+    const showTogetherPill = !!shared && !(typeof isSoloHousehold === 'function' && isSoloHousehold());
     return '<span class="pill together mini" id="'+pillId+'" style="display:'+(showTogetherPill?'inline-flex':'none')+'">👥 Together</span>';
   }
 
@@ -1326,28 +1327,28 @@ function renderTodayMeals(){
   document.getElementById('bfTitle').textContent = bfv.recipe ? mealTitleWithExtras(bfv) : bf.title;
   document.getElementById('bfKcal').textContent = bfv.kcal;
   document.getElementById('bfDesc').textContent = 'Breakfast · ' + macroSummaryFromTotals(bfv);
-  document.getElementById('bfTags').innerHTML = tagsHtml(bfv.recipeId, 'breakfast', 'pillBreakfast');
+  document.getElementById('bfTags').innerHTML = tagsHtml(bfv.recipeId, 'breakfast', 'pillBreakfast', bfv.shared);
 
   const luv = todaySlotView('lunch'), lu = luv.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('lunchThumb').textContent = lu.emoji;
   document.getElementById('lunchTitle').textContent = luv.recipe ? mealTitleWithExtras(luv) : lu.title;
   document.getElementById('lunchKcal').textContent = luv.kcal;
   document.getElementById('lunchDesc').textContent = 'Lunch · ' + macroSummaryFromTotals(luv);
-  document.getElementById('lunchTags').innerHTML = tagsHtml(luv.recipeId, 'lunch', 'pillLunch');
+  document.getElementById('lunchTags').innerHTML = tagsHtml(luv.recipeId, 'lunch', 'pillLunch', luv.shared);
 
   const div_ = todaySlotView('dinner'), di = div_.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('dinnerThumb').textContent = di.emoji;
   document.getElementById('dinnerTitle').textContent = div_.recipe ? mealTitleWithExtras(div_) : di.title;
   document.getElementById('dinnerKcal').textContent = div_.kcal;
   document.getElementById('dinnerDesc').textContent = 'Dinner · ' + macroSummaryFromTotals(div_);
-  document.getElementById('dinnerTags').innerHTML = tagsHtml(div_.recipeId, 'dinner', 'pillDinner');
+  document.getElementById('dinnerTags').innerHTML = tagsHtml(div_.recipeId, 'dinner', 'pillDinner', div_.shared);
 
   const snv = todaySlotView('snack'), sn = snv.recipe || MISSING_RECIPE_FALLBACK;
   document.getElementById('snackThumbEl').textContent = sn.emoji;
   document.getElementById('snackTitleEl').textContent = snv.recipe ? mealTitleWithExtras(snv) : sn.title;
   document.getElementById('snackKcalEl').textContent = snv.kcal;
   document.getElementById('snackDescEl').textContent = 'Snack · ' + macroSummaryFromTotals(snv);
-  document.getElementById('snackTags').innerHTML = tagsHtml(snv.recipeId, 'snack', 'pillSnack');
+  document.getElementById('snackTags').innerHTML = tagsHtml(snv.recipeId, 'snack', 'pillSnack', snv.shared);
 
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
   renderTodayRecords();

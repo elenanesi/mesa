@@ -639,21 +639,23 @@ function renderRecipeMealStrip(){
   const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
   const planned = slot && displayedTodayRecipeId(slot) === currentRecipeKey;
   const view = planned ? todaySlotView(slot) : null;
-  if(!view || !view.extras || !view.extras.length){
+  if(!view){
     wrap.style.display = 'none';
     wrap.innerHTML = '';
     return;
   }
-  const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion, view.opts).totals);
   let rows = '<div class="row between"><b style="font-size:14px">In this meal</b>'
-    + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\'' + slot + '\')">Manage</button></div>'
-    + '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(view.recipeId, view.opts)) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';
-  view.extras.forEach(function(c){
-    if(!RECIPES_DB[c.recipeId]) return;
-    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1, c.opts).totals);
-    rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(c.recipeId, c.opts)) + '<small>' + nut.kcal + ' kcal</small></div></div>';
-  });
-  rows += '<div class="logitem" style="border-bottom:0"><div class="li-t"><b>Meal total</b><small><b>' + view.kcal + ' kcal</b></small></div></div>';
+    + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\'' + slot + '\')">Manage</button></div>';
+  if(view.extras && view.extras.length){
+    const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion, view.opts).totals);
+    rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(view.recipeId, view.opts)) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';
+    view.extras.forEach(function(c){
+      if(!RECIPES_DB[c.recipeId]) return;
+      const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1, c.opts).totals);
+      rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(c.recipeId, c.opts)) + '<small>' + nut.kcal + ' kcal</small></div></div>';
+    });
+    rows += '<div class="logitem" style="border-bottom:0"><div class="li-t"><b>Meal total</b><small><b>' + view.kcal + ' kcal</b></small></div></div>';
+  }
   wrap.innerHTML = rows;
   wrap.style.display = 'block';
 }
