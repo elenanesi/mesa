@@ -51,11 +51,17 @@ const FIXED_MONDAY = '2026-07-13'; // a real Monday — planner/plan-signature t
 // ensureDefaultFoodIconCached() call).
 const APP_SCRIPT_ORDER = [
   'data/foods.js', 'data/recipes.js', 'data/validate.js',
-  'js/state.js', 'js/log.js', 'js/engine.js', 'js/planner.js', 'js/pantry.js', 'js/render.js',
+  'js/state.js', 'js/log.js', 'js/engine.js', 'js/planner.js', 'js/pantry.js',
+  'js/render.js', 'js/render-recipe.js', 'js/render-week.js', 'js/render-today.js', 'js/render-profile.js', 'js/render-sheets.js',
   // 'vendor/zxing-browser.min.js' (barcode/camera) skipped
   'js/library.js', 'js/sync.js'
   // 'js/app.js' (boot/nav DOM code) skipped
 ];
+
+const RENDER_FILES = ['render.js', 'render-recipe.js', 'render-week.js', 'render-today.js', 'render-profile.js', 'render-sheets.js'];
+function readAllRenderSrc(){
+  return RENDER_FILES.map(function(f){ return fs.readFileSync(path.join(APP_DIR, 'js', f), 'utf8'); }).join('\n');
+}
 
 /* ---------------- minimal browser-global stubs ---------------- */
 
@@ -554,7 +560,7 @@ function testSlotCompositionBias(ctx){
 }
 
 function testSharedRecipeViewerNutrition(ctx){
-  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const renderSrc = readAllRenderSrc();
   const fnBody = function(name){
     const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
     return m ? m[0] : '';
@@ -1860,7 +1866,7 @@ function testPinnedMealsRebalanceImmutability(ctx){
 // preserveLoggedSlots and BEFORE markWeekPlanEdited (the 2026-07-19 belt-and-braces fix;
 // regeneration in planner.js ensureWeekPlan already had the same final guard from abe920f).
 function testRebalanceAppliersCarryPinGuard(){
-  const src = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const src = readAllRenderSrc();
   ['applyRebalance', 'applyTodayRebalance'].forEach(function(fnName){
     const start = src.indexOf('function ' + fnName + '(');
     const end = src.indexOf('\nfunction ', start + 1);
@@ -3904,7 +3910,7 @@ function testWeekNutriSummary(ctx){
     'B4: weekNutriSummary.sugarTargetG derives from coverageGaps().freeSugars.target (the SAME sugar target Insights uses), not a re-typed literal',
     'got ' + summary.sugarTargetG + ', expected ' + expectedSugarTargetG);
 
-  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const renderSrc = readAllRenderSrc();
   const fnBody = function(name){
     const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
     return m ? m[0] : '';
@@ -4267,7 +4273,7 @@ function testInsightsNutrientBands(ctx){
    throws on that null #weekList, so this is a structural/source assertion instead: count
    'renderWeek()' occurrences in each function's own extracted source. */
 function testRefreshAfterLogChangeRendersWeekOnce(){
-  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const renderSrc = readAllRenderSrc();
   const fnBody = function(name){
     const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
     return m ? m[0] : '';
@@ -5857,7 +5863,7 @@ function testEatenOutFlag(ctx){
    some ad-hoc repaint), and the two render functions really reference the toggle handlers
    and the "eaten out" pill, rather than silently never being called. */
 function testEatenOutToggleWiring(){
-  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const renderSrc = readAllRenderSrc();
   const fnBody = function(name){
     const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
     return m ? m[0] : '';
@@ -6154,7 +6160,7 @@ function testWeekEatenOut(ctx){
    branches on meal.shared, and renderWeek() really emits the "🍴 out" pill from
    slotLoggedEatenOut() using the same chip-computed style. */
 function testWeekEatenOutToggleWiring(){
-  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const renderSrc = readAllRenderSrc();
   const fnBody = function(name){
     const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
     return m ? m[0] : '';

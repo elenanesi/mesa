@@ -1,0 +1,768 @@
+/* render-sheets.js — shopping sheet, food search, quick add, export/import */
+
+// Two-week horizon: which week the shopping sheet currently shows ('current'|'next').
+// Reset every time the sheet is opened fresh (openShopping()) to whichever week the Week
+// screen was showing at that moment (task: "default: the week currently shown on the Week
+// screen when opened from there") — setShopWeek() then lets the sheet's own segmented
+// control switch it without closing/reopening. currentShopWeekStartDate is the resolved
+// Monday for whichever mode is active right now — toggleShop() writes into that week's
+// checked-set, so it's always kept in sync with buildShopSheet()'s own resolution.
+let shopWeekMode = 'current';
+let currentShopWeekStartDate = null;
+
+function openShopping(){
+  shopWeekMode = weekScreenShowsNext ? 'next' : 'current';
+  document.getElementById('sheetBody').innerHTML = buildShopSheet();
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  attachShopListClickHandler();
+}
+
+// Switches the shopping sheet's own "This week | Next week" control without closing the
+// sheet — same pattern as setWeekScreenMode() on the Week screen, just scoped to the sheet.
+function setShopWeek(mode){
+  shopWeekMode = mode;
+  document.getElementById('sheetBody').innerHTML = buildShopSheet();
+  attachShopListClickHandler();
+}
+
+// Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list
+// recomputes (different week, different servings), so checked state is tracked and
+// persisted by ingredient NAME, PER WEEK (checkedShopByWeek/checkedSetForWeek, state.js)
+// — the DOM class is just this render's presentation of that. Writes into whichever
+// week's bucket buildShopSheet() most recently resolved (currentShopWeekStartDate), so
+// checking an item on next week's list never touches this week's checks and vice versa.
+function toggleShop(id, name){
+  const el = document.getElementById(id);
+  if(!el) return;
+  el.classList.toggle('done');
+  if(name && currentShopWeekStartDate){
+    const checked = checkedSetForWeek(currentShopWeekStartDate);
+    if(el.classList.contains('done')) checked[name] = true;
+    else delete checked[name];
+    persist();
+  }
+}
+
+// Delegated click handler for the shopping list's .shop-item rows (buildShopSheet below).
+// Ingredient NAMES can be user-authored (custom food/recipe names), so rows carry the name
+// only in a data-* attribute (htmlAttr-escaped once by the HTML-attribute parser, never
+// re-parsed as JS) instead of interpolating it into an onclick="..." JS string — same
+// re-attach-after-innerHTML-rebuild pattern as attachSwapSearchHandler (planner.js).
+function attachShopListClickHandler(){
+  const el = document.getElementById('sheetBody');
+  if(!el) return;
+  el.onclick = function(e){
+    const row = e.target.closest('.shop-item');
+    if(!row || !el.contains(row)) return;
+    toggleShop(row.id, row.getAttribute('data-shop-name') || '');
+  };
+}
+
+function buildShopSheet(){
+  const weekStartDate = shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO());
+  currentShopWeekStartDate = weekStartDate; // toggleShop() writes into this week's checked-set
+  const list = computeShoppingList(weekStartDate);
+  const checked = checkedSetForWeek(weekStartDate);
+  const byCat = {};
+  Object.keys(list.totals).forEach(function(name){
+    const cat = foodCategoryForName(name); // real FOODS[..].cat, no hand-typed map (task C2)
+    (byCat[cat] = byCat[cat] || []).push(name);
+  });
+  // Task C3 item 4 (generalized for the two-week horizon): the week date range, computed
+  // from the week actually being shown, never the current week by default.
+  const weekRange = fmtShopWeekRange(list.weekStartDate);
+  const weekLabel = shopWeekMode === 'next' ? 'next week\'s' : 'this week\'s';
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Shopping list <span class="chip-computed">✓ computed</span></h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div class="seg" style="width:100%;margin-top:10px">'
+    + '<button style="flex:1" class="'+(shopWeekMode === 'current' ? 'on' : '')+'" onclick="setShopWeek(\'current\')">This week</button>'
+    + '<button style="flex:1" class="'+(shopWeekMode === 'next' ? 'on' : '')+'" onclick="setShopWeek(\'next\')">Next week</button>'
+    + '</div>'
+    + '<p class="sub" style="margin-top:10px"><b>' + weekRange + '</b> · ' + (isSoloHousehold() ? 'For you' : 'For both of you') + ' · 7 days · totals summed from ' + weekLabel + ' plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
+  // PANTRY-plan.md P3: a row the pantry fully covers is dropped from the list below, but
+  // never silently — this short summary says where it went (the plan is explicit that
+  // silent disappearance is indistinguishable from a bug).
+  if(list.fullyCovered.length){
+    html += '<p class="sub" style="margin-top:0">Already at home, not on this list: ' + list.fullyCovered.slice().sort().map(escapeHtml).join(', ') + '.</p>';
+  }
+  let idx = 0;
+  SHOP_CAT_ORDER.forEach(function(cat){
+    const names = byCat[cat];
+    if(!names || !names.length) return;
+    names.sort();
+    html += '<div class="shop-cat">'+cat+'</div>';
+    names.forEach(function(name){
+      const t = list.totals[name];
+      const id = 'sh-' + (idx++);
+      const done = checked[name] ? ' done' : '';
+      // PANTRY-plan.md P3: a PARTIALLY covered row keeps the reduced qty (t.qty, already
+      // net of the pantry) but annotates what pantry already contributed — same "never
+      // silent" reasoning as the fullyCovered summary above, just per-row. Mirrors the
+      // existing .dm-t/.li-t small-under-title pattern (mesa.css) inline rather than adding
+      // a new selector, since this file's scope doesn't include the stylesheet.
+      const haveNote = list.covered[name]
+        ? '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(list.covered[name].have, list.covered[name].unit) + '</small>'
+        : '';
+      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+haveNote+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+    });
+  });
+  const stapleNames = Object.keys(list.staples).sort();
+  if(stapleNames.length){
+    html += '<div class="shop-cat">Pantry staples — check you have these</div>';
+    stapleNames.forEach(function(name){
+      const id = 'sh-' + (idx++);
+      const done = checked[name] ? ' done' : '';
+      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
+    });
+  }
+  // Q2 (PANTRY-plan.md P3 step 4): explicit-only restock — ticking a row above never by
+  // itself stocks anything (checkedShopByWeek is a UI/shopping concept only); this button is
+  // the one and only path that writes to the pantry from this sheet.
+  html += '<button class="cta" onclick="addTickedShopItemsToPantry()">Add ticked items to pantry</button>';
+  return html;
+}
+
+// Q2 (PANTRY-plan.md P3 step 4) — pure logic: stocks every currently-TICKED row of
+// `weekStartDate`'s shopping list into the pantry at its LISTED quantity (computeShoppingList's
+// already pantry-reduced `qty` — exactly what's still missing), adding it ON TOP of
+// whatever's already in stock (reads pantryRemaining() first) rather than replacing it.
+// Goes through setPantryRemaining (js/library.js), the ONE re-baselining mutator, once per
+// affected foodId — so this file never writes `pantry[...]` directly, and every write still
+// re-stamps setAt/u atomically like every other pantry edit path. No DOM here (the onclick
+// wrapper below owns the re-render + toast) so this is directly callable from
+// tools/check.js. Returns the number of foodId writes made, so the caller can tell "nothing
+// was ticked" apart from "stocked N things".
+function restockTickedShopItems(weekStartDate){
+  const list = computeShoppingList(weekStartDate);
+  const checked = checkedSetForWeek(weekStartDate);
+  const remaining = pantryRemaining();
+  let count = 0;
+  Object.keys(list.totals).forEach(function(name){
+    if(!checked[name]) return;
+    const row = list.totals[name];
+    (row.foodIds || []).forEach(function(foodId){
+      if(!FOODS[foodId]) return;
+      const have = (typeof remaining[foodId] === 'number') ? remaining[foodId] : 0;
+      const newQty = have + row.qty;
+      setPantryRemaining(foodId, newQty);
+      remaining[foodId] = newQty; // keep the local map in sync for the (rare) shared-foodId-per-row case
+      count++;
+    });
+  });
+  return count;
+}
+
+function addTickedShopItemsToPantry(){
+  const weekStartDate = currentShopWeekStartDate || (shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO()));
+  const count = restockTickedShopItems(weekStartDate);
+  if(!count){ toast('Tick items first, then add them to your pantry'); return; }
+  document.getElementById('sheetBody').innerHTML = buildShopSheet();
+  attachShopListClickHandler();
+  toast('Added to pantry');
+}
+
+/* ---------------- re-balance week (task C2 item 4 — real solver) ---------------- */
+// buildRebalanceSheet asks planner.js:proposeRebalanceSuggestions() for the real worst
+// coverage gap and a small deterministic set of swap/side suggestions that improve it;
+// applyRebalance() commits only the accepted suggestions, persists, and re-renders
+// every surface that shows the plan (chips included).
+let rebalanceProposal = null;
+let todayRebalanceProposal = null;
+
+function rebalanceProposalLabel(){
+  return rebalanceProposal && rebalanceProposal.weekStartDate === nextMondayISO() ? 'next week' : 'this week';
+}
+
+function rebalanceSuggestionLabel(s){
+  if(s.kind === 'swap'){
+    const to = RECIPES_DB[s.toRecipeId];
+    return DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + ' → ' + escapeHtml(to.title);
+  }
+  const side = RECIPES_DB[s.sideRecipeId];
+  return DAY_NAMES[s.unit.dayIndex] + ' ' + SLOT_LABEL[s.unit.slot].toLowerCase() + ' + side ' + escapeHtml(side.title);
+}
+
+function rebalanceAcceptedPlan(prop){
+  if(!prop) return null;
+  const basePlan = ensureWeekPlan(prop.weekStartDate);
+  const resultPlan = deepClone(basePlan);
+  prop.suggestions.forEach(function(s){
+    if(s.accepted === false) return;
+    if(typeof canAutoMutateUnit === 'function' && !canAutoMutateUnit(resultPlan, s.unit)) return;
+    if(s.kind === 'swap') applySwapToPlan(resultPlan, s.unit, s.toRecipeId);
+    else addSideToPlan(resultPlan, s.unit, s.sideRecipeId);
+  });
+  return resultPlan;
+}
+
+function setRebalanceSuggestionChoice(index, accepted){
+  if(!rebalanceProposal || !rebalanceProposal.suggestions || !rebalanceProposal.suggestions[index]) return;
+  rebalanceProposal.suggestions[index].accepted = !!accepted;
+  document.getElementById('sheetBody').innerHTML = renderRebalanceSheet();
+}
+
+function buildRebalanceSheet(){
+  const weekStartDate = weekScreenShowsNext ? nextMondayISO() : mondayOfWeek(todayISO());
+  rebalanceProposal = proposeRebalanceSuggestions(weekStartDate);
+  return renderRebalanceSheet();
+}
+
+function renderRebalanceSheet(){
+  if(!rebalanceProposal) return '';
+  const g = rebalanceProposal.gapInfo;
+  const acceptedPlan = rebalanceAcceptedPlan(rebalanceProposal);
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  if(!rebalanceProposal.suggestions.length){
+    const allMet = g.gap <= 1e-9;
+    html += '<p class="sub">' + (allMet
+      ? 'Nothing to fix — all four weekly coverage targets are already met. Nicely balanced.'
+      : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal suggestion improves it for this week.')
+      + '</p>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+    return html;
+  }
+  html += '<p class="sub">Keeps fixed: pinned meals, logged or skipped slots, foods you avoid, and past dates. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Suggestions stay conservative and week-aware.</p>'
+    + '<div class="card" style="padding:14px">'
+    + '<b style="font-size:13px">Suggestions</b>';
+  rebalanceProposal.suggestions.forEach(function(s, i){
+    const accepted = s.accepted !== false;
+    // Task B2 (generic identity): displayName instead of a hardcoded person name — this
+    // whole suggestion line is built into `html` and painted via innerHTML further down, so
+    // (unlike the plain-textContent viewerName above) it must go through escapeHtml.
+    const who = s.unit.shared ? '' : (' (' + escapeHtml(resolveDisplayName(s.unit.person === 'elena' ? 'elena' : 'partner')) + ')');
+    const last = i === rebalanceProposal.suggestions.length - 1;
+    const kind = s.kind === 'swap' ? 'swap' : 'side';
+    const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
+    html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + icon + '</div>'
+      + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
+      + '<small>' + (kind === 'swap' ? 'Swap' : 'Add side') + ' · +' + g.label + '</small></div>'
+      + '<div class="row" style="gap:8px">'
+      + '<button class="backbtn' + (accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
+      + '<button class="backbtn' + (!accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'
+      + '</div></div>';
+  });
+  const acceptedGap = coverageGaps(computeWeeklyCoverage(acceptedPlan))[rebalanceProposal.metricKey];
+  html += '</div>'
+    + '<p class="sub">' + g.label + ' after accepted suggestions: <b>' + coverageValueText(acceptedGap) + '</b> (now ' + coverageValueText(g) + ').</p>'
+    + '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+  return html;
+}
+
+function openRebalanceSheet(){
+  document.getElementById('sheetBody').innerHTML = buildRebalanceSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function applyRebalance(){
+  if(!rebalanceProposal || !rebalanceProposal.suggestions.length){ closeSheet(); return; }
+  const g = rebalanceProposal.gapInfo;
+  const accepted = rebalanceProposal.suggestions.filter(function(s){ return s.accepted !== false; });
+  if(!accepted.length){ closeSheet(); return; }
+  const basePlan = ensureWeekPlan(rebalanceProposal.weekStartDate);
+  const resultPlan = rebalanceAcceptedPlan(rebalanceProposal);
+  const afterText = coverageValueText(coverageGaps(computeWeeklyCoverage(resultPlan))[rebalanceProposal.metricKey]);
+  preserveLoggedSlots(basePlan, resultPlan);
+  // Belt-and-braces pin guard (2026-07-19 pin-leak report): every suggestion is already
+  // filtered per-unit by canAutoMutateUnit (enumeration AND apply time), but regeneration
+  // (ensureWeekPlan) already gets a preservePinnedSlots final pass, and this apply path is
+  // the same kind of AUTO mutation — so any pinned cell is restored from basePlan
+  // wholesale here regardless of what the accepted suggestions did. Explicit user
+  // corrections (manual swap, routine set, extras edit) never route through this
+  // function, so v56's "explicit user corrections remain allowed" is untouched.
+  preservePinnedSlots(basePlan, resultPlan);
+  markWeekPlanEdited(resultPlan);
+  weekPlans[rebalanceProposal.weekStartDate] = resultPlan;
+  if(rebalanceProposal.weekStartDate === mondayOfWeek(todayISO())) weekPlan = resultPlan;
+  rebalanceProposal = null;
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  closeSheet();
+  toast('✓ Week re-balanced — ' + g.label + ' now ' + afterText);
+}
+
+/* ---------------- re-balance today (UI slice) ---------------- */
+function todayRebalanceProposalDate(){
+  return (todayRebalanceProposal && todayRebalanceProposal.dateISO) || todayISO();
+}
+
+function todayRebalanceSuggestionLabel(s){
+  const unit = s.unit || {};
+  const slot = unit.slot || s.slot || '';
+  const label = SLOT_LABEL[slot] || slot || 'Meal';
+  if(s.kind === 'swap'){
+    const to = RECIPES_DB[s.toRecipeId] || {};
+    return label + ' → ' + escapeHtml(to.title || 'suggested meal');
+  }
+  const side = RECIPES_DB[s.sideRecipeId] || {};
+  return label + ' + side ' + escapeHtml(side.title || 'suggested side');
+}
+
+function todayRebalanceSuggestionIcon(s){
+  if(s.kind === 'swap'){
+    const to = RECIPES_DB[s.toRecipeId] || {};
+    return to.emoji || '↔';
+  }
+  const side = RECIPES_DB[s.sideRecipeId] || {};
+  return side.emoji || '+';
+}
+
+function todayRebalanceChangedSuggestions(beforePlan, afterPlan, suggestions){
+  if(!beforePlan || !afterPlan || !Array.isArray(suggestions)) return [];
+  return suggestions.filter(function(s){
+    return s && s.accepted !== false && s.unit
+      && todayRebalanceUnitSnapshot(beforePlan, s.unit) !== todayRebalanceUnitSnapshot(afterPlan, s.unit);
+  });
+}
+
+function todayRebalanceAcceptedCount(prop){
+  return prop && prop.suggestions ? prop.suggestions.filter(function(s){ return s.accepted !== false && todayRebalanceUnitCanApply(prop, s); }).length : 0;
+}
+
+function todayRebalanceUnitCanApply(prop, s){
+  if(typeof canApplyTodayRebalanceUnit !== 'function') return true;
+  const dateISO = (prop && prop.dateISO) || todayISO();
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  return canApplyTodayRebalanceUnit(plan, (s && s.unit) || {}, dateISO);
+}
+
+function setTodayRebalanceSuggestionChoice(index, accepted){
+  if(!todayRebalanceProposal || !todayRebalanceProposal.suggestions || !todayRebalanceProposal.suggestions[index]) return;
+  todayRebalanceProposal.suggestions[index].accepted = !!accepted;
+  document.getElementById('sheetBody').innerHTML = renderTodayRebalanceSheet();
+}
+
+function buildTodayRebalanceSheet(){
+  const dateISO = todayISO();
+  todayRebalanceProposal = proposeTodayRebalanceSuggestions(dateISO, currentProf);
+  if(todayRebalanceProposal){
+    todayRebalanceProposal.dateISO = todayRebalanceProposal.dateISO || dateISO;
+    todayRebalanceProposal.personKey = todayRebalanceProposal.personKey || currentProf;
+  }
+  return renderTodayRebalanceSheet();
+}
+
+function renderTodayRebalanceSheet(){
+  if(!todayRebalanceProposal) return '';
+  const suggestions = todayRebalanceProposal.suggestions || [];
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance today</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  if(!suggestions.length){
+    html += '<p class="sub">Nothing to fix for today. Your current menu already fits the remaining day as well as Mesa can nudge it.</p>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+    return html;
+  }
+
+  html += '<p class="sub">Keeps fixed: logged or skipped slots, pinned meals, foods you avoid, and the rest of the week. Accept the swaps you want, then apply them to today only.</p>'
+    + '<div class="card" style="padding:14px">'
+    + '<b style="font-size:13px">Suggestions</b>';
+  suggestions.forEach(function(s, i){
+    const accepted = s.accepted !== false;
+    const canApply = todayRebalanceUnitCanApply(todayRebalanceProposal, s);
+    const disabled = canApply ? '' : ' disabled';
+    const last = i === suggestions.length - 1;
+    const kind = s.kind === 'swap' ? 'Swap' : 'Add side';
+    const lockedNote = canApply ? '' : ' · Locked';
+    html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + todayRebalanceSuggestionIcon(s) + '</div>'
+      + '<div class="li-t">' + todayRebalanceSuggestionLabel(s)
+      + '<small>' + kind + lockedNote + '</small></div>'
+      + '<div class="row" style="gap:8px">'
+      + '<button class="backbtn' + (accepted && canApply ? ' on' : '') + '"' + disabled + ' onclick="setTodayRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
+      + '<button class="backbtn' + (!accepted || !canApply ? ' on' : '') + '" onclick="setTodayRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'
+      + '</div></div>';
+  });
+  html += '</div>'
+    + '<p class="sub">Accepted suggestions: <b>' + todayRebalanceAcceptedCount(todayRebalanceProposal) + '</b>.</p>'
+    + '<button class="cta" onclick="applyTodayRebalance()">Apply ' + todayRebalanceAcceptedCount(todayRebalanceProposal) + ' ' + (todayRebalanceAcceptedCount(todayRebalanceProposal) === 1 ? 'change' : 'changes') + '</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+  return html;
+}
+
+function renderTodayRebalanceAppliedSheet(changedSuggestions){
+  const changed = Array.isArray(changedSuggestions) ? changedSuggestions : [];
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Applied changes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub">Today was updated. Logged and skipped meals stayed fixed.</p>';
+  html += '<div class="card" style="padding:14px"><b style="font-size:13px">Changed today</b>';
+  changed.forEach(function(s, i){
+    html += '<div class="logitem"' + (i === changed.length - 1 ? ' style="border-bottom:0"' : '') + '>'
+      + '<div class="li-i" style="background:var(--sage-tint)">' + todayRebalanceSuggestionIcon(s) + '</div>'
+      + '<div class="li-t">' + todayRebalanceSuggestionLabel(s)
+      + '<small>Updated in Today, Log, Week, and saved offline</small></div></div>';
+  });
+  html += '</div><button class="cta" onclick="closeSheet()">Done</button>';
+  return html;
+}
+
+function openTodayRebalanceSheet(){
+  document.getElementById('sheetBody').innerHTML = buildTodayRebalanceSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function applyTodayRebalance(){
+  if(!todayRebalanceProposal || !todayRebalanceProposal.suggestions || !todayRebalanceProposal.suggestions.length){ closeSheet(); return; }
+  todayRebalanceProposal.suggestions.forEach(function(s){
+    if(!todayRebalanceUnitCanApply(todayRebalanceProposal, s)) s.accepted = false;
+  });
+  const accepted = todayRebalanceProposal.suggestions.filter(function(s){ return s.accepted !== false; });
+  if(!accepted.length){ closeSheet(); return; }
+  const basePlan = ensureWeekPlan(mondayOfWeek(todayRebalanceProposalDate()));
+  const resultPlan = todayRebalanceAcceptedPlan(todayRebalanceProposal);
+  if(!resultPlan){ closeSheet(); return; }
+  const changedSuggestions = todayRebalanceChangedSuggestions(basePlan, resultPlan, accepted);
+  if(!changedSuggestions.length){
+    document.getElementById('sheetBody').innerHTML =
+      '<div class="row between" style="margin-top:6px"><h2 style="margin:0">No open meals changed</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+      + '<p class="sub">Those suggestions are no longer applicable. A meal may have been logged, skipped, pinned, or updated since the sheet opened.</p>'
+      + '<button class="cta" onclick="document.getElementById(\'sheetBody\').innerHTML=buildTodayRebalanceSheet()">Refresh suggestions</button>'
+      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+    toast('No open meals changed — re-open re-balance for fresh suggestions');
+    return;
+  }
+  const weekStartDate = resultPlan.weekStartDate || mondayOfWeek(todayRebalanceProposalDate());
+  preserveLoggedSlots(basePlan, resultPlan);
+  // Same belt-and-braces pin guard as applyRebalance above: today-rebalance is AUTO
+  // mutation too, so pinned cells are restored from basePlan after the logged-slot pass.
+  preservePinnedSlots(basePlan, resultPlan);
+  markWeekPlanEdited(resultPlan);
+  weekPlans[weekStartDate] = resultPlan;
+  if(weekStartDate === mondayOfWeek(todayISO())) weekPlan = resultPlan;
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogPlan();
+  renderWeek();
+  persist();
+  todayRebalanceProposal = null;
+  document.getElementById('sheetBody').innerHTML = renderTodayRebalanceAppliedSheet(changedSuggestions);
+  document.getElementById('sheet').classList.add('show');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  toast('✓ Today re-balanced — ' + changedSuggestions.length + (changedSuggestions.length === 1 ? ' change' : ' changes'));
+}
+
+/* ===================================================================
+   Quick-add: food search sheet (task D1 item 2)
+   "Search" and "Meal" quick actions (Log screen) both open this sheet
+   — Meal is a documented MVP alias, same flow. Two sub-views painted
+   into #sheetBody: a live text-filtered food list (>=2 chars, client-
+   side substring match on FOODS[..].name), then a grams stepper with a
+   live-computed kcal/protein/carbs/fat preview (foodMacros(), engine.js)
+   before writing a food-kind LogEntry (state.js:logFoodEntry) for
+   currentProf. Barcode/photo stay demo toasts (index.html); water stays
+   a toast too (it's not a nutrition entry).
+   =================================================================== */
+let quickAdd = {query: '', selectedId: null, grams: 100};
+
+function openFoodSearch(){
+  quickAdd = {query: '', selectedId: null, grams: 100};
+  document.getElementById('sheetBody').innerHTML = buildFoodSearchSheet();
+  // Delegated click for the result rows (data-food-id, not inline onclick — food ids can
+  // be user-authored 'cf-' slugs). Attached on sheetBody so it also survives the
+  // grams-stepper "‹ Back" path and #foodSearchResults child-only re-renders.
+  const sheetBody = document.getElementById('sheetBody');
+  sheetBody.onclick = function(e){
+    const row = e.target.closest('.altrow[data-food-id]');
+    if(!row || !sheetBody.contains(row)) return;
+    selectQuickAddFood(row.getAttribute('data-food-id'));
+  };
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  const input = document.getElementById('foodSearchInput');
+  if(input) input.focus();
+}
+
+// Client-side substring match on food display names, case-insensitive, capped to keep the
+// sheet scannable. Requires >=2 characters (task D1 item 2) — shorter queries show a hint
+// instead of the whole 60-food DB.
+function searchFoods(query){
+  const q = query.trim().toLowerCase();
+  if(q.length < 2) return [];
+  return Object.keys(FOODS)
+    .filter(function(id){ return FOODS[id].name.toLowerCase().indexOf(q) !== -1; })
+    .sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : (FOODS[a].name > FOODS[b].name ? 1 : 0); })
+    .slice(0, 20);
+}
+
+function buildFoodSearchSheet(){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add a food</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="foodSearchInput" placeholder="Search foods… (e.g. yogurt)" value="'+htmlAttr(quickAdd.query)+'" oninput="onFoodSearchInput(this.value)" autocomplete="off"></div>'
+    + '<div id="foodSearchResults">' + renderFoodSearchResults() + '</div>';
+}
+
+function renderFoodSearchResults(){
+  const q = quickAdd.query.trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
+  const ids = searchFoods(q);
+  if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + escapeHtml(q) + '”.</p>';
+  return ids.map(function(id){
+    const f = FOODS[id];
+    const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
+    return '<div class="altrow" data-food-id="'+htmlAttr(id)+'">'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
+      + '<div class="at"><div class="an">'+escapeHtml(f.name)+'</div>'
+      + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein · '+Math.round(f.sugars || 0)+'g sugars <b>/ '+per+'</b></div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function onFoodSearchInput(value){
+  quickAdd.query = value;
+  const el = document.getElementById('foodSearchResults');
+  if(el) el.innerHTML = renderFoodSearchResults();
+}
+
+function selectQuickAddFood(id){
+  if(!FOODS[id]) return;
+  quickAdd.selectedId = id;
+  quickAdd.grams = 100;
+  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
+}
+
+// FIX 2 (feedback): grams typeable directly, integer 1–2000 (same bound the stepper now
+// clamps to as well, so typing and tapping can never disagree). Invalid/empty text reverts
+// to the previous grams with a toast; a valid typed value re-renders through the exact same
+// sheet builder a stepper tap uses, so the live kcal/protein/carbs/fat preview recomputes
+// identically either way.
+function commitQuickAddGrams(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null || n < 0){ toast('Enter grams, e.g. 125'); document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet(); return; }
+  quickAdd.grams = Math.max(1, Math.min(2000, Math.round(n)));
+  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
+}
+
+function stepQuickAddGrams(delta){
+  quickAdd.grams = Math.max(1, Math.min(2000, quickAdd.grams + delta));
+  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
+}
+
+function buildGramsStepperSheet(){
+  const food = FOODS[quickAdd.selectedId];
+  if(!food) return buildFoodSearchSheet();
+  const nut = foodMacros(quickAdd.selectedId, quickAdd.grams);
+  const pieceHint = food.unit === 'piece' ? ' (≈' + (+(quickAdd.grams / food.avgG).toFixed(1)) + ' piece)' : '';
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">'+escapeHtml(food.name)+'</h2><button class="backbtn" style="margin:0" onclick="openFoodSearch()">‹ Back</button></div>'
+    + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
+    + '<div class="sv-name">Amount</div>'
+    + '<div class="sv-stepper"><button onclick="stepQuickAddGrams(-10)" aria-label="Decrease grams">–</button>'
+    + '<input class="sv-val" type="text" inputmode="decimal" value="'+quickAdd.grams+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitQuickAddGrams(this.value)" aria-label="Grams">'
+    + '<span class="sv-unit">g'+pieceHint+'</span>'
+    + '<button onclick="stepQuickAddGrams(10)" aria-label="Increase grams">+</button></div></div></div>'
+    + '<div class="nutri" style="margin-top:16px">'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>'+Math.round(nut.protein)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Carbs</span><b>'+Math.round(nut.carbs)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Sugars</span><b>'+Math.round(nut.sugars)+' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
+    + '</div>'
+    + '<button class="cta" onclick="confirmQuickAdd()">Add to today</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+function confirmQuickAdd(){
+  if(!quickAdd.selectedId || !FOODS[quickAdd.selectedId]) return;
+  const food = FOODS[quickAdd.selectedId];
+  const grams = quickAdd.grams;
+  logFoodEntry(currentLogDateISO(), currentProf, quickAdd.selectedId, grams);
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  updateLogTotalPill();
+  renderTodaySoFar();
+  renderTodayRecords();
+  renderBeverageCounts();
+  // C3: a quick-add is a kind:'food' logHistory entry, which weekDayNutriViews now folds
+  // into the CURRENT week's day totals (Week screen header/macro line) whenever the
+  // logged date is today-or-earlier — repaint Week here too, same as every other
+  // logHistory mutator in this file (confirm/skip/swap/extras), so it can't show stale
+  // numbers until some unrelated action happens to repaint it next.
+  renderWeek();
+  persist();
+  closeSheet();
+  toast('✓ Added ' + grams + 'g ' + food.name + ' to ' + logDateLabel().toLowerCase());
+}
+
+function logBeverage(foodId){
+  const food = FOODS[foodId];
+  if(!food) return;
+  const grams = (food.unit === 'piece' && food.avgG) ? food.avgG : 1;
+  logFoodEntry(currentLogDateISO(), currentProf, foodId, grams);
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  updateLogTotalPill();
+  renderTodaySoFar();
+  renderTodayRecords();
+  renderBeverageCounts();
+  renderWeek(); // C3: same reasoning as confirmQuickAdd() above — this also writes a kind:'food' entry.
+  persist();
+  toast('✓ Added ' + food.name);
+}
+
+/* ===================================================================
+   export / import (task F2) — Profile → "Your data"
+
+   Poor-man's Elena⇄Andrea sync until Phase 2's real backend: export
+   downloads (iOS Safari: share-sheets) the EXACT mesa.v1 value as a
+   dated JSON file; import reads a file, validates its shape, shows a
+   confirm sheet naming the backup's date, and on confirm overwrites
+   localStorage and reloads. Nothing is written to localStorage until
+   the user confirms — an invalid file never touches existing state.
+   =================================================================== */
+
+// exportData() calls persist() first so the exact bytes exported are what's actually in
+// localStorage right now (not a re-serialization that could drift from it), then reads
+// STORE_KEY back verbatim and downloads it — no transformation of the stored value.
+function exportData(){
+  persist();
+  let raw = null;
+  try{ raw = localStorage.getItem(STORE_KEY); }catch(e){ raw = null; }
+  if(!raw){ toast('Nothing to export yet'); return; }
+  const filename = 'mesa-backup-' + todayISO() + '.json';
+  const blob = new Blob([raw], {type: 'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  // Revoke on a delay: iOS Safari's share sheet reads the blob URL asynchronously after
+  // the click handler returns, so revoking immediately can race it.
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 2000);
+  toast('✓ Backup downloaded');
+}
+
+// The same structural checks loadState() trusts before touching any field: a version
+// number no newer than this app understands, and a profiles object with both known
+// people. Deliberately shallow — loadState()'s own per-field type checks (already run
+// against whatever we write to localStorage, on the reload that follows a confirmed
+// import) are the real guard against a malformed-but-structurally-OK file.
+function validateBackupStructure(obj){
+  if(!obj || typeof obj !== 'object') return false;
+  if(typeof obj.v !== 'number' || obj.v > CURRENT_STORE_VERSION) return false;
+  if(!obj.profiles || typeof obj.profiles !== 'object') return false;
+  if(!obj.profiles.elena || typeof obj.profiles.elena !== 'object') return false;
+  if(!obj.profiles.partner || typeof obj.profiles.partner !== 'object') return false;
+  // pantry (PANTRY-plan.md P1): additive/optional like every other post-v4 field this
+  // function doesn't otherwise enumerate — absent entirely on any pre-pantry backup. Only
+  // checked shallowly (must be an object when present); loadState()'s isValidPantryEntry()
+  // per-entry check (state.js) is the real guard against a malformed entry, same
+  // shallow-here/deep-there split this function's doc above already describes.
+  if(obj.pantry !== undefined && (obj.pantry === null || typeof obj.pantry !== 'object')) return false;
+  return true;
+}
+
+// Pulls a human date out of the mesa-backup-YYYY-MM-DD.json filename Mesa itself writes
+// (exportData() above) so the confirm sheet can name the backup without needing an
+// export timestamp inside the store itself; falls back to the file's mtime for a
+// renamed file, and finally to a neutral phrase if neither is available.
+function importDateLabel(filename, lastModified){
+  const m = /mesa-backup-(\d{4}-\d{2}-\d{2})/.exec(filename || '');
+  if(m) return m[1];
+  if(typeof lastModified === 'number' && isFinite(lastModified)){
+    try{ return new Date(lastModified).toISOString().slice(0, 10); }catch(e){ /* fall through */ }
+  }
+  return 'this file';
+}
+
+// Holds the exact raw JSON text of a file that passed validateBackupStructure() and is
+// awaiting the confirm sheet's decision — never written to localStorage until
+// confirmImport(). null whenever no import is pending (cancelled, completed, or never
+// started).
+let pendingImportRaw = null;
+
+function handleImportFile(input){
+  const file = input.files && input.files[0];
+  input.value = ''; // reset so re-picking the same filename still fires 'change'
+  if(!file) return;
+  const reader = new FileReader();
+  reader.onerror = function(){ toast("Couldn't read that file"); };
+  reader.onload = function(){
+    let parsed;
+    try{ parsed = JSON.parse(String(reader.result)); }
+    catch(e){ toast("That file isn't a valid Mesa backup"); return; }
+    if(!validateBackupStructure(parsed)){ toast("That file isn't a valid Mesa backup"); return; }
+    pendingImportRaw = String(reader.result);
+    openImportConfirm(importDateLabel(file.name, file.lastModified));
+  };
+  reader.readAsText(file);
+}
+
+// FEATURE (owner feedback): two import modes, not one. "Merge food library only" (new —
+// js/library.js:mergeImportedLibrary()) is the safe default action for the common case
+// ("share just a recipe with each other") — it merges custom foods/recipes plus recipe
+// edits/deletes, while leaving profiles, plans, logs, and shopping checks alone. "Replace everything" is the
+// original F2 behavior, unchanged (confirmImport() below), for the rarer full-phone-sync
+// case — kept as the ghost/secondary button precisely because it's destructive.
+function buildImportConfirmSheet(dateLabel){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Import backup</h2><button class="backbtn" style="margin:0" onclick="cancelImport()">✕ Close</button></div>'
+    + '<p class="sub">Backup from <b>' + dateLabel + '</b>. Choose how to bring it in.</p>'
+    + '<button class="cta" onclick="confirmMergeImport()">🔀 Merge food library only</button>'
+    + '<button class="cta ghostbtn" style="margin-top:10px" onclick="confirmImport()">⚠️ Replace everything</button>'
+    + '<p class="sub" style="margin-top:10px">Merge adds this backup\'s custom ingredients &amp; recipes to what\'s already on this phone — nothing else changes, and it\'s safe to run more than once. Replace everything overwrites ALL data on this phone (profiles, plans, log history, library) with the backup — your current data here will be lost.</p>'
+    + '<button class="cta ghostbtn" style="margin-top:14px" onclick="cancelImport()">Cancel</button>';
+}
+
+function openImportConfirm(dateLabel){
+  document.getElementById('sheetBody').innerHTML = buildImportConfirmSheet(dateLabel);
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function cancelImport(){
+  pendingImportRaw = null;
+  closeSheet();
+}
+
+// Overwrites STORE_KEY with the pending backup's exact bytes, then reloads: a full
+// reload (rather than re-running loadState() in place) guarantees every already-rendered
+// screen and in-memory global (PROF, weekPlan, logHistory, currentProf, RECIPES_DB…)
+// rebuild from scratch against the new store, with zero risk of stale in-memory state
+// bleeding through.
+function confirmImport(){
+  if(!pendingImportRaw){ closeSheet(); return; }
+  try{
+    localStorage.setItem(STORE_KEY, pendingImportRaw);
+  }catch(e){
+    toast("Couldn't save that backup on this phone");
+    return;
+  }
+  pendingImportRaw = null;
+  location.reload();
+}
+
+// Merge-only import (FEATURE, owner feedback): parses the SAME pending backup
+// validateBackupStructure() already accepted for structural soundness, hands it to
+// js/library.js:mergeImportedLibrary() (library content only — see that
+// function's doc for the full merge-rule spec: identical-content skip, '-2' conflict
+// copies with ingredient remap, " (imported)" on name collisions), then persists +
+// re-renders via applyProf() — the exact same pattern saveNewFood()/saveNewRecipe()/
+// deleteCustomFood()/deleteRecipe() (js/library.js) already use for every other
+// library mutation. Unlike confirmImport() above (full replace + hard reload), this
+// never reloads: it's a pure in-place library merge, so everything else already on this
+// phone (profile edits, plans, log history) is completely undisturbed.
+function confirmMergeImport(){
+  if(!pendingImportRaw){ closeSheet(); return; }
+  let parsed;
+  try{ parsed = JSON.parse(pendingImportRaw); }
+  catch(e){ toast("That file isn't a valid Mesa backup"); pendingImportRaw = null; closeSheet(); return; }
+  const result = mergeImportedLibrary(parsed);
+  pendingImportRaw = null;
+  applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
+  closeSheet();
+  const parts = [];
+  if(result.addedRecipes) parts.push(result.addedRecipes + ' recipe' + (result.addedRecipes === 1 ? '' : 's'));
+  if(result.addedFoods) parts.push(result.addedFoods + ' ingredient' + (result.addedFoods === 1 ? '' : 's'));
+  toast(parts.length ? '✓ Added ' + parts.join(' and ') + ' from the backup' : 'Nothing new in that backup — already on this phone');
+}
