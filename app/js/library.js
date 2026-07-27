@@ -40,9 +40,9 @@
    how many custom entries a reload later merges in. */
 const BUILTIN_FOOD_COUNT = Object.keys(FOODS).length;
 const BUILTIN_RECIPE_COUNT = Object.keys(RECIPES_DB).length;
-const BUILTIN_FOODS_DB = JSON.parse(JSON.stringify(FOODS));
-const BUILTIN_RECIPES_DB = JSON.parse(JSON.stringify(RECIPES_DB));
-const BUILTIN_RECIPE_SLOT_DB = JSON.parse(JSON.stringify(RECIPE_SLOT_DB));
+const BUILTIN_FOODS_DB = deepClone(FOODS);
+const BUILTIN_RECIPES_DB = deepClone(RECIPES_DB);
+const BUILTIN_RECIPE_SLOT_DB = deepClone(RECIPE_SLOT_DB);
 
 /* ---------------- merge custom content into the live DBs ----------------
    Both functions are full "sync to customFoods/customRecipes" passes (not
@@ -56,7 +56,7 @@ function applyCustomFoods(){
     if(id.indexOf('cf-') === 0 && !customFoods[id]) delete FOODS[id];
   });
   Object.keys(BUILTIN_FOODS_DB).forEach(function(id){
-    FOODS[id] = JSON.parse(JSON.stringify(foodOverrides[id] || BUILTIN_FOODS_DB[id]));
+    FOODS[id] = deepClone(foodOverrides[id] || BUILTIN_FOODS_DB[id]);
   });
   Object.keys(customFoods).forEach(function(id){ FOODS[id] = customFoods[id]; });
 }
@@ -92,7 +92,7 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
     const id = String(row.id || '').trim();
     const data = row.data;
     if(!id || !data || typeof data !== 'object' || Array.isArray(data)) return;
-    const recipe = normalizeRecipeRoleField(JSON.parse(JSON.stringify(data)));
+    const recipe = normalizeRecipeRoleField(deepClone(data));
     const titleValid = typeof recipe.title === 'string' && !!recipe.title;
     const slotValid = typeof recipe.slot === 'string' && VALID_SLOTS.indexOf(recipe.slot) !== -1;
     const ingredientsValid = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0;
@@ -138,17 +138,17 @@ function applyCustomRecipes(){
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
     if(deletedRecipes[id]) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
-    RECIPES_DB[id] = normalizeRecipeRoleField(JSON.parse(JSON.stringify(src)));
+    RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(src));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
   });
   Object.keys(recipeOverrides).forEach(function(id){
     if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id]) return;
-    RECIPES_DB[id] = normalizeRecipeRoleField(JSON.parse(JSON.stringify(recipeOverrides[id])));
+    RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(recipeOverrides[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
   Object.keys(customRecipes).forEach(function(id){
     if(deletedRecipes[id]) return;
-    RECIPES_DB[id] = normalizeRecipeRoleField(JSON.parse(JSON.stringify(customRecipes[id])));
+    RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(customRecipes[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
 }
@@ -2887,7 +2887,7 @@ function mergeImportedLibrary(parsed){
   let addedFoods = 0, addedRecipes = 0, changedRecipeControls = 0, changedPrefs = 0;
 
   function commitFood(targetId, incoming){
-    const food = JSON.parse(JSON.stringify(incoming));
+    const food = deepClone(incoming);
     const nameNorm = String(food.name || '').trim().toLowerCase();
     if(existingFoodNames.indexOf(nameNorm) !== -1) food.name = food.name + ' (imported)';
     if(typeof food.sugars !== 'number' || !isFinite(food.sugars)) food.sugars = 0;
@@ -2916,7 +2916,7 @@ function mergeImportedLibrary(parsed){
 
   Object.keys(incomingFoodOverrides).sort().forEach(function(id){
     if(contentEqualJSON(foodOverrides[id], incomingFoodOverrides[id])) return;
-    foodOverrides[id] = JSON.parse(JSON.stringify(incomingFoodOverrides[id]));
+    foodOverrides[id] = deepClone(incomingFoodOverrides[id]);
     if(deletedFoods[id]) delete deletedFoods[id];
     addedFoods++;
   });
@@ -2927,7 +2927,7 @@ function mergeImportedLibrary(parsed){
   // check, not after.
   function remapIngredients(recipe){
     if(!recipe || !Array.isArray(recipe.ingredients)) return recipe;
-    const r = JSON.parse(JSON.stringify(recipe));
+    const r = deepClone(recipe);
     r.ingredients = r.ingredients.map(function(ing){
       const fid = ing && ing[0];
       return (fid && foodIdRemap[fid]) ? [foodIdRemap[fid], ing[1]] : ing;
@@ -2956,7 +2956,7 @@ function mergeImportedLibrary(parsed){
 
   Object.keys(incomingOverrides).sort().forEach(function(id){
     if(contentEqualJSON(recipeOverrides[id], incomingOverrides[id])) return;
-    recipeOverrides[id] = JSON.parse(JSON.stringify(incomingOverrides[id]));
+    recipeOverrides[id] = deepClone(incomingOverrides[id]);
     if(deletedRecipes[id]) delete deletedRecipes[id];
     changedRecipeControls++;
   });

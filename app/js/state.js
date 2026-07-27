@@ -64,6 +64,11 @@ function jsAttr(s){
     .replace(/\u2029/g, '\\u2029');
 }
 
+function deepClone(obj){
+  if(typeof structuredClone === 'function') return structuredClone(obj);
+  return JSON.parse(JSON.stringify(obj));
+}
+
 /* ===================================================================
    recipe data — RECIPES_DB is read directly (task C-compat removed)
 
