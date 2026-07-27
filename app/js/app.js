@@ -344,70 +344,50 @@ function bootMesaApp(){
   // need them (js/library.js), not a hard prerequisite for anything past this point.
   bootStage('foods', applyCustomFoods);
 
-  const catalogPromise = (typeof fetchBuiltinRecipeCatalogFromD1 === 'function')
-    ? fetchBuiltinRecipeCatalogFromD1()
-    : Promise.resolve(false);
+  // Render immediately with bundled recipes so the user never sees the static
+  // mockup HTML. The D1 catalog fetch runs in parallel and refreshes afterward.
+  bootStage('recipes', applyCustomRecipes);
 
-  // fetchBuiltinRecipeCatalogFromD1() (js/sync.js) already wraps its own fetch in an
-  // AbortController timeout + .catch that resolves false instead of rejecting, so a
-  // timeout/offline/abort should already fall through to the bundled fallback catalog on
-  // its own — but boot must not just assume that holds. If the promise ever DID reject
-  // (a future sync.js change, some edge case its .catch doesn't cover), catch it HERE,
-  // outside the stage chain below, so the rest of boot still runs on the bundled catalog
-  // rather than the entire .then(...) block being skipped the way the old bare
-  // .then(...).catch(...) chain would have skipped it (see file-header PROBLEM note).
-  catalogPromise.catch(function(err){
-    console.warn('Mesa boot: catalog fetch rejected unexpectedly, continuing on bundled fallback', err);
-    if(typeof authLog === 'function') authLog('boot.fail', 'catalog: ' + ((err && err.message) || String(err)));
-    return false;
-  }).then(function(){
-    bootStage('recipes', applyCustomRecipes); // merges D1-backed built-ins or bundled fallback +
-                                               // user recipes (every renderer reads RECIPES_DB directly)
-
-    // One-shot cleanup migration (js/library.js) for the pre-`u`-stamp couple-sync duplication
-    // ratchet (see its doc block) — must run AFTER customRecipes is populated (state.js, not
-    // dependent on the 'recipes' stage above) and BEFORE the first render, so a just-cleaned-up
-    // library is what the user sees on open, not the ~200 duplicate rows for one frame.
-    // Idempotent and a no-op (toast-free) on an already-clean library, so it's safe to leave
-    // running on every boot. Independent of the 'recipes' stage's outcome — it operates on the
-    // raw customRecipes/deletedRecipes state, not on RECIPES_DB.
-    bootStage('cleanup', function(){
-      if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
-    });
-
-    bootStage('today-header', renderTodayHeader);
-
-    // renderRecipe below reads currentProf-derived state (PROF[currentProf], recipe prefs,
-    // "why" personalization) that applyProf() is what actually populates/refreshes — a real
-    // dependency, not just ordering. If applyProf failed, rendering the recipe screen would
-    // run on stale/broken profile state, so skip it and record why instead of guessing.
-    const profOk = bootStage('prof', function(){ applyProf(currentProf); });
-    if(profOk){
-      bootStage('recipe', function(){
-        renderRecipe('salmon');
-        recipeOrigin = 'today';
-      });
-    } else {
-      bootSkip('recipe', 'applyProf failed');
-    }
-
-    bootStage('onboarding', maybeShowOnboarding);
-
-    // Task S1 (couple sync): a no-op wherever js/sync.js isn't loaded or a household was
-    // never configured (syncState.code stays null — see state.js) — no network calls happen
-    // in that case, per the ground rule that sync is an enhancement, never a dependency.
-    bootStage('sync', function(){ if(typeof initSync === 'function') initSync(); });
-
-    // Phase 3A (account sign-in): a no-op wherever js/auth.js isn't loaded or no session
-    // token is stored — sign-in never gates anything, so this runs independently of initSync()
-    // and of every stage above (initAuthEarly() already ran before app.js even loaded).
-    bootStage('auth', function(){ if(typeof initAuth === 'function') initAuth(); });
-
-    // A log that reaches this line proves boot ran to completion (whether or not individual
-    // stages above failed) — distinguishes "boot finished, some stages degraded" from a boot
-    // that died silently with nothing after it in the log at all.
-    if(typeof authLog === 'function') authLog('boot.ok', 'reached end of boot');
+  bootStage('cleanup', function(){
+    if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
   });
+
+  bootStage('today-header', renderTodayHeader);
+
+  const profOk = bootStage('prof', function(){ applyProf(currentProf); });
+  if(profOk){
+    bootStage('recipe', function(){
+      renderRecipe('salmon');
+      recipeOrigin = 'today';
+    });
+  } else {
+    bootSkip('recipe', 'applyProf failed');
+  }
+
+  bootStage('onboarding', maybeShowOnboarding);
+
+  bootStage('sync', function(){ if(typeof initSync === 'function') initSync(); });
+
+  bootStage('auth', function(){ if(typeof initAuth === 'function') initAuth(); });
+
+  if(typeof authLog === 'function') authLog('boot.ok', 'reached end of boot');
+
+  // D1 catalog fetch: replaces bundled built-in recipes with the authoritative
+  // server copy, then re-renders so any catalog changes take effect. Runs after
+  // the first paint is already on screen — a timeout or offline just keeps the
+  // bundled catalog that's already rendering.
+  if(typeof fetchBuiltinRecipeCatalogFromD1 === 'function'){
+    fetchBuiltinRecipeCatalogFromD1().catch(function(err){
+      console.warn('Mesa boot: catalog fetch rejected, keeping bundled fallback', err);
+      if(typeof authLog === 'function') authLog('boot.fail', 'catalog: ' + ((err && err.message) || String(err)));
+      return false;
+    }).then(function(updated){
+      if(updated){
+        bootStage('recipes-refresh', applyCustomRecipes);
+        bootStage('prof-refresh', function(){ applyProf(currentProf); });
+      }
+    });
+  }
 }
 
 bootMesaApp();
