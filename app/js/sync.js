@@ -108,7 +108,7 @@ function maskHouseholdCode(code){
 /* ---------------- per-section data: live state -> wire shape ---------------- */
 // Deep-cloned plain JSON — never a live reference — so nothing here can be mutated by a
 // later local edit after it's already been queued into a fetch() body.
-function clone(v){ return JSON.parse(JSON.stringify(v)); }
+function clone(v){ return deepClone(v); }
 
 function librarySectionData(){
   return {

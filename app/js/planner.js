@@ -741,7 +741,7 @@ function preserveLoggedSlots(oldPlan, newPlan){
       if(!lockE && !lockA) return;
       if(oldMeal.shared || newMeal.shared){
         if(!mealRecipesValid(oldMeal)) return;
-        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        newPlan.days[d].meals[slot] = deepClone(oldMeal);
         return;
       }
       // Both solo + both locked: whole-cell replace carries cell-level fields the
@@ -750,11 +750,11 @@ function preserveLoggedSlots(oldPlan, newPlan){
       // other person's logged meal is still fine), don't drop the whole cell for that;
       // fall through to the per-person restore so the valid person keeps their log.
       if(lockE && lockA && mealRecipesValid(oldMeal)){
-        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        newPlan.days[d].meals[slot] = deepClone(oldMeal);
         return;
       }
-      if(lockE && oldMeal.elena && planEntryRecipeValid(oldMeal.elena)) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
-      if(lockA && oldMeal.partner && planEntryRecipeValid(oldMeal.partner)) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
+      if(lockE && oldMeal.elena && planEntryRecipeValid(oldMeal.elena)) newMeal.elena = deepClone(oldMeal.elena);
+      if(lockA && oldMeal.partner && planEntryRecipeValid(oldMeal.partner)) newMeal.partner = deepClone(oldMeal.partner);
     });
   }
   refreshPlanNutrition(newPlan);
@@ -1041,7 +1041,7 @@ function preservePinnedSlots(oldPlan, newPlan){
       if(!pinShared && !pinE && !pinA) return;
       if(pinShared || oldMeal.shared || newMeal.shared){
         if(!mealRecipesValid(oldMeal)) return;
-        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        newPlan.days[d].meals[slot] = deepClone(oldMeal);
         return;
       }
       // Both solo + both pinned: whole-cell replace carries cell-level fields the
@@ -1050,11 +1050,11 @@ function preservePinnedSlots(oldPlan, newPlan){
       // other person's pinned meal is still fine), don't drop the whole cell for that;
       // fall through to the per-person restore so the valid person keeps their pin.
       if(pinE && pinA && mealRecipesValid(oldMeal)){
-        newPlan.days[d].meals[slot] = JSON.parse(JSON.stringify(oldMeal));
+        newPlan.days[d].meals[slot] = deepClone(oldMeal);
         return;
       }
-      if(pinE && oldMeal.elena && planEntryRecipeValid(oldMeal.elena)) newMeal.elena = JSON.parse(JSON.stringify(oldMeal.elena));
-      if(pinA && oldMeal.partner && planEntryRecipeValid(oldMeal.partner)) newMeal.partner = JSON.parse(JSON.stringify(oldMeal.partner));
+      if(pinE && oldMeal.elena && planEntryRecipeValid(oldMeal.elena)) newMeal.elena = deepClone(oldMeal.elena);
+      if(pinA && oldMeal.partner && planEntryRecipeValid(oldMeal.partner)) newMeal.partner = deepClone(oldMeal.partner);
     });
   }
   refreshPlanNutrition(newPlan);
@@ -1107,7 +1107,7 @@ function mealRuleApplies(rule, dateISO, dayIndex, slot, person){
 // caller does that, exactly like applyRebalance.
 function regenerateWeekPreservingLocks(monday){
   const sig = computePlanSignature();
-  const prev = weekPlans[monday] ? JSON.parse(JSON.stringify(weekPlans[monday])) : null;
+  const prev = weekPlans[monday] ? deepClone(weekPlans[monday]) : null;
   const plan = generateWeek({weekStartDate: monday, signature: sig});
   applyMealRulesToPlan(plan);
   preserveLoggedSlots(prev, plan);
@@ -1968,7 +1968,7 @@ function ensureWeekPlan(mondayISO){
 
   function freshen(monday){
     let plan = weekPlans[monday];
-    const previousPlan = plan ? JSON.parse(JSON.stringify(plan)) : null;
+    const previousPlan = plan ? deepClone(plan) : null;
     const stale = !plan || !planSignatureMatches(plan.signature, sig) || plan.weekStartDate !== monday || planReferencesMissingRecipe(plan);
     if(stale){
       plan = generateWeek({weekStartDate: monday, signature: sig});
@@ -3132,7 +3132,7 @@ function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson
   });
   const results = [];
   sidePool.forEach(function(sideId){
-    const trial = JSON.parse(JSON.stringify(plan));
+    const trial = deepClone(plan);
     addSideToPlan(trial, unit, sideId);
     const trialDaily = dailyBandState(trial)[unit.dayIndex];
     const people = unit.shared ? ['elena', 'partner'] : [unit.person];
@@ -3340,7 +3340,7 @@ function proposeTodayRebalanceSuggestions(dateISO, personKey){
     return {dateISO: dateISO, personKey: personKey, suggestions: [], before: emptyTotals, after: emptyTotals, resultPlan: plan};
   }
   const beforeTotals = todayRebalanceTotals(plan, dateISO);
-  let planCopy = JSON.parse(JSON.stringify(plan));
+  let planCopy = deepClone(plan);
   const applied = [];
   for(let round = 0; round < 2; round++){
     const baseTotals = todayRebalanceTotals(planCopy, dateISO);
@@ -3349,7 +3349,7 @@ function proposeTodayRebalanceSuggestions(dateISO, personKey){
       const people = todayRebalancePeopleForUnit(unit, personKey);
       const baseScore = todayRebalanceCombinedScore(baseTotals, people);
       todayRebalanceCandidateIds(planCopy, unit, dateISO).forEach(function(candId){
-        const trial = JSON.parse(JSON.stringify(planCopy));
+        const trial = deepClone(planCopy);
         applySwapToPlan(trial, unit, candId);
         const trialTotals = todayRebalanceTotals(trial, dateISO);
         if(!todayRebalancePeopleProtected(baseTotals, trialTotals, people)) return;
@@ -3359,7 +3359,7 @@ function proposeTodayRebalanceSuggestions(dateISO, personKey){
         candidates.push({kind: 'swap', unit: unit, candId: candId, fromRecipeId: todayRebalanceCurrentRecipeId(planCopy, unit), improvement: improvement, trial: trial});
       });
       todayRebalanceSideCandidateIds(planCopy, unit).forEach(function(sideId){
-        const trial = JSON.parse(JSON.stringify(planCopy));
+        const trial = deepClone(planCopy);
         addSideToPlan(trial, unit, sideId);
         const trialTotals = todayRebalanceTotals(trial, dateISO);
         if(!todayRebalancePeopleProtected(baseTotals, trialTotals, people)) return;
@@ -3387,7 +3387,7 @@ function proposeTodayRebalanceSuggestions(dateISO, personKey){
 function todayRebalanceAcceptedPlan(prop){
   if(!prop) return null;
   const plan = ensureWeekPlan(mondayOfWeek(prop.dateISO || todayISO()));
-  const resultPlan = JSON.parse(JSON.stringify(plan));
+  const resultPlan = deepClone(plan);
   (prop.suggestions || []).forEach(function(s){
     if(s.accepted === false) return;
     if(!canApplyTodayRebalanceUnit(resultPlan, s.unit, prop.dateISO)) return;
@@ -3407,7 +3407,7 @@ function proposeRebalanceSuggestions(weekStartDate){
   if(worst.gap <= 1e-9){
     return {weekStartDate: plan.weekStartDate, metricKey: worstKey, gapInfo: worst, suggestions: [], before: cov0, after: cov0, resultPlan: plan};
   }
-  let planCopy = JSON.parse(JSON.stringify(plan));
+  let planCopy = deepClone(plan);
   const applied = [];
   const fixedPerson = worst.person; // only meaningful for 'fiber'
   for(let round = 0; round < 2; round++){
@@ -3419,7 +3419,7 @@ function proposeRebalanceSuggestions(weekStartDate){
       const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
       const cands = candidatesFor(unit.slot, styleKey, avoidL, [unit.person || currentProf]).filter(function(id){ return id !== currentId; });
       cands.forEach(function(candId){
-        const trial = JSON.parse(JSON.stringify(planCopy));
+        const trial = deepClone(planCopy);
         applySwapToPlan(trial, unit, candId);
         const improvement = objectiveFor(worstKey, trial, fixedPerson) - baseObjective;
         if(improvement > 1e-9){

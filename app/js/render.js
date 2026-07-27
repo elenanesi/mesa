@@ -2228,7 +2228,7 @@ function rebalanceSuggestionLabel(s){
 function rebalanceAcceptedPlan(prop){
   if(!prop) return null;
   const basePlan = ensureWeekPlan(prop.weekStartDate);
-  const resultPlan = JSON.parse(JSON.stringify(basePlan));
+  const resultPlan = deepClone(basePlan);
   prop.suggestions.forEach(function(s){
     if(s.accepted === false) return;
     if(typeof canAutoMutateUnit === 'function' && !canAutoMutateUnit(resultPlan, s.unit)) return;
