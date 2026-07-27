@@ -1,0 +1,10 @@
+# Service worker must never be edge-cached — the browser's 24h freshness
+# check is the update mechanism, and a stale CDN copy blocks it entirely.
+/sw.js
+  Cache-Control: no-cache, no-store, must-revalidate
+
+# HTML navigations: always revalidate so deploys land immediately.
+/index.html
+  Cache-Control: no-cache, must-revalidate
+/
+  Cache-Control: no-cache, must-revalidate
