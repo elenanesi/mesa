@@ -590,3 +590,5 @@ body.gate-open{overflow:hidden;}
 
 /* remove the "Calories by macro" card (superseded by segmented donut ring) */
 #todayMacroCalCard{display:none !important;}
+
+/* cache-bust 1785161040 */
