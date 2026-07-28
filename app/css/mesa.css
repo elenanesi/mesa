@@ -138,13 +138,11 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .ta-skip{background:#f6e6dc;color:#b25e35;}
 .today-actions .tag-row{margin-top:0;}
 
-/* log plan actions */
-.logactions{display:flex;gap:7px;margin-top:11px;width:100%;}
-.logactions button{flex:1;border:0;border-radius:12px;padding:10px 4px;font:inherit;font-size:12px;font-weight:700;cursor:pointer;min-height:38px;}
-.logactions button:active{transform:scale(.96);}
-.la-confirm{background:var(--sage);color:#fff;}
-.la-swap{background:#eef0ec;color:var(--ink-soft);}
-.la-skip{background:#f6e6dc;color:#b25e35;}
+/* log plan actions — the row now holds the SAME .meal-act-btn/.meal-log-btn components
+   as the Today screen (see mealActionButtonHtml() in render.js); this container only
+   handles layout (left-aligned icon buttons, serving stepper pushed right via its own
+   margin-left:auto), not button skin. */
+.logactions{display:flex;align-items:center;gap:8px;margin-top:11px;width:100%;flex-wrap:wrap;}
 
 /* nutrient coverage chips */
 .nutri{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
@@ -558,6 +556,10 @@ body.gate-open{overflow:hidden;}
 .meal-act-btn:active{transform:scale(.88);}
 .meal-act-btn:hover{border-color:var(--sage);color:var(--sage);}
 .meal-act-btn.act-skip:hover{border-color:var(--muted);color:var(--text);}
+/* add/edit variant (Log screen's former text "+ Add"/"✎ Edit" .la-swap button) — same
+   36px icon-button shell, sage-tinted glyph so it reads distinct from the neutral swap. */
+.meal-act-btn.act-add{color:var(--sage-deep);font-weight:700;}
+.meal-act-btn.act-add:hover{border-color:var(--sage);color:var(--sage-deep);}
 
 /* cute meal log button */
 .meal-log-btn{

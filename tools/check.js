@@ -4300,6 +4300,128 @@ function testRefreshAfterLogChangeRendersWeekOnce(){
   });
 }
 
+/* ---------------- Log screen reconnect + meal-card action button unification ----------------
+   Regression coverage for the "log screen is unreachable + Today/Log action buttons have
+   drifted apart" batch: (a) library.js:openAddMenu()'s "Log food" row must navigate to the
+   #log screen (go('log')) instead of opening the old openFoodSearch() bottom sheet — the
+   Log screen is now the one canonical "log food" destination; (b) render-today.js's
+   renderTodayCardActions() (Today pending cards) and buildLogSlotCard() (Log cards) must
+   both build their pending-state buttons through the ONE shared render.js helper
+   (mealActionButtonHtml) instead of hand-rolled markup, so the two screens can't visually
+   drift again; (c) index.html must not contain any onclick="toast(...)" button/row left over
+   — every fake "connect (demo)" feature (Apple Health/Notifications/Calendar/Water/duplicate
+   Meal search) that only fired a toast with zero state change was deleted. */
+function testOpenAddMenuRoutesToLogScreen(){
+  const librarySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
+  const m = librarySrc.match(/function openAddMenu\(\)\{[\s\S]*?\n\}\n/);
+  const fnBody = m ? m[0] : '';
+  assert(fnBody.length > 0, 'setup: openAddMenu() function body found in library.js', 'not found');
+
+  // The "Log food" row's own altrow markup must be the one wired to go('log'), not just
+  // go('log') appearing somewhere unrelated in the function. Negative lookahead keeps the
+  // match from crossing into a DIFFERENT altrow's opening tag (there are several in this
+  // menu), so this is specifically the row whose text is "Log food".
+  const logFoodRow = fnBody.match(/<div class="altrow"[^>]*>(?:(?!<div class="altrow")[\s\S])*?Log food/);
+  assert(!!logFoodRow, 'setup: "Log food" altrow found inside openAddMenu()', fnBody);
+  const rowHtml = logFoodRow ? logFoodRow[0] : '';
+  // Source is a single-quoted JS string literal, so a JS-string argument like 'log' is
+  // written escaped as \'log\' in the .js file's own text — match the literal source form.
+  assert(/go\(\\?'log\\?'\)/.test(rowHtml),
+    'openAddMenu(): the "Log food" row navigates to the Log screen via go(\'log\') — the ONE canonical log-food destination',
+    rowHtml);
+  assert(rowHtml.indexOf('closeSheet()') !== -1,
+    'openAddMenu(): the "Log food" row closes the Add sheet before navigating',
+    rowHtml);
+  assert(rowHtml.indexOf('openFoodSearch()') === -1,
+    'openAddMenu(): the "Log food" row no longer opens the old openFoodSearch() bottom sheet',
+    rowHtml);
+}
+
+function testMealActionButtonHelperSharedByBothScreens(ctx){
+  const renderSrc = readAllRenderSrc();
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+
+  assert(renderSrc.indexOf('function mealActionButtonHtml(') !== -1,
+    'setup: mealActionButtonHtml() is defined in render.js (the one shared component)', '');
+
+  const todayFn = fnBody('renderTodayCardActions');
+  assert(todayFn.length > 0, 'setup: renderTodayCardActions() function body found in render-today.js', 'not found');
+  const todayCalls = (todayFn.match(/mealActionButtonHtml\(/g) || []).length;
+  assert(todayCalls >= 3,
+    'renderTodayCardActions(): builds its pending skip/swap/log buttons through the shared mealActionButtonHtml() helper',
+    'found ' + todayCalls + ' call(s) in: ' + todayFn);
+  assert(todayFn.indexOf("mealActionButtonHtml('skip'") !== -1, 'renderTodayCardActions(): skip button uses kind \'skip\'', todayFn);
+  assert(todayFn.indexOf("mealActionButtonHtml('swap'") !== -1, 'renderTodayCardActions(): swap button uses kind \'swap\'', todayFn);
+  assert(todayFn.indexOf("mealActionButtonHtml('log'") !== -1, 'renderTodayCardActions(): log/confirm button uses kind \'log\'', todayFn);
+  // Behaviour must stay exactly as-is: every pending Today action still stops propagation
+  // (the card itself opens the recipe on tap) — same onclick text, just built via the helper.
+  assert(todayFn.indexOf('event.stopPropagation()') !== -1,
+    'renderTodayCardActions(): pending buttons still stop propagation (unchanged behaviour)', todayFn);
+
+  const logFn = fnBody('buildLogSlotCard');
+  assert(logFn.length > 0, 'setup: buildLogSlotCard() function body found in render-today.js', 'not found');
+  const logCalls = (logFn.match(/mealActionButtonHtml\(/g) || []).length;
+  assert(logCalls >= 3,
+    'buildLogSlotCard(): builds its Confirm/Swap/Skip buttons through the SAME shared mealActionButtonHtml() helper as Today',
+    'found ' + logCalls + ' call(s) in: ' + logFn);
+  assert(logFn.indexOf("mealActionButtonHtml('log'") !== -1, 'buildLogSlotCard(): confirm/log button uses kind \'log\' (same component as Today)', logFn);
+  assert(logFn.indexOf("mealActionButtonHtml('swap'") !== -1, 'buildLogSlotCard(): swap button uses kind \'swap\' (same component as Today)', logFn);
+  assert(logFn.indexOf("mealActionButtonHtml('skip'") !== -1, 'buildLogSlotCard(): skip button uses kind \'skip\' (same component as Today)', logFn);
+  // The new add/edit variant is Log-only (Today's pending row never showed add/edit) but
+  // must still go through the shared helper, picking the +/✎ glyph from hasExtras.
+  assert(logFn.indexOf("mealActionButtonHtml('add'") !== -1, 'buildLogSlotCard(): add/edit button uses the new shared kind \'add\'', logFn);
+  // The serving stepper (.sv-stepper) is a real Log-only feature, not a duplicated action —
+  // must survive untouched, still gated on canEditSelectedDate like before.
+  assert(logFn.indexOf('sv-stepper') !== -1, 'buildLogSlotCard(): keeps its serving stepper (.sv-stepper) — a real Log-only feature', logFn);
+  assert(logFn.indexOf('stepMealServings(') !== -1, 'buildLogSlotCard(): serving stepper still wired to stepMealServings()', logFn);
+
+  // Dead text-button classes (.la-confirm/.la-swap/.la-skip) must no longer be emitted by
+  // either JS file now that both routes go through the icon components.
+  assert(renderSrc.indexOf('la-confirm') === -1 && renderSrc.indexOf('"la-swap"') === -1 && renderSrc.indexOf('la-skip') === -1,
+    'render-today.js no longer emits the old la-confirm/la-swap/la-skip text-button classes', '');
+
+  // Live-behaviour sanity check: the helper itself must still produce the documented
+  // onclick/aria-label/title contract for an icon-only kind.
+  const html = call(ctx, 'mealActionButtonHtml', ['skip', {onclick: "logSkip('lunch')", ariaLabel: 'Skip Lunch', title: 'Skip'}]);
+  assert(html.indexOf('class="meal-act-btn act-skip"') !== -1, 'mealActionButtonHtml(\'skip\', …): renders the .meal-act-btn.act-skip component', html);
+  assert(html.indexOf('aria-label="Skip Lunch"') !== -1, 'mealActionButtonHtml(\'skip\', …): keeps the aria-label (the only accessible name for an icon-only button)', html);
+  assert(html.indexOf('title="Skip"') !== -1, 'mealActionButtonHtml(\'skip\', …): keeps the title attribute', html);
+  assert(html.indexOf("logSkip('lunch')") !== -1, 'mealActionButtonHtml(\'skip\', …): preserves the exact onclick handler passed in', html);
+
+  const addNoExtras = call(ctx, 'mealActionButtonHtml', ['add', {onclick: "x()", ariaLabel: 'Add to Lunch', title: 'Add', hasExtras: false}]);
+  const addWithExtras = call(ctx, 'mealActionButtonHtml', ['add', {onclick: "x()", ariaLabel: 'Edit Lunch', title: 'Edit', hasExtras: true}]);
+  assert(addNoExtras.indexOf('＋') !== -1, 'mealActionButtonHtml(\'add\', {hasExtras:false}): shows the ＋ glyph', addNoExtras);
+  assert(addWithExtras.indexOf('✎') !== -1, 'mealActionButtonHtml(\'add\', {hasExtras:true}): shows the ✎ glyph', addWithExtras);
+  assert(addNoExtras.indexOf('class="meal-act-btn act-add"') !== -1, 'mealActionButtonHtml(\'add\', …): renders the new .meal-act-btn.act-add variant', addNoExtras);
+}
+
+function testNoToastOnlyFakeFeaturesRemain(){
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  assert(indexHtml.indexOf('onclick="toast(') === -1,
+    'index.html: no onclick="toast(...)" button remains — every button/row must cause a real state change, not just a toast', '');
+  assert(indexHtml.indexOf('sec-connections') === -1,
+    'index.html: the emptied Profile "Connections" section heading is removed (Apple Health/Notifications/Calendar were the only rows in it, all deleted)', '');
+  assert(indexHtml.indexOf("jumpToProfileSection('sec-connections'") === -1,
+    'index.html: the "Connections" jump-nav chip is removed too — no dead link in the chip bar', '');
+  assert(indexHtml.indexOf('💧') === -1,
+    'index.html: the Water quick-log button (no hydration model anywhere in the codebase) is deleted', '');
+  // "Meal" was byte-identical to "Search" (both called openFoodSearch()) — only one survives.
+  const moreWaysMatch = indexHtml.match(/More ways to log[\s\S]*?<div class="quick">[\s\S]*?<\/div>/);
+  assert(!!moreWaysMatch, 'setup: Log screen "More ways to log" quick grid found', '');
+  const grid = moreWaysMatch ? moreWaysMatch[0] : '';
+  const searchButtons = (grid.match(/openFoodSearch\(\)/g) || []).length;
+  assert(searchButtons === 1,
+    'Log screen "More ways to log" grid: exactly one openFoodSearch() button remains (duplicate "Meal" button deleted, "Search" kept)',
+    'found ' + searchButtons + ' in: ' + grid);
+
+  const renderProfileSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-profile.js'), 'utf8');
+  assert(renderProfileSrc.indexOf('sec-connections') === -1,
+    'render-profile.js: no leftover reference to the deleted sec-connections section', '');
+}
+
 /* ---------------- escaping helpers (stored-XSS hardening) ----------------
    escapeHtml/htmlAttr/jsAttr now live once, in js/state.js (the first-loaded
    js/*.js file per app/index.html's <script> order), instead of being
@@ -7011,6 +7133,9 @@ function main(){
   runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
+  runTest('openAddMenu "Log food" routes to the Log screen', function(){ testOpenAddMenuRoutesToLogScreen(); });
+  runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today and Log', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });
+  runTest('no toast-only fake features remain (Water/Apple Health/Notifications/Calendar/duplicate Meal search)', function(){ testNoToastOnlyFakeFeaturesRemain(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch

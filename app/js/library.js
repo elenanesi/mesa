@@ -514,7 +514,7 @@ function openAddMenu(){
     + '<div class="altrow" onclick="openBarcodeScanner()"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Import packaged foods from Open Food Facts</div></div></div>'
     + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">' + ingredientIconHtml('') + '</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food with computed calories from macros</div></div></div>'
     + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">📖</div><div class="at"><div class="an">New recipe</div><div class="ad">Build a recipe from ingredients</div></div></div>'
-    + '<div class="altrow" onclick="openFoodSearch()"><div class="ae">＋</div><div class="at"><div class="an">Log food</div><div class="ad">Quick-add something to today</div></div></div>'
+    + '<div class="altrow" onclick="closeSheet();go(\'log\')"><div class="ae">＋</div><div class="at"><div class="an">Log food</div><div class="ad">Quick-add something to today</div></div></div>'
     + '</div>';
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');

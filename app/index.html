@@ -317,12 +317,12 @@
       <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
       <!-- FIX 4 (feedback): library shortcuts surfaced here (they were Profile-only and
            hard to find) — same sheets as Profile's "Food library" section (library.js
-           openers). 6 buttons wrap onto a second grid row at 375px; targets stay >=44px. -->
+           openers). .quick is a 4-column grid, so these 4 buttons fill exactly one row at
+           375px; targets stay >=44px. (Water/duplicate Meal search removed — toast-only
+           demo buttons, no state.) -->
       <div class="quick">
         <button onclick="openBarcodeScanner()"><span class="qi">📷</span>Scan</button>
         <button onclick="openFoodSearch()"><span class="qi">🔎</span>Search</button>
-        <button onclick="openFoodSearch()"><span class="qi">🍱</span>Meal</button>
-        <button onclick="toast('💧 +250ml water')"><span class="qi">💧</span>Water</button>
         <button onclick="openFoodLibrary()"><span class="qi">🧺</span>Ingredients</button>
         <button onclick="openMyRecipes()"><span class="qi">📖</span>My recipes</button>
       </div>
@@ -431,7 +431,6 @@
         <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
         <button id="navChipMeals" onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
         <button onclick="jumpToProfileSection('sec-avoid',this)">Foods to avoid</button>
-        <button onclick="jumpToProfileSection('sec-connections',this)">Connections</button>
         <button onclick="jumpToProfileSection('sec-library',this)">Food library</button>
         <button onclick="jumpToProfileSection('accountHeading',this)">Account</button>
         <button onclick="jumpToProfileSection('coupleSyncHeading',this)">Couple sync</button>
@@ -597,11 +596,6 @@
       <div class="field"><div class="inp" onclick="toggleAvoidChooser()"><span style="color:var(--muted)">Choose from lactose, gluten, shellfish, nuts, raw onion, spicy…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
       <div class="cap-note">Free-text isn't supported yet — more coming with the AI phase.</div>
       <div class="row" id="avoidChooser" style="gap:7px;flex-wrap:wrap;margin-top:10px;display:none"></div>
-
-      <h2 id="sec-connections" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 15l6-6"/><path d="M8 12l-2.5 2.5a3.5 3.5 0 0 0 5 5L13 17"/><path d="M16 12l2.5-2.5a3.5 3.5 0 0 0-5-5L11 7"/></svg>Connections</h2>
-      <div class="opt" onclick="toast('Apple Health connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">♥</div><div><div class="ot">Apple Health</div><div class="od">Sync weight, activity & steps → better targets</div></div></div>
-      <div class="opt" onclick="toast('Reminders connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔔</div><div><div class="ot">Notifications</div><div class="od">Meal prep nudges & shopping reminders</div></div></div>
-      <div class="opt" onclick="toast('Calendar connect (demo)')"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">📅</div><div><div class="ot">Calendar</div><div class="od">Lighter prep on busy days</div></div></div>
 
       <h2 id="sec-library" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 6c-1.5-1.2-4-2-7-2v14c3 0 5.5.8 7 2 1.5-1.2 4-2 7-2V4c-3 0-5.5.8-7 2z"/><path d="M12 6v14"/></svg>Food library</h2>
       <p class="sub" id="libFoodCount">75 built-in · 0 yours</p>

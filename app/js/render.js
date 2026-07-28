@@ -46,6 +46,38 @@ function closeSheet(){
   document.getElementById('sheet').classList.remove('show');
 }
 
+/* ---------------- shared meal-card action button ----------------
+   Single source of markup for the pending-meal action buttons so Today
+   (render-today.js:renderTodayCardActions) and Log (render-today.js:
+   buildLogSlotCard) can never visually drift again — "same action => same
+   component" everywhere a meal card can be confirmed/swapped/skipped/edited.
+   kind: 'skip' | 'swap' | 'log' | 'add'.
+   opts.onclick is the FULLY BUILT onclick attribute value (including any
+   event.stopPropagation() prefix) — callers keep their exact existing
+   behaviour, this only standardizes the visual component around it.
+   opts.ariaLabel / opts.title are required for the icon-only buttons (they
+   are the only accessible name). opts.hasExtras picks the add/edit glyph. */
+function mealActionButtonHtml(kind, opts){
+  opts = opts || {};
+  const onclick = opts.onclick || '';
+  const aria = opts.ariaLabel || '';
+  const title = opts.title || '';
+  if(kind === 'log'){
+    return '<button class="meal-log-btn" aria-label="'+aria+'" onclick="'+onclick+'" title="'+title+'"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-2.25-2.25h-1.5a2.25 2.25 0 0 0-2.15 1.586z"/><path d="M9.298 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 16.5 3h-.298"/><path d="m9 14 2 2 4-4"/></svg></button>';
+  }
+  if(kind === 'skip'){
+    return '<button class="meal-act-btn act-skip" aria-label="'+aria+'" onclick="'+onclick+'" title="'+title+'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 14"/><path d="M19 5L5 19"/></svg></button>';
+  }
+  if(kind === 'swap'){
+    return '<button class="meal-act-btn act-swap" aria-label="'+aria+'" onclick="'+onclick+'" title="'+title+'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg></button>';
+  }
+  if(kind === 'add'){
+    const glyph = opts.hasExtras ? '✎' : '＋';
+    return '<button class="meal-act-btn act-add" aria-label="'+aria+'" onclick="'+onclick+'" title="'+title+'">'+glyph+'</button>';
+  }
+  return '';
+}
+
 let splitRebuildTimer = null;
 function scheduleMenuRebuild(){
   clearTimeout(splitRebuildTimer);

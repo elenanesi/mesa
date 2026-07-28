@@ -1028,9 +1028,9 @@ function renderTodayCardActions(){
       var oldBadge = card3 ? card3.querySelector('.done-badge') : null;
       if(oldBadge) oldBadge.remove();
       wrap.innerHTML = '<div class="meal-actions-row">'
-        + '<button class="meal-act-btn act-skip" aria-label="Skip '+label+'" onclick="event.stopPropagation();logSkip(\''+slot+'\')" title="Skip"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 5l14 14"/><path d="M19 5L5 19"/></svg></button>'
-        + '<button class="meal-act-btn act-swap" aria-label="Swap '+label+'" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)" title="Swap"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg></button>'
-        + '<button class="meal-log-btn" aria-label="Log '+label+'" onclick="event.stopPropagation();logConfirm(\''+slot+'\')" title="Mark as eaten"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11.35 3.836c-.065.21-.1.433-.1.664 0 .414.336.75.75.75h4.5a.75.75 0 0 0 .75-.75 2.25 2.25 0 0 0-2.25-2.25h-1.5a2.25 2.25 0 0 0-2.15 1.586z"/><path d="M9.298 3H7.5A2.25 2.25 0 0 0 5.25 5.25v13.5A2.25 2.25 0 0 0 7.5 21h9a2.25 2.25 0 0 0 2.25-2.25V5.25A2.25 2.25 0 0 0 16.5 3h-.298"/><path d="m9 14 2 2 4-4"/></svg></button>'
+        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"')", ariaLabel: 'Skip '+label, title: 'Skip'})
+        + mealActionButtonHtml('swap', {onclick: "event.stopPropagation();openSwap('"+slot+"',null)", ariaLabel: 'Swap '+label, title: 'Swap'})
+        + mealActionButtonHtml('log', {onclick: "event.stopPropagation();logConfirm('"+slot+"')", ariaLabel: 'Log '+label, title: 'Mark as eaten'})
         + '</div>';
     }
   });
@@ -1161,11 +1161,18 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
   const portion = (typeof portionOverride === 'number') ? portionOverride : ((activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1);
   const dateISO = currentLogDateISO();
   const canEditSelectedDate = dateISO <= todayISO();
-  const swapAction = canEditSelectedDate ? '<button class="la-swap" onclick="openLogSwap(\''+slot+'\',\'log-'+slot+'\')">Swap</button>' : '';
+  const label = SLOT_LABEL[slot] || slot;
+  const swapAction = canEditSelectedDate
+    ? mealActionButtonHtml('swap', {onclick: "openLogSwap('"+slot+"','log-"+slot+"')", ariaLabel: 'Swap '+label, title: 'Swap'})
+    : '';
   // USER FEEDBACK item 3: relabel to "Edit" once the meal has extras, same as the Today
   // card's add button — the only path to removing an extra, so it shouldn't read as "add".
   const hasExtras = logSlotView(slot).extras.length > 0;
-  const addAction = canEditSelectedDate ? ('<button class="la-swap" aria-label="'+(hasExtras ? 'Edit ' : 'Add to ')+(SLOT_LABEL[slot] || slot)+'" onclick="openAddMealRecipeSheet(\''+slot+'\',\''+jsAttr(dateISO)+'\')">'+(hasExtras ? '✎ Edit' : '+ Add')+'</button>') : '';
+  const addAction = canEditSelectedDate
+    ? mealActionButtonHtml('add', {onclick: "openAddMealRecipeSheet('"+slot+"','"+jsAttr(dateISO)+"')", ariaLabel: (hasExtras ? 'Edit ' : 'Add to ')+label, title: hasExtras ? 'Edit' : 'Add', hasExtras: hasExtras})
+    : '';
+  const logAction = mealActionButtonHtml('log', {onclick: "logConfirm('"+slot+"')", ariaLabel: 'Log '+label, title: 'Mark as eaten'});
+  const skipAction = mealActionButtonHtml('skip', {onclick: "logSkip('"+slot+"')", ariaLabel: 'Skip '+label, title: 'Skip'});
   const servingStepper = canEditSelectedDate ? '<span class="sv-stepper" style="margin-left:auto">'
     + '<button onclick="stepMealServings(\''+slot+'\',-0.5,\''+jsAttr(dateISO)+'\')" aria-label="Fewer servings">-</button>'
     + '<span class="sv-val">'+portion+'x</span>'
@@ -1174,11 +1181,15 @@ function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
   card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
     + '<div class="row between"><span class="t">'+escapeHtml(title)+'</span><span class="kcal">'+kcal+'</span></div>'
     + '<div class="d">'+desc+'</div>'
+    // Button ORDER mirrors the Today card (render-today.js:renderTodayCardActions):
+    // destructive first, primary last — skip, swap, [add], log. "Same action => same
+    // component" is only half of homogeneity; the same action also has to sit in the
+    // same place, or muscle memory from one screen misfires on the other.
     + '<div class="logactions">'
-    + '<button class="la-confirm" onclick="logConfirm(\''+slot+'\')">Confirm</button>'
+    + skipAction
     + swapAction
     + addAction
-    + '<button class="la-skip" onclick="logSkip(\''+slot+'\')">Skip</button>'
+    + logAction
     + servingStepper
     + '</div></div>';
 }
