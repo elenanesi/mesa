@@ -65,10 +65,146 @@ document.querySelectorAll('#profSeg button').forEach(b=>{
 });
 
 /* ---------------- onboarding ---------------- */
+// obProfile — which PROF slot ('elena' | 'partner') the wizard currently writes to.
+// Defaults to 'elena' (the pre-accounts single-device assumption, and what a genuinely
+// solo/no-auth install must still onboard into — see obTargetSlot()'s doc below and the
+// hard requirement that this keeps working with auth.js entirely absent, e.g.
+// tools/check.js's harness).
 let obIndex = 0;
 let obProfile = 'elena';
 
+// obIsReplay — true only inside a replayOnboarding() run (Profile -> About -> "Replay
+// intro"). Disables both obTargetSlot()'s auto-retarget (replay must keep editing whatever
+// profile is already on screen, even if that's the OTHER member's, e.g. viewed via the
+// segmented control) and obEnsureWritable()'s populated-slot guard (replaying your OWN
+// already-answered intro is expected to find real data there — that's the whole point).
+let obIsReplay = false;
+
+// obPrePopulatedSlots — per-slot snapshot of "did this slot already hold a real, saved
+// profile the FIRST moment onboarding targeted it this run", taken once via
+// obSnapshotPrePopulated() and never re-derived afterward (see that function's doc for why
+// a live re-check would wrongly trip on this wizard's OWN legitimate writes). Reset every
+// time onboarding freshly opens (maybeShowOnboarding/replayOnboarding).
+let obPrePopulatedSlots = {};
+
+/* ===================================================================
+   Slot-targeting fix (2026-07-28) — see README's task brief for the full diagnosis.
+
+   THE BUG: maybeShowOnboarding() used to hardcode obPick('elena') and run during
+   bootMesaApp()'s 'onboarding' stage, which is ALWAYS before auth.js's /auth/me round trip
+   can possibly resolve (that fetch is kicked off by initAuthEarly(), which runs at auth.js
+   PARSE time — before app.js is even parsed, since script tags execute in source order —
+   but its .then() can only land on a later tick). So for an invited SECOND household
+   member on a fresh device, the wizard's target slot was a guess that was often wrong, and
+   nothing ever corrected it: commitSex/commitDob/commitActivity/commitDiet took obProfile
+   as an explicit arg (always 'elena'), while commitDisplayName/commitHeight/commitWeight
+   silently used the global currentProf (which DID flip to 'partner' once
+   auth.js:applyOwnMemberSlot() ran) — two different targets from two halves of the same
+   wizard. Worst case: the household's real, already-synced data for slot 'elena' (pulled
+   down by auth.js:maybeAdoptHousehold, which runs as soon as the member slot resolves) was
+   still in local memory when the wrong-slot writes landed, silently corrupting the
+   OWNER'S real profile and propagating it to their phone via LWW couple-sync.
+
+   THE FIX (chosen over deferring the whole boot stage): every onboarding write resolves its
+   target FRESH, at the moment of the write, via obTargetSlot() — never once at wizard-open
+   time. This was preferred over blocking bootMesaApp()'s 'onboarding' stage on the /auth/me
+   network round trip because (a) this app's whole boot-resilience model (bootStage/bootSkip
+   above) is built on never letting one stage's network dependency gate another's paint, and
+   the "Agent handoff lessons" section is explicit that boot must never gate sign-in-adjacent
+   work on a network call; (b) a fresh-per-write check is strictly stronger than a one-time
+   deferred check — it keeps correcting itself for as long as the wizard stays open, even if
+   the slot resolves unusually late (slow network) or changes again for some other reason.
+   Every commit* wrapper below (obSetSex/obSetDob/obSetActivity/obSetDiet/obCommitName/
+   obCommitHeight/obCommitWeight) calls obTargetSlot() as its first step, and finishOnboarding()
+   does the same for the final applyProf(). obEnsureWritable() is the defensive backstop for
+   the one gap this can't structurally close (see its own doc). Every commitDisplayName/
+   commitHeight/commitWeight call now also passes its slot EXPLICITLY (render-profile.js
+   gave them an optional profileKey param defaulting to currentProf for every other,
+   unchanged, Profile-screen caller) — closing the second half of the original split-write.
+   =================================================================== */
+
+// Resolves which profile slot onboarding should write to RIGHT NOW, self-correcting
+// `obProfile` in place if the authoritative signed-in member slot (auth.js:myMemberSlot(),
+// read through a typeof guard so this file keeps working with auth.js entirely absent) has
+// resolved to something other than the wizard's current guess since it opened or was last
+// checked. Called at the top of every onboarding write AND at every obShow() slide
+// transition (see below) — correctness never depends on catching one specific moment;
+// whichever call happens next re-checks fresh.
+//
+// Skipped during a replay (obIsReplay) — see that flag's doc above.
+function obTargetSlot(){
+  if(!obIsReplay && typeof myMemberSlot === 'function'){
+    const known = myMemberSlot();
+    if((known === 'elena' || known === 'partner') && known !== obProfile){
+      const prevSlot = obProfile;
+      obProfile = known;
+      obSnapshotPrePopulated(obProfile);
+      console.warn('Mesa onboarding: retargeted from "' + prevSlot + '" to "' + obProfile + '" (member slot resolved)');
+      if(typeof authLog === 'function') authLog('onboarding.retarget', prevSlot + '->' + obProfile);
+    }
+  }
+  return obProfile;
+}
+
+// Snapshots whether `slot` already held a real, previously-saved profile (a non-placeholder
+// displayName — state.js:isPlaceholderDisplayName/DISPLAY_NAME_DEFAULTS) the FIRST moment
+// onboarding ever targeted it this run, and freezes that verdict (Object.prototype
+// .hasOwnProperty guard: never overwritten by a later call for the same slot). This must be
+// a one-time snapshot, not a live re-check: a fresh onboarding legitimately WRITES a real
+// name onto its own slot on slide 1 (see index.html's obNameVal), and a live re-check would
+// then see that slot as "already populated" on every subsequent slide (body stats, diet)
+// and wrongly block its own wizard's own answers.
+function obSnapshotPrePopulated(slot){
+  if(Object.prototype.hasOwnProperty.call(obPrePopulatedSlots, slot)) return;
+  const p = (typeof PROF !== 'undefined' && PROF) ? PROF[slot] : null;
+  obPrePopulatedSlots[slot] = !!(p && typeof isPlaceholderDisplayName === 'function' && !isPlaceholderDisplayName(p.displayName));
+}
+
+// Defensive backstop (task brief: "defensive rather than clever") for the one gap
+// obTargetSlot()'s fresh-per-write re-check can't structurally close: a write that happens
+// BEFORE myMemberSlot() has resolved even once (e.g. the name field on slide 1, answered
+// unusually fast on a slow network) still goes to the wizard's current best guess. If that
+// guess's slot already held a real saved profile before this run touched it
+// (obPrePopulatedSlots, snapshotted above) and this isn't a replay of the user's own already-
+// answered intro, refuse the write and log it rather than ever overwriting someone else's
+// real data — the household owner's profile corrupting itself and propagating to their
+// phone via LWW couple-sync is exactly the bug this batch fixes. Every onboarding commit
+// wrapper below checks this immediately after resolving its slot.
+function obEnsureWritable(slot){
+  if(obIsReplay) return true;
+  // OWNERSHIP first, emptiness only as a fallback. What makes a write safe is that the slot
+  // belongs to the signed-in member — NOT that it happens to be empty. An invited partner
+  // whose name the household owner already filled in before sending the invite owns a
+  // POPULATED slot, and an emptiness-only guard would silently refuse every answer they
+  // typed. Once myMemberSlot() has resolved, it is the authority: write to your own slot,
+  // never to the other one (a mismatch here means obTargetSlot() failed to retarget, which
+  // is the bug state this guard exists to catch).
+  if(typeof myMemberSlot === 'function'){
+    const known = myMemberSlot();
+    if(known === 'elena' || known === 'partner'){
+      if(known === slot) return true;
+      console.warn('Mesa onboarding: refusing to write into "' + slot + '" — this device is member slot "' + known + '" (bug guard, see obEnsureWritable).');
+      if(typeof authLog === 'function') authLog('onboarding.blocked', 'target=' + slot + ' own=' + known);
+      return false;
+    }
+  }
+  // Slot ownership not verifiable yet (auth.js absent, or /auth/me still in flight): fall
+  // back to the emptiness snapshot, so a write that beats the member-slot resolution can
+  // still never land on top of someone's real saved profile.
+  if(obPrePopulatedSlots[slot]){
+    console.warn('Mesa onboarding: refusing to write into "' + slot + '" — it already held a real saved profile when onboarding started targeting it, and this device does not yet know its own member slot (bug guard, see obEnsureWritable).');
+    if(typeof authLog === 'function') authLog('onboarding.blocked', 'target=' + slot);
+    return false;
+  }
+  return true;
+}
+
 function obShow(i){
+  // Defense in depth (see obTargetSlot's doc): re-resolve on every slide transition too, not
+  // only at commit time, so obPopulateBodyStats()/obPopulateDiet() below (which read
+  // PROF[obProfile]) already see the correct slot the moment a late-resolving member slot
+  // arrives, even before the user touches a field on that slide.
+  obTargetSlot();
   obIndex = i;
   document.querySelectorAll('.ob-slide').forEach(function(s, idx){ s.classList.toggle('active', idx === i); });
   document.querySelectorAll('.ob-dots .d').forEach(function(d, idx){ d.classList.toggle('on', idx === i); });
@@ -100,16 +236,19 @@ function renderObGoals(key){
 }
 
 // Task B2 (generic identity): obPick(key) picks which slot's goals preview the onboarding
-// "name" slide shows and, via finishOnboarding()'s applyProf(obProfile), which profile the
-// app lands on. maybeShowOnboarding() always calls obPick('elena') for a first-ever run (the
-// person setting up the app takes slot 'elena' — see PHASE3B-generic-spec.md B2); only
-// replayOnboarding() (Profile → About → "Replay intro") can pass 'partner', when the second
-// household member replays the intro from their own already-active profile. The obElena/
-// obAndrea option cards this used to toggle are gone (a brand-new user is no longer asked
-// "are you Elena or Andrea" — see index.html's onboarding slide 2), so those two lookups are
-// guarded rather than removed outright, in case an older cached index.html is still served.
+// "name" slide shows, and (via obSnapshotPrePopulated) freezes this run's populated-slot
+// guard for that slot. maybeShowOnboarding() calls obPick(obTargetSlot()) for a first-ever
+// run — 'elena' unless this device already knows its own member slot the moment onboarding
+// opens (see obTargetSlot's doc; a first-ever run on a genuinely fresh device is always
+// 'elena' at this point, matching PHASE3B-generic-spec.md B2's "the person setting up the
+// app takes slot 'elena'"). replayOnboarding() (Profile → About → "Replay intro") passes
+// `currentProf`, whichever slot that is. The obElena/obAndrea option cards this used to
+// toggle are gone (a brand-new user is no longer asked "are you Elena or Andrea" — see
+// index.html's onboarding slide 2), so those two lookups are guarded rather than removed
+// outright, in case an older cached index.html is still served.
 function obPick(key){
   obProfile = key;
+  obSnapshotPrePopulated(key); // freeze "was this slot already real before THIS run touched it" — see that function's doc
   const obElenaEl = document.getElementById('obElena');
   if(obElenaEl){ obElenaEl.classList.toggle('sel', key === 'elena'); const ck = obElenaEl.querySelector('.ck'); if(ck) ck.textContent = key === 'elena' ? '✓' : ''; }
   const obAndreaEl = document.getElementById('obAndrea');
@@ -122,14 +261,32 @@ function obPick(key){
 }
 
 function finishOnboarding(){
+  // Final fresh resolution (see obTargetSlot's doc) — lands the user on THEIR OWN profile
+  // rather than whatever obProfile's stale initial guess was, even if the member slot only
+  // resolved during the last slide or two.
+  const slot = obTargetSlot();
+  // A device whose own resolved identity is 'partner' is definitionally not a one-person
+  // household (state.js:isSoloHousehold/householdSize) — bump it defensively so the
+  // applyProf() call below doesn't get silently forced back to 'elena' by render.js:238's
+  // solo guard. auth.js:maybeSetHouseholdSizeFromServer() normally already does this well
+  // before onboarding finishes (it runs in the same /auth/me response that resolves the
+  // member slot in the first place), but landing on your own profile shouldn't depend on
+  // that timing. Never sets householdSizeManual — a real user choice (Profile -> Basics) or
+  // a later authoritative server count still fully governs this going forward; this only
+  // ever raises 1 -> 2, never the reverse.
+  if(slot === 'partner' && typeof householdSize !== 'undefined' && householdSize !== 2){
+    householdSize = 2;
+  }
   document.getElementById('onboard').classList.add('hidden');
   onboarded = true;               // persisted by applyProf()'s persist() call below
-  applyProf(obProfile);
-  document.querySelectorAll('#profSeg button').forEach(function(x){ x.classList.toggle('on', x.dataset.prof === obProfile); });
+  applyProf(slot);
+  document.querySelectorAll('#profSeg button').forEach(function(x){ x.classList.toggle('on', x.dataset.prof === slot); });
   go('today');
 }
 
 function replayOnboarding(){
+  obIsReplay = true;
+  obPrePopulatedSlots = {}; // fresh run — irrelevant while obIsReplay is true, but keeps state tidy for the next maybeShowOnboarding()
   obProfile = currentProf;
   obPick(obProfile);
   obShow(0);
@@ -204,8 +361,14 @@ function obPopulateDiet(){
   }
 }
 
+// Every obSet*/obCommit* wrapper below follows the same shape: resolve the slot FRESH
+// (obTargetSlot), refuse if it's a bug state (obEnsureWritable), only then commit. See the
+// slot-targeting fix doc above obTargetSlot() for why every write re-resolves independently
+// rather than trusting obProfile as set at wizard-open time.
 function obSetSex(sex){
-  commitSex(obProfile, sex);
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  commitSex(slot, sex);
 }
 
 function obSetDob(){
@@ -215,7 +378,9 @@ function obSetDob(){
     const dobY = parseInt(y.value);
     const dobM = parseInt(m.value);
     if(!isNaN(dobY) && !isNaN(dobM)){
-      commitDob(obProfile, dobY, dobM);
+      const slot = obTargetSlot();
+      if(!obEnsureWritable(slot)) return;
+      commitDob(slot, dobY, dobM);
     }
   }
 }
@@ -225,18 +390,54 @@ function obSetActivity(){
   if(select && select.value !== ''){
     const idx = parseInt(select.value);
     if(!isNaN(idx) && ACTIVITY_LEVELS[idx]){
-      commitActivity(obProfile, idx);
+      const slot = obTargetSlot();
+      if(!obEnsureWritable(slot)) return;
+      commitActivity(slot, idx);
     }
   }
 }
 
 function obSetDiet(diet){
-  commitDiet(obProfile, diet);
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  commitDiet(slot, diet);
+}
+
+// Onboarding-only wrappers around render-profile.js's commitDisplayName/commitHeight/
+// commitWeight (index.html's obNameVal/obHeightVal/obWeightVal call these instead of the
+// bare commit* functions the Profile screen's own inputs still use) — this is the other
+// half of the original split-write bug: these three used to take no profile argument at
+// all and silently wrote through the global currentProf instead of obProfile. Passing the
+// freshly-resolved slot explicitly closes that gap the same way obSetSex/obSetDob/
+// obSetActivity/obSetDiet already do above.
+function obCommitName(raw){
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  commitDisplayName(raw, slot);
+}
+function obCommitHeight(raw){
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  commitHeight(raw, slot);
+}
+function obCommitWeight(raw){
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  commitWeight(raw, slot);
 }
 
 function maybeShowOnboarding(){
   if(!onboarded){
-    obPick('elena');
+    obIsReplay = false;
+    obPrePopulatedSlots = {}; // fresh run
+    obProfile = 'elena';
+    // obTargetSlot() covers the case where this device's member slot is ALREADY known
+    // synchronously here (e.g. cached from an earlier session on this exact device before a
+    // state reset) — see its doc above. On a genuinely fresh device/first-ever load this is
+    // a no-op: myMemberSlot() returns null until /auth/me resolves, well after this line
+    // runs, which is exactly why every write below re-resolves independently instead of
+    // trusting this one snapshot.
+    obPick(obTargetSlot());
     obShow(0);
     document.getElementById('onboard').classList.remove('hidden');
   }

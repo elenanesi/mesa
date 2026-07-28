@@ -41,8 +41,14 @@ function renderBasics(){
 // One funnel for every body-stat edit: refresh the recommendation, keep any manual
 // override untouched (non-destructive nudge instead), cascade through applyProf, and
 // say exactly what changed.
-function afterBasicsChange(label){
-  const p = PROF[currentProf];
+// profileKey (optional): defaults to currentProf so every existing Profile-screen caller
+// (setSex/stepDob/stepBody below, all single-arg) is byte-identical to before. Onboarding's
+// commitHeight/commitWeight (below) pass their resolved slot explicitly through here so a
+// second household member's answers land on THEIR slot even while currentProf is still
+// showing the household owner's — see app.js:obTargetSlot() for how that slot is resolved.
+function afterBasicsChange(label, profileKey){
+  const key = (profileKey === 'elena' || profileKey === 'partner') ? profileKey : currentProf;
+  const p = PROF[key];
   const oldGoal = p.calGoalNum;
   const newRec = recommendedCal(p);
   if(p.calCustom !== null && p.calCustom !== newRec){
@@ -50,7 +56,7 @@ function afterBasicsChange(label){
   } else {
     p.calNote = '';
   }
-  applyProf(currentProf);
+  applyProf(key);
   if(p.calCustom !== null){
     toast(label + ' — Mesa now recommends ' + fmtKcal(newRec) + ' kcal');
   } else if(p.calGoalNum !== oldGoal){
@@ -110,29 +116,37 @@ function stepBody(field, delta){
 // weightKg/calNote use), so there is no separate persist/sync call here: applyProf() ->
 // persist() -> sync.js's onMesaBeforePersist hook detects the section changed and bumps
 // its rev/timestamp exactly like any other Basics edit does.
-function commitDisplayName(raw){
-  const p = PROF[currentProf];
+// profileKey (optional, all three below): defaults to currentProf, so every existing
+// Profile-screen caller (index.html's displayNameVal/hVal/wVal inputs, single-arg) behaves
+// exactly as before. Onboarding (app.js) passes its resolved target slot explicitly instead
+// of relying on currentProf, which is what fixes the split-write bug — see the file header
+// of app.js's onboarding section (obTargetSlot) for the full story.
+function commitDisplayName(raw, profileKey){
+  const key = (profileKey === 'elena' || profileKey === 'partner') ? profileKey : currentProf;
+  const p = PROF[key];
   const trimmed = (typeof raw === 'string' ? raw : '').trim().slice(0, DISPLAY_NAME_MAX_LEN);
   // Clearing the field stores '' (a placeholder), NOT a 'You'/'Partner' literal — storing
   // one would sync a viewer-relative word to the other person's phone.
   p.displayName = trimmed;
-  applyProf(currentProf); // recomputeProf() re-derives seg/av from the new displayName; applyProf() -> syncPersonLabels() repaints every "shows both names" spot
+  applyProf(key); // recomputeProf() re-derives seg/av from the new displayName; applyProf() -> syncPersonLabels() repaints every "shows both names" spot
   toast('✓ Name updated');
 }
 
-function commitHeight(raw){
-  const p = PROF[currentProf];
+function commitHeight(raw, profileKey){
+  const key = (profileKey === 'elena' || profileKey === 'partner') ? profileKey : currentProf;
+  const p = PROF[key];
   const n = parseDecimalInput(raw);
   if(n === null || n < 0){ toast('Enter a height in cm, e.g. 168'); renderBasics(); return; }
   p.heightCm = Math.round(Math.min(230, Math.max(120, n)));
-  afterBasicsChange('Height ' + p.heightCm + ' cm');
+  afterBasicsChange('Height ' + p.heightCm + ' cm', key);
 }
-function commitWeight(raw){
-  const p = PROF[currentProf];
+function commitWeight(raw, profileKey){
+  const key = (profileKey === 'elena' || profileKey === 'partner') ? profileKey : currentProf;
+  const p = PROF[key];
   const n = parseDecimalInput(raw);
   if(n === null || n < 0){ toast('Enter a weight in kg, e.g. 64.5'); renderBasics(); return; }
   p.weightKg = +(Math.min(250, Math.max(30, n))).toFixed(1);
-  afterBasicsChange('Weight ' + p.weightKg + ' kg');
+  afterBasicsChange('Weight ' + p.weightKg + ' kg', key);
 }
 
 function setActivity(i){

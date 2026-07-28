@@ -644,22 +644,30 @@
         <p class="sub" style="text-align:center">Shown on your profile, avatar and shared meal plans. You can change it anytime in Profile → Basics.</p>
         <!-- Task B2 (generic identity): a brand-new user is no longer asked "are you Elena
              or Andrea" — just their own name, using the same commit-on-blur/Enter input
-             convention as the Basics "Name" field (render.js:commitDisplayName), reused
-             verbatim so a name typed here lands in PROF.elena.displayName through the exact
-             same trim/cap/persist/sync path (no separate logic to keep in sync). obPick()
-             (js/app.js) still runs underneath (fired from maybeShowOnboarding()/
-             replayOnboarding()) to prefill this field and keep the goals preview below it
-             working; it just no longer has a two-person picker to drive. -->
+             convention as the Basics "Name" field (render-profile.js:commitDisplayName).
+             2026-07-28 slot-targeting fix: this now calls js/app.js's obCommitName(), a thin
+             wrapper that resolves the correct target slot fresh (obTargetSlot()) and passes
+             it explicitly into commitDisplayName(raw, profileKey) — NOT the bare
+             commitDisplayName(this.value) the Basics field still uses, which implicitly
+             targets currentProf and is wrong here (currentProf may not equal the signed-in
+             member's own slot yet at this point in the wizard — see app.js's slot-targeting
+             fix doc for the full story). obPick() (js/app.js) still runs underneath (fired
+             from maybeShowOnboarding()/replayOnboarding()) to prefill this field and keep
+             the goals preview below it working; it just no longer has a two-person picker
+             to drive. -->
         <div class="field" style="margin-top:14px"><label>Your name</label>
           <div class="inp"><span>Name</span>
             <span class="sv-stepper" style="margin:0">
-              <input class="sv-val" id="obNameVal" type="text" maxlength="24" style="width:8.5em" placeholder="You" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitDisplayName(this.value)" aria-label="Your display name">
+              <input class="sv-val" id="obNameVal" type="text" maxlength="24" style="width:8.5em" placeholder="You" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="obCommitName(this.value)" aria-label="Your display name">
             </span>
           </div>
         </div>
         <div class="row" id="obGoalsPreview" style="gap:7px;flex-wrap:wrap;margin-top:14px"></div>
       </div>
-      <!-- Task D3: body metrics (sex, DOB, height, weight, activity level) -->
+      <!-- Task D3: body metrics (sex, DOB, height, weight, activity level). Every field here
+           calls an ob*() wrapper (js/app.js), never the bare commit*() the Basics screen
+           uses — obHeightVal/obWeightVal go through obCommitHeight()/obCommitWeight()
+           (2026-07-28 slot-targeting fix), same reasoning as the name field above. -->
       <div class="ob-slide">
         <h1 style="text-align:center">Your body stats</h1>
         <p class="sub" style="text-align:center">Used to calculate your personal calorie & nutrition targets.</p>
@@ -677,10 +685,10 @@
           </div>
         </div>
         <div class="field" style="margin-top:12px"><label>Height</label>
-          <div class="inp"><span>cm</span><input class="sv-val" id="obHeightVal" type="text" inputmode="decimal" style="width:5em" placeholder="168" onblur="commitHeight(this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"></div>
+          <div class="inp"><span>cm</span><input class="sv-val" id="obHeightVal" type="text" inputmode="decimal" style="width:5em" placeholder="168" onblur="obCommitHeight(this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"></div>
         </div>
         <div class="field" style="margin-top:12px"><label>Weight</label>
-          <div class="inp"><span>kg</span><input class="sv-val" id="obWeightVal" type="text" inputmode="decimal" style="width:5em" placeholder="64" onblur="commitWeight(this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"></div>
+          <div class="inp"><span>kg</span><input class="sv-val" id="obWeightVal" type="text" inputmode="decimal" style="width:5em" placeholder="64" onblur="obCommitWeight(this.value)" onkeydown="if(event.key==='Enter'){this.blur();}"></div>
         </div>
         <div class="field" style="margin-top:12px"><label>Activity level</label>
           <select id="obActivity" style="width:100%;margin-top:6px" onchange="obSetActivity()"><option value="">Choose activity level</option></select>

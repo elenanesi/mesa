@@ -63,6 +63,27 @@ function readAllRenderSrc(){
   return RENDER_FILES.map(function(f){ return fs.readFileSync(path.join(APP_DIR, 'js', f), 'utf8'); }).join('\n');
 }
 
+// app.js is skipped by APP_SCRIPT_ORDER above (boot/nav DOM code — see its header comment)
+// because its very last statement is an unconditional `bootMesaApp();` call, which would run
+// the entire boot sequence (including a network-fetch attempt via
+// fetchBuiltinRecipeCatalogFromD1) the instant the file loads into any shared context — that
+// would corrupt the "no-network" invariant this harness enforces for every OTHER test. The
+// onboarding slot-targeting fix (2026-07-28) lives entirely in app.js's function bodies
+// though (obTargetSlot/obEnsureWritable/obSetSex/obCommitName/finishOnboarding/...), so
+// testOnboardingSlotTargeting() below needs them loaded somewhere. This reads app.js's
+// source and slices off everything from the literal "bootMesaApp();" call onward (which also
+// drops the trailing service-worker registration block after it) — same "read source, run
+// selected portions" idea readAllRenderSrc() above already uses for render*.js markup
+// builders, just applied to app.js's definitions instead of static text. Throws loudly if the
+// marker isn't found, so a future rewrite of app.js's tail can't silently stop stripping it.
+function readAppJsDefsOnlySrc(){
+  const src = fs.readFileSync(path.join(APP_DIR, 'js', 'app.js'), 'utf8');
+  const marker = '\nbootMesaApp();';
+  const idx = src.indexOf(marker);
+  if(idx === -1) throw new Error('tools/check.js: expected the literal "bootMesaApp();" boot call in app.js to strip it before loading onboarding logic into the test harness — app.js structure changed, update readAppJsDefsOnlySrc()');
+  return src.slice(0, idx);
+}
+
 /* ---------------- minimal browser-global stubs ---------------- */
 
 function makeLocalStorage(){
@@ -88,6 +109,41 @@ function makeDocumentStub(){
     getElementById: function(){ return null; }, querySelector: function(){ return null; }, querySelectorAll: function(){ return []; },
     createElement: fakeEl, addEventListener: noop, removeEventListener: noop,
     cookie: '', body: fakeEl(), documentElement: fakeEl()
+  };
+}
+
+// A richer document double, used only by testOnboardingSlotTargeting() below: unlike the
+// base stub above (getElementById always null — fine for tests that stub out every
+// DOM-touching function they cross), this test wants to drive app.js's REAL onboarding
+// wizard functions (maybeShowOnboarding/obPick/obShow/finishOnboarding/replayOnboarding)
+// end to end, which touch a couple dozen element ids with no `if(el)` guard (e.g.
+// renderObGoals's `document.getElementById('obGoalsPreview').innerHTML = ...`). Rather than
+// enumerate every id, getElementById lazily hands out one reusable fake element per id (a
+// plain object that accepts any property assignment — .value/.textContent/.innerHTML/
+// .style.display/.className — and a minimal classList/querySelector so `.classList.toggle()`
+// and `obElenaEl.querySelector('.ck')` don't throw). Nothing here asserts against DOM
+// output — the test only cares what lands in PROF/currentProf/obProfile.
+function makeObFakeDocument(){
+  const els = new Map();
+  function makeObFakeEl(){
+    const el = {
+      value: '', textContent: '', innerHTML: '', className: '', style: {},
+      classList: {add: noop, remove: noop, toggle: noop, contains: function(){ return false; }},
+      querySelector: function(){ return makeObFakeEl(); },
+      appendChild: noop, addEventListener: noop, removeEventListener: noop, setAttribute: noop
+    };
+    return el;
+  }
+  return {
+    getElementById: function(id){
+      if(!els.has(id)) els.set(id, makeObFakeEl());
+      return els.get(id);
+    },
+    querySelector: function(){ return null; },
+    querySelectorAll: function(){ return []; },
+    getElementsByName: function(){ return []; },
+    createElement: makeObFakeEl, addEventListener: noop, removeEventListener: noop,
+    cookie: '', body: makeObFakeEl(), documentElement: makeObFakeEl()
   };
 }
 
@@ -7049,6 +7105,260 @@ function testRecipeOptionsBuilder(ctx){
 }
 
 /* ===================================================================
+   Onboarding slot-targeting fix (2026-07-28)
+
+   Regression coverage for the bug fixed in app.js/render-profile.js/index.html: onboarding
+   used to write its answers to TWO different profile slots (commitSex/commitDob/
+   commitActivity/commitDiet always targeted a hardcoded 'elena' guess; commitDisplayName/
+   commitHeight/commitWeight silently used whatever currentProf had already flipped to via
+   auth.js). For an invited SECOND household member on a fresh device, that could silently
+   overwrite the household OWNER's real profile mid-onboarding and propagate the corruption
+   to their phone via LWW couple-sync.
+
+   Runs in its OWN isolated context (createMesaContext() + loadAppInto(), like every other
+   test) PLUS app.js's function definitions (readAppJsDefsOnlySrc() — see that function's doc
+   for why app.js is otherwise excluded from this harness) and a richer document double
+   (makeObFakeDocument()) so the real onboarding wizard functions can run end to end.
+   applyProf/toast are replaced with minimal stand-ins for the test's duration: this suite
+   cares about which PROF slot gets written and what currentProf ends up as, not about
+   repainting a DOM this harness doesn't have (same rationale as the icon-picker/recipe-
+   builder tests above, which stub the same two functions for the same reason). myMemberSlot()
+   (normally auth.js) is defined directly on the sandbox per-section below to control exactly
+   when — if ever — this device's member slot resolves. ACTIVITY_LEVELS index 2 always means
+   the same thing across sections ("Moderately active", f:1.55 — see engine.js). */
+function testOnboardingSlotTargeting(){
+  const ctx = createMesaContext();
+  loadAppInto(ctx);
+  run(ctx, readAppJsDefsOnlySrc());
+  ctx.document = makeObFakeDocument(); // ctx.window/self/globalThis all === ctx (createMesaContext), so this is visible everywhere the loaded scripts look for `document`
+
+  // Minimal stand-ins — see file doc above. applyProf() still runs the real (DOM-free)
+  // recomputeProf() so derived fields afterBasicsChange() reads (p.calGoalNum etc., normally
+  // populated by boot's first real applyProf() before onboarding ever shows) aren't left
+  // undefined — this test ctx never calls the real applyProf otherwise. go() (app.js) is
+  // pure screen-navigation DOM painting (tab bar highlight, .scrollTop) with nothing this
+  // suite asserts on; finishOnboarding() calls it unconditionally.
+  run(ctx, "applyProf = function(key){ currentProf = key; if(typeof recomputeProf === 'function') recomputeProf(key); }; toast = function(){}; go = function(){};");
+
+  const pristineProf = cloneJSON(get(ctx, 'PROF'));
+  function restoreProf(){
+    run(ctx, "PROF.elena = " + JSON.stringify(pristineProf.elena) + "; PROF.partner = " + JSON.stringify(pristineProf.partner) + ";");
+  }
+  function resetOnboardingFlags(){
+    run(ctx, "onboarded = false; currentProf = 'elena'; obIsReplay = false; obPrePopulatedSlots = {};");
+  }
+  // Fills the fake obDobY/obDobM/obActivity <select>s (obSetDob/obSetActivity read
+  // document.getElementById(...).value directly, unlike every other onboarding field) then
+  // calls the real onboarding entry points, exactly like a user picking both dropdowns.
+  function setDobAndActivityViaFakeSelects(y, m, activityIdx){
+    run(ctx, "document.getElementById('obDobY').value = " + JSON.stringify(String(y)) + "; document.getElementById('obDobM').value = " + JSON.stringify(String(m)) + "; document.getElementById('obActivity').value = " + JSON.stringify(String(activityIdx)) + ";");
+    call(ctx, 'obSetDob', []);
+    call(ctx, 'obSetActivity', []);
+  }
+
+  // -------- (c) slot-1 / solo / no-auth path: unchanged behavior --------
+  // typeof myMemberSlot is 'undefined' here — auth.js was never loaded into this context,
+  // same as a real tools/check.js boot (and a real signed-out/offline device). Requirement:
+  // onboarding must still work into slot 'elena' with zero auth present.
+  (function(){
+    assert(get(ctx, 'typeof myMemberSlot') === 'undefined', 'onboarding setup: myMemberSlot is undefined with auth.js absent', get(ctx, 'typeof myMemberSlot'));
+    resetOnboardingFlags();
+    call(ctx, 'maybeShowOnboarding', []);
+    assert(get(ctx, 'obProfile') === 'elena', 'no-auth onboarding: obProfile stays "elena" with no signed-in identity to resolve', get(ctx, 'obProfile'));
+
+    call(ctx, 'obShow', [1]);
+    call(ctx, 'obCommitName', ['Solo Person']);
+    call(ctx, 'obShow', [2]);
+    call(ctx, 'obCommitHeight', ['175']);
+    call(ctx, 'obCommitWeight', ['70']);
+    // 'prefer-not' (not 'female'/'male' — PROF.elena's own baked-in default sex is
+    // 'female', which would make this assertion pass even if the write silently no-oped)
+    // and activity index 3 (not elena's own default index, 1.55/index 2) — every input
+    // value below is chosen to differ from BOTH slots' PROF defaults (see state.js's PROF
+    // literal), so a wrong-slot or no-op write is actually detectable, not masked by a
+    // coincidental default-value match.
+    call(ctx, 'obSetSex', ['prefer-not']);
+    setDobAndActivityViaFakeSelects(1990, 6, 3);
+    call(ctx, 'obShow', [3]);
+    call(ctx, 'obSetDiet', ['vegan']);
+    call(ctx, 'obShow', [4]);
+    call(ctx, 'finishOnboarding', []);
+
+    const PROF = get(ctx, 'PROF');
+    const ACTIVITY_LEVELS = get(ctx, 'ACTIVITY_LEVELS');
+    assert(PROF.elena.displayName === 'Solo Person', 'no-auth onboarding: name lands on PROF.elena', PROF.elena.displayName);
+    assert(PROF.elena.heightCm === 175, 'no-auth onboarding: height lands on PROF.elena', String(PROF.elena.heightCm));
+    assert(PROF.elena.weightKg === 70, 'no-auth onboarding: weight lands on PROF.elena', String(PROF.elena.weightKg));
+    assert(PROF.elena.sex === 'prefer-not', 'no-auth onboarding: sex lands on PROF.elena', PROF.elena.sex);
+    assert(PROF.elena.dobY === 1990 && PROF.elena.dobM === 6, 'no-auth onboarding: DOB lands on PROF.elena', PROF.elena.dobY + '/' + PROF.elena.dobM);
+    assert(PROF.elena.activity === ACTIVITY_LEVELS[3].f, 'no-auth onboarding: activity lands on PROF.elena', String(PROF.elena.activity));
+    assert(PROF.elena.diet === 'vegan', 'no-auth onboarding: diet lands on PROF.elena', PROF.elena.diet);
+    assert(JSON.stringify(PROF.partner) === JSON.stringify(pristineProf.partner), 'no-auth onboarding: PROF.partner is byte-identical (untouched)', '');
+    assert(get(ctx, 'currentProf') === 'elena', 'finishOnboarding (no-auth/solo): leaves currentProf on "elena"', get(ctx, 'currentProf'));
+    assert(get(ctx, 'onboarded') === true, 'finishOnboarding: sets onboarded = true', String(get(ctx, 'onboarded')));
+    restoreProf();
+  })();
+
+  // -------- (a) slot-2 onboarding: THE bug this batch fixes.
+  // myMemberSlot() already resolves to 'partner' before maybeShowOnboarding() ever runs
+  // (the dominant real-world timing: /auth/me is fast, and slide 1's name field needs a
+  // "Continue" tap first anyway) — every one of the seven fields must land on PROF.partner,
+  // and PROF.elena (the household owner's slot) must come out byte-identical to before. --------
+  (function(){
+    run(ctx, "function myMemberSlot(){ return 'partner'; }");
+    run(ctx, "householdSize = 1; householdSizeManual = false;"); // fresh device default (state.js loadState()'s "no prior localStorage" branch)
+    resetOnboardingFlags();
+    call(ctx, 'maybeShowOnboarding', []);
+    assert(get(ctx, 'obProfile') === 'partner', 'slot-2 onboarding: obProfile resolves to "partner" via obTargetSlot() before any field is touched', get(ctx, 'obProfile'));
+
+    call(ctx, 'obShow', [1]);
+    call(ctx, 'obCommitName', ['Andrea']);
+    call(ctx, 'obShow', [2]);
+    call(ctx, 'obCommitHeight', ['190']); // NOT 181 — PROF.partner's own baked-in default heightCm IS 181, which would make this assertion pass even on a no-op write
+    call(ctx, 'obCommitWeight', ['79']);
+    call(ctx, 'obSetSex', ['prefer-not']); // NOT 'male' — PROF.partner's own baked-in default sex
+    setDobAndActivityViaFakeSelects(1994, 9, 3); // activity index 3, NOT 2 — PROF.elena's own default activity is index 2 (1.55); a write that landed on elena by mistake would misread as correct here otherwise
+    call(ctx, 'obShow', [3]);
+    call(ctx, 'obSetDiet', ['pescatarian']);
+    call(ctx, 'obShow', [4]);
+    call(ctx, 'finishOnboarding', []);
+
+    const PROF = get(ctx, 'PROF');
+    const ACTIVITY_LEVELS = get(ctx, 'ACTIVITY_LEVELS');
+    assert(PROF.partner.displayName === 'Andrea', 'slot-2 onboarding: NAME lands on PROF.partner', PROF.partner.displayName);
+    assert(PROF.partner.heightCm === 190, 'slot-2 onboarding: HEIGHT lands on PROF.partner', String(PROF.partner.heightCm));
+    assert(PROF.partner.weightKg === 79, 'slot-2 onboarding: WEIGHT lands on PROF.partner', String(PROF.partner.weightKg));
+    assert(PROF.partner.sex === 'prefer-not', 'slot-2 onboarding: SEX lands on PROF.partner', PROF.partner.sex);
+    assert(PROF.partner.dobY === 1994 && PROF.partner.dobM === 9, 'slot-2 onboarding: DOB lands on PROF.partner', PROF.partner.dobY + '/' + PROF.partner.dobM);
+    assert(PROF.partner.activity === ACTIVITY_LEVELS[3].f, 'slot-2 onboarding: ACTIVITY lands on PROF.partner', String(PROF.partner.activity));
+    assert(PROF.partner.diet === 'pescatarian', 'slot-2 onboarding: DIET lands on PROF.partner', PROF.partner.diet);
+    assert(JSON.stringify(PROF.elena) === JSON.stringify(pristineProf.elena),
+      'slot-2 onboarding: PROF.elena (the household owner\'s slot) is byte-identical — the corruption bug this batch fixes', JSON.stringify(PROF.elena));
+
+    // (b) finishOnboarding() must land the user on their own profile.
+    assert(get(ctx, 'currentProf') === 'partner', 'finishOnboarding (slot-2): leaves currentProf on "partner", the onboarding user\'s own slot', get(ctx, 'currentProf'));
+    // item 5 audit: a device whose own resolved identity is 'partner' can't be a one-person
+    // household — finishOnboarding() must bump householdSize so applyProf() doesn't get
+    // silently forced back to 'elena' by render.js:238's solo guard.
+    assert(get(ctx, 'householdSize') === 2, 'finishOnboarding (slot-2): bumps householdSize to 2 (was 1, the fresh-device default)', String(get(ctx, 'householdSize')));
+    assert(get(ctx, 'householdSizeManual') === false, 'finishOnboarding (slot-2): does NOT set householdSizeManual (a real user choice/server count still governs it going forward)', String(get(ctx, 'householdSizeManual')));
+
+    restoreProf();
+    run(ctx, "myMemberSlot = undefined; householdSize = 2; householdSizeManual = false;");
+  })();
+
+  // -------- mid-flight retarget: myMemberSlot() resolves PARTWAY through the wizard
+  // (name already committed under the stale 'elena' guess before the slot is known — the
+  // narrow residual race this fix cannot structurally close, see obEnsureWritable's doc),
+  // proving obTargetSlot() self-corrects and every FIELD COMMITTED FROM THAT POINT ON lands
+  // on the newly-resolved slot. --------
+  (function(){
+    run(ctx, "var __obSlotResolved = null; function myMemberSlot(){ return __obSlotResolved; }");
+    resetOnboardingFlags();
+    call(ctx, 'maybeShowOnboarding', []);
+    assert(get(ctx, 'obProfile') === 'elena', 'mid-flight retarget setup: still "elena" while myMemberSlot() is unresolved', get(ctx, 'obProfile'));
+
+    call(ctx, 'obShow', [1]);
+    call(ctx, 'obCommitName', ['Too Early']); // lands on 'elena' — the acknowledged residual gap, not asserted as a positive outcome here
+
+    run(ctx, "__obSlotResolved = 'partner';"); // simulates /auth/me resolving mid-wizard
+    call(ctx, 'obShow', [2]); // obShow() re-resolves too (defense in depth), before any field on this slide is touched
+    assert(get(ctx, 'obProfile') === 'partner', 'mid-flight retarget: obShow() re-resolves obProfile to "partner" the moment myMemberSlot() changes', get(ctx, 'obProfile'));
+    call(ctx, 'obCommitHeight', ['190']); // not 181 — PROF.partner's own baked-in default
+    call(ctx, 'obSetSex', ['prefer-not']); // not 'male' — PROF.partner's own baked-in default
+
+    const PROF = get(ctx, 'PROF');
+    assert(PROF.partner.heightCm === 190, 'mid-flight retarget: a write AFTER the slot resolves lands on the corrected slot (partner)', String(PROF.partner.heightCm));
+    assert(PROF.partner.sex === 'prefer-not', 'mid-flight retarget: a write AFTER the slot resolves lands on the corrected slot (partner)', PROF.partner.sex);
+
+    restoreProf();
+    run(ctx, "myMemberSlot = undefined; delete __obSlotResolved;");
+  })();
+
+  // -------- write guard (item 3): what makes a write safe is OWNERSHIP of the slot, not
+  // the slot being empty. Two cases, because they must behave differently:
+  //   (i)  own slot, already populated  -> ALLOWED. The household owner may have filled in
+  //        the partner's name before sending the invite; an emptiness-only guard would
+  //        silently refuse every answer that partner then typed about themselves.
+  //   (ii) ownership not yet verifiable (myMemberSlot() unresolved) + populated slot ->
+  //        REFUSED. This is the corruption case the guard exists for: a write that beats
+  //        member-slot resolution must never land on someone's real saved profile. --------
+  (function(){
+    // (i) own slot, pre-populated by the other member -> writes must LAND
+    run(ctx, "PROF.partner.displayName = 'Name Owner Typed For Me';");
+    run(ctx, "function myMemberSlot(){ return 'partner'; }");
+    resetOnboardingFlags();
+    call(ctx, 'maybeShowOnboarding', []);
+    assert(get(ctx, 'obProfile') === 'partner', 'write guard setup: resolves/retargets to "partner"', get(ctx, 'obProfile'));
+
+    call(ctx, 'obShow', [1]);
+    call(ctx, 'obCommitName', ['My Own Real Name']);
+    call(ctx, 'obShow', [2]);
+    call(ctx, 'obCommitHeight', ['150']); // not 181 — PROF.partner's own baked-in default
+    call(ctx, 'obSetSex', ['prefer-not']); // not 'male' — PROF.partner's own baked-in default
+
+    const owned = get(ctx, 'PROF').partner;
+    assert(owned.displayName === 'My Own Real Name',
+      'obEnsureWritable: a member writing to their OWN slot is allowed even when that slot was already populated by the other member', owned.displayName);
+    assert(owned.heightCm === 150 && owned.sex === 'prefer-not',
+      'obEnsureWritable: every subsequent own-slot answer lands too', owned.heightCm + '/' + owned.sex);
+    restoreProf();
+    run(ctx, "myMemberSlot = undefined;");
+
+    // (ii) ownership unverifiable + populated slot -> writes must be REFUSED
+    run(ctx, "PROF.elena.displayName = 'Already Real Owner';");
+    const populatedSnapshot = cloneJSON(get(ctx, 'PROF').elena);
+    run(ctx, "myMemberSlot = undefined;"); // /auth/me still in flight — ownership unknown
+    resetOnboardingFlags();
+    call(ctx, 'maybeShowOnboarding', []);
+    call(ctx, 'obShow', [1]);
+    call(ctx, 'obCommitName', ['Should Not Land']);
+    call(ctx, 'obShow', [2]);
+    call(ctx, 'obCommitHeight', ['150']);
+    call(ctx, 'obSetSex', ['female']);
+
+    const afterGuard = get(ctx, 'PROF').elena;
+    assert(JSON.stringify(afterGuard) === JSON.stringify(populatedSnapshot),
+      'obEnsureWritable: with ownership unverifiable, a fresh run refuses to overwrite a slot that already held real data — PROF.elena unchanged', JSON.stringify(afterGuard));
+
+    restoreProf();
+    run(ctx, "myMemberSlot = undefined;");
+  })();
+
+  // -------- (c) replayOnboarding(): still allowed to edit an already-populated slot
+  // (obIsReplay bypasses both the retarget-away-from-currentProf behavior and the
+  // populated-slot guard — replaying your OWN already-answered intro is expected to find
+  // real data there), and keeps targeting whatever profile is on screen even if this
+  // device's OWN resolved member slot (myMemberSlot()) disagrees. --------
+  (function(){
+    run(ctx, "PROF.elena.displayName = 'Existing Real Elena';");
+    const before = cloneJSON(get(ctx, 'PROF').elena);
+    run(ctx, "function myMemberSlot(){ return 'partner'; }"); // this device's own slot is 'partner' -- irrelevant to what's being replayed
+    run(ctx, "currentProf = 'elena'; onboarded = true;"); // viewing elena's profile (e.g. via the segmented control) when tapping "Replay intro"
+    call(ctx, 'replayOnboarding', []);
+    assert(get(ctx, 'obProfile') === 'elena', 'replayOnboarding: targets currentProf ("elena"), not this device\'s own resolved slot', get(ctx, 'obProfile'));
+
+    call(ctx, 'obShow', [1]);
+    call(ctx, 'obCommitName', ['Elena Renamed']);
+    call(ctx, 'obShow', [2]);
+    call(ctx, 'obCommitHeight', ['170']);
+    call(ctx, 'obSetSex', ['male']); // not 'female' — PROF.elena's own baked-in default sex
+
+    const PROF = get(ctx, 'PROF');
+    assert(PROF.elena.displayName === 'Elena Renamed', 'replayOnboarding: allowed to edit the already-populated slot it opened on', PROF.elena.displayName);
+    assert(PROF.elena.heightCm === 170, 'replayOnboarding: allowed to edit the already-populated slot it opened on', String(PROF.elena.heightCm));
+    assert(PROF.elena.sex === 'male', 'replayOnboarding: allowed to edit the already-populated slot it opened on', PROF.elena.sex);
+    assert(before.displayName === 'Existing Real Elena', 'replay guard setup sanity: PROF.elena really was pre-populated before replay started', before.displayName);
+
+    call(ctx, 'finishOnboarding', []);
+    assert(get(ctx, 'currentProf') === 'elena', 'finishOnboarding after replay: currentProf stays on "elena"', get(ctx, 'currentProf'));
+
+    restoreProf();
+    run(ctx, "myMemberSlot = undefined;");
+  })();
+}
+
+/* ===================================================================
    main
    =================================================================== */
 
@@ -7137,6 +7447,7 @@ function main(){
   runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today and Log', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });
   runTest('no toast-only fake features remain (Water/Apple Health/Notifications/Calendar/duplicate Meal search)', function(){ testNoToastOnlyFakeFeaturesRemain(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
+  runTest('onboarding slot-targeting fix (2026-07-28)', function(){ testOnboardingSlotTargeting(); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch
 
