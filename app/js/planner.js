@@ -1431,6 +1431,61 @@ function tuningBonus(totals, tuningKey){
   return 0; // unknown key (shouldn't happen — state.js validates on load/sync) behaves like 'none'
 }
 
+/* ---------------- per-person goal tuning (goal audit, KNOWLEDGE-BASE.md §3) ----------------
+   `muscle`/`heart`/`skin` (PROF[person].goals — state.js:GOAL_DEFS_UNION) used to change
+   only the goalTag chip and "why this fits you" copy — zero effect on which meals the
+   planner actually picks. This wires each one to the SAME tuningBonus() formula
+   nextWeekTuning already uses, so the magnitude is proven-in-range (TUNING_WEIGHT/NORM
+   constants above, empirically tuned per the comment on tuningBonus) rather than a new
+   invented threshold.
+
+   Could a HOUSEHOLD-level term (nextWeekTuning is one shared `let`) express a per-person
+   goal instead of adding a second mechanism? No — nextWeekTuning is a single value read
+   identically for both scoreE and scoreA below, so it can only ever say "the household
+   wants more protein this week," never "Elena wants more protein but Andrea doesn't."
+   What DOES already exist per-person is the CALL SITE: pickSharedMeal computes scoreE and
+   scoreA separately (each fed that person's own totalsE/totalsA), and pickSoloMeal computes
+   one score per person outright. tuningBonus(totals, key) is already invoked once per
+   person, just with the same household key both times. Reusing that per-person seam — pass
+   a key derived from PROF[person].goals instead of the shared nextWeekTuning — needed no
+   new plumbing through generateWeek()/mealScore, only a second call added next to the
+   existing tuningBonus() call at each of the three score sites below.
+
+   Per-person goal on a SHARED dish: a dinner both people eat is one recipe choice, but each
+   person's own goal bonus is computed from THEIR OWN totalsE/totalsA (already portion-scaled
+   per person) and added to only THEIR half of the score before scoreE+scoreA picks the
+   winning dish — so Elena's heart goal nudges the shared dinner pick toward more fiber, but
+   only by pulling on the shared decision through her own preference, exactly the way
+   FAVORITE_SCORE_BOOST/mealScore's per-person rotation term already pulls one shared choice
+   toward what suits one person specifically. It can never force a solo split for a goal alone
+   (SHARED[slot] / mealShareOverrides still own that), and it can never move a candidate that
+   doesn't already meet BOTH people's calorie/protein targets — tuningBonus-family terms are
+   pure tie-break-scale nudges among the mealScore-feasible set, same class of change as
+   nextWeekTuning, so they cannot "silently fight" the user's own split (kP/kC/kF) or
+   calorie target the way editing SPLIT_BOUNDS/targetP directly would.
+
+   Mapping chosen from what tuningBonus can already express, matched to each goal's
+   GOAL_DEFS_UNION description (state.js): muscle -> protein-forward picks; heart -> more
+   fiber + less saturated fat; skin -> more omega-3 + less free sugar. There is no lowGI or
+   sodium tuningBonus key (no such food data — see foods.js's header / KNOWLEDGE-BASE.md §5),
+   so skin/heart's copy was reworded to match exactly this, not the other way around. */
+const GOAL_TUNING_KEYS = {
+  muscle: ['protein'],
+  heart: ['fiber', 'lowSatFat'],
+  skin: ['omega3', 'lowSugar']
+};
+function goalTuningBonus(totals, person){
+  if(!totals) return 0;
+  const goals = PROF[person] && PROF[person].goals;
+  if(!goals) return 0;
+  let bonus = 0;
+  Object.keys(GOAL_TUNING_KEYS).forEach(function(goalKey){
+    if(!goals[goalKey]) return;
+    GOAL_TUNING_KEYS[goalKey].forEach(function(tuningKey){ bonus += tuningBonus(totals, tuningKey); });
+  });
+  return bonus;
+}
+
 /* ---------------- week generation ---------------- */
 // seed = {weekStartDate, signature} — pure function of these plus the live PROF/SHARED/
 // householdStyle state AND weekPlans[weekStartDate − 7d] (the previous week's stored
@@ -1755,8 +1810,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // never the composite tieId — so a composed unit's score treats "which main" exactly
     // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
     // ONLY for the final deterministic tie-break below.
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning);
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning);
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena');
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner');
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
@@ -1851,7 +1906,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   let best = null;
   candidates.forEach(function(c){
     // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
   });
@@ -1886,11 +1941,17 @@ function computePlanSignature(){
     nextWeekTuning, // task C2 (2026-07-18): changing the tuning goal must regenerate future
                     // (non-logged, non-pinned) days exactly like any other signature input —
                     // 'none' is just another value here, no special-cased branch.
-    householdSize // task B3 (solo households): flipping "Just me"/"Me + partner" must
+    householdSize, // task B3 (solo households): flipping "Just me"/"Me + partner" must
                   // regenerate — going solo needs the partner cells cleared, going back to
                   // two needs them filled in again. Two-person households never see this
                   // field change (it's always 2), so their plans regenerate exactly as
                   // often as they always did.
+    // Goal audit: muscle/heart/skin drive goalTuningBonus() per-person (see its doc above
+    // tuningBonus) — flipping one of these must regenerate future days the same way
+    // nextWeekTuning does. fatLoss/muscleGain need no entry here: they only move
+    // calGoalNum, already in this signature above.
+    e.goals.muscle ? 1 : 0, e.goals.heart ? 1 : 0, e.goals.skin ? 1 : 0,
+    a.goals.muscle ? 1 : 0, a.goals.heart ? 1 : 0, a.goals.skin ? 1 : 0
   ].join('|');
 }
 

@@ -224,7 +224,12 @@ function renderObGoals(key){
   // chosen by the user after completing profile setup. Only show goals when replaying
   // onboarding (non-fresh install), where PROF[key] already has saved preferences.
   const g = PROF[key] && PROF[key].goals;
-  const hasAnyGoal = g && (g.fatLoss || g.muscle || g.hashimoto || g.skin || g.heart);
+  // Goal-audit fix: was g.hashimoto, a key that never existed on PROF[key].goals (the
+  // real key is `hashi` — see GOAL_DEFS_UNION, state.js) — a dead condition that could
+  // never be true. Also restored the missing `muscleGain` check (both calorie goals are
+  // now available on every profile, not just fatLoss — see engine.js:deriveGoalAdj) so
+  // this checks every real key in GOAL_DEFS_UNION, not an ad-hoc subset.
+  const hasAnyGoal = g && (g.fatLoss || g.muscleGain || g.muscle || g.hashi || g.skin || g.heart);
   if(!hadStoredStateOnBoot || !hasAnyGoal){
     document.getElementById('obGoalsPreview').innerHTML = '';
     return;

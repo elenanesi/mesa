@@ -364,6 +364,14 @@ function toggleGoal(profKey, goalKey, el){
   if(!p || !p.goals || !(goalKey in p.goals)) return;
   const before = p.calGoalNum;
   p.goals[goalKey] = !p.goals[goalKey];
+  // Goal audit fix: fatLoss (deficit) and muscleGain (surplus) are mutually exclusive —
+  // a person can't be in both at once (engine.js:deriveGoalAdj no longer pins one goal
+  // per slot, so both are now offered on both profiles and this is the only place that
+  // exclusivity is enforced). Turning one on turns the other off; renderGoalsEditor()
+  // (called via applyProf below) re-renders both checkmarks from p.goals, so the UI
+  // reflects the flip immediately.
+  if(goalKey === 'fatLoss' && p.goals.fatLoss) p.goals.muscleGain = false;
+  if(goalKey === 'muscleGain' && p.goals.muscleGain) p.goals.fatLoss = false;
   recomputeProf(profKey);
   applyProf(profKey);
   const def = (GOAL_DEFS[profKey] || []).find(function(g){ return g.key === goalKey; });

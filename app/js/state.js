@@ -518,22 +518,42 @@ function dietLabel(key){ return DIET_LABELS[key] || capitalizeFirst(key); }
 // loss" did nothing and Andrea saw Elena's fat-loss goal). Single copy source for
 // render.js:renderGoalsEditor() ("Profile" screen) — each entry's key is a boolean on
 // PROF[key].goals.
-// Task B2 (generic identity): both slots now offer the SAME union of six goals — one
-// shared array, not a per-slot list — since a slot is just "slot 1"/"slot 2" (ground
-// rule: opaque ids), not "the fat-loss person" vs "the muscle-gain person". Only
-// elena.fatLoss and partner.muscleGain still move recommendedCal() (engine.js:
-// deriveGoalAdj/CALORIE_GOAL_KEY dispatch on the SLOT, not on which keys happen to be in
-// `goals` — see that file) — every other goal here (including a slot picking the OTHER
-// slot's calorie goal) only changes copy/whyText, never numbers. In-code defaults are
-// all-false (see PROF below) — a brand-new household starts with nothing toggled;
+// Task B2 (generic identity): both slots offer the SAME union of six goals — one shared
+// array, not a per-slot list — since a slot is just "slot 1"/"slot 2" (ground rule:
+// opaque ids), not "the fat-loss person" vs "the muscle-gain person". In-code defaults
+// are all-false (see PROF below) — a brand-new household starts with nothing toggled;
 // loadState() restores a returning user's real saved booleans over these on top.
+//
+// Goal-audit fix (KNOWLEDGE-BASE.md §3): every `desc` below now states only what the
+// code actually enforces for that goal — no more copy promising a rule nothing checks.
+//   - fatLoss / muscleGain move recommendedCal() by a fixed offset (engine.js:
+//     deriveGoalAdj) — BOTH goals are available on BOTH profiles now (no more slot
+//     pinning) and are mutually exclusive (render-profile.js:toggleGoal enforces it:
+//     turning one on turns the other off — you can't be in a deficit and a surplus at
+//     once).
+//   - muscle/heart/skin each nudge which recipes the WEEKLY PLANNER picks for that
+//     person, via GOAL_TUNING_KEYS (planner.js, next to tuningBonus) — the same
+//     per-metric scoring term nextWeekTuning already uses, just keyed per-person off
+//     `goals` instead of off the one shared household dial. They do NOT touch the
+//     person's macro split or calorie target (SPLIT_BOUNDS/kP/kC/kF stay exactly what
+//     the user set on the Split editor) — see planner.js:goalTuningBonus's doc for why a
+//     per-person goal is scoped to nudging shared-meal candidates, not overriding them.
+//   - hashi additionally gates the selenium coverage target (render-week.js:
+//     renderNutrientChips) so it's tracked (≥3 sources/wk) only while at least one
+//     person has it on.
+// "Low sodium" (heart), "moderate iodine"/"anti-inflammatory" (hashi), "low-GI"/"dairy
+// down" (skin) and "g/kg"-style protein math are deliberately NOT in this copy — no
+// sodium field exists in FOODS at all, no iodine cap or dairy threshold exists anywhere,
+// and no code path computes protein from bodyweight (KNOWLEDGE-BASE.md §5 lists the
+// same gaps for foods.js's data-sourcing side). Restating an unenforced rule here would
+// be exactly the drift this audit removed.
 const GOAL_DEFS_UNION = [
   {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance'},
-  {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance · protein-forward split'},
-  {key:'muscle', title:'Muscle & protein', desc:'Protein-forward macro split · ~1.8–2 g/kg'},
-  {key:'heart', title:'Heart & metabolic', desc:'High fiber, low sodium, Mediterranean base'},
-  {key:'skin', title:'Beautiful skin', desc:'Low-GI, omega-3 up, dairy/sugar down'},
-  {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Selenium, moderate iodine, anti-inflammatory'}
+  {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance — calorie target only'},
+  {key:'muscle', title:'Muscle & protein', desc:'Nudges meal picks toward higher protein — does not change your split or calories'},
+  {key:'heart', title:'Heart & metabolic', desc:'Nudges meal picks toward more fiber and less saturated fat'},
+  {key:'skin', title:'Beautiful skin', desc:'Nudges meal picks toward more omega-3 and less free sugar'},
+  {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Tracks weekly selenium coverage (≥3 sources) while this is on'}
 ];
 const GOAL_DEFS = {elena: GOAL_DEFS_UNION, partner: GOAL_DEFS_UNION};
 

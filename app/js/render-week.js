@@ -622,8 +622,8 @@ function weekLogUndo(){
 // Insights — same markup/ids, same live wiring: renderWeek() still calls this after every
 // plan change, and renderInsights() also refreshes it on each visit): the 4 REAL computed metrics from
 // planner.js:computeWeeklyCoverage (omega-3 meals/wk ≥3, selenium sources/wk ≥3 while
-// Elena's thyroid goal is on, fiber g/day avg vs 25g for whoever of the two is lower,
-// sat-fat share of fat ≤33%), replacing the hardcoded Vitamin D demo chips. The chip
+// EITHER profile's thyroid (hashi) goal is on, fiber g/day avg vs 25g for whoever of the
+// two is lower, sat-fat share of fat ≤33%), replacing the hardcoded Vitamin D demo chips. The chip
 // markup (.n/.nt/.nbar) is unchanged — same visual design, real numbers.
 function coverageValueText(g){
   if(g.key === 'fiber') return g.value + ' g/day';
@@ -655,12 +655,23 @@ function coverageChipHtml(g){
   return '<div class="n'+(low ? ' low' : '')+'"><div class="nt"><span>'+g.label+'</span><b>'+coverageValueText(g)+'</b></div>'
     + '<div class="nbar"><i style="width:'+g.pct+'%"></i></div>'+capNote+'</div>';
 }
+// Goal-audit fix: used to be inlined as `PROF.elena.hashi`, so a slot-2 (partner)
+// thyroid goal never surfaced the selenium coverage target. The plan is household-level
+// and either person's dish can carry the selenium coverage (planner.js:
+// computeWeeklyCoverage), so the gate follows WHICHEVER profile has the goal on, not a
+// fixed slot. Factored out to its own top-level function (rather than a local var inside
+// renderNutrientChips) so it's a plain, DOM-free boolean tools/check.js's regression test
+// can call directly — renderNutrientChips itself is DOM-painting and returns early under
+// the test harness's stubbed document.
+function hashiGoalOn(){ return !!(PROF.elena.hashi || PROF.partner.hashi); }
+
 function renderNutrientChips(){
   const wrap = document.getElementById('nutriChips');
   if(!wrap) return;
   const gaps = coverageGaps(computeWeeklyCoverage(weekPlan));
+  const hashiOn = hashiGoalOn();
   const order = ['omega3', 'selenium', 'fiber', 'satFat', 'freeSugars', 'freeSugarsWarn'].filter(function(k){
-    return k !== 'selenium' || PROF.elena.hashi; // selenium target tracked only with the thyroid goal on
+    return k !== 'selenium' || hashiOn; // selenium target tracked only with the thyroid goal on (either profile)
   });
   wrap.innerHTML = order.map(function(k){ return coverageChipHtml(gaps[k]); }).join('');
   const worstKey = order.reduce(function(a, b){ return gaps[b].gap > gaps[a].gap ? b : a; });
@@ -671,7 +682,7 @@ function renderNutrientChips(){
   if(note){
     note.innerHTML = worst.gap > 1e-9
       ? '📌 <b>' + worst.label + ' is the biggest gap</b> — at ' + coverageValueText(worst) + ' vs a ' + coverageTargetText(worst) + ' target. “Re-balance my week” proposes the fewest swaps to close it.'
-      : '✅ <b>All coverage targets are on track this week.</b> Omega-3, ' + (PROF.elena.hashi ? 'selenium, ' : '') + 'fiber, saturated fat and free sugars are all within the current guide.';
+      : '✅ <b>All coverage targets are on track this week.</b> Omega-3, ' + (hashiOn ? 'selenium, ' : '') + 'fiber, saturated fat and free sugars are all within the current guide.';
   }
 }
 

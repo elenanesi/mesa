@@ -130,6 +130,13 @@ function makeObFakeDocument(){
       value: '', textContent: '', innerHTML: '', className: '', style: {},
       classList: {add: noop, remove: noop, toggle: noop, contains: function(){ return false; }},
       querySelector: function(){ return makeObFakeEl(); },
+      // querySelectorAll/.closest (goal-audit test: toggleGoal()'s applyProf() funnel
+      // reaches render.js:syncProfileToggle and render-today.js:renderTodayCardActions,
+      // which call these on an element, not just on `document`) — an empty list / no
+      // match is the safe default; every real call site already guards for "found
+      // nothing" (forEach over [], null-checks on closest's result).
+      querySelectorAll: function(){ return []; },
+      closest: function(){ return null; },
       appendChild: noop, addEventListener: noop, removeEventListener: noop, setAttribute: noop
     };
     return el;
@@ -2317,6 +2324,172 @@ function testNextWeekTuning(ctx){
 
   // Restore every mutated field to defaults for the tests that run after this one.
   run(ctx, "nextWeekTuning = 'none'; weekPlans = {}; weekPlan = null;");
+}
+
+/* ---------------- goal audit ----------------
+   Regression coverage for un-pinning the calorie goals (engine.js:deriveGoalAdj no
+   longer dispatches on slot), wiring muscle/heart/skin to a real per-person planner nudge
+   (planner.js:goalTuningBonus, reusing tuningBonus() the same way nextWeekTuning already
+   does), and fixing the selenium coverage gate's slot-2 hardcoding (render-week.js:
+   hashiGoalOn). Covers:
+     (a) BOTH slots can apply BOTH calorie goals — calGoalNum moves in all 4 combinations
+         (elena.fatLoss, elena.muscleGain, partner.fatLoss, partner.muscleGain).
+     (b) fatLoss/muscleGain are mutually exclusive, enforced by toggleGoal() itself.
+     (c) muscle/heart/skin each measurably move a generated fortnight's numbers for
+         whichever person has them on (weak-monotonic, same tolerance convention
+         testNextWeekTuning already established for this class of small scoring nudge).
+     (d) the selenium coverage gate follows whichever profile actually has hashi on,
+         including the partner slot alone (the exact bug this fixes). */
+function testGoalAudit(ctx){
+  const round10 = function(n){ return Math.round(n / 10) * 10; };
+
+  // ---- (a) both slots, both calorie goals, all 4 combinations ----
+  ['elena', 'partner'].forEach(function(profKey){
+    run(ctx, 'PROF.' + profKey + '.goals.fatLoss = false; PROF.' + profKey + '.goals.muscleGain = false;');
+    call(ctx, 'recomputeProf', [profKey]);
+    const maint = run(ctx, 'maintenanceOf(PROF.' + profKey + ')');
+    let recCal = get(ctx, 'PROF.' + profKey + '.recCal');
+    assert(recCal === round10(maint), 'goal audit: ' + profKey + ' both calorie goals off -> recommendedCal === round10(maintenance)',
+      'got ' + recCal + ', expected ' + round10(maint));
+
+    run(ctx, 'PROF.' + profKey + '.goals.fatLoss = true;');
+    call(ctx, 'recomputeProf', [profKey]);
+    recCal = get(ctx, 'PROF.' + profKey + '.recCal');
+    assert(recCal === round10(maint - 325), 'goal audit: ' + profKey + '.goals.fatLoss -> recommendedCal moves by -325 (fatLoss is no longer elena-only)',
+      'got ' + recCal + ', expected ' + round10(maint - 325));
+
+    run(ctx, 'PROF.' + profKey + '.goals.fatLoss = false; PROF.' + profKey + '.goals.muscleGain = true;');
+    call(ctx, 'recomputeProf', [profKey]);
+    recCal = get(ctx, 'PROF.' + profKey + '.recCal');
+    assert(recCal === round10(maint + 60), 'goal audit: ' + profKey + '.goals.muscleGain -> recommendedCal moves by +60 (muscleGain is no longer partner-only)',
+      'got ' + recCal + ', expected ' + round10(maint + 60));
+
+    run(ctx, 'PROF.' + profKey + '.goals.muscleGain = false;');
+    call(ctx, 'recomputeProf', [profKey]);
+  });
+
+  // ---- (b) mutual exclusivity, driven through the real toggle funnel (render-profile.js:toggleGoal) ----
+  // toggleGoal() calls applyProf(), which paints straight into DOM elements the base
+  // document stub doesn't provide (getElementById always null there — fine for tests
+  // that never cross a DOM-painting function). Swap in the richer element-double this
+  // harness already built for onboarding (makeObFakeDocument — a reusable fake element
+  // per id, accepts any property write) for exactly this block, then restore, same
+  // stub-then-restore bracketing testPersistFailureHook uses for localStorage.setItem.
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try{
+    ['elena', 'partner'].forEach(function(profKey){
+      run(ctx, 'PROF.' + profKey + '.goals.fatLoss = false; PROF.' + profKey + '.goals.muscleGain = false; recomputeProf(\'' + profKey + '\');');
+      call(ctx, 'toggleGoal', [profKey, 'fatLoss', null]);
+      assert(get(ctx, 'PROF.' + profKey + '.goals.fatLoss') === true, 'goal audit: toggleGoal turns fatLoss on for ' + profKey);
+      call(ctx, 'toggleGoal', [profKey, 'muscleGain', null]);
+      assert(get(ctx, 'PROF.' + profKey + '.goals.muscleGain') === true && get(ctx, 'PROF.' + profKey + '.goals.fatLoss') === false,
+        'goal audit: toggleGoal(muscleGain) turns fatLoss back off for ' + profKey + ' — mutually exclusive',
+        'muscleGain=' + get(ctx, 'PROF.' + profKey + '.goals.muscleGain') + ' fatLoss=' + get(ctx, 'PROF.' + profKey + '.goals.fatLoss'));
+      call(ctx, 'toggleGoal', [profKey, 'fatLoss', null]);
+      assert(get(ctx, 'PROF.' + profKey + '.goals.fatLoss') === true && get(ctx, 'PROF.' + profKey + '.goals.muscleGain') === false,
+        'goal audit: toggleGoal(fatLoss) turns muscleGain back off for ' + profKey + ' — mutually exclusive',
+        'fatLoss=' + get(ctx, 'PROF.' + profKey + '.goals.fatLoss') + ' muscleGain=' + get(ctx, 'PROF.' + profKey + '.goals.muscleGain'));
+      run(ctx, 'PROF.' + profKey + '.goals.fatLoss = false; recomputeProf(\'' + profKey + '\');');
+    });
+  } finally {
+    ctx.document = savedDocument;
+  }
+
+  // ---- (c) muscle/heart/skin each move a real generated-plan number for whoever has them on ----
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  function personFortnightTotals(person){
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+    const cur = call(ctx, 'ensureWeekPlan', []);
+    const nextMonday = call(ctx, 'nextMondayISO', []);
+    const next = call(ctx, 'ensureWeekPlan', [nextMonday]);
+    let protein = 0, fiber = 0, freeSugars = 0, fatSum = 0, satFatSum = 0, omega3Count = 0, n = 0;
+    [cur, next].forEach(function(plan){
+      plan.days.forEach(function(day){
+        Object.keys(day.meals).forEach(function(slot){
+          const entry = day.meals[slot] && day.meals[slot][person];
+          if(!entry || !entry.recipeId) return;
+          const nut = call(ctx, 'planEntryNutrition', [entry]);
+          protein += nut.protein; fiber += nut.fiber; freeSugars += nut.freeSugars;
+          fatSum += nut.fat; satFatSum += nut.satFat;
+          if(call(ctx, 'recipeHasOmega3', [entry.recipeId])) omega3Count++;
+          n++;
+        });
+      });
+    });
+    return {protein: protein, fiber: fiber, freeSugars: freeSugars, satShare: fatSum > 0 ? satFatSum / fatSum : 0, omega3Count: omega3Count, n: n};
+  }
+
+  ['elena', 'partner'].forEach(function(person){
+    run(ctx, 'PROF.' + person + '.goals.muscle = false; PROF.' + person + '.goals.heart = false; PROF.' + person + '.goals.skin = false; recomputeProf(\'' + person + '\');');
+    const off = personFortnightTotals(person);
+
+    run(ctx, 'PROF.' + person + '.goals.muscle = true; recomputeProf(\'' + person + '\');');
+    const muscleOn = personFortnightTotals(person);
+    assert(muscleOn.n === off.n, 'goal audit: ' + person + '.goals.muscle on/off count the same number of planned meal-halves', 'on=' + muscleOn.n + ' off=' + off.n);
+    // Strict, not weak-monotonic: this must prove a MEASURABLE difference exists (task
+    // requirement), not just "no worse than off" — a >= comparison would pass trivially
+    // if goalTuningBonus were never wired in at all (on === off exactly). +1g margin is
+    // comfortably below the real fortnight swing this produces (double digits of grams
+    // for the default household on FIXED_MONDAY) but far above float/rounding noise.
+    assert(muscleOn.protein > off.protein + 1,
+      'goal audit: ' + person + '.goals.muscle on measurably raises fortnight protein vs off',
+      'muscleOn=' + muscleOn.protein + ' off=' + off.protein);
+    run(ctx, 'PROF.' + person + '.goals.muscle = false; recomputeProf(\'' + person + '\');');
+
+    run(ctx, 'PROF.' + person + '.goals.heart = true; recomputeProf(\'' + person + '\');');
+    const heartOn = personFortnightTotals(person);
+    assert(heartOn.fiber > off.fiber + 1, 'goal audit: ' + person + '.goals.heart on measurably raises fortnight fiber vs off',
+      'heartOn=' + heartOn.fiber + ' off=' + off.fiber);
+    assert(heartOn.satShare <= off.satShare + 1e-6, 'goal audit: ' + person + '.goals.heart on does not increase fortnight sat-fat share of fat',
+      'heartOn=' + heartOn.satShare + ' off=' + off.satShare);
+    run(ctx, 'PROF.' + person + '.goals.heart = false; recomputeProf(\'' + person + '\');');
+
+    run(ctx, 'PROF.' + person + '.goals.skin = true; recomputeProf(\'' + person + '\');');
+    const skinOn = personFortnightTotals(person);
+    // Primary "measurable difference" proof: omega3Count is an integer meal-count, not a
+    // continuous nutrient sum, so any real change in candidate selection shows up as a
+    // whole-number delta with zero float noise — a much cleaner strict-difference signal
+    // than the two nutrient sums below, which can shift in either direction slot-to-slot
+    // (goalTuningBonus sums BOTH 'omega3' and 'lowSugar' into skin's one score term, and
+    // a slot that wins on omega3 can lose a little ground on free sugar, or vice versa —
+    // documented in the tolerance note below, same class of knock-on effect
+    // testNextWeekTuning already established tolerance conventions for).
+    assert(skinOn.omega3Count !== off.omega3Count,
+      'goal audit: ' + person + '.goals.skin on measurably changes fortnight omega-3 meal count vs off (proves the goal moved a real candidate pick, not just this one metric\'s direction)',
+      'skinOn=' + skinOn.omega3Count + ' off=' + off.omega3Count);
+    // Directional sanity, WEAK on purpose (see the comment above): VARIETY-plan.md P2's
+    // weekly-cap/Mediterranean-ceiling filters are HARD filters applied before scoring, so
+    // an earlier day's omega3-nudged pick can shrink a LATER day's feasible pool enough
+    // that goalTuningBonus can no longer strictly improve every metric — it optimizes
+    // within whatever survives those filters, not the unconstrained pool. Same tolerance
+    // convention testNextWeekTuning's own 'fiber' assertion documents for this exact class
+    // of cascading effect.
+    assert(skinOn.omega3Count >= off.omega3Count * 0.9 - 1e-6,
+      'goal audit: ' + person + '.goals.skin on keeps fortnight omega-3 meal count within 10% of off (weekly-cap knock-on effects)',
+      'skinOn=' + skinOn.omega3Count + ' off=' + off.omega3Count);
+    assert(skinOn.freeSugars <= off.freeSugars * 1.02 + 1e-6,
+      'goal audit: ' + person + '.goals.skin on keeps fortnight free sugars within 2% of off',
+      'skinOn=' + skinOn.freeSugars + ' off=' + off.freeSugars);
+    run(ctx, 'PROF.' + person + '.goals.skin = false; recomputeProf(\'' + person + '\');');
+  });
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+
+  // ---- (d) selenium coverage gate follows whichever profile has hashi on ----
+  run(ctx, 'PROF.elena.goals.hashi = false; PROF.partner.goals.hashi = false; recomputeProf(\'elena\'); recomputeProf(\'partner\');');
+  assert(call(ctx, 'hashiGoalOn', []) === false, 'goal audit: hashiGoalOn() false when neither profile has the thyroid goal on');
+  run(ctx, "PROF.elena.goals.hashi = true; recomputeProf('elena');");
+  assert(call(ctx, 'hashiGoalOn', []) === true, 'goal audit: hashiGoalOn() true when ELENA has the thyroid goal on');
+  run(ctx, "PROF.elena.goals.hashi = false; recomputeProf('elena'); PROF.partner.goals.hashi = true; recomputeProf('partner');");
+  assert(call(ctx, 'hashiGoalOn', []) === true,
+    'goal audit: hashiGoalOn() true when PARTNER ALONE has the thyroid goal on — the slot-2 hardcoding bug this fixes (used to read PROF.elena.hashi only)');
+  run(ctx, "PROF.partner.goals.hashi = false; recomputeProf('partner');");
+  assert(call(ctx, 'hashiGoalOn', []) === false, 'goal audit: hashiGoalOn() false again once turned back off');
+
+  // Restore every mutated field to defaults for the tests that run after this one (mirrors testGoalToggles' own restore).
+  run(ctx, "PROF.elena.goals = {fatLoss:true, muscleGain:false, muscle:true, heart:true, skin:true, hashi:true}; " +
+    "PROF.partner.goals = {fatLoss:false, muscleGain:true, muscle:false, heart:true, skin:false, hashi:false}; " +
+    "recomputeProf('elena'); recomputeProf('partner'); weekPlans = {}; weekPlan = null;");
 }
 
 /* ---------------- persist() storage-failure reporting (Fix 3) ----------------
@@ -7413,6 +7586,7 @@ function main(){
   runTest('preserveLoggedSlots/preservePinnedSlots one-sided dangling recipe (2026-07-19)', function(){ testPreserveSlotsOneSidedDangling(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
+  runTest('goal audit: un-pinned calorie goals + muscle/heart/skin planner bias + hashi slot-2 fix', function(){ testGoalAudit(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('per-meal share override (eat different/together)', function(){ testMealShareOverride(ctx); });
   runTest('lunch fish/meat exclusion + swap variety', function(){ testLunchFishMeatExclusionAndSwapVariety(ctx); });

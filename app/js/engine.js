@@ -33,51 +33,46 @@ function recommendedCal(p){ return round10(maintenanceOf(p) + p.goalAdj); }
 // Sane band for manual targets: never below ~110% of BMR, never above maintenance + 600.
 function calBand(p){ return [round10(bmrOf(p) * 1.1), round10(maintenanceOf(p) + 600)]; }
 
-/* ---------------- goal-derived numbers (task B1, dispatch reworked task B2) ----------------
-   The bug this fixed originally: PROF[key].goalAdj used to be a fixed constant, so
+/* ---------------- goal-derived numbers (task B1, un-pinned in the goal audit) ----------------
+   The bug this originally fixed: PROF[key].goalAdj used to be a fixed constant, so
    unchecking "Gentle fat loss" on the Profile screen changed nothing — recommendedCal()
    kept applying −325 regardless. goalAdj/goalName/goalTag are PURE functions of
    PROF[key].goals (state.js), the single source of truth; recomputeProf() below calls
-   them on every recompute so toggling a goal (render.js:toggleGoal) takes effect
+   them on every recompute so toggling a goal (render-profile.js:toggleGoal) takes effect
    immediately, the same way editing weight/height already did.
 
-   Dispatch (task B2): used to detect "which slot is this" by checking `'fatLoss' in
-   p.goals` (elena had a `fatLoss` key, partner didn't). That broke once GOAL_DEFS
-   (state.js) became one shared union list for both slots — partner's `goals` object now
-   carries a `fatLoss` key too (default false), so 'in' alone can no longer tell slots
-   apart. CALORIE_GOAL_KEY below is the explicit replacement: recomputeProf(key) passes
-   it in so each slot's calorie-moving goal stays pinned to the SAME key it always was
-   (elena→fatLoss, partner→muscleGain) no matter which other goals that slot's `goals`
-   object also carries — "only elena.fatLoss and partner.muscleGain move calories" holds
-   exactly as before. The optional 2nd param falls back to the old 'in'-detection when
-   omitted, so calling these with a bare {goals:{...}} object (every other key absent —
-   e.g. tools/check.js's unit tests) still resolves the same way it always did. */
-const CALORIE_GOAL_KEY = {elena: 'fatLoss', partner: 'muscleGain'};
-
-function deriveGoalAdj(p, calorieGoalKey){
-  const gk = calorieGoalKey || (('fatLoss' in p.goals) ? 'fatLoss' : 'muscleGain');
-  return gk === 'fatLoss' ? (p.goals.fatLoss ? -325 : 0) : (p.goals.muscleGain ? 60 : 0);
+   Goal-audit fix: this used to also take a `calorieGoalKey` param (CALORIE_GOAL_KEY =
+   {elena:'fatLoss', partner:'muscleGain'}) that PINNED which calorie goal each SLOT was
+   even allowed to move — so partner checking "Gentle fat loss" showed a checkmark but
+   deriveGoalAdj still dispatched on 'muscleGain' for that slot and applied nothing. Both
+   goals are plain booleans on EVERY profile's `goals` object (GOAL_DEFS union, state.js)
+   and both slots can use either one — there is no slot-based dispatch left. The two
+   remain mutually exclusive (a person can't be in a deficit and a surplus at once), but
+   that's enforced where the user actually flips the checkbox (render-profile.js:
+   toggleGoal — turning one on turns the other off), not baked into which slot "owns"
+   which goal. fatLoss taking priority over muscleGain below only matters for one instant
+   mid-toggle (toggleGoal sets the new one before clearing the old one) — the two should
+   never both be true once toggleGoal's own clearing has run. */
+function deriveGoalAdj(p){
+  if(p.goals.fatLoss) return -325;
+  if(p.goals.muscleGain) return 60;
+  return 0;
 }
-function deriveGoalName(p, calorieGoalKey){
-  const gk = calorieGoalKey || (('fatLoss' in p.goals) ? 'fatLoss' : 'muscleGain');
-  return gk === 'fatLoss' ? (p.goals.fatLoss ? 'gentle fat loss' : 'maintenance') : (p.goals.muscleGain ? 'small muscle-gain surplus' : 'maintenance');
+function deriveGoalName(p){
+  if(p.goals.fatLoss) return 'gentle fat loss';
+  if(p.goals.muscleGain) return 'small muscle-gain surplus';
+  return 'maintenance';
 }
 // Short "🎯 <calorie goal> · <other emoji> <other goal>" summary shown under the name
 // on the Profile screen (#goalTag). The second slot surfaces the person's most
 // distinctive OTHER active goal — same priority order as state.js's WHY_RULES (thyroid
-// > skin > muscle > heart) — and is omitted entirely if none of those are on. Task B2:
-// this priority chain used to run ONLY for elena (partner could only ever surface heart);
-// now that partner's `goals` carries the same hashi/skin/muscle/heart keys as elena's
-// (GOAL_DEFS union, state.js), the same chain applies to both — for a partner who's never
-// toggled any of the three new ones, g.hashi/g.skin/g.muscle are all false, so the result
-// is byte-identical to the old partner-only branch (falls through to g.heart).
-function deriveGoalTag(p, calorieGoalKey){
+// > skin > muscle > heart) — and is omitted entirely if none of those are on. Both slots
+// run the identical chain now (GOAL_DEFS union, state.js) — for someone who's never
+// toggled any of the four non-calorie goals, g.hashi/g.skin/g.muscle/g.heart are all
+// false and the chip is just the calorie chip alone.
+function deriveGoalTag(p){
   const g = p.goals;
-  const gk = calorieGoalKey || (('fatLoss' in g) ? 'fatLoss' : 'muscleGain');
-  const isElena = gk === 'fatLoss';
-  const calChip = isElena
-    ? (g.fatLoss ? '🎯 Gentle fat loss' : '🎯 At maintenance')
-    : (g.muscleGain ? '🎯 Muscle gain' : '🎯 At maintenance');
+  const calChip = g.fatLoss ? '🎯 Gentle fat loss' : g.muscleGain ? '🎯 Muscle gain' : '🎯 At maintenance';
   const other = g.hashi ? '🦋 Hashimoto' : g.skin ? '✨ Skin' : g.muscle ? '💪 Muscle & protein' : g.heart ? '❤️ Heart-smart' : null;
   return other ? (calChip + ' · ' + other) : calChip;
 }
@@ -87,14 +82,11 @@ function deriveGoalTag(p, calorieGoalKey){
 // denominators — and therefore the bar widths — move when the split changes.
 function recomputeProf(key){
   const p = PROF[key];
-  // Goal-derived numbers first (task B1) — recCal below reads p.goalAdj. calorieGoalKey
-  // (task B2) pins each slot to its own calorie-moving goal explicitly — see
-  // CALORIE_GOAL_KEY's doc above deriveGoalAdj for why 'in'-detection alone stopped being
-  // enough once both slots' `goals` carry the same union of keys.
-  const calorieGoalKey = CALORIE_GOAL_KEY[key];
-  p.goalAdj = deriveGoalAdj(p, calorieGoalKey);
-  p.goalName = deriveGoalName(p, calorieGoalKey);
-  p.goalTag = deriveGoalTag(p, calorieGoalKey);
+  // Goal-derived numbers first (task B1) — recCal below reads p.goalAdj. Both goals are
+  // plain per-profile booleans now (see deriveGoalAdj's doc above) — no slot dispatch.
+  p.goalAdj = deriveGoalAdj(p);
+  p.goalName = deriveGoalName(p);
+  p.goalTag = deriveGoalTag(p);
   p.hashi = !!p.goals.hashi; // mirrored convenience: Insights' selenium check reads PROF[key].hashi directly
   // Task B2: displayName is the real source now — seg (segment-button label) and av
   // (avatar initial) DERIVE from it every recompute (state.js:avatarInitial), same
