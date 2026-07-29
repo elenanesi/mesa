@@ -42,8 +42,15 @@ function parseDecimalInput(str){
 
 function closeSheet(){
   if(typeof stopBarcodeScanner === 'function') stopBarcodeScanner();
+  const sheet = document.getElementById('sheet');
+  const wasRecipeFilterSheet = sheet.classList.contains('recipe-filter-sheet');
   document.getElementById('sheetBackdrop').classList.remove('show');
-  document.getElementById('sheet').classList.remove('show');
+  sheet.classList.remove('show');
+  sheet.classList.remove('recipe-filter-sheet');
+  if(wasRecipeFilterSheet && typeof libRecipeFiltersOpen !== 'undefined'){
+    libRecipeFiltersOpen = false;
+    if(typeof rerenderLibRecipeFilteredView === 'function') rerenderLibRecipeFilteredView();
+  }
 }
 
 /* ---------------- shared meal-card action button ----------------

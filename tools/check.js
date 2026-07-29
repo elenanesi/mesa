@@ -3368,6 +3368,58 @@ function testRecipePrefsUIScopedToCurrentProf(ctx){
   }
 }
 
+// Recipe Library filters are a manual browsing refinement, but their dietary meaning must
+// remain exactly aligned with planner.js:recipeViolatesDiet(). This locks the UI-facing
+// predicate to the same conservative ingredient/option-group semantics for both built-ins
+// and user-created recipes.
+function testRecipeLibraryDietFilters(ctx){
+  const savedFilters = get(ctx, 'libRecipeFilters');
+  const savedCustomRecipes = cloneJSON(get(ctx, 'customRecipes'));
+  const customId = '__library_vegan_fixture__';
+  try{
+    run(ctx, "libRecipeFilters = {query:'', diets:new Set(['vegan']), slots:new Set(), tags:new Set(), seasons:new Set()};");
+    const veganIds = call(ctx, 'filteredRecipeIds', []);
+    assert(veganIds.length > 0 && veganIds.every(function(id){ return !call(ctx, 'recipeViolatesDiet', [id, ['vegan']]); }),
+      'Recipe Library diet filter: Vegan returns only recipes planner.js considers vegan-compatible', JSON.stringify(veganIds));
+
+    const knownViolation = Object.keys(get(ctx, 'RECIPES_DB')).find(function(id){ return call(ctx, 'recipeViolatesDiet', [id, ['vegan']]); });
+    assert(!!knownViolation && veganIds.indexOf(knownViolation) === -1,
+      'Recipe Library diet filter: excludes a meat/dairy/egg/honey/fish violating recipe instead of relying on the veggie tag', knownViolation || 'no violating fixture found');
+
+    const sourceId = veganIds[0];
+    const sourceRecipe = cloneJSON(get(ctx, 'RECIPES_DB')[sourceId]);
+    sourceRecipe.title = 'Library vegan fixture';
+    run(ctx, 'customRecipes[' + JSON.stringify(customId) + '] = ' + JSON.stringify(sourceRecipe) + '; applyCustomRecipes();');
+    const withCustom = call(ctx, 'filteredRecipeIds', []);
+    assert(withCustom.indexOf(customId) !== -1,
+      'Recipe Library diet filter: applies the same Vegan compatibility check to a custom recipe', JSON.stringify(withCustom));
+
+    call(ctx, 'chooseLibRecipeDietFilter', ['vegetarian']);
+    const dietAfterStyleSwitch = get(ctx, 'libRecipeFilters').diets;
+    assert(dietAfterStyleSwitch.has('vegetarian') && !dietAfterStyleSwitch.has('vegan') && !dietAfterStyleSwitch.has('pescatarian'),
+      'Recipe Library diet filter: eating-style choices are mutually exclusive', JSON.stringify(Array.from(dietAfterStyleSwitch)));
+    call(ctx, 'toggleLibRecipeDietFilter', ['gluten-free']);
+    const dietAfterIntolerance = get(ctx, 'libRecipeFilters').diets;
+    assert(dietAfterIntolerance.has('vegetarian') && dietAfterIntolerance.has('gluten-free'),
+      'Recipe Library diet filter: an intolerance stacks with the selected eating style', JSON.stringify(Array.from(dietAfterIntolerance)));
+
+    run(ctx, "libRecipeFilters = {query:'definitely-not-a-recipe', diets:new Set(['vegan']), slots:new Set(), tags:new Set(), seasons:new Set()};");
+    const emptyMarkup = call(ctx, 'renderLibRecipeListMarkup', []);
+    assert(emptyMarkup.indexOf('No vegan recipes match') !== -1 && emptyMarkup.indexOf('Clear filters or edit your search.') !== -1,
+      'Recipe Library diet filter: combined search/filter empty state explains how to recover', emptyMarkup);
+
+    const librarySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
+    assert(librarySrc.indexOf("recipeViolatesDiet(id, normalizeDietsArray(Array.from(libRecipeFilters.diets)))") !== -1
+      && librarySrc.indexOf('aria-live="polite"') !== -1
+      && librarySrc.indexOf('id="libRecipeSearchInput"') !== -1,
+      'Recipe Library filter UI: reuses planner diet semantics and exposes live accessible search feedback', 'expected filter implementation markers missing');
+  } finally {
+    ctx.__savedRecipeLibraryFilters__ = savedFilters;
+    ctx.__savedRecipeLibraryCustomRecipes__ = savedCustomRecipes;
+    run(ctx, 'customRecipes = __savedRecipeLibraryCustomRecipes__; applyCustomRecipes(); libRecipeFilters = __savedRecipeLibraryFilters__; delete __savedRecipeLibraryCustomRecipes__; delete __savedRecipeLibraryFilters__;');
+  }
+}
+
 // sync.js: the D1 mirror (buildLibraryCatalogPayload/flattenRecipePrefsForMirror) flattens
 // the nested recipePrefs to a household-union map for the worker's flat recipe_prefs
 // table — "either-down excludes, either-favorite boosts", same rule generateWeek's shared
@@ -9225,6 +9277,7 @@ function main(){
   runTest('diet preferences: per-diet exclude/permit matrix + plant-milk trap', function(){ testDietFilterSemantics(ctx); });
   runTest('diet preferences: optionGroups any-variant conservatism', function(){ testDietOptionGroupsConservatism(ctx); });
   runTest('diet preferences: multi-select combinations (vegetarian+gluten-free+lactose-intolerant)', function(){ testDietMultiSelectCombinations(ctx); });
+  runTest('Recipe Library: dietary refinements share planner semantics and remain composable', function(){ testRecipeLibraryDietFilters(ctx); });
   runTest('diet preferences: toggleDiet()/DIET_EXCLUSIVE_GROUP collapse behavior', function(){ testDietToggleExclusiveGroupCollapse(ctx); });
   runTest('diet preferences: loadState() migration from every legacy diet value + stale avoid cleanup', function(){ testDietLoadStateMigration(ctx); });
   runTest('diet preferences: sync robustness (legacy/new-shape payloads, both directions)', function(){ testDietSyncRobustness(ctx); });

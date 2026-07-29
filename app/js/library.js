@@ -1014,6 +1014,7 @@ function filterActiveCount(filters){
   if(filters.slots) n += filters.slots.size;
   if(filters.tags) n += filters.tags.size;
   if(filters.seasons) n += filters.seasons.size;
+  if(filters.diets) n += filters.diets.size;
   return n;
 }
 
@@ -2042,16 +2043,15 @@ function confirmPantryAdd(){
 /* ===================================================================
    FEATURE 2 — My recipes sheet + builder
    =================================================================== */
-/* ---------------- T5: Recipes sheet — meal-slot/tag filter chips ----------------
-   Same pattern as the Ingredients sheet's filters above: Meal (slot) is OR'd (a recipe
-   can carry multiple slots), Tag is AND'd (recipe must carry every active tag). Combines with
-   the (currently absent) implicit "all recipes" list — no separate search box exists here,
-   so filters are the only narrowing. View-only: reset every time the sheet opens. */
-let libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
+/* ---------------- Recipe Library — search + refinement ----------------
+   Search is independent from the refinements below so typing never replaces the focused
+   input. Meal filters OR across a recipe's slots; diet, season, and nutrition filters all
+   narrow the candidate list. These are view-only controls and reset when Recipes opens. */
+let libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
 let libRecipeFiltersOpen = false;
 
 function openMyRecipes(){
-  libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
+  libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
   libRecipeFiltersOpen = false;
   setRecipesScreenHtml(buildMyRecipesSheet());
   attachLibRecipeListHandler();
@@ -2105,6 +2105,7 @@ function filteredRecipeIds(){
       libRecipeFilters.slots.forEach(function(slot){ if(slots.indexOf(slot) !== -1) hasSlot = true; });
       if(!hasSlot) return false;
     }
+    if(libRecipeFilters.diets.size && recipeViolatesDiet(id, normalizeDietsArray(Array.from(libRecipeFilters.diets)))) return false;
     if(libRecipeFilters.tags.size){
       const tags = r.tags || [];
       let hasAll = true;
@@ -2123,43 +2124,95 @@ function filteredRecipeIds(){
   });
 }
 
-function renderLibRecipeFilterBar(){
-  const anyActive = (libRecipeFilters.query || '').trim().length > 0 || libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0 || libRecipeFilters.seasons.size > 0;
-  const activeCount = filterActiveCount(libRecipeFilters);
+function recipeFilterLabels(){
   const labels = [];
-  libRecipeFilters.slots.forEach(function(s){ labels.push(SLOT_LABEL[s] || s); });
-  libRecipeFilters.tags.forEach(function(t){ labels.push(tagLabelForPreview(t)); });
-  libRecipeFilters.seasons.forEach(function(s){ labels.push(seasonLabel(s)); });
+  libRecipeFilters.diets.forEach(function(d){ labels.push({label: dietLabel(d), clear: 'clearLibRecipeDietFilter(\'' + d + '\')'}); });
+  libRecipeFilters.slots.forEach(function(s){ labels.push({label: SLOT_LABEL[s] || s, clear: 'toggleLibRecipeSlotFilter(\'' + s + '\')'}); });
+  libRecipeFilters.tags.forEach(function(t){ labels.push({label: tagLabelForPreview(t), clear: 'toggleLibRecipeTagFilter(\'' + t + '\')'}); });
+  libRecipeFilters.seasons.forEach(function(s){ labels.push({label: seasonLabel(s), clear: 'toggleLibRecipeSeasonFilter(\'' + s + '\')'}); });
+  return labels;
+}
+
+function recipeFilterSummaryHtml(){
+  const labels = recipeFilterLabels();
+  const hasSearch = (libRecipeFilters.query || '').trim().length > 0;
+  if(!labels.length && !hasSearch) return '';
+  return '<div class="recipe-filter-summary" aria-label="Active recipe refinements">'
+    + labels.map(function(item){ return '<button class="recipe-filter-summary-chip" onclick="' + item.clear + '" aria-label="Remove ' + htmlAttr(item.label) + ' filter">' + escapeHtml(item.label) + ' <span aria-hidden="true">×</span></button>'; }).join('')
+    + '<button class="recipe-filter-clear" onclick="clearLibRecipeFilters()">Clear all</button>'
+    + '</div>';
+}
+
+function recipeFilterChipHtml(label, active, onclickJs){
+  return '<button class="recipe-filter-chip' + (active ? ' on' : '') + '" aria-pressed="' + (active ? 'true' : 'false') + '" onclick="' + onclickJs + '">' + escapeHtml(label) + '</button>';
+}
+
+function buildLibRecipeFilterControls(){
+  return '<div class="recipe-filter-group"><div class="filter-label">Diet</div>'
+    + '<div class="recipe-filter-subhead">Eating style</div>'
+    + '<div class="recipe-filter-options">'
+    + DIET_EXCLUSIVE_GROUP.map(function(d){ return recipeFilterChipHtml(dietLabel(d), libRecipeFilters.diets.has(d), 'chooseLibRecipeDietFilter(\'' + d + '\')'); }).join('')
+    + '</div><div class="recipe-filter-subhead">Intolerances</div><div class="recipe-filter-options">'
+    + DIET_KEYS.filter(function(d){ return DIET_EXCLUSIVE_GROUP.indexOf(d) === -1; }).map(function(d){ return recipeFilterChipHtml(dietLabel(d), libRecipeFilters.diets.has(d), 'toggleLibRecipeDietFilter(\'' + d + '\')'); }).join('')
+    + '</div></div>'
+    + '<div class="recipe-filter-group"><div class="filter-label">Meal</div><div class="recipe-filter-options">'
+    + RECIPE_SLOTS.map(function(s){ return recipeFilterChipHtml(SLOT_LABEL[s], libRecipeFilters.slots.has(s), 'toggleLibRecipeSlotFilter(\'' + s + '\')'); }).join('')
+    + '</div></div>'
+    + '<div class="recipe-filter-group"><div class="filter-label">Season</div><div class="recipe-filter-options">'
+    + SEASON_VALUES.map(function(s){ return recipeFilterChipHtml(seasonLabel(s), libRecipeFilters.seasons.has(s), 'toggleLibRecipeSeasonFilter(\'' + s + '\')'); }).join('')
+    + '</div></div>'
+    + '<div class="recipe-filter-group"><div class="filter-label">Nutrition</div><div class="recipe-filter-options">'
+    + VALID_TAGS.map(function(t){ return recipeFilterChipHtml(tagLabelForPreview(t), libRecipeFilters.tags.has(t), 'toggleLibRecipeTagFilter(\'' + t + '\')'); }).join('')
+    + '</div></div>';
+}
+
+function renderLibRecipeFilterBar(){
+  const activeCount = filterActiveCount(libRecipeFilters);
   const n = filteredRecipeIds().length;
-  let html = '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:10px" type="text" id="libRecipeSearchInput" placeholder="Search recipes…" value="' + htmlAttr(libRecipeFilters.query || '') + '" oninput="onLibRecipeSearchInput(this.value)" autocomplete="off">'
-    + '<div class="filter-compact">'
-    + '<button class="filter-toggle" onclick="toggleLibRecipeFiltersPanel()">' + (libRecipeFiltersOpen ? 'Hide filters' : 'Filters') + (activeCount ? ' · ' + activeCount : '') + '</button>'
-    + '<span class="sub" style="margin:0">' + n + ' recipe' + (n === 1 ? '' : 's') + '</span>'
+  const controlsId = recipeFiltersUseSheet() ? 'libRecipeFilterSheetPanel' : 'libRecipeFilterControls';
+  let html = '<div class="recipe-filter-toolbar">'
+    + '<button class="recipe-filter-toggle" onclick="toggleLibRecipeFiltersPanel()" aria-expanded="' + (libRecipeFiltersOpen ? 'true' : 'false') + '" aria-controls="' + controlsId + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span>Filters' + (activeCount ? ' · ' + activeCount : '') + '</span></button>'
+    + '<span class="recipe-filter-count" aria-live="polite">' + n + ' recipe' + (n === 1 ? '' : 's') + '</span>'
     + '</div>'
-    + filterSummaryChips(labels, 'clearLibRecipeFilters()');
-  if(libRecipeFiltersOpen){
-    html += '<div class="filter-panel">'
-      + '<div class="filter-label">Meal</div>'
-      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
-      + RECIPE_SLOTS.map(function(s){ return filterChipHtml(SLOT_LABEL[s], libRecipeFilters.slots.has(s), 'toggleLibRecipeSlotFilter(\'' + s + '\')'); }).join('')
-      + '</div>'
-      + '<div class="filter-label">Season</div>'
-      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
-      + SEASON_VALUES.map(function(s){ return filterChipHtml(seasonLabel(s), libRecipeFilters.seasons.has(s), 'toggleLibRecipeSeasonFilter(\'' + s + '\')'); }).join('')
-      + '</div>'
-      + '<div class="filter-label">Tags</div>'
-      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
-      + VALID_TAGS.map(function(t){ return filterChipHtml(tagLabelForPreview(t), libRecipeFilters.tags.has(t), 'toggleLibRecipeTagFilter(\'' + t + '\')'); }).join('')
-      + '</div>'
-      + (anyActive ? '<button class="filter-clear full" onclick="clearLibRecipeFilters()">Clear filters</button>' : '')
-      + '</div>';
-  }
+    + recipeFilterSummaryHtml();
+  if(libRecipeFiltersOpen && !recipeFiltersUseSheet()) html += '<div class="recipe-filter-panel" id="libRecipeFilterControls">' + buildLibRecipeFilterControls() + '</div>';
   return html;
 }
 
+function recipeFiltersUseSheet(){ return typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(max-width: 640px)').matches; }
+function libRecipeFilterSheetIsOpen(){
+  const sheet = document.getElementById('sheet');
+  return !!sheet && sheet.classList.contains('recipe-filter-sheet');
+}
+
 function toggleLibRecipeFiltersPanel(){
+  if(recipeFiltersUseSheet()){
+    const sheet = document.getElementById('sheet');
+    if(sheet && sheet.classList.contains('recipe-filter-sheet')) closeSheet();
+    else openLibRecipeFiltersSheet();
+    return;
+  }
   libRecipeFiltersOpen = !libRecipeFiltersOpen;
   rerenderLibRecipeFilteredView();
+}
+
+function openLibRecipeFiltersSheet(){
+  libRecipeFiltersOpen = true;
+  const sheet = document.getElementById('sheet');
+  sheet.classList.add('tall', 'recipe-filter-sheet', 'show');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  renderLibRecipeFilterSheet();
+  rerenderLibRecipeFilteredView();
+}
+
+function renderLibRecipeFilterSheet(){
+  const body = document.getElementById('sheetBody');
+  if(!body) return;
+  const n = filteredRecipeIds().length;
+  body.innerHTML = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Refine recipes</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">Done</button></div>'
+    + '<div class="recipe-filter-sheet-count" id="libRecipeFilterSheetPanel">' + n + ' recipe' + (n === 1 ? '' : 's') + '</div>'
+    + '<div class="recipe-filter-sheet-controls">' + buildLibRecipeFilterControls() + '</div>'
+    + '<button class="filter-clear full" onclick="clearLibRecipeFilters()">Clear all</button>';
 }
 
 function toggleLibRecipeSlotFilter(slot){
@@ -2169,8 +2222,22 @@ function toggleLibRecipeSlotFilter(slot){
 function onLibRecipeSearchInput(value){
   libRecipeFilters.query = value;
   rerenderLibRecipeFilteredView();
-  const input = document.getElementById('libRecipeSearchInput');
-  if(input) input.focus();
+}
+function chooseLibRecipeDietFilter(diet){
+  const selected = libRecipeFilters.diets.has(diet);
+  DIET_EXCLUSIVE_GROUP.forEach(function(d){ libRecipeFilters.diets.delete(d); });
+  if(!selected) libRecipeFilters.diets.add(diet);
+  libRecipeFilters.diets = new Set(normalizeDietsArray(Array.from(libRecipeFilters.diets)));
+  rerenderLibRecipeFilteredView();
+}
+function toggleLibRecipeDietFilter(diet){
+  if(libRecipeFilters.diets.has(diet)) libRecipeFilters.diets.delete(diet); else libRecipeFilters.diets.add(diet);
+  libRecipeFilters.diets = new Set(normalizeDietsArray(Array.from(libRecipeFilters.diets)));
+  rerenderLibRecipeFilteredView();
+}
+function clearLibRecipeDietFilter(diet){
+  libRecipeFilters.diets.delete(diet);
+  rerenderLibRecipeFilteredView();
 }
 function toggleLibRecipeTagFilter(tag){
   if(libRecipeFilters.tags.has(tag)) libRecipeFilters.tags.delete(tag); else libRecipeFilters.tags.add(tag);
@@ -2182,8 +2249,9 @@ function toggleLibRecipeSeasonFilter(season){
   rerenderLibRecipeFilteredView();
 }
 function clearLibRecipeFilters(){
-  libRecipeFilters = {query: '', slots: new Set(), tags: new Set(), seasons: new Set()};
+  libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
   libRecipeFiltersOpen = false;
+  if(libRecipeFilterSheetIsOpen()) closeSheet();
   rerenderLibRecipeFilteredView();
 }
 function rerenderLibRecipeFilteredView(){
@@ -2191,15 +2259,20 @@ function rerenderLibRecipeFilteredView(){
   if(bar) bar.innerHTML = renderLibRecipeFilterBar();
   const list = document.getElementById('libRecipeList');
   if(list) list.innerHTML = renderLibRecipeListMarkup();
+  if(libRecipeFilterSheetIsOpen()) renderLibRecipeFilterSheet();
 }
 
 function renderLibRecipeListMarkup(){
   const ids = filteredRecipeIds();
   if(!ids.length){
-    const anyActive = libRecipeFilters.slots.size > 0 || libRecipeFilters.tags.size > 0 || libRecipeFilters.seasons.size > 0;
-    return '<p class="sub" style="margin-top:14px">' + (anyActive
-      ? 'No recipes match your filters.'
-      : 'No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.') + '</p>';
+    const query = (libRecipeFilters.query || '').trim();
+    const labels = recipeFilterLabels().map(function(item){ return item.label; });
+    const hasFilters = labels.length > 0;
+    let message = 'No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.';
+    if(query && hasFilters) message = 'No ' + labels.join(', ').toLowerCase() + ' recipes match &ldquo;' + escapeHtml(query) + '&rdquo;. Clear filters or edit your search.';
+    else if(query) message = 'No recipes match &ldquo;' + escapeHtml(query) + '&rdquo;.';
+    else if(hasFilters) message = 'No ' + labels.join(', ').toLowerCase() + ' recipes match these filters.';
+    return '<p class="sub" style="margin-top:14px">' + message + '</p>';
   }
   // Recipe ids can be user-authored ('cr-<slug>' from a typed title), so rows carry the
   // id in data-recipe-id and the action buttons a data-act verb, resolved by
@@ -2239,6 +2312,7 @@ function toggleRecipePref(id, pref){
 function buildMyRecipesSheet(){
   let html = '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Recipes</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
     + '<button class="cta ghostbtn" style="margin-top:10px" onclick="openNewRecipeForm()">＋ New recipe</button>'
+    + '<div class="recipe-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input type="search" id="libRecipeSearchInput" placeholder="Search recipes…" value="' + htmlAttr(libRecipeFilters.query || '') + '" oninput="onLibRecipeSearchInput(this.value)" autocomplete="off" aria-label="Search recipes"></div>'
     + '<div id="libRecipeFilterBar">' + renderLibRecipeFilterBar() + '</div>';
   if(!Object.keys(RECIPES_DB).length){
     html += '<p class="sub" style="margin-top:14px">No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.</p>';
