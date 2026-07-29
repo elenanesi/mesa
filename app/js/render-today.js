@@ -1534,6 +1534,27 @@ function renderTodayMeals(){
   document.getElementById('snackDescEl').textContent = slotDescLine(snv, 'Snack');
   document.getElementById('snackTags').innerHTML = tagsHtml(snv.recipeId, 'snack', 'pillSnack', snv.shared);
 
+  // UX-REVIEW-plan.md item 4: snack only gets the tap-to-recipe affordance breakfast/lunch/
+  // dinner have (statically wired via onclick in index.html) when the slot actually holds a
+  // recipe today — todaySlotView('snack') can legitimately come back empty (no-candidates or
+  // a genuinely unplanned snack), and offering a pointer cursor with nothing behind it would
+  // just trade one bug (missing affordance) for another (dead tap). Re-applied every render
+  // so it never goes stale after a swap/re-balance changes whether today has a snack.
+  // openSnackRecipe lives in app.js (boot/nav layer, deliberately not loaded into
+  // tools/check.js's shared harness context — see that file's header doc), so this guards
+  // with typeof same as every other cross-file optional-function check in this codebase
+  // (e.g. isSoloHousehold/renderInsights above) rather than assuming it's always defined.
+  const snackCard = document.getElementById('todaySnack');
+  if(snackCard){
+    if(snv.recipe && typeof openSnackRecipe === 'function'){
+      snackCard.style.cursor = 'pointer';
+      snackCard.onclick = openSnackRecipe;
+    } else {
+      snackCard.style.cursor = 'default';
+      snackCard.onclick = null;
+    }
+  }
+
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
   renderTodayRecords();
 }

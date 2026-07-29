@@ -8471,6 +8471,191 @@ function testOnboardingSlotTargeting(){
 }
 
 /* ===================================================================
+   UX-REVIEW-plan.md item 4: snack tap-to-recipe affordance
+
+   #todaySnack used to be the only Today meal card with a hardcoded cursor:default and no
+   tap handler, while breakfast/lunch/dinner all open recipe detail via a static
+   onclick="open*Recipe()" in index.html. The fix can't use that same static-onclick
+   pattern though: unlike the other three slots, snack can legitimately hold NO recipe some
+   days (planner.js's B2 notes — snack is excluded from main+side composition), so
+   renderTodayMeals() (render-today.js) now wires the card's cursor/onclick IN JS, once per
+   render, based on whether todaySlotView('snack').recipe exists.
+
+   Runs in its own isolated context (createMesaContext() + loadAppInto() + app.js's function
+   definitions via readAppJsDefsOnlySrc() — same reasoning/pattern as
+   testOnboardingSlotTargeting above, since openSnackRecipe() lives in app.js) with the
+   richer makeObFakeDocument() double so #todaySnack's real onclick/style.cursor can be
+   inspected and invoked like a real tap. todaySlotView is monkey-patched for the 'snack'
+   slot only (falling through to the real implementation for every other slot) so both
+   branches — "has a recipe" and "legitimately has none" — are deterministic regardless of
+   what the planner happens to compose for FIXED_MONDAY.
+   =================================================================== */
+function testSnackTapAffordance(){
+  const ctx = createMesaContext();
+  loadAppInto(ctx);
+  run(ctx, readAppJsDefsOnlySrc());
+  ctx.document = makeObFakeDocument();
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  // openRecipe/go are boot/nav DOM painters this suite doesn't need — stand in with
+  // recorders, same rationale testOnboardingSlotTargeting uses for applyProf/toast/go.
+  run(ctx, "var __openRecipeCalls = []; openRecipe = function(key, origin, dayCtx){ __openRecipeCalls.push({key: key, origin: origin, dayCtx: dayCtx}); }; go = function(){};");
+  call(ctx, 'ensureWeekPlan', []);
+
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const snackRecipeId = Object.keys(RECIPES_DB).find(function(id){
+    const r = RECIPES_DB[id];
+    return Array.isArray(r.slots) ? r.slots.indexOf('snack') !== -1 : r.slot === 'snack';
+  });
+  assert(!!snackRecipeId, 'setup: found a snack-eligible recipe in RECIPES_DB to drive the test with', '');
+
+  run(ctx, "var __origTodaySlotView = todaySlotView; todaySlotView = function(slot){ return slot === 'snack' ? __snackViewOverride : __origTodaySlotView(slot); };");
+
+  // -------- Case A: the snack slot has a real recipe today --------
+  run(ctx, "__snackViewOverride = {recipeId: " + JSON.stringify(snackRecipeId) + ", recipe: RECIPES_DB[" + JSON.stringify(snackRecipeId) + "], opts: undefined, components: [{recipeId: " + JSON.stringify(snackRecipeId) + ", portion: 1}], extras: [], kcal: 150, protein: 5, carbs: 20, fat: 4, satFat: 1, fiber: 2, sugars: 3, freeSugars: 1, portion: 1, shared: false, logged: false};");
+  call(ctx, 'renderTodayMeals', []);
+  const cardWithRecipe = get(ctx, "document.getElementById('todaySnack')");
+  assert(cardWithRecipe.style.cursor === 'pointer', 'snack card: cursor becomes pointer once the slot has a recipe', cardWithRecipe.style.cursor);
+  assert(typeof cardWithRecipe.onclick === 'function', 'snack card: onclick is wired once the slot has a recipe', typeof cardWithRecipe.onclick);
+  cardWithRecipe.onclick();
+  const callsA = get(ctx, '__openRecipeCalls');
+  assert(callsA.length === 1 && callsA[0].key === snackRecipeId, 'snack card tap: opens the actual planned/logged snack recipe', JSON.stringify(callsA));
+  assert(callsA[0].origin === 'today', 'snack card tap: opens with origin "today" (same as breakfast/lunch/dinner, so Back returns to Today)', JSON.stringify(callsA[0]));
+  assert(!!callsA[0].dayCtx && callsA[0].dayCtx.slot === 'snack', 'snack card tap: passes todayRecipeCtx(\'snack\') as dayCtx, same pattern as the other 3 cards', JSON.stringify(callsA[0]));
+
+  // -------- Case B: the snack slot legitimately has no recipe today (not an error state —
+  // see NO_CANDIDATES_FALLBACK in render-today.js) --------
+  run(ctx, "__openRecipeCalls.length = 0;");
+  run(ctx, "__snackViewOverride = {recipeId: null, recipe: null, opts: undefined, components: [], extras: [], kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, portion: 1, shared: false, logged: false, reason: 'no-candidates'};");
+  call(ctx, 'renderTodayMeals', []);
+  const cardNoRecipe = get(ctx, "document.getElementById('todaySnack')");
+  assert(cardNoRecipe.style.cursor === 'default', 'snack card: cursor stays default when the slot has no recipe — no dead-tap affordance', cardNoRecipe.style.cursor);
+  assert(cardNoRecipe.onclick === null, 'snack card: onclick is cleared when the slot has no recipe', String(cardNoRecipe.onclick));
+  cardNoRecipe.onclick; // (no-op; nothing to invoke — asserted above it's null, not a function)
+  assert(get(ctx, '__openRecipeCalls').length === 0, 'snack card: renderTodayMeals() never calls openRecipe for a slot with nothing to open', JSON.stringify(get(ctx, '__openRecipeCalls')));
+
+  // openSnackRecipe() itself must also refuse to open with nothing to open, even called
+  // directly — belt-and-suspenders per its own doc comment in app.js.
+  run(ctx, "activeMenu.snack = {recipeId: null};");
+  call(ctx, 'openSnackRecipe', []);
+  assert(get(ctx, '__openRecipeCalls').length === 0, 'openSnackRecipe(): no-ops when there is no recipe id to open, even if called directly', JSON.stringify(get(ctx, '__openRecipeCalls')));
+}
+
+/* ===================================================================
+   UX-REVIEW-plan.md item 5: Today screen surfaces Shopping + Pantry
+
+   Shopping was reachable only from the Week screen and Pantry only two taps deep inside
+   Library. The fix adds a compact 2-button .quick grid to the Today screen (same
+   convention as the Log screen's "More ways to log" block), positioned AFTER every meal
+   card (so it can never push breakfast/lunch/dinner/snack below the fold at 375px) and
+   BEFORE the "Eaten today" records card, calling the pre-existing openShopping()/
+   openPantryLibrary() openers directly rather than duplicating any of their logic.
+   DOM-free: static markup assertions against the real index.html, same style as
+   testNoToastOnlyFakeFeaturesRemain's "More ways to log" grid check below.
+   =================================================================== */
+function testTodayShoppingPantryQuickLinks(){
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+
+  const gridMatch = indexHtml.match(/<div class="quick" id="todayQuickLinks"[\s\S]*?<\/div>/);
+  assert(!!gridMatch, 'index.html: Today screen has a #todayQuickLinks .quick grid', '');
+  const grid = gridMatch ? gridMatch[0] : '';
+  assert(grid.indexOf('onclick="openShopping()"') !== -1,
+    '#todayQuickLinks: Shopping button calls the existing openShopping() opener directly (no wrapper/duplicated logic)', grid);
+  assert(grid.indexOf('onclick="openPantryLibrary()"') !== -1,
+    '#todayQuickLinks: Pantry button calls the existing openPantryLibrary() opener directly (no wrapper/duplicated logic)', grid);
+
+  const snackIdx = indexHtml.indexOf('id="todaySnack"');
+  const quickIdx = indexHtml.indexOf('id="todayQuickLinks"');
+  const recordsIdx = indexHtml.indexOf('id="todayRecordsCard"');
+  assert(snackIdx !== -1 && quickIdx !== -1 && recordsIdx !== -1, 'setup: #todaySnack, #todayQuickLinks and #todayRecordsCard all found in index.html', '');
+  assert(snackIdx < quickIdx && quickIdx < recordsIdx,
+    'index.html: #todayQuickLinks sits AFTER every meal card (#todaySnack is the last one) and BEFORE #todayRecordsCard — never pushes the meal cards below the fold', 'snack@' + snackIdx + ' quick@' + quickIdx + ' records@' + recordsIdx);
+}
+
+/* ===================================================================
+   UX-REVIEW-plan.md item 9: Profile jump-nav grouped (You / Plan / Data & more)
+
+   The flat 12-chip #profileNav bar became a 2-tier nav: 3 always-visible group tabs
+   (#profileNavTabs) that each reveal a <=5-chip row (#navGroupYou/Plan/Data). Every
+   original section id must still be reachable via jumpToProfileSection() somewhere in the
+   bar (nothing lost), and the two conditionally-hidden chips (navChipWhose/navChipMeals,
+   still driven by applyHouseholdSizeVisibility() in render-profile.js, unchanged by this
+   batch) must still exist with their original ids. DOM-free: static markup + source
+   assertions, same style as testNoToastOnlyFakeFeaturesRemain above — a full click-through
+   simulation would need a DOM double with real classList/style.display tracking, which is
+   more machinery than this structural regression guard needs (this fix is also
+   manually verified in a real browser per the task's verification step).
+   =================================================================== */
+function testProfileNavGrouping(){
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  const navMatch = indexHtml.match(/<div class="profile-nav" id="profileNav">[\s\S]*?\n      <\/div>\n\n      <h2 id="sec-whose"/);
+  assert(!!navMatch, 'setup: #profileNav block found in index.html', '');
+  const nav = navMatch ? navMatch[0] : '';
+
+  assert(nav.indexOf('id="profileNavTabs"') !== -1, '#profileNav: has a #profileNavTabs group-tab row', nav);
+  ['you', 'plan', 'data'].forEach(function(group){
+    assert(nav.indexOf("selectProfileNavGroup('" + group + "'") !== -1,
+      '#profileNavTabs: a tab calls selectProfileNavGroup(\'' + group + '\', this)', nav);
+  });
+  ['navGroupYou', 'navGroupPlan', 'navGroupData'].forEach(function(id){
+    assert(nav.indexOf('id="' + id + '"') !== -1, '#profileNav: chip row #' + id + ' present', nav);
+  });
+
+  // Every section id the OLD flat bar jumped to must still be reachable from SOME chip.
+  const sectionIds = ['sec-whose', 'sec-basics', 'sec-diet', 'sec-macro', 'sec-goals', 'sec-meals', 'sec-avoid', 'sec-library', 'accountHeading', 'coupleSyncHeading', 'sec-data', 'sec-about'];
+  sectionIds.forEach(function(id){
+    assert(nav.indexOf("jumpToProfileSection('" + id + "'") !== -1,
+      '#profileNav: no section lost — a chip still jumps to \'' + id + '\'', '');
+  });
+  assert(nav.indexOf('id="navChipWhose"') !== -1 && nav.indexOf('id="navChipMeals"') !== -1,
+    '#profileNav: navChipWhose/navChipMeals still present with their original ids (applyHouseholdSizeVisibility solo-hiding keeps working)', nav);
+
+  const renderProfileSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-profile.js'), 'utf8');
+  assert(renderProfileSrc.indexOf('function selectProfileNavGroup(') !== -1,
+    'render-profile.js: selectProfileNavGroup() is defined', '');
+  const jumpFn = (renderProfileSrc.match(/function jumpToProfileSection\([\s\S]*?\n\}/) || [''])[0];
+  assert(jumpFn.indexOf("closest('.profile-nav-chips')") !== -1,
+    'jumpToProfileSection(): scopes its \'on\' toggling to the tapped chip\'s own row, not the whole bar (so a chip tap can never clear the group tab\'s \'on\' state)', jumpFn);
+}
+
+/* ===================================================================
+   UX-REVIEW-plan.md P3: Library ingredient-count label tracks an active search
+
+   Fixed in the 2026-07-17 code-health batch (onLibFoodSearchInput ->
+   rerenderLibFoodFilteredView(), which repaints #libFoodFilterBar — where the "N
+   ingredients" count lives — alongside the list). Verified still true here as a DOM-free
+   regression guard on the pure count logic (countFilteredFoods/libFoodIdsByCategory), plus
+   a source-level guard that the wiring chain from a search keystroke to the bar repaint
+   hasn't been quietly cut (that exact regression — the count silently reading the
+   unfiltered total while the list itself narrowed — is what shipped once already).
+   =================================================================== */
+function testLibraryIngredientCountTracksSearch(ctx){
+  const FOODS = get(ctx, 'FOODS');
+  run(ctx, "libFoodQuery = ''; libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};");
+
+  const allNamed = Object.keys(FOODS).filter(function(id){ return FOODS[id] && FOODS[id].name; });
+  const unfiltered = call(ctx, 'countFilteredFoods', ['']);
+  assert(unfiltered === allNamed.length, 'countFilteredFoods(\'\'): matches every named food with no query', unfiltered + ' vs ' + allNamed.length);
+
+  // Pick a real substring that narrows the set (not all foods, not zero) so the assertion
+  // actually exercises filtering rather than an edge case.
+  const sample = FOODS[allNamed[0]].name.slice(0, 3).toLowerCase();
+  const expected = allNamed.filter(function(id){ return FOODS[id].name.toLowerCase().indexOf(sample) !== -1; }).length;
+  const got = call(ctx, 'countFilteredFoods', [sample]);
+  assert(got === expected, 'countFilteredFoods(query): narrows to exactly the foods whose name matches the query (query=' + JSON.stringify(sample) + ')', got + ' vs expected ' + expected);
+  assert(got < allNamed.length, 'setup sanity: the sample query actually narrows the result (regression would false-pass if query matched everything)', got + ' of ' + allNamed.length);
+
+  // Source-level guard: the keystroke handler must still repaint the bar that carries the
+  // count, not just the list — this is the exact chain the 2026-07-17 fix put in place.
+  const librarySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
+  const searchFn = (librarySrc.match(/function onLibFoodSearchInput\([\s\S]*?\n\}/) || [''])[0];
+  assert(searchFn.indexOf('rerenderLibFoodFilteredView()') !== -1,
+    'onLibFoodSearchInput(): still calls rerenderLibFoodFilteredView() (repaints the count bar, not just the list)', searchFn);
+  const rerenderFn = (librarySrc.match(/function rerenderLibFoodFilteredView\([\s\S]*?\n\}/) || [''])[0];
+  assert(rerenderFn.indexOf("getElementById('libFoodFilterBar')") !== -1,
+    'rerenderLibFoodFilteredView(): still repaints #libFoodFilterBar (where the "N ingredients" count lives), not only #libFoodList', rerenderFn);
+}
+
+/* ===================================================================
    main
    =================================================================== */
 
@@ -8573,6 +8758,10 @@ function main(){
   runTest('person-switcher: shared component wiring guard', function(){ testPersonSwitcherSharedComponent(ctx); });
   runTest('person-switcher: personSwitcherHtml() active-state/names/solo-hiding/escaping', function(){ testPersonSwitcherHtml(ctx); });
   runTest('person-switcher: a switch preserves the active screen + Week/Log view state', function(){ testPersonSwitchPreservesScreenAndViewState(ctx); });
+  runTest('UX-REVIEW-plan.md item 4: snack card tap-to-recipe affordance (present with a recipe, absent without one)', function(){ testSnackTapAffordance(); });
+  runTest('UX-REVIEW-plan.md item 5: Today screen Shopping/Pantry quick links call the existing openers, placed below the meal cards', function(){ testTodayShoppingPantryQuickLinks(); });
+  runTest('UX-REVIEW-plan.md item 9: Profile jump-nav grouped into You/Plan/Data & more, every original chip still wired', function(){ testProfileNavGrouping(); });
+  runTest('UX-REVIEW-plan.md P3: Library ingredient count tracks an active search', function(){ testLibraryIngredientCountTracksSearch(ctx); });
   runTest('build-stamp guard: sw.js CACHE === auth.js AUTH_BUILD', function(){ testBuildStampMatch(); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch

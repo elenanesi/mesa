@@ -566,9 +566,41 @@ function jumpToProfileSection(id, el){
     const offset = (bar ? bar.offsetHeight : 0) + 12;
     screen.scrollTop = Math.max(0, target.offsetTop - offset);
   }
-  if(el && bar){
-    bar.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
+  // UX-REVIEW-plan.md item 9: clearing 'on' is scoped to el's OWN chip row (.profile-nav-
+  // chips), not the whole bar — the bar now also contains the 3 group tabs
+  // (#profileNavTabs), whose own 'on' state is managed separately by
+  // selectProfileNavGroup() and must survive a chip tap inside the row it just revealed.
+  if(el){
+    const row = el.closest('.profile-nav-chips') || bar;
+    if(row) row.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
     el.classList.add('on');
+  }
+}
+
+// UX-REVIEW-plan.md item 9: the group-tab tier above jumpToProfileSection's chips — see
+// #profileNav's doc comment in index.html for why (12 flat chips past the ~7-chip
+// scannability threshold, in a horizontal scroller that hides its own overflow). Shows
+// only the tapped group's chip row, marks that tab 'on' (scoped to #profileNavTabs, not
+// the whole bar — same reasoning as jumpToProfileSection's own scoping), then clicks that
+// row's first VISIBLE chip so the tab is still a working one-tap jump exactly like every
+// individual chip already was (a hidden chip, e.g. navChipWhose in a solo household, is
+// skipped in favor of the next visible one rather than jumping to a hidden section).
+const PROFILE_NAV_GROUP_ROWS = {you: 'navGroupYou', plan: 'navGroupPlan', data: 'navGroupData'};
+function selectProfileNavGroup(group, el){
+  Object.keys(PROFILE_NAV_GROUP_ROWS).forEach(function(g){
+    const row = document.getElementById(PROFILE_NAV_GROUP_ROWS[g]);
+    if(row) row.style.display = (g === group) ? 'flex' : 'none';
+  });
+  const tabs = document.getElementById('profileNavTabs');
+  if(tabs){
+    tabs.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
+    if(el) el.classList.add('on');
+  }
+  const row = document.getElementById(PROFILE_NAV_GROUP_ROWS[group]);
+  if(!row) return;
+  const chips = row.querySelectorAll('button');
+  for(let i = 0; i < chips.length; i++){
+    if(chips[i].style.display !== 'none'){ chips[i].click(); break; }
   }
 }
 

@@ -148,7 +148,7 @@
         </div>
       </div>
 
-      <div class="card meal" id="todaySnack" style="cursor:default">
+      <div class="card meal" id="todaySnack">
         <div class="thumb" id="snackThumbEl" style="background:var(--terra-tint)">🌰</div>
         <div class="info">
           <div class="row between"><span class="t" id="snackTitleEl"></span><span class="kcal" id="snackKcalEl"></span></div>
@@ -156,6 +156,16 @@
           <div class="tags" id="snackTags"></div>
           <div class="today-actions" id="taSnack"></div>
         </div>
+      </div>
+
+      <!-- UX-REVIEW-plan.md item 5: Shopping and Pantry are weekly-cadence, high-intent
+           tasks with no surface on Today. Same .quick grid convention as the Log screen's
+           "More ways to log" block (2 columns here, not 4 — only 2 destinations), placed
+           below the meal cards so it never pushes them below the fold at 375px. Calls the
+           existing openers directly — no duplicated logic. -->
+      <div class="quick" id="todayQuickLinks" style="grid-template-columns:repeat(2,1fr);margin-top:18px">
+        <button onclick="openShopping()"><span class="qi">🛒</span>Shopping list</button>
+        <button onclick="openPantryLibrary()"><span class="qi">🥫</span>Pantry</button>
       </div>
 
       <div class="card" id="todayRecordsCard" style="margin-top:18px">
@@ -421,7 +431,12 @@
 
       <div class="card" id="insightsBarsCard"></div>
 
-      <h2><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>Insights</h2>
+      <!-- UX-REVIEW-plan.md P3: this used to read "Insights" — a nested <h2>Insights</h2>
+           inside the Insights SCREEN, which describes nothing about what the section below
+           it actually is. #insightsWorking (render-profile.js:renderInsights()) paints
+           exactly 2 deterministic "what's working / watch this" call-outs, so the heading
+           now names that. -->
+      <h2><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8 12.5l2.5 2.5L16 9.5"/></svg>What's working</h2>
       <div class="card" style="padding:14px" id="insightsWorking"></div>
 
       <!-- task C2: real "Tune next week" card, replacing the fake Mesa-coach banner + the
@@ -448,23 +463,45 @@
       </div>
       <p class="sub">This is what makes the plans <i>yours</i>. Mesa recalculates whenever you change something here.</p>
 
-      <!-- T1: sticky jump-to-section chip bar — reuses the .seg chip look, one chip per
-           <h2> below. Static markup (not re-rendered on profile switch) so it can never
-           duplicate; jumpToProfileSection() (render.js) scrollIntoView()s the target,
-           whose scroll-margin-top (mesa.css .jump-target) keeps it clear of this bar. -->
+      <!-- T1 / UX-REVIEW-plan.md item 9: sticky jump-to-section chip bar — one chip per
+           <h2> below. Used to be 12 chips in a single horizontal scroller, which stops
+           being scannable well before that (~7) and a scroller hides its own overflow —
+           nothing signals there's more to the right. Now a two-tier nav: 3 always-visible
+           group tabs (You / Plan / Data & more, chosen because that's roughly how the
+           sections below already read — identity+diet, nutrition planning, then
+           account/library/system) that each reveal a row of that group's own chips
+           (<=5 per group, comfortably under the scannability threshold). Tapping a group
+           tab both switches the visible row AND jumps to that group's first section
+           (selectProfileNavGroup(), render-profile.js), so it's still a one-tap jump like
+           every chip always was — nothing lost, just organized. Every individual chip,
+           including navChipWhose/navChipMeals (still hidden/shown for a solo household by
+           applyHouseholdSizeVisibility(), unchanged), keeps its own id and
+           jumpToProfileSection() wiring exactly as before. Static markup (not re-rendered
+           on profile switch), same reasoning as before. -->
       <div class="profile-nav" id="profileNav">
-        <button class="on" id="navChipWhose" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
-        <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
-        <button onclick="jumpToProfileSection('sec-diet',this)">Diet</button>
-        <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
-        <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
-        <button id="navChipMeals" onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
-        <button onclick="jumpToProfileSection('sec-avoid',this)">Foods to avoid</button>
-        <button onclick="jumpToProfileSection('sec-library',this)">Food library</button>
-        <button onclick="jumpToProfileSection('accountHeading',this)">Account</button>
-        <button onclick="jumpToProfileSection('coupleSyncHeading',this)">Couple sync</button>
-        <button onclick="jumpToProfileSection('sec-data',this)">Your data</button>
-        <button onclick="jumpToProfileSection('sec-about',this)">About</button>
+        <div class="profile-nav-tabs" id="profileNavTabs">
+          <button class="on" onclick="selectProfileNavGroup('you',this)">You</button>
+          <button onclick="selectProfileNavGroup('plan',this)">Plan</button>
+          <button onclick="selectProfileNavGroup('data',this)">Data &amp; more</button>
+        </div>
+        <div class="profile-nav-chips" id="navGroupYou">
+          <button class="on" id="navChipWhose" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
+          <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
+          <button onclick="jumpToProfileSection('sec-diet',this)">Diet</button>
+        </div>
+        <div class="profile-nav-chips" id="navGroupPlan" style="display:none">
+          <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
+          <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
+          <button id="navChipMeals" onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
+          <button onclick="jumpToProfileSection('sec-avoid',this)">Foods to avoid</button>
+        </div>
+        <div class="profile-nav-chips" id="navGroupData" style="display:none">
+          <button onclick="jumpToProfileSection('sec-library',this)">Food library</button>
+          <button onclick="jumpToProfileSection('accountHeading',this)">Account</button>
+          <button onclick="jumpToProfileSection('coupleSyncHeading',this)">Couple sync</button>
+          <button onclick="jumpToProfileSection('sec-data',this)">Your data</button>
+          <button onclick="jumpToProfileSection('sec-about',this)">About</button>
+        </div>
       </div>
 
       <h2 id="sec-whose" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5"/><path d="M10 20c0-3 3-5 6-5s6 2 6 5"/></svg>Whose plan</h2>

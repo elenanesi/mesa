@@ -55,6 +55,17 @@ function openLunchRecipe(){
 function openDinnerRecipe(){
   openRecipe(displayedTodayRecipeId('dinner') || activeMenu.dinner.recipeId, 'today', todayRecipeCtx('dinner'));
 }
+// UX-REVIEW-plan.md item 4: unlike breakfast/lunch/dinner, the snack slot legitimately has
+// no recipe some days (planner.js's B2 notes — snack is excluded from main+side composition
+// and can come up empty), so this guards on an actual id rather than assuming one the way
+// the three above do. renderTodayMeals() (render-today.js) only wires this up as the card's
+// onclick when todaySlotView('snack').recipe exists, so in practice the guard here is
+// belt-and-suspenders, not the only thing standing between a tap and a crash.
+function openSnackRecipe(){
+  const id = displayedTodayRecipeId('snack') || (activeMenu.snack && activeMenu.snack.recipeId);
+  if(!id) return;
+  openRecipe(id, 'today', todayRecipeCtx('snack'));
+}
 
 /* ---------------- shared person-switcher click handling ----------------
    ONE delegated listener for every "whose plan" mount (render.js:personSwitcherHtml()/

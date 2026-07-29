@@ -338,12 +338,22 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
    background reaches the edges, then re-adds that padding so the chips still align. */
 .profile-nav{
   position:sticky;top:0;z-index:6;
-  display:flex;gap:8px;overflow-x:auto;
   margin:8px -18px 14px;padding:8px 18px 10px;
   background:var(--bg);
+}
+/* UX-REVIEW-plan.md item 9: top tier — 3 group tabs, always all visible (no scroll needed,
+   3 comfortably fits 375px), evenly spread via flex:1 so each is an easy target. */
+.profile-nav-tabs{display:flex;gap:8px;}
+.profile-nav-tabs button{flex:1;}
+/* Bottom tier — the active group's own chips. Still a horizontal scroller for a group
+   whose chips don't all fit (Plan/Data can run to 4-5), but each group is well under the
+   ~7-chip scannability threshold that made the old flat 12-chip bar unscannable, so a
+   scroller hiding a LITTLE overflow here isn't the same problem. */
+.profile-nav-chips{
+  display:flex;gap:8px;overflow-x:auto;margin-top:8px;
   scrollbar-width:none;-ms-overflow-style:none;
 }
-.profile-nav::-webkit-scrollbar{display:none;}
+.profile-nav-chips::-webkit-scrollbar{display:none;}
 .profile-nav button{
   flex:0 0 auto;border:1px solid rgba(176,146,105,.32);background:#e8dcc8;color:var(--ink-soft);
   font:inherit;font-size:12.5px;font-weight:600;padding:0 14px;min-height:44px;border-radius:999px;
