@@ -25,10 +25,12 @@
    deliberate simplification, not a typo; the macro grams themselves
    are the sourced values.
 
-   Composite ingredients (mockup shorthand like 'Roasted mixed veg')
-   get ONE pragmatic blended entry — a weighted average of their
-   components, documented in `src` — so recipes keep working, PLUS
-   the individual components as their own separate foods.
+   Composite ingredients carry `components` + `yieldG` instead of
+   frozen kcal/protein/carb/fat fields. engine.js resolves their
+   macros live from the component foods; made-at-home composites
+   (`bought:false`) decompose for shopping/pantry, while bought
+   composites (`bought:true`) stay as one pantry item but still expose
+   components for diet/allergen derivation.
 
    Categories (shopping list): Produce | Protein | Dairy | Pantry |
    Bakery | Frozen. Seasons (planning/filter tags): evergreen |
@@ -599,22 +601,22 @@ const FOODS = {
   '00-flour': {
     name: 'Flour, type 00 (soft wheat)', per: 100, unit: 'g',
     kcal: 353, protein: 10.0, carbs: 74.5, fat: 1.2, satFat: 0.2, fiber: 2.2, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Pantry', iconKey: '00-flour', src: 'USDA FDC 168911-style (wheat flour, white, all-purpose)'
+    flags: [], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 168911-style (wheat flour, white, all-purpose)'
   },
   '0-flour': {
     name: 'Flour, type 0 (soft wheat)', per: 100, unit: 'g',
     kcal: 348, protein: 11.0, carbs: 72.0, fat: 1.4, satFat: 0.2, fiber: 2.8, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Pantry', iconKey: '0-flour', src: 'CREA-style Italian food table (farina tipo 0)'
+    flags: [], cat: 'Pantry', iconKey: 'flour', src: 'CREA-style Italian food table (farina tipo 0)'
   },
   'oat-flour': {
     name: 'Oat flour', per: 100, unit: 'g',
     kcal: 404, protein: 14.7, carbs: 65.7, fat: 9.1, satFat: 1.6, fiber: 6.5, sugars: 0.9, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber', 'glutenFree'], cat: 'Pantry', iconKey: 'oat-flour', src: 'USDA FDC 173904-style (oats, ground); milled from rolled oats'
+    flags: ['highFiber', 'glutenFree'], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 173904-style (oats, ground); milled from rolled oats'
   },
   'wholewheat-flour': {
     name: 'Flour, whole wheat', per: 100, unit: 'g',
     kcal: 340, protein: 13.2, carbs: 72.0, fat: 2.5, satFat: 0.4, fiber: 10.7, sugars: 0.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Pantry', iconKey: 'wholewheat-flour', src: 'USDA FDC 168897 (wheat flour, whole-grain)'
+    flags: ['highFiber'], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 168897 (wheat flour, whole-grain)'
   },
   'rice': {
     name: 'Rice, white, dry', per: 100, unit: 'g',

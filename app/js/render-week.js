@@ -11,6 +11,7 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // re-visit, matching how every other screen's local view state — e.g. quickAdd — persists
 // across tab switches within a session).
 let weekScreenShowsNext = false;
+let weekQualityExpanded = false;
 
 function setWeekScreenMode(mode, el){
   weekScreenShowsNext = (mode === 'next');
@@ -18,6 +19,11 @@ function setWeekScreenMode(mode, el){
     el.parentNode.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
     el.classList.add('on');
   }
+  renderWeek();
+}
+
+function toggleWeekQualityDrawer(){
+  weekQualityExpanded = !weekQualityExpanded;
   renderWeek();
 }
 
@@ -250,7 +256,7 @@ function renderWeek(){
     const day = e.target.closest('.day[data-di]');
     if(day && el.contains(day)) toggleDay(+day.getAttribute('data-di'));
   };
-  renderWeekSummaryLine(plan, person);
+  renderWeekQuality(plan, person, dayViews);
   renderWeekNutriCard(plan, person, dayViews);
 
   // Nutrient coverage chips always reflect the CURRENT week regardless of which week is
@@ -260,14 +266,9 @@ function renderWeek(){
   updateWeekActionsForMode();
 }
 
-// B4: paints weekNutriSummary(plan, person, dayViews) into #weekNutriCard — the compact
-// card ABOVE the day list, on BOTH This-week and Next-week modes: per-day averages
-// (kcal/P/C/F) for the CURRENT profile, fiber and free-sugars averages against the SAME
-// targets Insights already uses, and the two headline household coverage chips (omega-3
-// meals/wk, sat-fat share) for the DISPLAYED week's plan. dayViews are exactly what
-// renderWeek() already built from displayedSlotViewForDate() — current week's totals are
-// therefore logged-overlay-aware (what the rows show), and next week's are plan-only (no
-// logged overlay exists for future dates), with no special-casing needed here.
+// B4: paints weekNutriSummary(plan, person, dayViews) into #weekNutriCard inside the
+// collapsible Week quality drawer. It uses the same computed averages and coverage chips
+// as before, but no longer sits as a large card before the plan.
 function renderWeekNutriCard(plan, person, dayViews){
   const wrap = document.getElementById('weekNutriCard');
   if(!wrap) return;
@@ -306,25 +307,30 @@ function renderWeekNutriCard(plan, person, dayViews){
     + '<div class="nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
 }
 
-// T6: paints planner.js:summarizeWeekPlan(plan, person) into #weekSummaryLine as a single
-// (wrappable) line — up to 3 friendly tag chips from the plan's most-common recipe tags,
-// plus one hard metric that clears a T7/Insights threshold (or, failing that, the fiber
-// figure framed against its goal). Called every renderWeek(), so it already tracks the
-// This/Next toggle (`plan`/`person` passed in) and profile switch for free.
-function renderWeekSummaryLine(plan, person){
-  const el = document.getElementById('weekSummaryLine');
-  if(!el) return;
+// T6: paints planner.js:summarizeWeekPlan(plan, person) into the collapsed Week quality
+// row as a concise one-line readout. The expanded metrics live below it in #weekNutriCard.
+function renderWeekQuality(plan, person, dayViews){
+  const row = document.getElementById('weekQuality');
+  const toggle = document.getElementById('weekQualityToggle');
+  const panel = document.getElementById('weekQualityPanel');
+  const summaryEl = document.getElementById('weekSummaryLine');
   const s = summarizeWeekPlan(plan, person);
-  const tagsHtml = s.tags.length
-    ? s.tags.map(function(t){ return '<b>' + escapeHtml(t) + '</b>'; }).join(' <span class="ws-sep">·</span> ')
-    : '<b>Balanced week</b>';
-  el.innerHTML = tagsHtml + ' <span class="ws-sep">·</span> ' + escapeHtml(s.metricText);
+  const tagText = s.tags.length ? s.tags[0] : 'Balanced week';
+  if(summaryEl) summaryEl.textContent = tagText + ' · ' + s.metricText;
+  if(row) row.classList.toggle('open', weekQualityExpanded);
+  if(toggle) toggle.setAttribute('aria-expanded', weekQualityExpanded ? 'true' : 'false');
+  if(panel) panel.hidden = !weekQualityExpanded;
 }
 
 function updateWeekActionsForMode(){
   const btn = document.getElementById('rebalanceBtn');
+  const regenBtn = document.getElementById('regenerateBtn');
   const note = document.getElementById('rebalanceCapNote');
-  if(btn) btn.textContent = weekScreenShowsNext ? '✨ Re-balance next week' : '✨ Re-balance this week';
+  if(btn){
+    btn.textContent = 'Re-balance';
+    btn.setAttribute('aria-label', weekScreenShowsNext ? 'Re-balance next week' : 'Re-balance this week');
+  }
+  if(regenBtn) regenBtn.setAttribute('aria-label', weekScreenShowsNext ? 'Regenerate next week, keeping pinned and logged meals' : 'Regenerate this week, keeping pinned and logged meals');
   if(note) note.style.display = 'none';
 }
 

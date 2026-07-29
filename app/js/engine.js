@@ -63,13 +63,9 @@ function deriveGoalName(p){
   if(p.goals.muscleGain) return 'small muscle-gain surplus';
   return 'maintenance';
 }
-// Short "🎯 <calorie goal> · <other emoji> <other goal>" summary shown under the name
-// on the Profile screen (#goalTag). The second slot surfaces the person's most
-// distinctive OTHER active goal — same priority order as state.js's WHY_RULES (thyroid
-// > skin > muscle > heart) — and is omitted entirely if none of those are on. Both slots
-// run the identical chain now (GOAL_DEFS union, state.js) — for someone who's never
-// toggled any of the four non-calorie goals, g.hashi/g.skin/g.muscle/g.heart are all
-// false and the chip is just the calorie chip alone.
+// Legacy compact goal summary. Today no longer renders this lossy chip because it could
+// show only one non-calorie goal; Profile's Nutrition plan is the full, authoritative
+// place to review goals.
 function deriveGoalTag(p){
   const g = p.goals;
   const calChip = g.fatLoss ? '🎯 Gentle fat loss' : g.muscleGain ? '🎯 Muscle gain' : '🎯 At maintenance';

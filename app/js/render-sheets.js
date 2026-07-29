@@ -28,11 +28,9 @@ function setShopWeek(mode){
 }
 
 // Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list
-// recomputes (different week, different servings), so checked state is tracked and
-// persisted by ingredient NAME, PER WEEK (checkedShopByWeek/checkedSetForWeek, state.js)
-// — the DOM class is just this render's presentation of that. Writes into whichever
-// week's bucket buildShopSheet() most recently resolved (currentShopWeekStartDate), so
-// checking an item on next week's list never touches this week's checks and vice versa.
+// recomputes (different week, different servings), so checked state is tracked by
+// ingredient NAME, PER WEEK (checkedShopByWeek/checkedSetForWeek, state.js). Ticking a
+// row selects it for the final "Add ticked items to pantry" action.
 function toggleShop(id, name){
   const el = document.getElementById(id);
   if(!el) return;
@@ -40,7 +38,9 @@ function toggleShop(id, name){
   if(name && currentShopWeekStartDate){
     const checked = checkedSetForWeek(currentShopWeekStartDate);
     if(el.classList.contains('done')) checked[name] = true;
-    else delete checked[name];
+    else {
+      delete checked[name];
+    }
     persist();
   }
 }
@@ -86,6 +86,7 @@ function buildShopSheet(){
   if(list.fullyCovered.length){
     html += '<p class="sub" style="margin-top:0">Already at home, not on this list: ' + list.fullyCovered.slice().sort().map(escapeHtml).join(', ') + '.</p>';
   }
+  html += '<button class="cta" onclick="addTickedShopItemsToPantry()">Add ticked items to pantry</button>';
   let idx = 0;
   SHOP_CAT_ORDER.forEach(function(cat){
     const names = byCat[cat];
@@ -116,40 +117,47 @@ function buildShopSheet(){
       html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
     });
   }
-  // Q2 (PANTRY-plan.md P3 step 4): explicit-only restock — ticking a row above never by
-  // itself stocks anything (checkedShopByWeek is a UI/shopping concept only); this button is
-  // the one and only path that writes to the pantry from this sheet.
-  html += '<button class="cta" onclick="addTickedShopItemsToPantry()">Add ticked items to pantry</button>';
   return html;
 }
 
-// Q2 (PANTRY-plan.md P3 step 4) — pure logic: stocks every currently-TICKED row of
-// `weekStartDate`'s shopping list into the pantry at its LISTED quantity (computeShoppingList's
-// already pantry-reduced `qty` — exactly what's still missing), adding it ON TOP of
-// whatever's already in stock (reads pantryRemaining() first) rather than replacing it.
-// Goes through setPantryRemaining (js/library.js), the ONE re-baselining mutator, once per
-// affected foodId — so this file never writes `pantry[...]` directly, and every write still
-// re-stamps setAt/u atomically like every other pantry edit path. No DOM here (the onclick
-// wrapper below owns the re-render + toast) so this is directly callable from
-// tools/check.js. Returns the number of foodId writes made, so the caller can tell "nothing
-// was ticked" apart from "stocked N things".
+function restockShopItemName(weekStartDate, name){
+  const list = computeShoppingList(weekStartDate);
+  const row = list.totals[name];
+  if(!row) return 0;
+  const remaining = pantryRemaining();
+  let count = 0;
+  (row.foodIds || []).forEach(function(foodId){
+    if(!FOODS[foodId]) return;
+    const have = (typeof remaining[foodId] === 'number') ? remaining[foodId] : 0;
+    const newQty = have + row.qty;
+    setPantryRemaining(foodId, newQty);
+    remaining[foodId] = newQty;
+    count++;
+  });
+  return count;
+}
+
+// Stocks every currently-TICKED row of `weekStartDate`'s shopping list into the pantry at
+// its LISTED quantity (computeShoppingList's already pantry-reduced `qty` — exactly what's
+// still missing), adding it ON TOP of whatever's already in stock. This is called only by
+// the shopping sheet's final "Add ticked items to pantry" action.
 function restockTickedShopItems(weekStartDate){
   const list = computeShoppingList(weekStartDate);
   const checked = checkedSetForWeek(weekStartDate);
-  const remaining = pantryRemaining();
   let count = 0;
+  const stockedNames = {};
   Object.keys(list.totals).forEach(function(name){
     if(!checked[name]) return;
-    const row = list.totals[name];
-    (row.foodIds || []).forEach(function(foodId){
-      if(!FOODS[foodId]) return;
-      const have = (typeof remaining[foodId] === 'number') ? remaining[foodId] : 0;
-      const newQty = have + row.qty;
-      setPantryRemaining(foodId, newQty);
-      remaining[foodId] = newQty; // keep the local map in sync for the (rare) shared-foodId-per-row case
-      count++;
-    });
+    const stocked = restockShopItemName(weekStartDate, name);
+    if(stocked){
+      stockedNames[name] = true;
+      count += stocked;
+    }
   });
+  if(count){
+    Object.keys(stockedNames).forEach(function(name){ delete checked[name]; });
+    persist();
+  }
   return count;
 }
 
@@ -286,7 +294,7 @@ function applyRebalance(){
   renderWeek();
   persist();
   closeSheet();
-  toast('✓ Week re-balanced — ' + g.label + ' now ' + afterText);
+  toast('✓ Plan re-balanced — ' + g.label + ' now ' + afterText);
 }
 
 /* ---------------- re-balance today (UI slice) ---------------- */
@@ -394,7 +402,7 @@ function renderTodayRebalanceAppliedSheet(changedSuggestions){
     html += '<div class="logitem"' + (i === changed.length - 1 ? ' style="border-bottom:0"' : '') + '>'
       + '<div class="li-i" style="background:var(--sage-tint)">' + todayRebalanceSuggestionIcon(s) + '</div>'
       + '<div class="li-t">' + todayRebalanceSuggestionLabel(s)
-      + '<small>Updated in Today, Log, Week, and saved offline</small></div></div>';
+      + '<small>Updated in Today, Log, Planner, and saved offline</small></div></div>';
   });
   html += '</div><button class="cta" onclick="closeSheet()">Done</button>';
   return html;

@@ -99,9 +99,25 @@ function recipeMacros(recipeId, opts) {
     const foodId = ing[0], grams = ing[1] / batchYield;
     const food = FOODS[foodId];
     if (!food) { resolved = false; return; }
-    // Recipe quantities are always grams. Foods are per 100g/100ml, except
-    // unit:'piece' entries (eggs) whose values are PER PIECE with avgG
-    // documenting the assumed piece weight — so grams/avgG pieces.
+    // engine.js:foodMacros is the SINGLE source of a food's macros now (composite-
+    // ingredients task) — a COMPOSITE (food.components present) has no static kcal/
+    // protein/... fields of its own to read directly (see data/foods.js's header comment),
+    // so this must go through foodMacros rather than the raw field-read fallback below.
+    // engine.js loads after this file but is always loaded before recipeMacros is actually
+    // CALLED (this file's own header doc already flags that requirement for optionGroups
+    // resolution) — guarded with typeof anyway for a headless call before engine.js loads.
+    if (typeof foodMacros === 'function') {
+      const m = foodMacros(foodId, grams);
+      totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
+      totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
+      totals.sugars += m.sugars || 0; totals.freeSugars += m.freeSugars || 0;
+      return;
+    }
+    // Legacy direct-read fallback (engine.js not loaded). Recipe quantities are always
+    // grams. Foods are per 100g/100ml, except unit:'piece' entries (eggs) whose values are
+    // PER PIECE with avgG documenting the assumed piece weight — so grams/avgG pieces. A
+    // composite silently contributes zero here (no food.kcal etc to read) — the same
+    // "engine.js must be loaded" caveat this file's header already documents.
     const factor = food.unit === 'piece' ? grams / food.avgG : grams / (food.per || 100);
     totals.kcal += (food.kcal || 0) * factor;
     totals.protein += (food.protein || 0) * factor;

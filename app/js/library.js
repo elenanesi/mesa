@@ -1138,6 +1138,8 @@ function renderLibFoodListMarkup(query){
       const dm = foodDisplayMacros(id) || f; // composite-aware — see foodDisplayMacros's doc
       const isCustom = !!customFoods[id];
       const isEdited = !isCustom && !!foodOverrides[id];
+      const composite = isCompositeFood(f);
+      const pantryAllowed = foodCanBePantryBaselined(id);
       const kcalPer100 = f.unit === 'piece' ? Math.round(dm.kcal / f.avgG * 100) : Math.round(dm.kcal);
       const factor = f.unit === 'piece' ? (100 / f.avgG) : (100 / f.per);
       const macroLine = Math.round((dm.protein || 0) * factor) + 'g P · '
@@ -1153,7 +1155,7 @@ function renderLibFoodListMarkup(query){
       // aria-label naming the action for screen readers.
       out += '<div class="altrow" data-food-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(f.name) + '">'
         + '<div class="ae">' + foodIconHtml(id) + '</div>'
-        + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + ' <span class="pill mini">' + sugarQualityLabel(f.sugarQuality) + '</span></div>'
+        + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCustom ? ' <span class="pill mini gold">yours</span>' : '') + (isEdited ? ' <span class="pill mini terra">edited</span>' : '') + (composite ? ' <span class="pill mini">' + escapeHtml(componentCountLabel(f.components)) + '</span> <span class="pill mini ghost">' + escapeHtml(compositeModeLabel(f)) + '</span>' : '') + ' <span class="pill mini">' + sugarQualityLabel(f.sugarQuality) + '</span></div>'
         + '<div class="ad">' + kcalPer100 + ' kcal · ' + macroLine + ' · ' + seasonLabel(foodSeason(f)) + '</div></div>'
         // Actions stack in one 44px column (.lib-food-actions) instead of sitting inline:
         // a third inline button cost the text block 29% of its width. 🥫 matches the Library
@@ -1161,7 +1163,7 @@ function renderLibFoodListMarkup(query){
         // "I have this at home" is the frequent action, and putting it first keeps the
         // destructive delete furthest from where a thumb lands.
         + '<div class="lib-food-actions">'
-        + '<button class="lib-edit" data-act="pantry" aria-label="Add ' + htmlAttr(f.name) + ' to pantry">🥫</button>'
+        + (pantryAllowed ? '<button class="lib-edit" data-act="pantry" aria-label="Add ' + htmlAttr(f.name) + ' to pantry">🥫</button>' : '')
         + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(f.name) + '">✎</button>'
         + (isEdited ? '<button class="lib-del" data-act="reset" aria-label="Reset ' + htmlAttr(f.name) + '">↺</button>' : '')
         + (isCustom ? '<button class="lib-del" data-act="delete" aria-label="Delete ' + htmlAttr(f.name) + '">✕</button>' : '')
@@ -1192,34 +1194,136 @@ function sugarQualityLabel(q){
   return 'Sugar quality unknown';
 }
 
+function isCompositeFood(food){ return !!(food && Array.isArray(food.components)); }
+function isMadeCompositeFood(food){ return isCompositeFood(food) && food.bought !== true; }
+function foodCanBePantryBaselined(foodId){ return !!FOODS[foodId] && !isMadeCompositeFood(FOODS[foodId]); }
+
+function compositeModeLabel(food){
+  if(!isCompositeFood(food)) return '';
+  return food.bought === true ? 'bought as itself' : 'made from components';
+}
+
+function componentCountLabel(components){
+  const n = Array.isArray(components) ? components.length : 0;
+  return 'made of ' + n + ' ingredient' + (n === 1 ? '' : 's');
+}
+
+function componentAmountLabel(foodId, grams){
+  const food = FOODS[foodId];
+  if(!food) return grams + 'g';
+  if(food.unit === 'piece') return fmtShopQty(grams / (food.avgG || 1), '');
+  return fmtShopQty(grams, food.unit);
+}
+
+function normalizeComponentRows(rows){
+  return (Array.isArray(rows) ? rows : []).map(function(row){
+    if(Array.isArray(row)) return {foodId: row[0], grams: row[1]};
+    return {foodId: row && row.foodId, grams: row && row.grams};
+  }).filter(function(row){
+    return typeof row.foodId === 'string' && typeof row.grams === 'number' && isFinite(row.grams) && row.grams > 0;
+  });
+}
+
+function componentRowsToPairs(rows){
+  return normalizeComponentRows(rows).map(function(row){ return [row.foodId, row.grams]; });
+}
+
+function componentProblems(rows, ownerId){
+  const problems = [];
+  normalizeComponentRows(rows).forEach(function(row){
+    if(!FOODS[row.foodId]) problems.push('Missing ingredient: ' + row.foodId);
+    if(ownerId && row.foodId === ownerId) problems.push('A composite cannot contain itself.');
+  });
+  return problems;
+}
+
+function compositeDraftMacros(form, variant){
+  const components = normalizeComponentRows(variant ? variant.components : form.components);
+  const yieldG = variant ? variant.yieldG : form.yieldG;
+  const out = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown', problems: []};
+  if(!(typeof yieldG === 'number' && isFinite(yieldG) && yieldG > 0)){
+    out.problems.push('Batch yield must be above 0g.');
+    return out;
+  }
+  if(!components.length) out.problems.push('Add at least one component.');
+  components.forEach(function(row){
+    if(!FOODS[row.foodId]){
+      out.problems.push('Missing ingredient: ' + row.foodId);
+      return;
+    }
+    const m = foodMacros(row.foodId, row.grams);
+    out.protein += m.protein || 0; out.carbs += m.carbs || 0; out.fat += m.fat || 0;
+    out.satFat += m.satFat || 0; out.fiber += m.fiber || 0; out.sugars += m.sugars || 0; out.freeSugars += m.freeSugars || 0;
+  });
+  const scale = 100 / yieldG;
+  ['protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(k){ out[k] *= scale; });
+  out.kcal = 4 * out.protein + 4 * out.carbs + 9 * out.fat;
+  out.sugarQuality = out.freeSugars > 0 ? 'added/free' : (out.sugars > 0 ? 'intrinsic' : 'unknown');
+  return out;
+}
+
+function compositeRowListMarkup(rows, emptyText){
+  rows = normalizeComponentRows(rows);
+  if(!rows.length) return '<p class="sub" style="margin-top:10px">' + escapeHtml(emptyText || 'No components yet.') + '</p>';
+  return rows.map(function(row, i){
+    const food = FOODS[row.foodId];
+    const label = food ? food.name : 'Missing ingredient: ' + row.foodId;
+    return '<div class="altrow" data-comp-index="' + i + '" style="cursor:default">'
+      + '<div class="ae">' + (food ? foodIconHtml(row.foodId) : '<span class="recipe-emoji">?</span>') + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(label) + (food ? '' : ' <span class="pill mini terra">missing</span>') + '</div>'
+      + '<div class="ad">' + escapeHtml(componentAmountLabel(row.foodId, row.grams)) + '</div></div>'
+      + '<div style="display:flex;align-items:center;gap:6px;flex:0 0 auto">'
+      + '<input class="pantry-qty-input" type="text" inputmode="decimal" value="' + htmlAttr(row.grams) + '" aria-label="Component grams" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" style="font-size:16px;width:4.2em;height:44px;text-align:center;border:1px solid var(--line);border-radius:10px;box-sizing:border-box;padding:0 2px">'
+      + '<span class="sv-unit">g</span>'
+      + '<button class="lib-del" data-act="remove-comp" aria-label="Remove ' + htmlAttr(label) + '">✕</button>'
+      + '</div></div>';
+  }).join('');
+}
+
 let newFoodForm = null;
+let newFoodComponentPickerTarget = null;
 
 function openNewFoodForm(){
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: []};
   renderNewFoodFormSheet();
 }
 
 function openEditFoodForm(id){
   const f = FOODS[id];
   if(!f){ toast('Ingredient not found'); return; }
-  const factor = f.unit === 'piece' && f.avgG ? (100 / f.avgG) : (100 / (f.per || 100));
+  const composite = isCompositeFood(f);
+  const factor = composite ? 1 : (f.unit === 'piece' && f.avgG ? (100 / f.avgG) : (100 / (f.per || 100)));
+  const dm = composite ? (foodDisplayMacros(id) || {}) : f;
   newFoodForm = {
     editingId: id,
     name: f.name || '',
     cat: f.cat || 'Produce',
     season: foodSeason(f),
-    protein: +((f.protein || 0) * factor).toFixed(1),
-    carbs: +((f.carbs || 0) * factor).toFixed(1),
-    fat: +((f.fat || 0) * factor).toFixed(1),
-    satFat: +((f.satFat || 0) * factor).toFixed(1),
-    fiber: +((f.fiber || 0) * factor).toFixed(1),
-    sugars: +((f.sugars || 0) * factor).toFixed(1),
-    freeSugars: +((f.freeSugars || 0) * factor).toFixed(1),
-    sugarQuality: f.sugarQuality || 'unknown',
+    protein: +((dm.protein || 0) * factor).toFixed(1),
+    carbs: +((dm.carbs || 0) * factor).toFixed(1),
+    fat: +((dm.fat || 0) * factor).toFixed(1),
+    satFat: +((dm.satFat || 0) * factor).toFixed(1),
+    fiber: +((dm.fiber || 0) * factor).toFixed(1),
+    sugars: +((dm.sugars || 0) * factor).toFixed(1),
+    freeSugars: +((dm.freeSugars || 0) * factor).toFixed(1),
+    sugarQuality: dm.sugarQuality || f.sugarQuality || 'unknown',
     flags: Array.isArray(f.flags) ? f.flags.slice() : [],
     breakfastPair: !!f.breakfastPair,
     iconKey: safeIngredientIconKey(f.iconKey) || null,
-    iconPickerOpen: false
+    iconPickerOpen: false,
+    isComposite: composite,
+    components: normalizeComponentRows(f.components),
+    yieldG: (typeof f.yieldG === 'number' && f.yieldG > 0) ? f.yieldG : 100,
+    bought: f.bought === true,
+    variants: (Array.isArray(f.variants) ? f.variants : []).map(function(v){
+      return {
+        key: v.key || '',
+        label: v.label || '',
+        dietKeys: Array.isArray(v.dietKeys) ? v.dietKeys.slice() : [],
+        components: normalizeComponentRows(v.components),
+        yieldG: (typeof v.yieldG === 'number' && v.yieldG > 0) ? v.yieldG : 100
+      };
+    })
   };
   renderNewFoodFormSheet();
 }
@@ -1230,6 +1334,7 @@ function openEditFoodForm(id){
 function renderNewFoodFormSheet(){
   setIngredientsScreenHtml(buildNewFoodFormSheet());
   attachNewFoodIconGridHandler();
+  attachNewFoodComponentHandlers();
 }
 
 function computeNewFoodKcal(f){ return Math.round(4 * f.protein + 4 * f.carbs + 9 * f.fat); }
@@ -1253,6 +1358,12 @@ function buildNewFoodFormSheet(){
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(f.name) + '" oninput="newFoodForm.name=this.value" placeholder="e.g. Tempeh" autocomplete="off"></div>';
 
+  html += '<div class="field"><label>Type</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + '<button class="pill ghost chip-preset' + (!f.isComposite ? ' chipsel' : '') + '" onclick="setNewFoodCompositeMode(false)">Single ingredient</button>'
+    + '<button class="pill ghost chip-preset' + (f.isComposite ? ' chipsel' : '') + '" onclick="setNewFoodCompositeMode(true)">Composite</button>'
+    + '</div>'
+    + '<div class="cap-note">Composite nutrition is computed live from its components.</div></div>';
+
   html += '<div class="field"><label>Category</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + FOOD_CATEGORIES.map(function(c){ return '<button class="pill ghost chip-preset' + (f.cat === c ? ' chipsel' : '') + '" onclick="setNewFoodCat(\'' + c + '\')">' + c + '</button>'; }).join('')
     + '</div></div>';
@@ -1261,47 +1372,51 @@ function buildNewFoodFormSheet(){
     + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(f.season) === s ? ' chipsel' : '') + '" onclick="setNewFoodSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
     + '</div></div>';
 
-  html += '<div class="field"><label>Sugar quality</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
-    + [['intrinsic','Intrinsic'], ['added/free','Added/free'], ['mixed','Mixed'], ['unknown','Unknown']].map(function(pair){
-      return '<button class="pill ghost chip-preset' + (f.sugarQuality === pair[0] ? ' chipsel' : '') + '" onclick="setNewFoodSugarQuality(\'' + pair[0] + '\')">' + pair[1] + '</button>';
-    }).join('')
-    + '</div></div>';
+  if(f.isComposite){
+    html += buildNewFoodCompositeSection();
+  } else {
+    html += '<div class="field"><label>Sugar quality</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+      + [['intrinsic','Intrinsic'], ['added/free','Added/free'], ['mixed','Mixed'], ['unknown','Unknown']].map(function(pair){
+        return '<button class="pill ghost chip-preset' + (f.sugarQuality === pair[0] ? ' chipsel' : '') + '" onclick="setNewFoodSugarQuality(\'' + pair[0] + '\')">' + pair[1] + '</button>';
+      }).join('')
+      + '</div></div>';
 
-  // FIX 2 (feedback, owner: "prova a creare un ingrediente con 100 calorie usando il +…
-  // permetti di scrivere direttamente l'importo… anche i decimali (es: 7,4 grassi)"): each
-  // value is now a typeable input (comma OR dot decimals, commitNewFoodField below), flanked
-  // by the same +/- steppers as before.
-  [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat'], ['satFat', 'Sat. fat'], ['fiber', 'Fiber'], ['sugars', 'Sugars'], ['freeSugars', 'Free sugars']].forEach(function(pair){
-    const key = pair[0], label = pair[1];
-    html += '<div class="field"><label>' + label + ' (g / 100g)</label><div class="inp">'
-      + '<span>' + label + '</span>'
-      + '<span class="sv-stepper" style="margin:0">'
-      + '<button onclick="stepNewFoodField(\'' + key + '\',-1)" aria-label="Decrease ' + label + '">–</button>'
-      + '<input class="sv-val" type="text" inputmode="decimal" value="' + f[key] + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitNewFoodField(\'' + key + '\',this.value)" aria-label="' + label + ' grams per 100 grams">'
-      + '<span class="sv-unit">g</span>'
-      + '<button onclick="stepNewFoodField(\'' + key + '\',1)" aria-label="Increase ' + label + '">+</button>'
-      + '</span></div></div>';
-  });
+    // FIX 2 (feedback, owner: "prova a creare un ingrediente con 100 calorie usando il +…
+    // permetti di scrivere direttamente l'importo… anche i decimali (es: 7,4 grassi)"): each
+    // value is now a typeable input (comma OR dot decimals, commitNewFoodField below), flanked
+    // by the same +/- steppers as before.
+    [['protein', 'Protein'], ['carbs', 'Carbs'], ['fat', 'Fat'], ['satFat', 'Sat. fat'], ['fiber', 'Fiber'], ['sugars', 'Sugars'], ['freeSugars', 'Free sugars']].forEach(function(pair){
+      const key = pair[0], label = pair[1];
+      html += '<div class="field"><label>' + label + ' (g / 100g)</label><div class="inp">'
+        + '<span>' + label + '</span>'
+        + '<span class="sv-stepper" style="margin:0">'
+        + '<button onclick="stepNewFoodField(\'' + key + '\',-1)" aria-label="Decrease ' + label + '">–</button>'
+        + '<input class="sv-val" type="text" inputmode="decimal" value="' + f[key] + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitNewFoodField(\'' + key + '\',this.value)" aria-label="' + label + ' grams per 100 grams">'
+        + '<span class="sv-unit">g</span>'
+        + '<button onclick="stepNewFoodField(\'' + key + '\',1)" aria-label="Increase ' + label + '">+</button>'
+        + '</span></div></div>';
+    });
 
-  html += '<div class="field"><label>Calories <span class="chip-computed">✓ computed</span></label><div class="inp"><span>Calories / 100g</span><b>' + kcal + ' kcal</b></div>'
-    + '<div class="cap-note">4×protein + 4×carbs + 9×fat — never typed in.</div></div>';
+    html += '<div class="field"><label>Calories <span class="chip-computed">✓ computed</span></label><div class="inp"><span>Calories / 100g</span><b>' + kcal + ' kcal</b></div>'
+      + '<div class="cap-note">4×protein + 4×carbs + 9×fat — never typed in.</div></div>';
 
-  const notes = newFoodCapNotes(f);
-  if(notes.length) html += '<div class="cap-note" style="color:#b25e35;margin-top:2px">' + notes.join(' ') + '</div>';
+    const notes = newFoodCapNotes(f);
+    if(notes.length) html += '<div class="cap-note" style="color:#b25e35;margin-top:2px">' + notes.join(' ') + '</div>';
 
-  html += '<div class="field"><label>Flags (optional)</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
-    + FOOD_FORM_FLAGS.map(function(fl){ return '<button class="pill ghost chip-preset' + (f.flags.indexOf(fl) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodFlag(\'' + fl + '\')">' + flagLabel(fl) + '</button>'; }).join('')
-    + '</div></div>';
+    html += '<div class="field"><label>Flags (optional)</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+      + FOOD_FORM_FLAGS.map(function(fl){ return '<button class="pill ghost chip-preset' + (f.flags.indexOf(fl) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodFlag(\'' + fl + '\')">' + flagLabel(fl) + '</button>'; }).join('')
+      + '</div></div>';
 
-  // task B2: breakfastPair — an explicit whitelist (rather than inferring from cat:
-  // 'Produce', which also holds vegetables) of foods the planner may pair with a light
-  // breakfast main (e.g. skyr bowl + 1 pear). Same checkbox-row visual as Profile's goals
-  // list (render.js renderGoalsEditor's .opt/.ck pattern) — this app has no native
-  // <input type="checkbox"> anywhere, so this stays consistent with the rest of the UI.
-  html += '<div class="field"><label>Breakfast pairing</label>'
-    + '<div class="opt' + (f.breakfastPair ? ' sel' : '') + '" onclick="toggleNewFoodBreakfastPair()">'
-    + '<div class="ck">' + (f.breakfastPair ? '✓' : '') + '</div>'
-    + '<div><div class="ot">Can pair with a light breakfast</div><div class="od">Lets the planner combine this food (bread or fruit) with a plain protein breakfast main.</div></div></div></div>';
+    // task B2: breakfastPair — an explicit whitelist (rather than inferring from cat:
+    // 'Produce', which also holds vegetables) of foods the planner may pair with a light
+    // breakfast main (e.g. skyr bowl + 1 pear). Same checkbox-row visual as Profile's goals
+    // list (render.js renderGoalsEditor's .opt/.ck pattern) — this app has no native
+    // <input type="checkbox"> anywhere, so this stays consistent with the rest of the UI.
+    html += '<div class="field"><label>Breakfast pairing</label>'
+      + '<div class="opt' + (f.breakfastPair ? ' sel' : '') + '" onclick="toggleNewFoodBreakfastPair()">'
+      + '<div class="ck">' + (f.breakfastPair ? '✓' : '') + '</div>'
+      + '<div><div class="ot">Can pair with a light breakfast</div><div class="od">Lets the planner combine this food (bread or fruit) with a plain protein breakfast main.</div></div></div></div>';
+  }
 
   // task C5: icon picker — current selection preview (default watercolor until chosen) +
   // a "Choose icon" toggle expanding a grid of the existing built-in watercolor icons.
@@ -1322,7 +1437,74 @@ function buildNewFoodFormSheet(){
   return html;
 }
 
+function buildNewFoodCompositeSection(){
+  const f = newFoodForm;
+  const live = compositeDraftMacros(f);
+  let html = '<div class="field"><label>Composite behavior</label>'
+    + '<div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + '<button class="pill ghost chip-preset' + (!f.bought ? ' chipsel' : '') + '" onclick="setNewFoodBought(false)">Made at home</button>'
+    + '<button class="pill ghost chip-preset' + (f.bought ? ' chipsel' : '') + '" onclick="setNewFoodBought(true)">Bought as itself</button>'
+    + '</div><div class="cap-note">Made composites decompose into their ingredients for shopping and pantry. Bought composites stay as one pantry item.</div></div>';
+
+  html += '<div class="field"><label>Batch yield</label><div class="inp">'
+    + '<span>Finished amount</span>'
+    + '<span class="sv-stepper" style="margin:0">'
+    + '<button onclick="stepNewFoodYield(-10)" aria-label="Decrease batch yield">–</button>'
+    + '<input class="sv-val" type="text" inputmode="decimal" value="' + htmlAttr(f.yieldG) + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitNewFoodYield(this.value)" aria-label="Batch yield grams">'
+    + '<span class="sv-unit">g</span>'
+    + '<button onclick="stepNewFoodYield(10)" aria-label="Increase batch yield">+</button>'
+    + '</span></div></div>';
+
+  html += '<div class="field"><label>Components</label>'
+    + '<div data-role="new-food-components">' + compositeRowListMarkup(f.components, 'Add the ingredients that make this batch.') + '</div>'
+    + '<button class="pill ghost chip-preset" style="margin-top:10px" onclick="openAddComponentToFood()">＋ Add component</button></div>';
+
+  html += '<div class="field"><label>Live nutrition <span class="chip-computed">✓ computed</span></label>'
+    + '<div class="nutri" style="margin-top:8px">'
+    + foodDetailNutriPill('Calories', Math.round(live.kcal || 0), 'kcal')
+    + foodDetailNutriPill('Protein', +(live.protein || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Carbs', +(live.carbs || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Fat', +(live.fat || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Fiber', +(live.fiber || 0).toFixed(1), 'g')
+    + '</div>'
+    + '<div class="cap-note">Per 100g, resolved from the batch formula. Calories are recomputed from protein/carbs/fat.</div>'
+    + (live.problems.length ? '<div class="cap-note" style="color:#b25e35;margin-top:6px">' + live.problems.map(escapeHtml).join(' ') + '</div>' : '')
+    + '</div>';
+
+  html += buildNewFoodVariantsSection();
+  return html;
+}
+
+function buildNewFoodVariantsSection(){
+  const variants = Array.isArray(newFoodForm.variants) ? newFoodForm.variants : [];
+  let html = '<div class="field"><label>Diet variants (optional)</label>'
+    + '<div class="cap-note">Mesa uses the first variant whose diet chips match the household diet; otherwise it uses the default batch above.</div>';
+  if(!variants.length){
+    html += '<p class="sub" style="margin-top:10px">No variants yet.</p>';
+  }
+  variants.forEach(function(v, i){
+    const live = compositeDraftMacros(newFoodForm, v);
+    html += '<div class="card" style="margin-top:10px">'
+      + '<div class="row between"><b>Variant ' + (i + 1) + '</b><button class="lib-del" onclick="removeNewFoodVariant(' + i + ')" aria-label="Remove variant">✕</button></div>'
+      + '<div class="field"><label>Label</label><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(v.label) + '" oninput="setNewFoodVariantField(' + i + ',\'label\',this.value)" placeholder="e.g. Vegan pesto"></div>'
+      + '<div class="field"><label>Key</label><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(v.key) + '" oninput="setNewFoodVariantField(' + i + ',\'key\',this.value)" placeholder="e.g. vegan"></div>'
+      + '<div class="field"><label>Diets</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+      + DIET_KEYS.map(function(k){ return '<button class="pill ghost chip-preset' + (v.dietKeys.indexOf(k) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodVariantDiet(' + i + ',\'' + k + '\')">' + escapeHtml(dietLabel(k)) + '</button>'; }).join('')
+      + '</div></div>'
+      + '<div class="field"><label>Variant yield</label><div class="inp"><span>Finished amount</span><input class="sv-val" type="text" inputmode="decimal" value="' + htmlAttr(v.yieldG) + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitNewFoodVariantYield(' + i + ',this.value)" aria-label="Variant yield grams"><span class="sv-unit">g</span></div></div>'
+      + '<div class="field"><label>Variant components</label><div data-role="new-food-variant-components-' + i + '">' + compositeRowListMarkup(v.components, 'Add the ingredients for this variant.') + '</div>'
+      + '<button class="pill ghost chip-preset" style="margin-top:10px" onclick="openAddComponentToFood({variantIndex:' + i + '})">＋ Add component</button></div>'
+      + '<div class="cap-note">Preview: ' + Math.round(live.kcal || 0) + ' kcal · ' + +(live.protein || 0).toFixed(1) + 'g protein / 100g'
+      + (live.problems.length ? ' · ' + live.problems.map(escapeHtml).join(' ') : '') + '</div>'
+      + '</div>';
+  });
+  html += '<button class="pill ghost chip-preset" style="margin-top:10px" onclick="addNewFoodVariant()">＋ Add diet variant</button></div>';
+  return html;
+}
+
 function setNewFoodCat(c){ newFoodForm.cat = c; renderNewFoodFormSheet(); }
+function setNewFoodCompositeMode(on){ newFoodForm.isComposite = !!on; renderNewFoodFormSheet(); }
+function setNewFoodBought(on){ newFoodForm.bought = !!on; renderNewFoodFormSheet(); }
 function setNewFoodSeason(season){ newFoodForm.season = normalizeSeason(season); renderNewFoodFormSheet(); }
 function setNewFoodSugarQuality(value){ newFoodForm.sugarQuality = value; renderNewFoodFormSheet(); }
 function toggleNewFoodFlag(fl){
@@ -1397,6 +1579,139 @@ function commitNewFoodField(key, raw){
   renderNewFoodFormSheet();
 }
 
+function commitNewFoodYield(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null || n <= 0){ toast('Enter a batch yield above 0g'); renderNewFoodFormSheet(); return; }
+  newFoodForm.yieldG = +n.toFixed(1);
+  renderNewFoodFormSheet();
+}
+function stepNewFoodYield(delta){
+  newFoodForm.yieldG = Math.max(1, +((newFoodForm.yieldG || 0) + delta).toFixed(1));
+  renderNewFoodFormSheet();
+}
+
+function componentTargetRows(target){
+  if(target && typeof target.variantIndex === 'number'){
+    const v = newFoodForm.variants && newFoodForm.variants[target.variantIndex];
+    return v ? v.components : null;
+  }
+  return newFoodForm.components;
+}
+
+function attachNewFoodComponentHandlers(){
+  if(!newFoodForm || !newFoodForm.isComposite) return;
+  function attach(container, target){
+    if(!container) return;
+    container.onclick = function(e){
+      const btn = e.target.closest('button[data-act="remove-comp"]');
+      if(!btn || !container.contains(btn)) return;
+      const row = btn.closest('.altrow[data-comp-index]');
+      const rows = componentTargetRows(target);
+      if(!row || !rows) return;
+      rows.splice(+row.getAttribute('data-comp-index'), 1);
+      renderNewFoodFormSheet();
+    };
+    container.onfocusout = function(e){
+      const input = e.target.closest('.pantry-qty-input');
+      if(!input || !container.contains(input)) return;
+      const row = input.closest('.altrow[data-comp-index]');
+      const rows = componentTargetRows(target);
+      if(!row || !rows) return;
+      const n = parseDecimalInput(input.value);
+      if(n === null || n <= 0){ toast('Enter component grams above 0'); renderNewFoodFormSheet(); return; }
+      rows[+row.getAttribute('data-comp-index')].grams = +n.toFixed(1);
+      renderNewFoodFormSheet();
+    };
+  }
+  attach(document.querySelector('[data-role="new-food-components"]'), null);
+  (newFoodForm.variants || []).forEach(function(v, i){
+    attach(document.querySelector('[data-role="new-food-variant-components-' + i + '"]'), {variantIndex: i});
+  });
+}
+
+function openAddComponentToFood(target){
+  newFoodComponentPickerTarget = target && typeof target.variantIndex === 'number' ? {variantIndex: target.variantIndex} : null;
+  newFoodForm.pickerQuery = '';
+  setIngredientsScreenHtml(buildFoodComponentPickerSheet());
+  const results = document.getElementById('foodCompResults');
+  if(results) results.onclick = function(e){
+    const row = e.target.closest('.altrow[data-food-id]');
+    if(!row || !results.contains(row)) return;
+    addComponentToFood(row.getAttribute('data-food-id'));
+  };
+  const input = document.getElementById('foodCompSearchInput');
+  if(input) input.focus();
+}
+
+function buildFoodComponentPickerSheet(){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add component</h2><button class="backbtn" style="margin:0" onclick="renderNewFoodFormSheet()">‹ Back</button></div>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="foodCompSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(newFoodForm.pickerQuery || '') + '" oninput="onFoodComponentSearch(this.value)" autocomplete="off">'
+    + '<div id="foodCompResults" style="margin-top:4px">' + renderFoodComponentResults(newFoodForm.pickerQuery || '') + '</div>';
+}
+
+function renderFoodComponentResults(q){
+  q = (q || '').trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
+  const editingId = newFoodForm && newFoodForm.editingId;
+  const ids = searchFoods(q).filter(function(id){ return id !== editingId; });
+  if(!ids.length) return '<p class="sub" style="margin-top:10px">No ingredients match “' + escapeHtml(q) + '”.</p>';
+  return ids.map(function(id){
+    const f = FOODS[id];
+    const dm = foodDisplayMacros(id) || f;
+    return '<div class="altrow" data-food-id="' + htmlAttr(id) + '">'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(f.name) + (isCompositeFood(f) ? ' <span class="pill mini">composite</span>' : '') + '</div>'
+      + '<div class="ad">' + Math.round(dm.kcal || 0) + ' kcal · ' + (+(dm.protein || 0).toFixed(1)) + 'g protein / 100' + escapeHtml(f.unit) + '</div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function onFoodComponentSearch(value){
+  newFoodForm.pickerQuery = value;
+  const el = document.getElementById('foodCompResults');
+  if(el) el.innerHTML = renderFoodComponentResults(value);
+}
+
+function addComponentToFood(foodId){
+  const food = FOODS[foodId];
+  if(!food) return;
+  const rows = componentTargetRows(newFoodComponentPickerTarget);
+  if(!rows) return;
+  rows.push({foodId: foodId, grams: food.unit === 'piece' ? (food.avgG || 50) : 100});
+  newFoodComponentPickerTarget = null;
+  renderNewFoodFormSheet();
+}
+
+function addNewFoodVariant(){
+  newFoodForm.variants.push({key: 'variant-' + (newFoodForm.variants.length + 1), label: '', dietKeys: [], components: [], yieldG: newFoodForm.yieldG || 100});
+  renderNewFoodFormSheet();
+}
+function removeNewFoodVariant(index){
+  newFoodForm.variants.splice(index, 1);
+  renderNewFoodFormSheet();
+}
+function setNewFoodVariantField(index, key, value){
+  const v = newFoodForm.variants[index];
+  if(!v) return;
+  v[key] = value;
+}
+function toggleNewFoodVariantDiet(index, key){
+  const v = newFoodForm.variants[index];
+  if(!v || DIET_KEYS.indexOf(key) === -1) return;
+  const i = v.dietKeys.indexOf(key);
+  if(i === -1) v.dietKeys.push(key); else v.dietKeys.splice(i, 1);
+  v.dietKeys = normalizeDietsArray(v.dietKeys);
+  renderNewFoodFormSheet();
+}
+function commitNewFoodVariantYield(index, raw){
+  const v = newFoodForm.variants[index];
+  if(!v) return;
+  const n = parseDecimalInput(raw);
+  if(n === null || n <= 0){ toast('Enter a variant yield above 0g'); renderNewFoodFormSheet(); return; }
+  v.yieldG = +n.toFixed(1);
+  renderNewFoodFormSheet();
+}
+
 function saveNewFood(){
   const f = newFoodForm;
   const name = (f.name || '').trim();
@@ -1404,6 +1719,75 @@ function saveNewFood(){
   const lower = name.toLowerCase();
   const dup = Object.keys(FOODS).some(function(id){ return id !== f.editingId && FOODS[id].name.toLowerCase() === lower; });
   if(dup){ toast('“' + name + '” already exists — try a different name'); return; }
+  const id = f.editingId || uniqueSlug(slugify(name), FOODS, 'cf-');
+  const existing = FOODS[id] || {};
+  const chosenIconKey = safeIngredientIconKey(f.iconKey || '');
+
+  if(f.isComposite){
+    const components = componentRowsToPairs(f.components);
+    const yieldG = (typeof f.yieldG === 'number' && isFinite(f.yieldG)) ? f.yieldG : 0;
+    if(!components.length){ toast('Add at least one component'); return; }
+    if(!(yieldG > 0)){ toast('Enter a batch yield above 0g'); return; }
+    const problems = componentProblems(f.components, id);
+    if(problems.length){ toast(problems[0]); return; }
+    const variants = [];
+    let variantInvalid = false;
+    const variantKeys = {};
+    (Array.isArray(f.variants) ? f.variants : []).forEach(function(v, i){
+      if(variantInvalid) return;
+      const key = slugify(v.key || v.label || ('variant-' + (i + 1)));
+      const label = (v.label || '').trim();
+      const dietKeys = normalizeDietsArray(v.dietKeys || []);
+      const vRows = componentRowsToPairs(v.components);
+      const vYield = (typeof v.yieldG === 'number' && isFinite(v.yieldG)) ? v.yieldG : 0;
+      if(!label || !key || !dietKeys.length || !vRows.length || !(vYield > 0)){
+        toast('Complete variant ' + (i + 1) + ' or remove it');
+        variantInvalid = true;
+        return;
+      }
+      if(variantKeys[key]){
+        toast('Variant keys must be unique');
+        variantInvalid = true;
+        return;
+      }
+      const vProblems = componentProblems(v.components, id);
+      if(vProblems.length){
+        toast(vProblems[0]);
+        variantInvalid = true;
+        return;
+      }
+      variantKeys[key] = true;
+      variants.push({key: key, label: label, dietKeys: dietKeys, components: vRows, yieldG: vYield});
+    });
+    if(variantInvalid) return;
+    const live = compositeDraftMacros(f);
+    if(live.problems.length){ toast(live.problems[0]); return; }
+    if(deletedFoods[id]) delete deletedFoods[id];
+    const saved = Object.assign({}, existing, {
+      name: name, per: 100, unit: 'g',
+      components: components, yieldG: yieldG, bought: !!f.bought,
+      variants: variants.length ? variants : undefined,
+      flags: [], cat: f.cat, season: normalizeSeason(f.season), src: 'User-added composite ingredient',
+      sugarQuality: live.sugarQuality || 'unknown', breakfastPair: false,
+      u: Date.now()
+    });
+    saved.flags = (typeof deriveCompositeFlags === 'function') ? deriveCompositeFlags(saved) : [];
+    delete saved.kcal; delete saved.protein; delete saved.carbs; delete saved.fat; delete saved.satFat;
+    delete saved.fiber; delete saved.sugars; delete saved.freeSugars; delete saved.avgG;
+    if(!saved.variants) delete saved.variants;
+    if(chosenIconKey) saved.iconKey = chosenIconKey; else delete saved.iconKey;
+    if(id.indexOf('cf-') === 0) customFoods[id] = saved;
+    else foodOverrides[id] = saved;
+    customRev++;
+    applyCustomFoods();
+    applyProf(currentProf);
+    toast('✓ ' + name + (f.editingId ? ' updated' : ' added') + ' — computed from ' + components.length + ' ingredient' + (components.length === 1 ? '' : 's'));
+    newFoodForm = null;
+    openFoodLibrary();
+    renderFoodLibraryCount();
+    return;
+  }
+
   if(f.protein < 0 || f.carbs < 0 || f.fat < 0 || f.satFat < 0 || f.fiber < 0 || f.sugars < 0 || f.freeSugars < 0){ toast('Values must be zero or more'); return; }
   if(f.satFat > f.fat + 1e-9){ toast('Sat. fat can’t exceed total fat'); return; }
   if(f.fiber > f.carbs + 1e-9){ toast('Fiber can’t exceed total carbs'); return; }
@@ -1411,10 +1795,8 @@ function saveNewFood(){
   if(f.freeSugars > f.sugars + 1e-9){ toast('Free sugars can’t exceed total sugars'); return; }
   if(f.protein + f.carbs + f.fat > 100 + 1e-9){ toast('Protein + carbs + fat can’t exceed 100g per 100g'); return; }
 
-  const id = f.editingId || uniqueSlug(slugify(name), FOODS, 'cf-');
   const kcal = computeNewFoodKcal(f);
   if(deletedFoods[id]) delete deletedFoods[id]; // recreate-after-delete: this save's `u` below beats the tombstone (js/sync.js:mergeLibrarySection)
-  const existing = FOODS[id] || {};
   const saved = Object.assign({}, existing, {
     name: name, per: 100, unit: 'g',
     kcal: kcal, protein: f.protein, carbs: f.carbs, fat: f.fat, satFat: f.satFat, fiber: f.fiber,
@@ -1424,10 +1806,10 @@ function saveNewFood(){
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   });
   delete saved.avgG;
+  delete saved.components; delete saved.yieldG; delete saved.bought; delete saved.variants;
   // task C5: iconKey only persists when the user picked one — Default (null) removes any
   // previously-saved key on edit rather than writing an empty string, so a cleared custom
   // food falls back to the generic default icon exactly like a food that never had one.
-  const chosenIconKey = safeIngredientIconKey(f.iconKey || '');
   if(chosenIconKey) saved.iconKey = chosenIconKey; else delete saved.iconKey;
   if(id.indexOf('cf-') === 0) customFoods[id] = saved;
   else foodOverrides[id] = saved;
@@ -1538,6 +1920,40 @@ function foodDetailBarcodeSection(f){
   return '<div class="card" style="margin-top:12px"><b>Packaged product</b>' + rows + sourceLink + '</div>' + ingredientsBlock;
 }
 
+function compositeComponentBreakdownMarkup(components){
+  const rows = normalizeComponentRows(components);
+  if(!rows.length) return '<p class="sub" style="margin-top:8px">No components recorded.</p>';
+  return rows.map(function(row){
+    const food = FOODS[row.foodId];
+    const label = food ? food.name : ('Missing ingredient: ' + row.foodId);
+    return '<div class="altrow" style="cursor:default">'
+      + '<div class="ae">' + (food ? foodIconHtml(row.foodId) : '<span class="recipe-emoji">?</span>') + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(label) + (food ? '' : ' <span class="pill mini terra">missing</span>') + '</div>'
+      + '<div class="ad">' + escapeHtml(componentAmountLabel(row.foodId, row.grams)) + '</div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function foodDetailCompositeSection(f){
+  if(!isCompositeFood(f)) return '';
+  let html = '<div class="card" style="margin-top:12px"><b>Composite ingredient</b>'
+    + '<div style="margin-top:8px"><span class="pill mini">' + escapeHtml(componentCountLabel(f.components)) + '</span> <span class="pill mini ghost">' + escapeHtml(compositeModeLabel(f)) + '</span>'
+    + '<span class="pill mini ghost">' + Math.round(f.yieldG || 0) + 'g batch yield</span></div>'
+    + '<div style="margin-top:10px">' + compositeComponentBreakdownMarkup(f.components) + '</div>';
+  const variants = Array.isArray(f.variants) ? f.variants : [];
+  if(variants.length){
+    html += '<div class="field"><label>Diet variants</label>';
+    variants.forEach(function(v){
+      html += '<div style="margin-top:10px"><b>' + escapeHtml(v.label || v.key || 'Variant') + '</b>'
+        + '<div class="ad">' + normalizeDietsArray(v.dietKeys || []).map(dietLabel).map(escapeHtml).join(', ') + ' · ' + Math.round(v.yieldG || 0) + 'g yield</div>'
+        + compositeComponentBreakdownMarkup(v.components) + '</div>';
+    });
+    html += '</div>';
+  }
+  html += '</div>';
+  return html;
+}
+
 // Pure HTML-string builder (testable headlessly, no DOM access) — reads the live merged
 // FOODS[id] record, never re-typed numbers. Returns '' if the id no longer resolves (e.g.
 // a stale reference after a delete elsewhere) so callers can fall back gracefully.
@@ -1555,6 +1971,7 @@ function buildFoodDetailMarkup(id){
   if(isEdited) badges += '<span class="pill mini terra">edited</span>';
   badges += '<span class="pill mini ghost">' + escapeHtml(f.cat || '') + '</span>';
   badges += '<span class="pill mini ghost">' + escapeHtml(seasonLabel(foodSeason(f))) + '</span>';
+  if(isCompositeFood(f)) badges += '<span class="pill mini">' + escapeHtml(componentCountLabel(f.components)) + '</span><span class="pill mini ghost">' + escapeHtml(compositeModeLabel(f)) + '</span>';
   if(f.breakfastPair) badges += '<span class="pill mini">Breakfast pairing</span>';
 
   const flagsHtml = (f.flags || []).length
@@ -1584,9 +2001,10 @@ function buildFoodDetailMarkup(id){
     + '<p class="sub" style="margin-top:10px">' + foodDetailBasisLabel(f) + ' · ' + escapeHtml(sugarQualityLabel(f.sugarQuality)) + '</p>'
     + nutri
     + flagsHtml
+    + foodDetailCompositeSection(f)
     + foodDetailBarcodeSection(f)
     + srcLine
-    + '<button class="cta" style="margin-top:14px" data-act="pantry">🥫 Add to pantry</button>'
+    + (foodCanBePantryBaselined(id) ? '<button class="cta" style="margin-top:14px" data-act="pantry">🥫 Add to pantry</button>' : '')
     + '<button class="cta ghostbtn" data-act="edit">✎ Edit</button>'
     + (isEdited ? '<button class="cta ghostbtn" data-act="reset">↺ Reset to default</button>' : '')
     + (isCustom ? '<button class="cta ghostbtn" data-act="delete">✕ Delete</button>' : '')
@@ -1613,7 +2031,10 @@ function attachFoodDetailHandler(){
     const id = libFoodDetailId;
     if(!id) return;
     const act = btn.getAttribute('data-act');
-    if(act === 'pantry') openPantryAddForFood(id);
+    if(act === 'pantry'){
+      if(!foodCanBePantryBaselined(id)){ toast('Made composites are tracked through their ingredients'); return; }
+      openPantryAddForFood(id);
+    }
     else if(act === 'edit') openEditFoodForm(id);
     else if(act === 'reset'){ resetFoodOverride(id); openFoodDetail(id); }
     else if(act === 'delete') deleteCustomFood(id);
@@ -1948,6 +2369,7 @@ function fmtPantryQty(qty, food){
 // dropping the user into a food search they never asked for.
 function openPantryAddForFood(foodId){
   if(!FOODS[foodId]){ toast('Ingredient not found'); return; }
+  if(!foodCanBePantryBaselined(foodId)){ toast('Made composites are tracked through their ingredients'); return; }
   pantryAdd = {query: '', selectedId: null, qty: 0, direct: true};
   selectPantryAddFood(foodId); // sets the per-unit default qty and paints the qty sheet
   document.getElementById('sheet').classList.remove('tall');
@@ -1964,7 +2386,7 @@ function buildPantryAddSearchSheet(){
 function renderPantryAddResults(){
   const q = pantryAdd.query.trim();
   if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
-  const ids = searchFoods(q); // render.js — same substring match the quick-add sheet uses
+  const ids = searchFoods(q).filter(foodCanBePantryBaselined); // render.js — same substring match the quick-add sheet uses
   if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + escapeHtml(q) + '”.</p>';
   const remaining = pantryRemaining();
   return ids.map(function(id){
@@ -1988,6 +2410,7 @@ function onPantryAddSearchInput(value){
 
 function selectPantryAddFood(id){
   if(!FOODS[id]) return;
+  if(!foodCanBePantryBaselined(id)){ toast('Made composites are tracked through their ingredients'); return; }
   pantryAdd.selectedId = id;
   pantryAdd.qty = FOODS[id].unit === 'piece' ? 1 : 100;
   document.getElementById('sheetBody').innerHTML = buildPantryAddQtySheet();
@@ -2032,6 +2455,7 @@ function buildPantryAddQtySheet(){
 function confirmPantryAdd(){
   const food = FOODS[pantryAdd.selectedId];
   if(!food || !(pantryAdd.qty > 0)){ toast('Enter an amount above 0'); return; }
+  if(!foodCanBePantryBaselined(pantryAdd.selectedId)){ toast('Made composites are tracked through their ingredients'); return; }
   const current = pantryRemaining()[pantryAdd.selectedId] || 0;
   setPantryRemaining(pantryAdd.selectedId, current + pantryAdd.qty);
   toast('✓ Added ' + fmtPantryQty(pantryAdd.qty, food) + ' ' + food.name);

@@ -453,13 +453,18 @@ function testFoodMacrosLinearity(ctx){
    null — see the file header), so the wiring is asserted the same way the C1 render-funnel
    guards do it: over the real source text. */
 function testAddToPantryOnIngredientCards(ctx){
+  const FOODS = get(ctx, 'FOODS');
   const listHtml = call(ctx, 'renderLibFoodListMarkup', ['']);
   const rowCount = (listHtml.match(/class="altrow" data-food-id=/g) || []).length;
   const pantryBtnCount = (listHtml.match(/data-act="pantry"/g) || []).length;
+  const pantryEligibleCount = Object.keys(FOODS).filter(function(id){ return call(ctx, 'foodCanBePantryBaselined', [id]); }).length;
   assert(rowCount > 0, 'setup: the ingredients list rendered at least one row', 'rows=' + rowCount);
-  assert(pantryBtnCount === rowCount,
-    'renderLibFoodListMarkup: every ingredient row offers Add to pantry (one button per row, regardless of built-in/custom)',
-    'rows=' + rowCount + ' pantryButtons=' + pantryBtnCount);
+  assert(pantryBtnCount === pantryEligibleCount,
+    'renderLibFoodListMarkup: only pantry-baselineable ingredients offer Add to pantry (made composites are tracked through components)',
+    'rows=' + rowCount + ' eligible=' + pantryEligibleCount + ' pantryButtons=' + pantryBtnCount);
+  assert(call(ctx, 'foodCanBePantryBaselined', ['pesto-elena']) === false && call(ctx, 'foodCanBePantryBaselined', ['mayonnaise']) === true,
+    'foodCanBePantryBaselined: made composites are excluded, bought composites remain pantry items',
+    JSON.stringify({pesto: call(ctx, 'foodCanBePantryBaselined', ['pesto-elena']), mayonnaise: call(ctx, 'foodCanBePantryBaselined', ['mayonnaise'])}));
 
   // Regression guard of the same class the README calls out for recipe rows: the row BODY
   // must still open the ingredient detail. A new action button must not swallow the row tap.
@@ -473,7 +478,7 @@ function testAddToPantryOnIngredientCards(ctx){
 
   const detailHandler = /function attachFoodDetailHandler\(\)\{[\s\S]*?\n\}/.exec(listSrc);
   assert(!!detailHandler, 'setup: attachFoodDetailHandler() found in library.js');
-  assert(/act === 'pantry'\) openPantryAddForFood\(id\)/.test(detailHandler[0]),
+  assert(/act === 'pantry'[\s\S]*openPantryAddForFood\(id\)/.test(detailHandler[0]),
     'attachFoodDetailHandler: the detail page pantry button is routed');
 
   // The whole point of openPantryAddForFood is that it REUSES the one quantity flow. If a
@@ -944,7 +949,7 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza']),
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board']),
     'availableRecipeImageKeys: returns curated recipe image set plus approved ad hoc recipe images', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
   assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
     'safeRecipeImageKey: accepts an available recipe image key', '');
@@ -952,6 +957,8 @@ function testRecipeImageHelpers(ctx){
     'safeRecipeImageKey: accepts the sweets recipe image key', '');
   assert(call(ctx, 'safeRecipeImageKey', ['ice-cream']) === 'ice-cream',
     'safeRecipeImageKey: accepts the ice cream recipe image key', '');
+  assert(call(ctx, 'safeRecipeImageKey', ['snack-board']) === 'snack-board',
+    'safeRecipeImageKey: accepts the shared snack-board recipe image key', '');
   assert(call(ctx, 'safeRecipeImageKey', ['salmon-greens']) === '',
     'safeRecipeImageKey: rejects unavailable recipe image keys even if kebab-case', '');
   assert(call(ctx, 'safeRecipeImageKey', ['../salmon']) === '',
@@ -1044,6 +1051,8 @@ function testRecipeCatalogCleanup(ctx){
     'recipe catalog cleanup: brownie stays sweets while ice cream uses ice cream art', JSON.stringify({brownie: RECIPES_DB['brownie-dessert'], gelato: RECIPES_DB['gelato-cioccolato']}));
   assert(RECIPES_DB.pizza && RECIPES_DB.pizza.imageUri === 'assets/recipes/pizza.png' && call(ctx, 'recipeImageAssetForRecipe', [RECIPES_DB.pizza, 'pizza']) === 'assets/recipes/pizza.png',
     'recipe catalog cleanup: pizza exists and points to its recipe image URI', JSON.stringify(RECIPES_DB.pizza));
+  assert(RECIPES_DB['ricotta-walnuts'].imageKey === 'snack-board' && RECIPES_DB['almonds-cheese-cubes'].imageKey === 'snack-board',
+    'recipe catalog cleanup: cheese/nut snacks share the snack-board recipe image', JSON.stringify({ricotta: RECIPES_DB['ricotta-walnuts'], almonds: RECIPES_DB['almonds-cheese-cubes']}));
 }
 
 // replaceBuiltinRecipesFromCatalogRows() (js/library.js) installs whatever the D1 catalog
@@ -1144,6 +1153,88 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
       Object.keys(db).length + ' vs ' + bundledIds.length);
   } finally {
     restore();
+  }
+}
+
+/* ---------------- composite ingredient UI ---------------- */
+function testCompositeIngredientUi(ctx){
+  const savedCustomFoods = cloneJSON(get(ctx, 'customFoods'));
+  const savedFoodOverrides = cloneJSON(get(ctx, 'foodOverrides'));
+  const savedDeletedFoods = cloneJSON(get(ctx, 'deletedFoods'));
+  try{
+    run(ctx, "var __compUiStub = {toast: toast, openFoodLibrary: openFoodLibrary, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount}; toast = function(){}; openFoodLibrary = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){};");
+
+    call(ctx, 'openNewFoodForm', []);
+    run(ctx, "newFoodForm.name = 'Besciamella test'; newFoodForm.cat = 'Pantry'; newFoodForm.isComposite = true; newFoodForm.bought = false; newFoodForm.yieldG = 600; newFoodForm.components = [{foodId:'milk', grams:500}, {foodId:'butter', grams:50}, {foodId:'00-flour', grams:50}]; newFoodForm.variants = [{key:'vegan', label:'Vegan besciamella', dietKeys:['vegan','lactose-intolerant'], components:[{foodId:'soy-milk', grams:500}, {foodId:'olive-oil', grams:50}, {foodId:'00-flour', grams:50}], yieldG:600}];");
+    call(ctx, 'saveNewFood', []);
+
+    const savedId = Object.keys(get(ctx, 'customFoods')).find(function(id){ return get(ctx, 'customFoods')[id].name === 'Besciamella test'; });
+    assert(!!savedId, 'composite UI save: a new made composite is saved as a custom food', JSON.stringify(get(ctx, 'customFoods')));
+    const saved = get(ctx, 'customFoods')[savedId];
+    assert(Array.isArray(saved.components) && saved.components.length === 3 && saved.yieldG === 600 && saved.bought === false,
+      'composite UI save: persists components, positive yieldG and made/bought mode', JSON.stringify(saved));
+    assert(!('kcal' in saved) && !('protein' in saved) && !('carbs' in saved),
+      'composite UI save: stores no frozen macro fields for custom composites', JSON.stringify(saved));
+    assert(Array.isArray(saved.variants) && saved.variants.length === 1 && saved.variants[0].dietKeys.indexOf('vegan') !== -1,
+      'composite UI save: persists diet-linked component variants', JSON.stringify(saved.variants));
+
+    call(ctx, 'applyCustomFoods', []);
+    const macros = call(ctx, 'foodMacros', [savedId, 100]);
+    assert(isFinite(macros.kcal) && macros.kcal > 50 && macros.protein > 0,
+      'composite UI save: the saved custom composite resolves live per-100g nutrition through foodMacros', JSON.stringify(macros));
+    const detailHtml = call(ctx, 'buildFoodDetailMarkup', [savedId]);
+    assert(detailHtml.indexOf('Composite ingredient') !== -1 && detailHtml.indexOf('made from components') !== -1 && detailHtml.indexOf('Milk') !== -1 && detailHtml.indexOf('Vegan besciamella') !== -1,
+      'composite UI detail: shows mode, component breakdown and diet variants', detailHtml);
+    const listHtml = call(ctx, 'renderLibFoodListMarkup', ['Besciamella']);
+    assert(listHtml.indexOf('made of 3 ingredients') !== -1 && listHtml.indexOf('data-act="pantry"') === -1,
+      'composite UI list: made composites get a component badge and no direct pantry button', listHtml);
+
+    run(ctx, "pantryAdd = {query:'Besciamella', selectedId:null, qty:0};");
+    const pantrySearchHtml = call(ctx, 'renderPantryAddResults', []);
+    assert(pantrySearchHtml.indexOf(savedId) === -1,
+      'pantry add search: made composites are excluded from the direct pantry baseline picker', pantrySearchHtml);
+    run(ctx, "pantryAdd = {query:'', selectedId:'apples', qty:1};");
+    call(ctx, 'openPantryAddForFood', [savedId]);
+    assert(get(ctx, 'pantryAdd').selectedId === 'apples',
+      'openPantryAddForFood: made composites return before selecting a pantry item', JSON.stringify(get(ctx, 'pantryAdd')));
+
+    run(ctx, "customFoods['" + savedId + "'].bought = true; applyCustomFoods(); pantryAdd = {query:'Besciamella', selectedId:null, qty:0};");
+    const boughtSearchHtml = call(ctx, 'renderPantryAddResults', []);
+    assert(boughtSearchHtml.indexOf('data-food-id="' + savedId + '"') !== -1,
+      'pantry add search: bought composites remain selectable as pantry items', boughtSearchHtml);
+
+    call(ctx, 'persist', []);
+    const snapshot = JSON.parse(call(ctx, 'localStorage.getItem', [get(ctx, 'STORE_KEY')]));
+    assert(snapshot.customFoods && snapshot.customFoods[savedId] && Array.isArray(snapshot.customFoods[savedId].components),
+      'composite UI persistence: persist() writes component formulas into localStorage', JSON.stringify(snapshot.customFoods && snapshot.customFoods[savedId]));
+    run(ctx, "customFoods = {}; foodOverrides = {}; applyCustomFoods();");
+    call(ctx, 'loadState', []);
+    assert(get(ctx, 'customFoods')[savedId] && Array.isArray(get(ctx, 'customFoods')[savedId].components),
+      'composite UI persistence: loadState() restores component formulas from localStorage', JSON.stringify(get(ctx, 'customFoods')[savedId]));
+    call(ctx, 'applyCustomFoods', []);
+    const payload = call(ctx, 'buildLibraryCatalogPayload', []);
+    const row = payload.foods.filter(function(r){ return r.id === savedId; })[0];
+    assert(row && row.source === 'custom' && row.data && Array.isArray(row.data.components),
+      'D1 mirror payload: custom composite component formulas are included in the food catalog payload', JSON.stringify(row));
+
+    call(ctx, 'openNewFoodForm', []);
+    run(ctx, "newFoodForm.name = 'Broken composite test'; newFoodForm.isComposite = true; newFoodForm.yieldG = 0; newFoodForm.components = [];");
+    call(ctx, 'saveNewFood', []);
+    const brokenId = Object.keys(get(ctx, 'customFoods')).find(function(id){ return get(ctx, 'customFoods')[id].name === 'Broken composite test'; });
+    assert(!brokenId, 'composite UI guard: empty components/zero yield do not save a broken composite', JSON.stringify(get(ctx, 'customFoods')));
+    run(ctx, "newFoodForm.yieldG = 100; newFoodForm.components = [{foodId:'missing-food', grams:10}];");
+    const brokenHtml = call(ctx, 'buildNewFoodFormSheet', []);
+    assert(brokenHtml.indexOf('Missing ingredient: missing-food') !== -1 && brokenHtml.indexOf('missing') !== -1,
+      'composite UI guard: missing component references are visible in the editor instead of rendering NaN/blank rows', brokenHtml);
+  } finally {
+    ctx.__restoreCustomFoods = savedCustomFoods;
+    ctx.__restoreFoodOverrides = savedFoodOverrides;
+    ctx.__restoreDeletedFoods = savedDeletedFoods;
+    run(ctx,
+      "customFoods = __restoreCustomFoods; foodOverrides = __restoreFoodOverrides; deletedFoods = __restoreDeletedFoods;" +
+      "applyCustomFoods(); newFoodForm = null; pantryAdd = {query:'', selectedId:null, qty:0}; localStorage.removeItem(STORE_KEY);" +
+      "if(typeof __compUiStub !== 'undefined'){ toast = __compUiStub.toast; openFoodLibrary = __compUiStub.openFoodLibrary; applyProf = __compUiStub.applyProf; renderFoodLibraryCount = __compUiStub.renderFoodLibraryCount; delete __compUiStub; }" +
+      "delete __restoreCustomFoods; delete __restoreFoodOverrides; delete __restoreDeletedFoods;");
   }
 }
 
@@ -6157,16 +6248,19 @@ function testRestockTickedShopItems(ctx){
     assert(Math.abs(list.totals[FOOD_NAME].qty - 220) < 1e-6,
       'restock test setup: the listed qty is net of the existing 80g pantry stock (300 - 80 = 220)', JSON.stringify(list.totals[FOOD_NAME]));
 
-    // (a) ticking a row alone must NOT stock anything — ticked is a shopping-list UI
-    // concept only (checkedShopByWeek), separate from the pantry until the explicit action.
+    // Ticking selects the row only. The final sheet action is the sole Pantry write path.
+    const sheetSrc = fs.readFileSync(path.join(APP_DIR, 'js/render-sheets.js'), 'utf8');
+    const toggleBody = /function toggleShop\(id, name\)\{[\s\S]*?\n\}/.exec(sheetSrc);
+    assert(!!toggleBody && !/restockShopItemName/.test(toggleBody[0]) && /checked\[name\] = true/.test(toggleBody[0]),
+      'toggleShop: the shopping-list row tap selects the item without stocking Pantry', toggleBody && toggleBody[0]);
+    assert(sheetSrc.indexOf('Add ticked items to pantry') < sheetSrc.indexOf("let idx = 0;"),
+      'shopping list: the final Pantry action appears above the selectable items');
+
+    // (a) The final action stocks the selected row at its LISTED (net) quantity (220), ON
+    // TOP of the 80g already there — expected new remaining = 80 + 220 = 300.
     const checkedObj = {}; checkedObj[FOOD_NAME] = true;
     run(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "'] = " + JSON.stringify(checkedObj) + ';');
-    const remainingAfterTickOnly = call(ctx, 'pantryRemaining', []);
-    assert(remainingAfterTickOnly[FOOD_ID] === 80, 'ticking a row alone changes nothing in the pantry', 'got ' + remainingAfterTickOnly[FOOD_ID]);
 
-    // (b) the restock action: stocks the ticked row at its LISTED (net) quantity (220), ON
-    // TOP of the 80g already there — expected new remaining = 80 + 220 = 300 (exactly the
-    // recipe's full planned amount, as it should: you bought what was missing).
     const beforeRestock = Date.now();
     const count = call(ctx, 'restockTickedShopItems', [FIXED_MONDAY]);
     assert(count === 1, 'restockTickedShopItems: writes exactly one foodId (the single ticked row\'s single foodId)', 'got ' + count);
@@ -6176,12 +6270,29 @@ function testRestockTickedShopItems(ctx){
 
     // (c) goes through the ONE re-baselining mutator (setPantryRemaining) — qty/setAt/u are
     // all freshly stamped there, not a raw pantry[...] write.
-    const entry = get(ctx, "pantry['" + FOOD_ID + "']");
+    let entry = get(ctx, "pantry['" + FOOD_ID + "']");
     assert(entry.qty === 300, 'restockTickedShopItems: pantry entry stores the new total qty verbatim (re-baselined)', JSON.stringify(entry));
     assert(typeof entry.setAt === 'number' && entry.setAt >= beforeRestock,
       'restockTickedShopItems: re-stamps setAt to NOW via setPantryRemaining — proves it went through the mutator, not a raw write', JSON.stringify(entry));
     assert(typeof entry.u === 'number' && entry.u >= beforeRestock,
       'restockTickedShopItems: re-stamps a fresh sync u too', JSON.stringify(entry));
+    assert(!get(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "']['" + FOOD_NAME + "']"),
+      'restockTickedShopItems: clears the checked state after stocking, so a future need does not reappear already crossed off',
+      JSON.stringify(get(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "']")));
+
+    // (c2) Later consumption makes the item needed again. Because the restock path cleared
+    // the checked state above, the regenerated shopping row comes back as an active buy row,
+    // not as a stale crossed-off item.
+    run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 300, setAt: new Date(2026,6,13,0,0,0,0).getTime(), u: 1};");
+    run(ctx, "logHistory['2026-07-13'] = {elena: [{kind:'food', ref:'" + FOOD_ID + "', grams:120, id:'consumed', kcal:1, protein:1, carbs:1, fat:1, satFat:0, fiber:0, sugars:0, freeSugars:0, t:'12:00', u:2}], partner: [], targets: {elena:null, partner:null}, skipped: {elena:{}, partner:{}}, tomb: {elena: [], partner: []}};");
+    const listAfterConsumption = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+    assert(Math.abs(listAfterConsumption.totals[FOOD_NAME].qty - 120) < 1e-6,
+      'shopping list: as pantry stock is consumed, the missing quantity reappears on the list (300 planned - 180 remaining = 120)',
+      JSON.stringify(listAfterConsumption.totals[FOOD_NAME]));
+    const sheetAfterConsumption = call(ctx, 'buildShopSheet', []);
+    assert(sheetAfterConsumption.indexOf('data-shop-name="' + FOOD_NAME + '"') !== -1 && sheetAfterConsumption.indexOf('shop-item done') === -1,
+      'shopping list UI: the reappearing consumed item is unchecked, not stale-crossed-off',
+      sheetAfterConsumption);
 
     // (d) nothing ticked -> nothing written.
     run(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "'] = {};");
@@ -9097,50 +9208,135 @@ function testTodayShoppingPantryQuickLinks(){
     'index.html: #todayQuickLinks sits AFTER every meal card (#todaySnack is the last one) and BEFORE #todayRecordsCard — never pushes the meal cards below the fold', 'snack@' + snackIdx + ' quick@' + quickIdx + ' records@' + recordsIdx);
 }
 
-/* ===================================================================
-   UX-REVIEW-plan.md item 9: Profile jump-nav grouped (You / Plan / Data & more)
-
-   The flat 12-chip #profileNav bar became a 2-tier nav: 3 always-visible group tabs
-   (#profileNavTabs) that each reveal a <=5-chip row (#navGroupYou/Plan/Data). Every
-   original section id must still be reachable via jumpToProfileSection() somewhere in the
-   bar (nothing lost), and the two conditionally-hidden chips (navChipWhose/navChipMeals,
-   still driven by applyHouseholdSizeVisibility() in render-profile.js, unchanged by this
-   batch) must still exist with their original ids. DOM-free: static markup + source
-   assertions, same style as testNoToastOnlyFakeFeaturesRemain above — a full click-through
-   simulation would need a DOM double with real classList/style.display tracking, which is
-   more machinery than this structural regression guard needs (this fix is also
-   manually verified in a real browser per the task's verification step).
-   =================================================================== */
-function testProfileNavGrouping(){
+function testTodayGoalSummaryRemoved(){
   const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
-  const navMatch = indexHtml.match(/<div class="profile-nav" id="profileNav">[\s\S]*?\n      <\/div>\n\n      <h2 id="sec-whose"/);
-  assert(!!navMatch, 'setup: #profileNav block found in index.html', '');
-  const nav = navMatch ? navMatch[0] : '';
+  const todayStart = indexHtml.indexOf('<section class="screen active" id="today">');
+  const firstMeal = indexHtml.indexOf('id="todayBreakfastCard"', todayStart);
+  const progress = indexHtml.indexOf('id="todayProgressCard"', todayStart);
+  const todayTop = todayStart !== -1 && firstMeal !== -1 ? indexHtml.slice(todayStart, firstMeal) : '';
+  assert(todayStart !== -1 && firstMeal !== -1 && progress !== -1, 'setup: Today action-first structure found in index.html', '');
+  assert(todayTop.indexOf('id="goalTag"') === -1 && todayTop.indexOf('🎯 Gentle fat loss') === -1 && todayTop.indexOf('Heart-smart') === -1,
+    'Today summary: removes the compact goal chip because it could only show a subset of active goals', todayTop);
+  assert(firstMeal < progress,
+    'Today: actionable meal cards come before the calorie and macro progress card', 'meal@' + firstMeal + ' progress@' + progress);
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  assert(renderSrc.indexOf('var goalTag = document.getElementById(\'goalTag\');') !== -1 && renderSrc.indexOf('if(goalTag) goalTag.textContent=p.goalTag;') !== -1,
+    'applyProf(): tolerates the removed Today #goalTag mount for compatibility', '');
+}
 
-  assert(nav.indexOf('id="profileNavTabs"') !== -1, '#profileNav: has a #profileNavTabs group-tab row', nav);
-  ['you', 'plan', 'data'].forEach(function(group){
-    assert(nav.indexOf("selectProfileNavGroup('" + group + "'") !== -1,
-      '#profileNavTabs: a tab calls selectProfileNavGroup(\'' + group + '\', this)', nav);
-  });
-  ['navGroupYou', 'navGroupPlan', 'navGroupData'].forEach(function(id){
-    assert(nav.indexOf('id="' + id + '"') !== -1, '#profileNav: chip row #' + id + ' present', nav);
-  });
+function testWeekCompactPlanningWorkspace(){
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  const weekSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-week.js'), 'utf8');
+  const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  const weekStart = indexHtml.indexOf('<section class="screen" id="week">');
+  const recipeStart = indexHtml.indexOf('<section class="screen" id="recipe">');
+  const weekHtml = indexHtml.slice(weekStart, recipeStart);
+  assert(weekStart !== -1 && recipeStart !== -1, 'setup: Week screen block found in index.html', '');
+  assert(weekHtml.indexOf('<h1 style="margin:0">Planner</h1>') !== -1 && indexHtml.indexOf('<span class="tl">Planner</span>') !== -1,
+    'Planner: screen title and bottom-navigation label describe planning work rather than only a time period', weekHtml.slice(0, 800));
 
-  // Every section id the OLD flat bar jumped to must still be reachable from SOME chip.
-  const sectionIds = ['sec-whose', 'sec-basics', 'sec-diet', 'sec-macro', 'sec-goals', 'sec-meals', 'sec-avoid', 'sec-library', 'accountHeading', 'coupleSyncHeading', 'sec-data', 'sec-about'];
-  sectionIds.forEach(function(id){
-    assert(nav.indexOf("jumpToProfileSection('" + id + "'") !== -1,
-      '#profileNav: no section lost — a chip still jumps to \'' + id + '\'', '');
-  });
-  assert(nav.indexOf('id="navChipWhose"') !== -1 && nav.indexOf('id="navChipMeals"') !== -1,
-    '#profileNav: navChipWhose/navChipMeals still present with their original ids (applyHouseholdSizeVisibility solo-hiding keeps working)', nav);
+  const segIdx = weekHtml.indexOf('id="weekSeg"');
+  const toolbarIdx = weekHtml.indexOf('id="weekToolbar"');
+  const qualityIdx = weekHtml.indexOf('id="weekQuality"');
+  const listIdx = weekHtml.indexOf('id="weekList"');
+  assert(segIdx !== -1 && toolbarIdx !== -1 && qualityIdx !== -1 && listIdx !== -1,
+    'Week compact workspace: segmented control, toolbar, quality drawer, and plan list all exist', weekHtml.slice(0, 1200));
+  assert(segIdx < toolbarIdx && toolbarIdx < qualityIdx && qualityIdx < listIdx,
+    'Week compact workspace: compact controls and quality drawer sit before #weekList', 'seg@' + segIdx + ' toolbar@' + toolbarIdx + ' quality@' + qualityIdx + ' list@' + listIdx);
+  assert(weekHtml.indexOf('onclick="openShopping()"') !== -1 && weekHtml.indexOf('onclick="openRebalanceSheet()"') !== -1 && weekHtml.indexOf('onclick="openRegenerateSheet()"') !== -1,
+    'Week toolbar: Shopping, Re-balance, and Regenerate are all top-level compact actions', weekHtml);
 
+  const afterList = weekHtml.slice(listIdx);
+  assert(afterList.indexOf('Generate shopping list') === -1 && afterList.indexOf('Regenerate week (keep pinned') === -1,
+    'Week compact workspace: old bottom full-width Shopping/Re-balance/Regenerate CTA stack is gone', afterList);
+  assert(weekHtml.indexOf('id="weekQualityToggle"') !== -1 && weekHtml.indexOf('aria-expanded="false"') !== -1 && weekHtml.indexOf('aria-controls="weekQualityPanel"') !== -1 && weekHtml.indexOf('id="weekQualityPanel" hidden') !== -1,
+    'Week quality: drawer defaults collapsed with button semantics', weekHtml);
+
+  assert(weekSrc.indexOf('let weekQualityExpanded = false;') !== -1,
+    'render-week.js: Week quality drawer state is in-memory and defaults collapsed', '');
+  assert(/function toggleWeekQualityDrawer\(\)[\s\S]*weekQualityExpanded = !weekQualityExpanded;[\s\S]*renderWeek\(\);/.test(weekSrc),
+    'render-week.js: Week quality drawer toggles open/closed through renderWeek()', '');
+  assert(weekSrc.indexOf("panel.hidden = !weekQualityExpanded") !== -1 && weekSrc.indexOf("toggle.setAttribute('aria-expanded'") !== -1,
+    'render-week.js: Week quality drawer updates hidden state and aria-expanded', '');
+  assert(weekSrc.indexOf("btn.textContent = 'Re-balance';") !== -1 && weekSrc.indexOf("Re-balance next week") !== -1 && weekSrc.indexOf("Re-balance this week") !== -1,
+    'Week toolbar: Re-balance keeps a short visible label with week-specific aria text', '');
+  assert(weekSrc.indexOf("regenBtn.setAttribute('aria-label'") !== -1 && weekSrc.indexOf('Regenerate next week') !== -1 && weekSrc.indexOf('Regenerate this week') !== -1,
+    'Week toolbar: Regenerate is direct but keeps week-specific aria text', '');
+  assert(weekSrc.indexOf('function openWeekMoreSheet()') === -1,
+    'Week toolbar: no More sheet indirection remains for only three actions', '');
+
+  assert(css.indexOf('.week-toolbar') !== -1 && css.indexOf('min-height:44px') !== -1 && css.indexOf('.week-quality') !== -1,
+    'Week CSS: compact toolbar and drawer styles exist with 44px tap targets', '');
+  assert(css.indexOf('.week-summary') === -1,
+    'Week CSS: old standalone week-summary block styling is removed', '');
+}
+
+/* ===================================================================
+   Profile settings hub
+
+   The old 4,500px Profile form and sticky two-tier jump nav are replaced by a short hub
+   with four focused editor screens. DOM-free structural guard: verifies each hub row routes
+   to its editor, every editor has a Back action to the hub, the moved control hosts still
+   exist exactly once, and the removed jump-nav/list-save affordances do not quietly return.
+   =================================================================== */
+function testProfileSettingsHub(){
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
   const renderProfileSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-profile.js'), 'utf8');
-  assert(renderProfileSrc.indexOf('function selectProfileNavGroup(') !== -1,
-    'render-profile.js: selectProfileNavGroup() is defined', '');
-  const jumpFn = (renderProfileSrc.match(/function jumpToProfileSection\([\s\S]*?\n\}/) || [''])[0];
-  assert(jumpFn.indexOf("closest('.profile-nav-chips')") !== -1,
-    'jumpToProfileSection(): scopes its \'on\' toggling to the tapped chip\'s own row, not the whole bar (so a chip tap can never clear the group tab\'s \'on\' state)', jumpFn);
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+
+  assert(indexHtml.indexOf('id="profileNav"') === -1,
+    'index.html: old sticky #profileNav jump navigation is removed', '');
+  assert(indexHtml.indexOf('jumpToProfileSection(') === -1 && renderProfileSrc.indexOf('function jumpToProfileSection(') === -1,
+    'Profile: old jump-scroll behavior is removed from markup and render-profile.js', '');
+  assert(indexHtml.indexOf('selectProfileNavGroup(') === -1 && renderProfileSrc.indexOf('function selectProfileNavGroup(') === -1,
+    'Profile: old You/Plan/Data group-tab behavior is removed from markup and render-profile.js', '');
+  assert(indexHtml.indexOf('Save & rebuild my plan') === -1,
+    'index.html: misleading Profile "Save & rebuild my plan" button is gone; edits remain instant-save', '');
+  assert(indexHtml.indexOf('id="libFoodCount"') === -1 && indexHtml.indexOf('id="sec-library"') === -1,
+    'index.html: Food Library no longer lives inside Profile because Library is a primary destination', '');
+  assert(indexHtml.indexOf('id="sec-data"') === -1 && indexHtml.indexOf('id="importFileInput"') === -1 && indexHtml.indexOf('exportData()') === -1,
+    'index.html: manual export/import is no longer exposed from Profile now that login/cloud restore is the recovery path', '');
+
+  [
+    {title: 'About you', id: 'profileAbout', summary: 'profileAboutSummary'},
+    {title: 'Nutrition plan', id: 'profileNutrition', summary: 'profileNutritionSummary'},
+    {title: 'Food preferences', id: 'profilePreferences', summary: 'profilePreferencesSummary'},
+    {title: 'Account &amp; data', id: 'profileAccountData', summary: 'profileAccountSummary'}
+  ].forEach(function(dest){
+    assert(indexHtml.indexOf("go('" + dest.id + "')") !== -1,
+      'Profile hub: row routes to #' + dest.id, '');
+    assert(indexHtml.indexOf('id="' + dest.id + '"') !== -1,
+      'index.html: focused editor screen #' + dest.id + ' exists', '');
+    assert(indexHtml.indexOf('id="' + dest.summary + '"') !== -1,
+      'Profile hub: live summary #' + dest.summary + ' exists', '');
+  });
+
+  ['profileAbout', 'profileNutrition', 'profilePreferences', 'profileAccountData'].forEach(function(id){
+    const start = indexHtml.indexOf('id="' + id + '"');
+    const next = indexHtml.indexOf('<section class="screen"', start + 1);
+    const block = indexHtml.slice(start, next === -1 ? indexHtml.length : next);
+    assert(block.indexOf("go('profile')") !== -1,
+      '#' + id + ': Back action returns to Profile hub, not a scroll position', block.slice(0, 400));
+  });
+
+  ['displayNameVal', 'householdSizeBtn1', 'sexBtnF', 'pfDob', 'hVal', 'wVal', 'actOpts',
+   'pfCals', 'macroPresets', 'splitPVal', 'goalsList',
+   'dietList', 'mealsShareSection', 'avoidPills',
+   'accountSection', 'coupleSyncSection'].forEach(function(id){
+    const re = new RegExp('id="' + id + '"', 'g');
+    const matches = indexHtml.match(re) || [];
+    assert(matches.length === 1, 'Profile moved control host #' + id + ' exists exactly once', String(matches.length));
+  });
+
+  ['profWhoSeg', 'profileAboutWhoSeg', 'profileNutritionWhoSeg', 'profilePreferencesWhoSeg'].forEach(function(id){
+    assert(indexHtml.indexOf('id="' + id + '"') !== -1 && indexHtml.indexOf('id="' + id + '" data-person-switcher') !== -1,
+      'Profile person switcher mount #' + id + ' exists and uses shared data-person-switcher wiring', '');
+  });
+
+  assert(renderProfileSrc.indexOf('function renderProfileHubSummaries(') !== -1,
+    'render-profile.js: renders live Profile hub summaries from current profile state', '');
+  assert(renderSrc.indexOf('renderProfileHubSummaries') !== -1,
+    'applyProf(): refreshes Profile hub summaries through the existing instant-save funnel', '');
 }
 
 /* ===================================================================
@@ -9201,6 +9397,7 @@ function main(){
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
+  runTest('composite ingredient UI: save/detail/pantry/persist/D1 guards', function(){ testCompositeIngredientUi(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
   runTest('recipe catalog cleanup', function(){ testRecipeCatalogCleanup(ctx); });
@@ -9289,10 +9486,12 @@ function main(){
   runTest('person-switcher: a switch preserves the active screen + Week/Log view state', function(){ testPersonSwitchPreservesScreenAndViewState(ctx); });
   runTest('UX-REVIEW-plan.md item 4: snack card tap-to-recipe affordance (present with a recipe, absent without one)', function(){ testSnackTapAffordance(); });
   runTest('UX-REVIEW-plan.md item 5: Today screen Shopping/Pantry quick links call the existing openers, placed below the meal cards', function(){ testTodayShoppingPantryQuickLinks(); });
+  runTest('Today summary: compact goal chip removed instead of showing a subset of goals', function(){ testTodayGoalSummaryRemoved(); });
+  runTest('Week compact planning workspace: top actions, collapsed quality drawer, no bottom CTA stack', function(){ testWeekCompactPlanningWorkspace(); });
   runTest('UX-REVIEW-plan.md item 6: WHY_RULES muscle/heart clauses gate on the goal, with a sensible fallback when off', function(){ testWhyRulesGoalGating(ctx); });
   runTest('UX-REVIEW-plan.md item 7: goals editor renders two labelled groups (calorie-target vs. meal-nudge) with the right members', function(){ testGoalsEditorGrouping(ctx); });
   runTest('UX-REVIEW-plan.md item 8: diet editor renders eating-style vs. intolerances groups + normalizeDietsArray converges a legacy multi-style array', function(){ testDietEditorGroupingAndLegacyConvergence(ctx); });
-  runTest('UX-REVIEW-plan.md item 9: Profile jump-nav grouped into You/Plan/Data & more, every original chip still wired', function(){ testProfileNavGrouping(); });
+  runTest('Profile settings hub: four destinations, Back actions, reachable controls, no jump-nav regressions', function(){ testProfileSettingsHub(); });
   runTest('UX-REVIEW-plan.md P3: Library ingredient count tracks an active search', function(){ testLibraryIngredientCountTracksSearch(ctx); });
   runTest('build-stamp guard: sw.js CACHE === auth.js AUTH_BUILD', function(){ testBuildStampMatch(); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });

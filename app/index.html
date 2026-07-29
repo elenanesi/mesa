@@ -44,71 +44,7 @@
         <div class="ap-label"><span class="ap-dot" id="apDot"></span><span id="apName"></span></div>
         <div class="ap-detail" id="apDetail"></div>
       </div>
-      <div class="card">
-        <div class="ring-wrap">
-          <div class="ring">
-            <svg width="128" height="128" viewBox="0 0 128 128">
-              <circle cx="64" cy="64" r="56" fill="none" stroke="#eef0ec" stroke-width="13"/>
-              <circle id="arcFat" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#be6c45" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('fat',event)"/>
-              <circle id="arcCarbs" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#c79a48" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('carbs',event)"/>
-              <circle id="arcProtein" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#7f9364" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('protein',event)"/>
-            </svg>
-            <div class="center" style="cursor:pointer" onclick="if(!window._acIdx)window._acIdx=0;showArcPopover(['protein','carbs','fat'][window._acIdx%3],event);window._acIdx++;">
-              <span class="big" id="calLeft">1,420</span>
-              <span class="lbl">kcal left of <span id="calGoal">1,820</span></span>
-            </div>
-          </div>
-          <div class="macros">
-            <div class="macro">
-              <div class="mhead"><span>Protein <span class="macro-pct macro-pct-p" id="pctP">26%</span></span><b id="mp">28 / 110 g</b></div>
-              <div class="bar"><i class="b-p" id="bp" style="width:26%"></i></div>
-            </div>
-            <div class="macro">
-              <div class="mhead"><span>Carbs <span class="macro-pct macro-pct-c" id="pctC">41%</span></span><b id="mc">34 / 170 g</b></div>
-              <div class="bar"><i class="b-c" id="bc" style="width:20%"></i></div>
-            </div>
-            <div class="macro">
-              <div class="mhead"><span>Fat <span class="macro-pct macro-pct-f" id="pctF">33%</span></span><b id="mf">12 / 62 g</b></div>
-              <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
-              <div class="sub" id="fatSplit" style="display:none;margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
-            </div>
-          </div>
-        </div>
-        <div class="progress-dots" id="progressDots"></div>
-        <div class="meta-line">
-          <span id="goalTag">🎯 Gentle fat loss</span>
-          <span id="mealsPlannedTag" style="display:none">🍽️ 4 meals planned</span>
-        </div>
-      </div>
-
-      <div class="eaten-strip-wrap" id="eatenStripWrap">
-        <div class="eaten-strip-label" id="eatenStripLabel">Eaten so far</div>
-        <div class="eaten-strip" id="eatenStrip"></div>
-      </div>
-
-      <div class="card" id="todayMacroCalCard" style="padding:14px 16px">
-        <div class="row between" style="margin-bottom:2px"><b style="font-size:13px">Calories by macro</b><span class="chip-computed">✓ computed</span></div>
-        <div class="macro-cal-list" style="margin-top:10px">
-          <div class="macro-cal-row">
-            <span><i class="macro-dot b-p"></i>Protein</span>
-            <b id="kcalProteinText">470 kcal</b>
-            <em id="kcalProteinMeta">118g · 26%</em>
-          </div>
-          <div class="macro-cal-row">
-            <span><i class="macro-dot b-c"></i>Carbs</span>
-            <b id="kcalCarbsText">740 kcal</b>
-            <em id="kcalCarbsMeta">185g · 41%</em>
-          </div>
-          <div class="macro-cal-row">
-            <span><i class="macro-dot b-f"></i>Fat</span>
-            <b id="kcalFatText">590 kcal</b>
-            <em id="kcalFatMeta">66g · 33%</em>
-          </div>
-        </div>
-        <div class="sub" id="kcalSplitLegend" style="margin-top:8px">Target split for today</div>
-      </div>
-
-      <div class="row between" style="margin-top:22px">
+      <div class="row between" style="margin-top:16px">
         <h2 style="margin:0">Today's menu</h2>
         <button class="backbtn" style="margin:0" onclick="openTodayRebalanceSheet()">Re-balance today</button>
       </div>
@@ -158,6 +94,68 @@
         </div>
       </div>
 
+      <!-- Tracking supports the plan; it follows the actionable meal cards so the first
+           screenful answers "what do I do next?" before showing detailed progress. -->
+      <div class="card" id="todayProgressCard">
+        <div class="ring-wrap">
+          <div class="ring">
+            <svg width="128" height="128" viewBox="0 0 128 128">
+              <circle cx="64" cy="64" r="56" fill="none" stroke="#eef0ec" stroke-width="13"/>
+              <circle id="arcFat" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#be6c45" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('fat',event)"/>
+              <circle id="arcCarbs" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#c79a48" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('carbs',event)"/>
+              <circle id="arcProtein" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#7f9364" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('protein',event)"/>
+            </svg>
+            <div class="center" style="cursor:pointer" onclick="if(!window._acIdx)window._acIdx=0;showArcPopover(['protein','carbs','fat'][window._acIdx%3],event);window._acIdx++;">
+              <span class="big" id="calLeft">1,420</span>
+              <span class="lbl">kcal left of <span id="calGoal">1,820</span></span>
+            </div>
+          </div>
+          <div class="macros">
+            <div class="macro">
+              <div class="mhead"><span>Protein <span class="macro-pct macro-pct-p" id="pctP">26%</span></span><b id="mp">28 / 110 g</b></div>
+              <div class="bar"><i class="b-p" id="bp" style="width:26%"></i></div>
+            </div>
+            <div class="macro">
+              <div class="mhead"><span>Carbs <span class="macro-pct macro-pct-c" id="pctC">41%</span></span><b id="mc">34 / 170 g</b></div>
+              <div class="bar"><i class="b-c" id="bc" style="width:20%"></i></div>
+            </div>
+            <div class="macro">
+              <div class="mhead"><span>Fat <span class="macro-pct macro-pct-f" id="pctF">33%</span></span><b id="mf">12 / 62 g</b></div>
+              <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
+              <div class="sub" id="fatSplit" style="display:none;margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
+            </div>
+          </div>
+        </div>
+        <div class="progress-dots" id="progressDots"></div>
+      </div>
+
+      <div class="eaten-strip-wrap" id="eatenStripWrap">
+        <div class="eaten-strip-label" id="eatenStripLabel">Eaten so far</div>
+        <div class="eaten-strip" id="eatenStrip"></div>
+      </div>
+
+      <div class="card" id="todayMacroCalCard" style="padding:14px 16px">
+        <div class="row between" style="margin-bottom:2px"><b style="font-size:13px">Calories by macro</b><span class="chip-computed">✓ computed</span></div>
+        <div class="macro-cal-list" style="margin-top:10px">
+          <div class="macro-cal-row">
+            <span><i class="macro-dot b-p"></i>Protein</span>
+            <b id="kcalProteinText">470 kcal</b>
+            <em id="kcalProteinMeta">118g · 26%</em>
+          </div>
+          <div class="macro-cal-row">
+            <span><i class="macro-dot b-c"></i>Carbs</span>
+            <b id="kcalCarbsText">740 kcal</b>
+            <em id="kcalCarbsMeta">185g · 41%</em>
+          </div>
+          <div class="macro-cal-row">
+            <span><i class="macro-dot b-f"></i>Fat</span>
+            <b id="kcalFatText">590 kcal</b>
+            <em id="kcalFatMeta">66g · 33%</em>
+          </div>
+        </div>
+        <div class="sub" id="kcalSplitLegend" style="margin-top:8px">Target split for today</div>
+      </div>
+
       <!-- UX-REVIEW-plan.md item 5: Shopping and Pantry are weekly-cadence, high-intent
            tasks with no surface on Today. Same .quick grid convention as the Log screen's
            "More ways to log" block (2 columns here, not 4 — only 2 destinations), placed
@@ -177,10 +175,9 @@
     </section>
 
     <!-- ============ WEEK ============ -->
-    <!-- FIX 3 (feedback): the plan comes FIRST — day rows right under the header, then
-         the two actions. The "Last week in one minute" and "Weekly nutrient coverage"
-         cards moved to the top of the Insights screen (same markup/ids, live wiring
-         intact — renderNutrientChips() targets them by id wherever they live). -->
+    <!-- Week is a planning workspace first: compact controls at the top, then the day
+         summaries. The computed nutrition/coverage readout stays available in the
+         collapsed Week quality drawer instead of blocking the meal list. -->
     <section class="screen" id="week">
       <!-- Person-switcher mount (render.js:renderPersonSwitchers()) beside the heading —
            "these numbers belong to X" reads right at the top, before the day list, and
@@ -188,10 +185,9 @@
            .row.between (same flex pattern Today's topbar already uses). Hidden entirely in
            a solo household. -->
       <div class="row between">
-        <h1 style="margin:0">This week</h1>
+        <h1 style="margin:0">Planner</h1>
         <div class="seg" id="weekProfSeg" data-person-switcher></div>
       </div>
-      <p class="sub">A balanced 7-day rhythm. Nutrient coverage evens out across days, not just within one.</p>
 
       <!-- Two-week horizon (owner feedback: "I need to see both this and next week's menu
            to shop on the weekend") — reuses the .seg style already used for the profile
@@ -203,26 +199,28 @@
         <button style="flex:1" onclick="setWeekScreenMode('next',this)">Next week</button>
       </div>
 
-      <!-- T6: one-line "what this week accomplishes" summary — painted by renderWeek()
-           (render.js) from planner.js:summarizeWeekPlan(). Recomputed on every renderWeek()
-           call, so it already tracks the This/Next toggle and profile switch for free. -->
-      <div class="week-summary" id="weekSummaryLine"></div>
-
-      <!-- B4: per-day averages (kcal/P/C/F), fiber + free-sugars avg/day vs their existing
-           targets, and the omega-3/sat-fat headline coverage chips — painted by
-           render.js:renderWeekNutriCard() on every renderWeek() call, so it already tracks
-           the This/Next toggle and profile switch for free, same as weekSummaryLine above. -->
-      <div class="card" id="weekNutriCard" style="padding:14px;margin-top:10px"></div>
-
-      <h2>7-day plan</h2>
-      <div class="week" id="weekList"></div>
-
-      <button class="cta ghostbtn" onclick="openShopping()">🛒 Generate shopping list</button>
-      <button class="cta" id="rebalanceBtn" onclick="openRebalanceSheet()">✨ Re-balance this week</button>
+      <div class="week-toolbar" id="weekToolbar" aria-label="Planner actions">
+        <button class="week-tool ghost" onclick="openShopping()">Shopping</button>
+        <button class="week-tool primary" id="rebalanceBtn" onclick="openRebalanceSheet()">Re-balance</button>
+        <button class="week-tool ghost" id="regenerateBtn" onclick="openRegenerateSheet()">Regenerate</button>
+      </div>
       <p class="sub cap-note" id="rebalanceCapNote" style="display:none;text-align:center;margin-top:8px">Re-balance also works on next week.</p>
-      <!-- Regenerate the shown week from the latest catalog/rules, keeping pinned + logged
-           meals (render.js:openRegenerateSheet). Secondary/ghost — a rare deliberate action. -->
-      <button class="cta ghostbtn" onclick="openRegenerateSheet()">↻ Regenerate week (keep pinned &amp; logged)</button>
+
+      <div class="week-quality" id="weekQuality">
+        <button class="week-quality-toggle" id="weekQualityToggle" aria-expanded="false" aria-controls="weekQualityPanel" onclick="toggleWeekQualityDrawer()">
+          <span>
+            <b>Plan quality</b>
+            <small id="weekSummaryLine">Balanced week</small>
+          </span>
+          <span class="chev" aria-hidden="true">⌄</span>
+        </button>
+        <div class="week-quality-panel" id="weekQualityPanel" hidden>
+          <div id="weekNutriCard"></div>
+        </div>
+      </div>
+
+      <h2>Your plan</h2>
+      <div class="week" id="weekList"></div>
     </section>
 
     <!-- ============ RECIPE DETAIL ============ -->
@@ -462,52 +460,42 @@
         <div class="avatar" id="profAv">Y</div>
       </div>
       <p class="sub">This is what makes the plans <i>yours</i>. Mesa recalculates whenever you change something here.</p>
+      <div class="seg profile-hub-switcher" id="profWhoSeg" data-person-switcher></div>
 
-      <!-- T1 / UX-REVIEW-plan.md item 9: sticky jump-to-section chip bar — one chip per
-           <h2> below. Used to be 12 chips in a single horizontal scroller, which stops
-           being scannable well before that (~7) and a scroller hides its own overflow —
-           nothing signals there's more to the right. Now a two-tier nav: 3 always-visible
-           group tabs (You / Plan / Data & more, chosen because that's roughly how the
-           sections below already read — identity+diet, nutrition planning, then
-           account/library/system) that each reveal a row of that group's own chips
-           (<=5 per group, comfortably under the scannability threshold). Tapping a group
-           tab both switches the visible row AND jumps to that group's first section
-           (selectProfileNavGroup(), render-profile.js), so it's still a one-tap jump like
-           every chip always was — nothing lost, just organized. Every individual chip,
-           including navChipWhose/navChipMeals (still hidden/shown for a solo household by
-           applyHouseholdSizeVisibility(), unchanged), keeps its own id and
-           jumpToProfileSection() wiring exactly as before. Static markup (not re-rendered
-           on profile switch), same reasoning as before. -->
-      <div class="profile-nav" id="profileNav">
-        <div class="profile-nav-tabs" id="profileNavTabs">
-          <button class="on" onclick="selectProfileNavGroup('you',this)">You</button>
-          <button onclick="selectProfileNavGroup('plan',this)">Plan</button>
-          <button onclick="selectProfileNavGroup('data',this)">Data &amp; more</button>
-        </div>
-        <div class="profile-nav-chips" id="navGroupYou">
-          <button class="on" id="navChipWhose" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
-          <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
-          <button onclick="jumpToProfileSection('sec-diet',this)">Diet</button>
-        </div>
-        <div class="profile-nav-chips" id="navGroupPlan" style="display:none">
-          <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
-          <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
-          <button id="navChipMeals" onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
-          <button onclick="jumpToProfileSection('sec-avoid',this)">Foods to avoid</button>
-        </div>
-        <div class="profile-nav-chips" id="navGroupData" style="display:none">
-          <button onclick="jumpToProfileSection('sec-library',this)">Food library</button>
-          <button onclick="jumpToProfileSection('accountHeading',this)">Account</button>
-          <button onclick="jumpToProfileSection('coupleSyncHeading',this)">Couple sync</button>
-          <button onclick="jumpToProfileSection('sec-data',this)">Your data</button>
-          <button onclick="jumpToProfileSection('sec-about',this)">About</button>
-        </div>
+      <div class="profile-hub">
+        <button class="settings-row" onclick="go('profileAbout')">
+          <span class="settings-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg></span>
+          <span class="settings-copy"><b>About you</b><small id="profileAboutSummary">Name, household, body details</small></span>
+          <span class="settings-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" onclick="go('profileNutrition')">
+          <span class="settings-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg></span>
+          <span class="settings-copy"><b>Nutrition plan</b><small id="profileNutritionSummary">Calories, macros, health goals</small></span>
+          <span class="settings-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" onclick="go('profilePreferences')">
+          <span class="settings-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg></span>
+          <span class="settings-copy"><b>Food preferences</b><small id="profilePreferencesSummary">Diet, avoids, shared meals</small></span>
+          <span class="settings-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" onclick="go('profileAccountData')">
+          <span class="settings-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg></span>
+          <span class="settings-copy"><b>Account &amp; data</b><small id="profileAccountSummary">Sign-in, sync, app info</small></span>
+          <span class="settings-chev" aria-hidden="true">›</span>
+        </button>
       </div>
+    </section>
 
-      <h2 id="sec-whose" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5"/><path d="M10 20c0-3 3-5 6-5s6 2 6 5"/></svg>Whose plan</h2>
-      <div class="seg" id="profWhoSeg" style="width:100%" data-person-switcher></div>
+    <section class="screen" id="profileAbout">
+      <button class="backbtn" onclick="go('profile')">‹ Profile</button>
+      <div class="row between" style="margin-top:2px">
+        <h1 style="margin:0">About you</h1>
+        <div class="avatar" id="profileAboutAv">Y</div>
+      </div>
+      <p class="sub">The basics Mesa uses to calculate your target.</p>
+      <div class="seg profile-editor-switcher" id="profileAboutWhoSeg" data-person-switcher></div>
 
-      <h2 id="sec-basics" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>Basics</h2>
+      <h2 id="sec-basics"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>Basics</h2>
       <p class="sub">Edit anything here — Mesa recomputes your recommended calories and rebuilds your targets. Every number below is formula, not guesswork.</p>
       <!-- Task B2 (generic identity): displayName editor — same commit-on-blur/Enter
            wiring and .sv-stepper/.sv-val 16px-input convention as Height/Weight/Calories
@@ -585,6 +573,18 @@
       <div class="field"><label>Activity level</label>
         <div id="actOpts"></div>
       </div>
+    </section>
+
+    <section class="screen" id="profileNutrition">
+      <button class="backbtn" onclick="go('profile')">‹ Profile</button>
+      <div class="row between" style="margin-top:2px">
+        <h1 style="margin:0">Nutrition plan</h1>
+        <div class="avatar" id="profileNutritionAv">Y</div>
+      </div>
+      <p class="sub">Calories, macro split and the goals that nudge your menu.</p>
+      <div class="seg profile-editor-switcher" id="profileNutritionWhoSeg" data-person-switcher></div>
+
+      <h2 id="sec-calories"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Daily target</h2>
       <div class="field"><label>Daily target <small style="color:var(--muted)">(Mifflin-St Jeor × activity + goal)</small></label>
         <div class="inp"><span>Calories <span id="calChip" class="chip-computed" style="margin-left:6px">✓ computed</span></span>
           <span class="sv-stepper" style="margin:0">
@@ -599,15 +599,7 @@
         <button class="pill gold chip-preset" id="calRestoreBtn" style="display:none;margin-top:8px;padding:11px 14px;font-size:12px" onclick="restoreCal()">↺ Restore recommended (1,820)</button>
       </div>
 
-      <!-- Diet section (task 4): multi-select, real editor — replaces onboarding-only
-           `diet` (task D4's single-string mock). renderDietEditor() (render-profile.js)
-           paints #dietList from PROF[currentProf].diets; onboarding's copy ("Profile →
-           Diet") points HERE, matching this section's actual location. -->
-      <h2 id="sec-diet" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>Diet</h2>
-      <p class="sub">Pick any that apply — Mesa will never plan a recipe that breaks one of these. Combining is fine (e.g. vegetarian + gluten-free).</p>
-      <div id="dietList"></div>
-
-      <h2 id="sec-macro" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
+      <h2 id="sec-macro"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
       <p class="sub">Choose where your calories come from — Mesa keeps it adding up to 100% and rebuilds your menu to match.</p>
       <div class="row" id="macroPresets" style="gap:7px;flex-wrap:wrap;margin-top:6px">
         <button class="pill ghost chip-preset" onclick="applyPreset('default')">Mesa default</button>
@@ -643,17 +635,33 @@
       </div>
       <p class="sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Your total calories stay the same — the split changes where they come from.<span class="chip-computed">✓ computed</span></p>
 
-      <h2 id="sec-goals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Health goals</h2>
+      <h2 id="sec-goals"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Health goals</h2>
       <!-- task B1: rendered per-profile by render.js:renderGoalsEditor() from GOAL_DEFS
            (state.js) — was 5 static checkboxes shared by both profiles (the bug: unchecking
            "Gentle fat loss" as Andrea did nothing, and he saw a fat-loss goal he doesn't have). -->
       <div id="goalsList"></div>
+    </section>
+
+    <section class="screen" id="profilePreferences">
+      <button class="backbtn" onclick="go('profile')">‹ Profile</button>
+      <div class="row between" style="margin-top:2px">
+        <h1 style="margin:0">Food preferences</h1>
+        <div class="avatar" id="profilePreferencesAv">Y</div>
+      </div>
+      <p class="sub">The choices Mesa uses to filter and shape recipes.</p>
+      <div class="seg profile-editor-switcher" id="profilePreferencesWhoSeg" data-person-switcher></div>
+
+      <!-- Diet section (task 4): multi-select, real editor — replaces onboarding-only
+           `diet` (task D4's single-string mock). renderDietEditor() (render-profile.js)
+           paints #dietList from PROF[currentProf].diets. -->
+      <h2 id="sec-diet"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>Diet</h2>
+      <p class="sub">Pick any that apply — Mesa will never plan a recipe that breaks one of these. Combining is fine (e.g. vegetarian + gluten-free).</p>
+      <div id="dietList"></div>
 
       <!-- Task B3: no meaning without a second person — applyHouseholdSizeVisibility()
-           (render.js) hides this whole section (and its jump-nav chip, #navChipMeals) for a
-           one-person household. -->
+           (render.js) hides this whole section for a one-person household. -->
       <div id="mealsShareSection">
-      <h2 id="sec-meals" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="12" r="7"/><circle cx="15" cy="12" r="7"/></svg>Meals we share</h2>
+      <h2 id="sec-meals"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="9" cy="12" r="7"/><circle cx="15" cy="12" r="7"/></svg>Meals we share</h2>
       <p class="sub">Shared meals use one recipe with a portion for each of you. Solo meals are planned per person.</p>
       <div class="opt" id="shareBreakfast" onclick="toggleShared('breakfast',this)"><div class="ck"></div><div><div class="ot">Breakfast</div><div class="od">Solo (default)</div></div></div>
       <div class="opt" id="shareLunch" onclick="toggleShared('lunch',this)"><div class="ck"></div><div><div class="ot">Lunch</div><div class="od">Solo (default)</div></div></div>
@@ -661,34 +669,31 @@
       <div class="opt" id="shareSnack" onclick="toggleShared('snack',this)"><div class="ck"></div><div><div class="ot">Snack</div><div class="od">Solo (default)</div></div></div>
       </div>
 
-      <h2 id="sec-avoid" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/></svg>Foods to avoid</h2>
+      <h2 id="sec-avoid"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M5.5 5.5l13 13"/></svg>Foods to avoid</h2>
       <p class="sub">Mesa will never suggest a recipe that contains these.</p>
       <div class="row" id="avoidPills" style="gap:7px;flex-wrap:wrap"></div>
       <div class="field"><div class="inp" onclick="toggleAvoidChooser()"><span style="color:var(--muted)">Choose from lactose, gluten, shellfish, nuts, raw onion, spicy…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
       <div class="cap-note">Free-text isn't supported yet — more coming with the AI phase.</div>
       <div class="row" id="avoidChooser" style="gap:7px;flex-wrap:wrap;margin-top:10px;display:none"></div>
+    </section>
 
-      <h2 id="sec-library" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 6c-1.5-1.2-4-2-7-2v14c3 0 5.5.8 7 2 1.5-1.2 4-2 7-2V4c-3 0-5.5.8-7 2z"/><path d="M12 6v14"/></svg>Food library</h2>
-      <p class="sub" id="libFoodCount">75 built-in · 0 yours</p>
-      <button class="cta ghostbtn" style="margin-top:6px" onclick="openFoodLibrary()">📖 Browse ingredients</button>
-      <button class="cta ghostbtn" style="margin-top:10px" onclick="openMyRecipes()">📋 My recipes</button>
+    <section class="screen" id="profileAccountData">
+      <button class="backbtn" onclick="go('profile')">‹ Profile</button>
+      <div class="row between" style="margin-top:2px">
+        <h1 style="margin:0">Account &amp; data</h1>
+        <div class="avatar" id="profileAccountAv">Y</div>
+      </div>
+      <p class="sub">Sign-in, couple sync and Mesa information.</p>
 
-      <h2 id="accountHeading" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Account</h2>
+      <h2 id="accountHeading"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>Account</h2>
       <div id="accountSection"></div>
 
-      <h2 id="coupleSyncHeading" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>Couple sync</h2>
+      <h2 id="coupleSyncHeading"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></svg>Couple sync</h2>
       <div id="coupleSyncSection"></div>
 
-      <h2 id="sec-data" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M7 18a4 4 0 0 1-1-7.9A5 5 0 0 1 16 8a4.5 4.5 0 0 1 1 8.9"/><path d="M12 11v7M9 15l3 3 3-3"/></svg>Your data</h2>
-      <p class="sub">Move your plan between phones — export here, AirDrop the file, import on the other phone.</p>
-      <button class="cta ghostbtn" style="margin-top:6px" onclick="exportData()">⬇️ Export my data</button>
-      <input type="file" id="importFileInput" accept="application/json" style="display:none" onchange="handleImportFile(this)">
-      <button class="cta ghostbtn" style="margin-top:10px" onclick="document.getElementById('importFileInput').click()">⬆️ Import data</button>
-
-      <h2 id="sec-about" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.01"/></svg>About</h2>
+      <h2 id="sec-about"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.01"/></svg>About</h2>
       <div class="opt" onclick="replayOnboarding()"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔄</div><div><div class="ot">Replay intro</div><div class="od">Watch the welcome walkthrough again</div></div></div>
 
-      <button class="cta" onclick="go('today');toast('✓ Plan updated')">Save & rebuild my plan</button>
       <p class="sub" style="text-align:center;margin-top:14px">Mesa offers general nutrition guidance, not medical advice. For Hashimoto's, check changes with your doctor.</p>
     </section>
 
@@ -818,7 +823,7 @@
     </button>
     <button class="tab" data-tab="week" onclick="go('week',this)">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
-      <span class="tl">Week</span>
+      <span class="tl">Planner</span>
     </button>
     <button class="tab add" data-tab="add" onclick="openAddMenu()">
       <span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
@@ -879,7 +884,12 @@
      js/auth.js sorts it out a moment later. */
   try{
     var mesaTok = localStorage.getItem('mesaAuth');
-    if(typeof mesaTok === 'string' && mesaTok){
+    // Local visual/UX previews use the bundled demo state and deliberately have no OAuth
+    // callback registered. This is an explicit, localhost-only escape hatch: it can never
+    // suppress the production gate, even if someone adds ?preview=1 to a deployed URL.
+    var mesaLocalPreview = (location.hostname === 'localhost' || location.hostname === '127.0.0.1')
+      && /(?:^|&)preview=1(?:&|$)/.test((location.search || '').replace(/^\?/, ''));
+    if((typeof mesaTok === 'string' && mesaTok) || mesaLocalPreview){
       document.getElementById('loginGate').hidden = true;
     } else {
       document.body.classList.add('gate-open');

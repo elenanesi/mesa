@@ -17,6 +17,8 @@
                remain searchable/loggable but not enter automatic week planning
      imageKey — optional kebab-case slug for assets/recipes/<imageKey>.png,
                used by the recipe detail hero when a recipe photo exists
+     imageUri — optional safe relative URI (assets/recipes/<file>.png);
+               preferred over imageKey for ad hoc recipe art such as pizza
      styles  — subset of ['balanced','highprotein','lowcarb']; which
                household plan styles this recipe can serve (can overlap)
      time    — prep+cook minutes
@@ -1221,6 +1223,7 @@ const RECIPES_DB = {
   },
   'ricotta-walnuts': {
     title: 'Snack: Ricotta & walnuts', emoji: '🧀', slot: 'snack', role: 'full',
+    imageKey: 'snack-board',
     styles: ['highprotein'], time: 3,
     ingredients: [['ricotta', 130], ['walnuts', 12]],
     toTaste: [],
@@ -1230,6 +1233,7 @@ const RECIPES_DB = {
   },
   'almonds-cheese-cubes': {
     title: 'Snack: Almonds & cheese cubes', emoji: '🥜', slot: 'snack', role: 'full',
+    imageKey: 'snack-board',
     styles: ['lowcarb'], time: 3,
     ingredients: [['almonds', 20], ['mozzarella', 40]],
     toTaste: [],

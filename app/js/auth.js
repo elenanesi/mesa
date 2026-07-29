@@ -54,7 +54,7 @@
    appears not to work, since an installed PWA or a Safari cache can
    easily still be running last week's JavaScript.
    =================================================================== */
-const AUTH_BUILD = 'mesa-b0fa5198ab10'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
+const AUTH_BUILD = 'mesa-1d86aa5dc796'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
 const AUTH_LOG_KEY = 'mesaAuthLog';
 const AUTH_LOG_MAX = 40;
 
@@ -96,6 +96,19 @@ function clearAuthLog(){
 // with it, or vice versa.
 const AUTH_TOKEN_KEY = 'mesaAuth';
 const AUTH_USER_KEY = 'mesaAuthUser';
+
+// A local UI preview needs no real identity or server data: Mesa's bundled demo state is
+// enough to exercise navigation and planning. Keep this narrow and explicit so it cannot
+// become a production authentication bypass.
+function isLocalPreviewMode(){
+  try{
+    const host = location.hostname;
+    const local = host === 'localhost' || host === '127.0.0.1';
+    return local && new URLSearchParams(location.search || '').get('preview') === '1';
+  }catch(e){
+    return false;
+  }
+}
 
 function authToken(){
   try{
@@ -858,9 +871,11 @@ function updateLoginGate(){
   const gate = document.getElementById('loginGate');
   if(!gate) return; // markup not present (older cached index.html) — never let this throw
 
+  const preview = isLocalPreviewMode();
+
   // index.html ships this button as static markup so the gate is usable before/without
   // JS; repainting it here keeps it identical if that markup ever drifts.
-  const waiting = !authToken() && !!pendingClaim();
+  const waiting = !preview && !authToken() && !!pendingClaim();
   const btnSlot = document.getElementById('loginGateButton');
   if(btnSlot){
     btnSlot.innerHTML = waiting
@@ -874,7 +889,7 @@ function updateLoginGate(){
 
   renderAuthDiagnostics();
 
-  const show = !authToken();
+  const show = !preview && !authToken();
   gate.hidden = !show;
   try{ document.body.classList.toggle('gate-open', show); }catch(e){ /* non-browser env */ }
   if(!show){

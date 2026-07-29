@@ -245,7 +245,8 @@ function applyProf(key){
   recomputeConsumed(key); // consumed-so-far from today's confirmed slots of the real plan
   recomputeProf(key);
   refreshRingAndBars();
-  document.getElementById('goalTag').textContent=p.goalTag;
+  var goalTag = document.getElementById('goalTag');
+  if(goalTag) goalTag.textContent=p.goalTag;
   var stripe = document.getElementById('tintStripe');
   if(stripe){
     stripe.className = 'tint-stripe tint-' + key;
@@ -255,6 +256,10 @@ function applyProf(key){
   if(coachT) coachT.textContent=p.coachOverrideT || p.coachT;
   if(coachD) coachD.textContent=p.coachOverrideD || p.coachD;
   document.getElementById('profAv').innerHTML=avatarSlotHtml(key);
+  ['profileAboutAv', 'profileNutritionAv', 'profilePreferencesAv', 'profileAccountAv'].forEach(function(id){
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = avatarSlotHtml(key);
+  });
   const topAv = document.getElementById('topProfAv');
   if(topAv) topAv.innerHTML = avatarSlotHtml(key);
   renderBasics();
@@ -275,6 +280,7 @@ function applyProf(key){
   if(typeof renderFoodLibraryCount === 'function') renderFoodLibraryCount(); // js/library.js: "N built-in · M yours"
   if(typeof renderAccountSection === 'function') renderAccountSection(); // js/auth.js (Phase 3A): "Account" section
   if(typeof renderCoupleSync === 'function') renderCoupleSync(); // js/sync.js (task S1): "Couple sync" section
+  if(typeof renderProfileHubSummaries === 'function') renderProfileHubSummaries();
   renderTodayMeals();
   renderLogScreen();
   renderWeek();
@@ -388,4 +394,3 @@ function syncPersonLabels(){
   if(servePBtns[0]) servePBtns[0].setAttribute('aria-label', 'Decrease ' + possessiveName(nameP) + ' portion');
   if(servePBtns[1]) servePBtns[1].setAttribute('aria-label', 'Increase ' + possessiveName(nameP) + ' portion');
 }
-

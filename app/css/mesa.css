@@ -261,6 +261,19 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .split-label{font-size:13.5px;font-weight:600;display:flex;align-items:center;}
 
 /* week grid */
+.week-toolbar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:10px;}
+.week-tool{border:1.5px solid var(--sage);border-radius:11px;min-height:44px;padding:0 7px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.week-tool.primary{background:var(--sage);color:#fff;box-shadow:var(--shadow-soft);}
+.week-tool.ghost{background:rgba(255,250,240,.78);color:var(--sage-deep);box-shadow:none;}
+.week-tool:active{transform:scale(.98);}
+.week-quality{margin-top:10px;border:1px solid rgba(127,147,100,.18);border-radius:14px;background:rgba(237,241,223,.7);overflow:hidden;}
+.week-quality-toggle{width:100%;min-height:44px;border:0;background:transparent;padding:10px 13px;display:flex;align-items:center;justify-content:space-between;gap:10px;font:inherit;color:var(--sage-deep);cursor:pointer;text-align:left;}
+.week-quality-toggle b{display:block;font-size:12px;color:var(--sage-deep);}
+.week-quality-toggle small{display:block;margin-top:2px;font-size:12.5px;line-height:1.35;color:var(--ink-soft);}
+.week-quality-toggle .chev{display:inline-block;font-size:12px;color:var(--muted);transition:transform .2s ease;}
+.week-quality.open .week-quality-toggle .chev{transform:rotate(180deg);}
+.week-quality-panel{padding:0 13px 13px;}
+.week-quality-panel[hidden]{display:none;}
 .week{display:flex;flex-direction:column;gap:10px;}
 .day{background:rgba(255,250,240,.92);border:1px solid rgba(176,146,105,.38);border-radius:var(--radius);padding:13px 15px;cursor:pointer;}
 .day .dh{display:flex;justify-content:space-between;align-items:center;}
@@ -395,49 +408,24 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
    recolored to the sage accent and sized down to sit inline with the script h2 font. */
 .h2-ic{width:18px;height:18px;stroke:var(--sage-deep);vertical-align:-3px;margin-right:7px;}
 
-/* T1: Profile jump-to-section chip bar — sticky at the top of the #profile scroll
-   container (position:sticky's containing scroller is .screen, which already scrolls),
-   reusing the .seg pill look with a horizontally-scrollable row instead of a fixed split.
-   Bleeds to the screen's full width (negative margin cancels .screen's own padding) so the
-   background reaches the edges, then re-adds that padding so the chips still align. */
-.profile-nav{
-  position:sticky;top:0;z-index:6;
-  margin:8px -18px 14px;padding:8px 18px 10px;
-  background:var(--bg);
+.profile-hub-switcher,.profile-editor-switcher{width:100%;margin-top:14px;}
+.profile-hub{display:flex;flex-direction:column;gap:10px;margin-top:16px;}
+.settings-row{
+  width:100%;min-height:78px;border:1px solid rgba(176,146,105,.38);
+  background:rgba(255,250,240,.92);border-radius:14px;box-shadow:var(--shadow-soft);
+  padding:13px 14px;display:grid;grid-template-columns:36px minmax(0,1fr) 18px;align-items:center;gap:12px;
+  color:var(--ink);font:inherit;text-align:left;cursor:pointer;
 }
-/* UX-REVIEW-plan.md item 9: top tier — 3 group tabs, always all visible (no scroll needed,
-   3 comfortably fits 375px), evenly spread via flex:1 so each is an easy target. */
-.profile-nav-tabs{display:flex;gap:8px;}
-.profile-nav-tabs button{flex:1;}
-/* Bottom tier — the active group's own chips. Still a horizontal scroller for a group
-   whose chips don't all fit (Plan/Data can run to 4-5), but each group is well under the
-   ~7-chip scannability threshold that made the old flat 12-chip bar unscannable, so a
-   scroller hiding a LITTLE overflow here isn't the same problem. */
-.profile-nav-chips{
-  display:flex;gap:8px;overflow-x:auto;margin-top:8px;
-  scrollbar-width:none;-ms-overflow-style:none;
+.settings-row:active{transform:scale(.99);}
+.settings-ic{
+  width:36px;height:36px;border-radius:12px;background:var(--sage-tint);color:var(--sage-deep);
+  display:grid;place-items:center;flex:0 0 36px;
 }
-.profile-nav-chips::-webkit-scrollbar{display:none;}
-.profile-nav button{
-  flex:0 0 auto;border:1px solid rgba(176,146,105,.32);background:#e8dcc8;color:var(--ink-soft);
-  font:inherit;font-size:12.5px;font-weight:600;padding:0 14px;min-height:44px;border-radius:999px;
-  cursor:pointer;white-space:nowrap;transition:.2s;
-}
-.profile-nav button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-soft);border-color:transparent;}
-/* Keeps a jumped-to <h2> clear of the sticky bar above it (bar ≈52px tall + breathing room). */
-.jump-target{scroll-margin-top:64px;}
-
-/* T6: week diet-summary line — one wrap-capable line under the Week screen's intro,
-   painted by renderWeek() from planner.js:summarizeWeekPlan(). Echoes .why's sage
-   reading-note look rather than inventing a new color language. */
-.week-summary{
-  display:flex;align-items:center;flex-wrap:wrap;gap:6px 8px;
-  margin-top:10px;padding:10px 13px;
-  background:rgba(237,241,223,.86);border:1px solid rgba(127,147,100,.18);border-radius:14px;
-  font-size:12.5px;color:var(--sage-deep);line-height:1.4;
-}
-.week-summary b{color:var(--sage-deep);}
-.week-summary .ws-sep{color:var(--muted);}
+.settings-ic svg{width:20px;height:20px;}
+.settings-copy{min-width:0;display:flex;flex-direction:column;gap:3px;}
+.settings-copy b{font-size:15px;font-weight:700;color:var(--ink);}
+.settings-copy small{font-size:12.5px;line-height:1.35;color:var(--muted);white-space:normal;}
+.settings-chev{font-size:26px;line-height:1;color:var(--muted);}
 
 /* profile / onboarding */
 .opt{display:flex;align-items:center;gap:12px;padding:13px 14px;border:1px solid rgba(176,146,105,.38);background:rgba(255,250,240,.9);border-radius:14px;margin-top:9px;cursor:pointer;transition:.15s;min-height:44px;}

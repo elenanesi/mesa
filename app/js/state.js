@@ -840,6 +840,10 @@ let customRev = 0;
 function normalizeFood(food){
   if(!food || typeof food !== 'object') return food;
   const out = Object.assign({}, food);
+  if(Array.isArray(out.components)){
+    if(typeof out.sugarQuality !== 'string' || ['intrinsic', 'added/free', 'mixed', 'unknown'].indexOf(out.sugarQuality) === -1) out.sugarQuality = 'unknown';
+    return out;
+  }
   ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(k){
     if(typeof out[k] !== 'number' || !isFinite(out[k])) out[k] = 0;
   });

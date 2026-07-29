@@ -160,7 +160,7 @@ From the `app/data/foods.js` header comment (`foods.js:1-42`):
 - **Sourcing**: mostly **USDA FoodData Central** (FDC id noted per entry where an exact match exists; "-style" means a representative FDC entry for that food class was used, not an exact id lookup), plus a couple of **CREA-style Italian references** for farro and bresaola where USDA has no close match (`foods.js:9-14`). Values rounded to 1 decimal (kcal to whole numbers).
 - **kcal policy**: Atwater 4/4/9 general-factor computation from sourced protein/carb/fat grams, EU-style (fiber counted within carbs) — see §1.3 for the full quote (`foods.js:16-25`).
 - **Deliberate simplification, stated honestly**: computed kcal for very fibrous, low-calorie vegetables can read a little higher than some published USDA "kcal" columns, because USDA sometimes uses refined, food-specific energy factors that discount fiber further than the general 4/4/9 rule. Mesa explicitly keeps the general-factor approach for internal consistency and documents the gap rather than silently deviating per-food (`foods.js:20-25`).
-- **Composite ingredients**: mockup shorthand like "Roasted mixed veg" gets one pragmatic blended entry (a weighted average of its components, documented in that entry's `src` field) *plus* the individual components as their own separate foods, so both recipes and precise substitution keep working (`foods.js:27-30`).
+- **Composite ingredients**: real composite rows carry `components` + `yieldG` and deliberately do **not** store frozen macro fields. `engine.js:foodMacros()` resolves per-100g nutrition live from component foods; made composites (`bought:false`) decompose into their components for shopping/pantry consumption, while bought composites (`bought:true`) remain pantry-baselineable as one item but still expose components for diet/allergen derivation. The Library UI can now author/edit those formulas and shows component/variant breakdowns instead of static macro inputs.
 - **Still not enforced anywhere in code** (the 2026-07-28 goal audit — §3 — reworded every `GOAL_DEFS_UNION` description to stop claiming these, rather than leaving copy that names a rule the code doesn't apply): no sodium field exists anywhere in `FOODS`, so "low sodium" is not, and cannot yet be, a coded rule — dropped from the Heart & metabolic description. No weekly iodine cap exists despite the `highIodine` food flag (`foods.js:34`) — "moderate iodine" and "anti-inflammatory" were dropped from the Hashimoto's description; only the selenium coverage target (§2, §3) is actually gated on that goal. No `lowGI` key exists in the planner's `tuningBonus()` (`planner.js:1424-1432`) and no dairy threshold exists in `deriveRecipeMeta()` — "low-GI" and "dairy/sugar down" were dropped from the Beautiful skin description, leaving only the two things `goalTuningBonus()` (`planner.js:1477`) actually biases: more omega-3, less free sugar.
 - **Design-doc vs. shipped gap, updated**: `MVP-plan.md:120-123` describes calorie-goal offsets as *ranges* ("−300–500 kcal for fat loss, +200–300 for muscle gain") and protein as bodyweight-derived; the shipped code instead uses two **fixed** constants (`goalAdj -325`/`+60`, `engine.js:deriveGoalAdj`, lines 56-60) and a %-of-calorie split (§1.2) — not a live recompute from the selected goal set, and not bodyweight-derived. That part of the gap is unchanged by the goal audit. What the audit DID change: those two fixed constants used to also be **pinned one-per-slot** (`elena` could only ever apply `fatLoss`, `partner` only `muscleGain`, via a since-deleted `CALORIE_GOAL_KEY` slot-dispatch table) — an accident of the original two-named-people prototype that survived the move to opaque per-slot goal lists (`state.js:521-529`). Both goals are now available to, and mutually exclusive on, every profile — see §3.
 
@@ -248,9 +248,27 @@ array happened to list them in. `toggleDiet(profKey, key)`
 (`render-profile.js:201-219`) behaves like a segmented control *within* the exclusive group
 (picking vegan while vegetarian was active replaces it, not stacks) while gluten-free/
 lactose-intolerant toggle independently; `key === NONE_DIET_KEY` clears every diet at once.
-Both the Profile screen (`renderDietEditor()`, `render-profile.js:230-243`, `#dietList` in
+Both the Profile → **Food preferences** editor (`renderDietEditor()`, `#dietList` in
 `index.html`) and onboarding (`index.html`'s checkbox group, `obToggleDiet`) render off this
 same array and funnel through the same `toggleDiet()` — they cannot disagree.
+
+**Profile navigation (2026-07-29)**: Profile is a settings hub, not a long page with jump
+navigation. The hub routes to four internal screens: **About you** for name/household/body
+details, **Nutrition plan** for calories/macros/goals, **Food preferences** for diet/avoids/
+shared meals, and **Account & data** for sign-in/couple sync/replay/legal.
+`applyProf()` still owns repaint/persist/recompute behavior; `renderProfileHubSummaries()`
+adds only derived hub labels, so the data model and planner signatures are unchanged. Manual
+export/import is intentionally not reachable from Profile now that login/cloud restore owns
+the recovery story.
+
+**Week navigation (2026-07-29)**: Week is a compact planning workspace. The header keeps
+the active person visible, the This/Next week segmented control selects which plan every
+top action targets, and Shopping/Re-balance/Regenerate sit before the meal list as equal
+compact 44px-tap toolbar buttons. Regenerate stays direct because there are only three
+actions, but it still opens the existing confirmation sheet and uses the currently selected
+week. The previous standalone `weekSummaryLine` + `weekNutriCard`
+pre-plan stack is now a collapsed Week quality drawer: the closed row shows one concise
+computed summary, and expanding it reveals the same weekly averages/coverage chips.
 
 **Editor grouping (UX-REVIEW-plan.md item 8, 2026-07-29)**: the funnel above already made
 vegan/vegetarian/pescatarian behave like one mutually-exclusive choice and gluten-free/

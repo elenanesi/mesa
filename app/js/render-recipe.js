@@ -110,7 +110,7 @@ const RECIPE_IMAGE_KEYS = [
   'citrus-roast-turkey', 'club-sandwich', 'shakshuka',
   'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure',
   'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast',
-  'carrots-over-hummus', 'spring-rolls', 'pizza'
+  'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board'
 ];
 
 function recipeImageLabel(key){
@@ -137,7 +137,8 @@ function recipeImageLabel(key){
     'burrito': 'Burrito',
     'citrus-roast-turkey': 'Citrus turkey',
     'club-sandwich': 'Club sandwich',
-    'shakshuka': 'Shakshuka'
+    'shakshuka': 'Shakshuka',
+    'snack-board': 'Snack board'
   };
   return labels[key] || String(key || '').replace(/-/g, ' ');
 }

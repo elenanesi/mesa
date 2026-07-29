@@ -472,6 +472,39 @@ function toggleAvoidChooser(){
   el.style.display = (el.style.display === 'flex') ? 'none' : 'flex';
 }
 
+function profileDietSummary(p){
+  const diets = (p.diets || []).map(dietLabel);
+  return diets.length ? diets.join(', ') : 'No restrictions';
+}
+
+function profileSharedMealsSummary(){
+  if(typeof isSoloHousehold === 'function' && isSoloHousehold()) return 'Planning for one';
+  const shared = ['breakfast', 'lunch', 'dinner', 'snack'].filter(function(slot){ return !!SHARED[slot]; });
+  if(!shared.length) return 'No shared meals';
+  return 'Shared ' + shared.map(function(slot){ return SLOT_LABEL[slot].toLowerCase(); }).join(', ');
+}
+
+function renderProfileHubSummaries(){
+  const p = PROF[currentProf];
+  if(!p) return;
+  const name = resolveDisplayName(currentProf);
+  const household = (typeof isSoloHousehold === 'function' && isSoloHousehold()) ? 'Just me' : 'Me + partner';
+  const about = document.getElementById('profileAboutSummary');
+  if(about) about.textContent = name + ' · ' + ageOf(p) + ' · ' + p.heightCm + 'cm/' + p.weightKg + 'kg · ' + household;
+
+  const nutrition = document.getElementById('profileNutritionSummary');
+  if(nutrition) nutrition.textContent = fmtKcal(p.calGoalNum) + ' kcal · P' + p.kP + '/C' + p.kC + '/F' + p.kF;
+
+  const prefs = document.getElementById('profilePreferencesSummary');
+  if(prefs){
+    const avoid = (p.avoid || []).length ? (p.avoid || []).map(avoidLabel).join(', ') : 'No avoids';
+    prefs.textContent = profileDietSummary(p) + ' · ' + avoid + ' · ' + profileSharedMealsSummary();
+  }
+
+  const account = document.getElementById('profileAccountSummary');
+  if(account) account.textContent = 'Sign-in, couple sync, app info';
+}
+
 // Adds/removes one avoid key on the CURRENT profile, then runs the exact same funnel
 // every other profile-mutating action uses: applyProf() re-derives everything (including
 // ensureWeekPlan(), since the avoid-list is part of the plan signature — task C2) and
@@ -522,15 +555,6 @@ function applyHouseholdSizeVisibility(){
   // is fully hidden rather than just having its partner button disabled — render.js:
   // renderPersonSwitchers() (called from syncPersonLabels(), part of every applyProf())
   // already does this from the one shared path, so there is nothing left to do here.
-  // Profile's own "Whose plan" heading + jump-nav chip go with it, same treatment as
-  // "Meals we share" below — a heading over a switcher with nothing to switch is noise too.
-  const whoseHeading = document.getElementById('sec-whose');
-  if(whoseHeading) whoseHeading.style.display = solo ? 'none' : '';
-  const whoSeg = document.getElementById('profWhoSeg');
-  if(whoSeg && solo) whoSeg.style.display = 'none'; // belt-and-suspenders: renderPersonSwitchers() already hides it, but the heading above only makes sense paired with it
-  const whoseNavChip = document.getElementById('navChipWhose');
-  if(whoseNavChip) whoseNavChip.style.display = solo ? 'none' : '';
-
   // Recipe-screen second serve card: driven per-recipe by updateServings() (which itself
   // forces `shared=false` whenever solo — see that function) every time the recipe screen
   // repaints, so nothing to force here.
@@ -539,11 +563,9 @@ function applyHouseholdSizeVisibility(){
   }
 
   // "Meals we share" (Profile section) — a household default for splitting/merging a dish
-  // between two people has no meaning for one. Hides the section AND its jump-nav chip.
+  // between two people has no meaning for one. Hides the section.
   const mealsSection = document.getElementById('mealsShareSection');
   if(mealsSection) mealsSection.style.display = solo ? 'none' : '';
-  const mealsNavChip = document.getElementById('navChipMeals');
-  if(mealsNavChip) mealsNavChip.style.display = solo ? 'none' : '';
 
   // "I cook for" control itself (Basics) — keep the ON state in sync even though it's
   // always visible (this is the control that SETS householdSize, so it can't hide itself).
@@ -565,63 +587,6 @@ function setHouseholdSize(size){
   householdSizeManual = true;
   applyProf(currentProf); // recompute plan/UI for the new size (forces currentProf back to 'elena' when solo) + persist()
   toast(size === 1 ? '✓ Planning for one' : '✓ Planning for two');
-}
-
-// T1: Profile jump-to-section chip bar (index.html #profileNav) — scrolls the target
-// section's <h2> (class="jump-target", scroll-margin-top in mesa.css) to the top edge of
-// the #profile scroll container, clear of the sticky bar. The bar itself is static markup
-// (not re-painted per profile switch/render), so this only needs to track which chip is
-// visually "on".
-function jumpToProfileSection(id, el){
-  const target = document.getElementById(id);
-  const screen = document.getElementById('profile');
-  const bar = document.getElementById('profileNav');
-  // scrollIntoView() and scrollTo({behavior:'smooth'}) both no-op inside the absolutely-
-  // positioned .screen scroller in iOS WebKit; only a direct scrollTop assignment moves it
-  // reliably. target.offsetParent is #profile itself, so offsetTop already IS the scroll
-  // offset — subtract the sticky bar height + a small gap so the section lands just under
-  // the nav rather than hidden behind it. Instant (not animated): rAF-based tweening is
-  // paused whenever the page is backgrounded, so a direct set is the dependable choice.
-  if(target && screen){
-    const offset = (bar ? bar.offsetHeight : 0) + 12;
-    screen.scrollTop = Math.max(0, target.offsetTop - offset);
-  }
-  // UX-REVIEW-plan.md item 9: clearing 'on' is scoped to el's OWN chip row (.profile-nav-
-  // chips), not the whole bar — the bar now also contains the 3 group tabs
-  // (#profileNavTabs), whose own 'on' state is managed separately by
-  // selectProfileNavGroup() and must survive a chip tap inside the row it just revealed.
-  if(el){
-    const row = el.closest('.profile-nav-chips') || bar;
-    if(row) row.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
-    el.classList.add('on');
-  }
-}
-
-// UX-REVIEW-plan.md item 9: the group-tab tier above jumpToProfileSection's chips — see
-// #profileNav's doc comment in index.html for why (12 flat chips past the ~7-chip
-// scannability threshold, in a horizontal scroller that hides its own overflow). Shows
-// only the tapped group's chip row, marks that tab 'on' (scoped to #profileNavTabs, not
-// the whole bar — same reasoning as jumpToProfileSection's own scoping), then clicks that
-// row's first VISIBLE chip so the tab is still a working one-tap jump exactly like every
-// individual chip already was (a hidden chip, e.g. navChipWhose in a solo household, is
-// skipped in favor of the next visible one rather than jumping to a hidden section).
-const PROFILE_NAV_GROUP_ROWS = {you: 'navGroupYou', plan: 'navGroupPlan', data: 'navGroupData'};
-function selectProfileNavGroup(group, el){
-  Object.keys(PROFILE_NAV_GROUP_ROWS).forEach(function(g){
-    const row = document.getElementById(PROFILE_NAV_GROUP_ROWS[g]);
-    if(row) row.style.display = (g === group) ? 'flex' : 'none';
-  });
-  const tabs = document.getElementById('profileNavTabs');
-  if(tabs){
-    tabs.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
-    if(el) el.classList.add('on');
-  }
-  const row = document.getElementById(PROFILE_NAV_GROUP_ROWS[group]);
-  if(!row) return;
-  const chips = row.querySelectorAll('button');
-  for(let i = 0; i < chips.length; i++){
-    if(chips[i].style.display !== 'none'){ chips[i].click(); break; }
-  }
 }
 
 /* ===================================================================
@@ -773,4 +738,3 @@ function setNextWeekTuning(key){
   renderTodayMeals();
   renderLogScreen();
 }
-
