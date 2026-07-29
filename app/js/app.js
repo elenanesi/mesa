@@ -22,9 +22,12 @@ function go(id, el){
   target.classList.add('active');
   document.querySelector('.app').scrollTop = 0;
   var scr = target; if(scr) scr.scrollTop = 0;
-  // sync tabbar highlight
+  // sync tabbar highlight. Screens that aren't themselves a tab map onto the tab that OWNS
+  // them, otherwise every tab clears and nothing lights up — the user is somewhere with no
+  // "you are here" at all. The four library sub-screens map to the Library tab; #log maps to
+  // the centre ＋ (data-tab="add"), which is the only way to reach it (Add sheet -> Log food).
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
-  var tabId = id.indexOf('library') === 0 ? 'library' : id;
+  var tabId = id.indexOf('library') === 0 ? 'library' : (id === 'log' ? 'add' : id);
   var tab = el && el.dataset.tab ? el : document.querySelector('.tab[data-tab="'+tabId+'"]');
   if(tab) tab.classList.add('on');
   // Task D1: Insights is cheap to recompute (≤7 days of small arrays) and only ever

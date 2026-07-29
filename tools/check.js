@@ -4841,6 +4841,25 @@ function testLogScreenIsSearchAndAddPicker(ctx){
    EMOJI/TITLES/LOGKCAL, the old renderLogPlan() name, stepMealServings, the old
    openFoodSearch() quick-add-without-a-slot sheet, and the 'add' kind's .act-add CSS) must
    never quietly reappear, and every call site must have moved to the new names. */
+/* go() maps every non-tab screen onto the tab that owns it. Without this the tabbar clears
+   and NOTHING lights up, so the user is on a screen with no "you are here" — which is what
+   #log did from the moment the centre FAB stopped being a plain go('log') link. */
+function testGoTabHighlightMapping(){
+  const appSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'app.js'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  const tabIdLine = (appSrc.match(/var tabId = [^\n]*/) || [''])[0];
+  assert(/id === 'log' \? 'add'/.test(tabIdLine),
+    'go(): the #log screen maps onto the centre + tab (data-tab="add"), the only route that reaches it', tabIdLine);
+  assert(/indexOf\('library'\) === 0 \? 'library'/.test(tabIdLine),
+    'go(): the library sub-screens still map onto the Library tab', tabIdLine);
+  // Every tab a mapping targets must actually exist in the markup, or the mapping silently
+  // highlights nothing — the exact failure this test exists to prevent.
+  ['add', 'library', 'today', 'week', 'insights'].forEach(function(t){
+    assert(indexHtml.indexOf('data-tab="' + t + '"') !== -1,
+      'index.html: a .tab with data-tab="' + t + '" exists for go() to highlight', t);
+  });
+}
+
 function testLogScreenDeadCodeRemoved(){
   const renderSrc = readAllRenderSrc();
   const appSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'app.js'), 'utf8');
@@ -8937,6 +8956,7 @@ function main(){
   runTest('no toast-only fake features remain (Water/Apple Health/Notifications/Calendar/duplicate Meal search)', function(){ testNoToastOnlyFakeFeaturesRemain(); });
   runTest('Log screen is a search-and-add picker: applyLogPickerAdd() reuses the meal-extras funnel', function(){ testLogScreenIsSearchAndAddPicker(ctx); });
   runTest('Log screen plan-mirror dead code stays deleted', function(){ testLogScreenDeadCodeRemoved(); });
+  runTest('go() highlights the owning tab for non-tab screens', function(){ testGoTabHighlightMapping(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('diet preferences: per-diet exclude/permit matrix + plant-milk trap', function(){ testDietFilterSemantics(ctx); });
   runTest('diet preferences: optionGroups any-variant conservatism', function(){ testDietOptionGroupsConservatism(ctx); });
