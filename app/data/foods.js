@@ -650,7 +650,7 @@ const FOODS = {
   'peanut-butter': {
     name: 'Peanut butter, smooth', per: 100, unit: 'g',
     kcal: 628, protein: 25.0, carbs: 20.0, fat: 50.0, satFat: 10.0, fiber: 6.0, sugars: 9.0, freeSugars: 4.0, sugarQuality: 'mixed',
-    flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 172470-style (peanut butter, smooth); kcal per 4/4/9'
+    flags: ['highFiber'], cat: 'Pantry', iconKey: 'peanut-butter', src: 'USDA FDC 172470-style (peanut butter, smooth); kcal per 4/4/9'
   },
   'ginger': {
     name: 'Ginger, fresh', per: 100, unit: 'g',
