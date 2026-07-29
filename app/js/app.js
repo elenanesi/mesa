@@ -454,35 +454,6 @@ function maybeShowOnboarding(){
   }
 }
 
-// Replays today's persisted plan-first log status (state.js: logHistory/slotLogStatus)
-// onto the cards renderLogPlan() just built fresh from the active menu. Called from the
-// END of every renderLogPlan() run (task C2 — confirms survive plan re-renders within the
-// same day, not just boot) — silent:true suppresses the confirm/skip toast AND the
-// re-log (state.js:logConfirm skips logPlanEntry when silent, since the entry is already
-// in logHistory — replaying must never rewrite it with whatever's in activeMenu right
-// now). FIX 1 (feedback): breakfast is a normal meal now — replayed here exactly like
-// every other slot (the old auto-log path, ensureTodayBreakfastLogged, is gone).
-function restoreTodayLog(){
-  const dateISO = (typeof currentLogDateISO === 'function') ? currentLogDateISO() : todayISO();
-  SLOT_ORDER.forEach(function(slot){
-    const status = slotLogStatus(dateISO, currentProf, slot);
-    if(status === 'confirmed'){
-      const entry = getDayLog(dateISO)[currentProf].find(function(e){ return e.kind === 'plan' && e.slot === slot; });
-      const r = entry && RECIPES_DB[entry.ref];
-      const card = document.getElementById('log-' + slot);
-      if(card && r){
-        const t = card.querySelector('.t'); if(t) t.textContent = r.title;
-        const th = card.querySelector('.thumb'); if(th) th.textContent = r.emoji;
-      }
-      if(r){ TITLES[slot] = r.title; EMOJI[slot] = r.emoji; }
-      if(entry) LOGKCAL[slot] = Math.round(logEntryNutrition(entry).kcal);
-      logConfirm(slot, true);
-    } else if(status === 'skipped'){
-      logSkip(slot, true);
-    }
-  });
-}
-
 /* ---------------- today header (real date + time-aware greeting) ---------------- */
 // The mockup shipped a hardcoded "Monday · 29 Jun". Both lines derive from the device
 // clock at render time; refreshed on every applyProf() (cheap) so a day rollover while
@@ -535,8 +506,9 @@ function bootSkip(name, reason){
 // all loaded, and before anything reads RECIPES_DB — see render.js's recipeDisplay*
 // helpers for how the recipe screen/Today cards read it directly (no compat view).
 // applyProf() -> ensureWeekPlan() (planner.js) either keeps the persisted weekPlan (same
-// signature + same week) or regenerates it deterministically, then persists; it also
-// runs renderLogPlan(), which replays today's persisted confirms via restoreTodayLog().
+// signature + same week) or regenerates it deterministically, then persists; it also runs
+// renderTodayCardActions() (via renderTodayMeals()), which re-derives Today's confirm/skip
+// state fresh from logHistory/slotLogStatus every call — no boot-time "replay" step needed.
 function bootMesaApp(){
   try{
     loadState();

@@ -4546,12 +4546,16 @@ function testRefreshAfterLogChangeRendersWeekOnce(){
    drifted apart" batch: (a) library.js:openAddMenu()'s "Log food" row must navigate to the
    #log screen (go('log')) instead of opening the old openFoodSearch() bottom sheet — the
    Log screen is now the one canonical "log food" destination; (b) render-today.js's
-   renderTodayCardActions() (Today pending cards) and buildLogSlotCard() (Log cards) must
-   both build their pending-state buttons through the ONE shared render.js helper
-   (mealActionButtonHtml) instead of hand-rolled markup, so the two screens can't visually
-   drift again; (c) index.html must not contain any onclick="toast(...)" button/row left over
-   — every fake "connect (demo)" feature (Apple Health/Notifications/Calendar/Water/duplicate
-   Meal search) that only fired a toast with zero state change was deleted. */
+   renderTodayCardActions() (Today pending cards) must build its pending-state buttons
+   through the shared render.js helper (mealActionButtonHtml) instead of hand-rolled markup;
+   (c) index.html must not contain any onclick="toast(...)" button/row left over — every fake
+   "connect (demo)" feature (Apple Health/Notifications/Calendar/Water/duplicate Meal search)
+   that only fired a toast with zero state change was deleted.
+   Later batch (owner feedback, "the Log screen shouldn't mirror the whole day's plan"): the
+   Log screen stopped being a second copy of the four meal cards — buildLogSlotCard() and its
+   'add'-kind mealActionButtonHtml() variant were deleted outright (see
+   testLogScreenIsSearchAndAddPicker below for that batch's own coverage), so this test only
+   asserts the half of the old guarantee that's still real: Today's pending row. */
 function testOpenAddMenuRoutesToLogScreen(){
   const librarySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
   const m = librarySrc.match(/function openAddMenu\(\)\{[\s\S]*?\n\}\n/);
@@ -4602,27 +4606,20 @@ function testMealActionButtonHelperSharedByBothScreens(ctx){
   assert(todayFn.indexOf('event.stopPropagation()') !== -1,
     'renderTodayCardActions(): pending buttons still stop propagation (unchanged behaviour)', todayFn);
 
-  const logFn = fnBody('buildLogSlotCard');
-  assert(logFn.length > 0, 'setup: buildLogSlotCard() function body found in render-today.js', 'not found');
-  const logCalls = (logFn.match(/mealActionButtonHtml\(/g) || []).length;
-  assert(logCalls >= 3,
-    'buildLogSlotCard(): builds its Confirm/Swap/Skip buttons through the SAME shared mealActionButtonHtml() helper as Today',
-    'found ' + logCalls + ' call(s) in: ' + logFn);
-  assert(logFn.indexOf("mealActionButtonHtml('log'") !== -1, 'buildLogSlotCard(): confirm/log button uses kind \'log\' (same component as Today)', logFn);
-  assert(logFn.indexOf("mealActionButtonHtml('swap'") !== -1, 'buildLogSlotCard(): swap button uses kind \'swap\' (same component as Today)', logFn);
-  assert(logFn.indexOf("mealActionButtonHtml('skip'") !== -1, 'buildLogSlotCard(): skip button uses kind \'skip\' (same component as Today)', logFn);
-  // The new add/edit variant is Log-only (Today's pending row never showed add/edit) but
-  // must still go through the shared helper, picking the +/✎ glyph from hasExtras.
-  assert(logFn.indexOf("mealActionButtonHtml('add'") !== -1, 'buildLogSlotCard(): add/edit button uses the new shared kind \'add\'', logFn);
-  // The serving stepper (.sv-stepper) is a real Log-only feature, not a duplicated action —
-  // must survive untouched, still gated on canEditSelectedDate like before.
-  assert(logFn.indexOf('sv-stepper') !== -1, 'buildLogSlotCard(): keeps its serving stepper (.sv-stepper) — a real Log-only feature', logFn);
-  assert(logFn.indexOf('stepMealServings(') !== -1, 'buildLogSlotCard(): serving stepper still wired to stepMealServings()', logFn);
-
-  // Dead text-button classes (.la-confirm/.la-swap/.la-skip) must no longer be emitted by
-  // either JS file now that both routes go through the icon components.
+  // Dead text-button classes (.la-confirm/.la-swap/.la-skip) must no longer be emitted —
+  // pre-existing regression guard from before mealActionButtonHtml existed at all.
   assert(renderSrc.indexOf('la-confirm') === -1 && renderSrc.indexOf('"la-swap"') === -1 && renderSrc.indexOf('la-skip') === -1,
     'render-today.js no longer emits the old la-confirm/la-swap/la-skip text-button classes', '');
+
+  // The Log-screen mirror is gone (buildLogSlotCard() deleted — see
+  // testLogScreenIsSearchAndAddPicker), and along with it the 'add'-kind glyph variant only
+  // that function ever used. Neither should still exist anywhere.
+  assert(renderSrc.indexOf('function buildLogSlotCard(') === -1,
+    'render-today.js: buildLogSlotCard() (the old Log-screen plan mirror) no longer exists', '');
+  assert(renderSrc.indexOf("mealActionButtonHtml('add'") === -1,
+    'no caller still requests the deleted \'add\' kind from mealActionButtonHtml()', '');
+  assert(renderSrc.indexOf('act-add') === -1,
+    'render-today.js: no leftover .act-add class reference (its only caller, buildLogSlotCard, is gone)', '');
 
   // Live-behaviour sanity check: the helper itself must still produce the documented
   // onclick/aria-label/title contract for an icon-only kind.
@@ -4632,11 +4629,10 @@ function testMealActionButtonHelperSharedByBothScreens(ctx){
   assert(html.indexOf('title="Skip"') !== -1, 'mealActionButtonHtml(\'skip\', …): keeps the title attribute', html);
   assert(html.indexOf("logSkip('lunch')") !== -1, 'mealActionButtonHtml(\'skip\', …): preserves the exact onclick handler passed in', html);
 
-  const addNoExtras = call(ctx, 'mealActionButtonHtml', ['add', {onclick: "x()", ariaLabel: 'Add to Lunch', title: 'Add', hasExtras: false}]);
-  const addWithExtras = call(ctx, 'mealActionButtonHtml', ['add', {onclick: "x()", ariaLabel: 'Edit Lunch', title: 'Edit', hasExtras: true}]);
-  assert(addNoExtras.indexOf('＋') !== -1, 'mealActionButtonHtml(\'add\', {hasExtras:false}): shows the ＋ glyph', addNoExtras);
-  assert(addWithExtras.indexOf('✎') !== -1, 'mealActionButtonHtml(\'add\', {hasExtras:true}): shows the ✎ glyph', addWithExtras);
-  assert(addNoExtras.indexOf('class="meal-act-btn act-add"') !== -1, 'mealActionButtonHtml(\'add\', …): renders the new .meal-act-btn.act-add variant', addNoExtras);
+  // 'add' is no longer a recognized kind — the helper returns '' for it now, same as any
+  // other unrecognized kind string (see the trailing `return ''` in mealActionButtonHtml).
+  const addResult = call(ctx, 'mealActionButtonHtml', ['add', {onclick: "x()", ariaLabel: 'Add to Lunch', title: 'Add'}]);
+  assert(addResult === '', 'mealActionButtonHtml(\'add\', …): the deleted kind now falls through to the empty-string default', addResult);
 }
 
 function testNoToastOnlyFakeFeaturesRemain(){
@@ -4649,18 +4645,256 @@ function testNoToastOnlyFakeFeaturesRemain(){
     'index.html: the "Connections" jump-nav chip is removed too — no dead link in the chip bar', '');
   assert(indexHtml.indexOf('💧') === -1,
     'index.html: the Water quick-log button (no hydration model anywhere in the codebase) is deleted', '');
-  // "Meal" was byte-identical to "Search" (both called openFoodSearch()) — only one survives.
-  const moreWaysMatch = indexHtml.match(/More ways to log[\s\S]*?<div class="quick">[\s\S]*?<\/div>/);
-  assert(!!moreWaysMatch, 'setup: Log screen "More ways to log" quick grid found', '');
-  const grid = moreWaysMatch ? moreWaysMatch[0] : '';
-  const searchButtons = (grid.match(/openFoodSearch\(\)/g) || []).length;
-  assert(searchButtons === 1,
-    'Log screen "More ways to log" grid: exactly one openFoodSearch() button remains (duplicate "Meal" button deleted, "Search" kept)',
-    'found ' + searchButtons + ' in: ' + grid);
+  // The Log screen's own search box replaced the "Search" shortcut (owner feedback: the old
+  // screen mirrored the whole day's plan back at the user — see testLogScreenIsSearchAndAddPicker
+  // for that batch's own coverage). Scope to just the <div class="quick">...</div> button grid
+  // (not the whole "More ways to log" section, which now also contains an explanatory HTML
+  // comment that legitimately mentions openFoodSearch() by name) so this can't false-pass on
+  // prose the way a wider match would.
+  const gridMatch = indexHtml.match(/<div class="quick">\s*<button onclick="openBarcodeScanner\(\)"[\s\S]*?<\/div>/);
+  assert(!!gridMatch, 'setup: Log screen "More ways to log" quick grid found', '');
+  const grid = gridMatch ? gridMatch[0] : '';
+  assert(grid.indexOf('openFoodSearch()') === -1,
+    'Log screen "More ways to log" grid: no button still opens the deleted openFoodSearch() sheet',
+    grid);
+  ['openBarcodeScanner()', 'openFoodLibrary()', 'openMyRecipes()'].forEach(function(needle){
+    assert(grid.indexOf(needle) !== -1, 'Log screen "More ways to log" grid: ' + needle + ' shortcut kept', grid);
+  });
 
   const renderProfileSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-profile.js'), 'utf8');
   assert(renderProfileSrc.indexOf('sec-connections') === -1,
     'render-profile.js: no leftover reference to the deleted sec-connections section', '');
+}
+
+/* ---------------- Log screen is a search-and-add picker, not a plan mirror ----------------
+   Owner feedback: "I don't want to see the full today's plan anymore ... clicking log food
+   should simply let you pick a recipe or ingredient to add to the daily plan." The four
+   per-slot "Today's plan" cards (buildLogSlotCard) are gone; render-today.js's
+   applyLogPickerAdd(dateISO, slot, kind, id, amount, person) is the new picker's actual
+   write path — split out DOM-free from its UI wrapper commitLogPickerAdd(), the same way
+   planner.js's applySwap()/chooseSwap() are split, specifically so it can be exercised here.
+   It goes through the SAME addExtraRecipeToMeal()/addExtraFoodToMeal() funnel
+   chooseMealExtraRecipe()/chooseMealExtraFood() (openAddMealRecipeSheet's callees) use —
+   this suite proves that funnel reuse, not a second write path. */
+function testLogScreenIsSearchAndAddPicker(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
+
+  function freshPlan(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+    run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+    const plan = call(ctx, 'ensureWeekPlan', []);
+    // Same "strip any auto-composed extras first" precaution testMealExtras' freshPlan()
+    // uses — this suite's "starts with no extras" assumptions must hold regardless of which
+    // unit the planner composed onto lunch/dinner this run.
+    run(ctx, "['lunch','dinner'].forEach(function(slot){ var m = weekPlans['" + plan.weekStartDate + "'].days[0].meals[slot]; delete m.elena.extras; delete m.partner.extras; });");
+    return plan.weekStartDate;
+  }
+
+  // (a) recipe add, today, unlogged slot — lands as a plan extra on the acting person,
+  // through addExtraRecipeToMeal() exactly like chooseMealExtraRecipe().
+  (function(){
+    const wk = freshPlan();
+    const result = call(ctx, 'applyLogPickerAdd', [FIXED_MONDAY, 'lunch', 'recipe', 'yogurt', 1, 'elena']);
+    assert(!!result && result.title === RECIPES_DB.yogurt.title && result.logged === false,
+      'applyLogPickerAdd (recipe, unlogged): returns {title, logged:false}', JSON.stringify(result));
+    const entry = get(ctx, 'weekPlans')[wk].days[0].meals.lunch.elena;
+    assert(Array.isArray(entry.extras) && entry.extras.length === 1 && entry.extras[0].recipeId === 'yogurt' && entry.extras[0].portion === 1,
+      'applyLogPickerAdd (recipe): appends {recipeId, portion} to the plan cell exactly like chooseMealExtraRecipe',
+      JSON.stringify(entry.extras));
+  })();
+
+  // (b) food add, today, unlogged slot — lands as a plan extra with the picked grams.
+  (function(){
+    const wk = freshPlan();
+    const result = call(ctx, 'applyLogPickerAdd', [FIXED_MONDAY, 'breakfast', 'food', 'spinach', 75, 'elena']);
+    assert(!!result && result.title === FOODS.spinach.name,
+      'applyLogPickerAdd (food, unlogged): returns {title}', JSON.stringify(result));
+    const entry = get(ctx, 'weekPlans')[wk].days[0].meals.breakfast.elena;
+    assert(Array.isArray(entry.extras) && entry.extras.length === 1 && entry.extras[0].foodId === 'spinach' && entry.extras[0].grams === 75,
+      'applyLogPickerAdd (food): appends {foodId, grams} to the plan cell exactly like chooseMealExtraFood',
+      JSON.stringify(entry.extras));
+  })();
+
+  // (c) a non-default recipe portion (2x, picked in the "how much" step) follows up through
+  // setExtraRecipePortion() — the SAME "set portion" funnel the sheet's own stepper uses,
+  // not a hand-set field.
+  (function(){
+    const wk = freshPlan();
+    call(ctx, 'applyLogPickerAdd', [FIXED_MONDAY, 'dinner', 'recipe', 'yogurt', 2, 'elena']);
+    const entry = get(ctx, 'weekPlans')[wk].days[0].meals.dinner.elena;
+    assert(!!entry.extras && entry.extras[0].portion === 2,
+      'applyLogPickerAdd (recipe, portion 2): the follow-up setExtraRecipePortion() call lands', JSON.stringify(entry.extras));
+  })();
+
+  // (d) already-confirmed slot — the picker must correct BOTH the live logHistory entry
+  // (what "Today so far" actually shows) AND the plan cell, same dual-write
+  // chooseMealExtraRecipe()/stepMealExtraPortion() perform for an already-logged meal, not
+  // just one side of it.
+  (function(){
+    const wk = freshPlan();
+    const lunchEntry = get(ctx, 'weekPlans')[wk].days[0].meals.lunch.elena;
+    call(ctx, 'logPlanEntry', [FIXED_MONDAY, 'elena', 'lunch', lunchEntry.recipeId, lunchEntry.portion, call(ctx, 'planEntryComponents', [lunchEntry])]);
+    assert(call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'lunch']) === 'confirmed', 'setup: lunch is confirmed for today', '');
+    const result = call(ctx, 'applyLogPickerAdd', [FIXED_MONDAY, 'lunch', 'recipe', 'yogurt', 1, 'elena']);
+    assert(!!result && result.logged === true, 'applyLogPickerAdd on an already-confirmed slot: reports logged:true', JSON.stringify(result));
+    const logged = get(ctx, 'logHistory')[FIXED_MONDAY].elena.find(function(e){ return e.kind === 'plan' && e.slot === 'lunch'; });
+    const loggedRecipeIds = (logged.components || []).map(function(c){ return c.recipeId; });
+    assert(loggedRecipeIds.indexOf('yogurt') !== -1,
+      'applyLogPickerAdd on a confirmed slot: mirrors the extra into the LIVE logHistory entry (addExtraToLoggedMeal), not just the plan',
+      JSON.stringify(logged));
+    const planEntryAfter = get(ctx, 'weekPlans')[wk].days[0].meals.lunch.elena;
+    assert(Array.isArray(planEntryAfter.extras) && planEntryAfter.extras.some(function(x){ return x.recipeId === 'yogurt'; }),
+      'applyLogPickerAdd on a confirmed slot: ALSO writes the plan cell (so a later swap/undo/re-confirm cannot silently drop it)',
+      JSON.stringify(planEntryAfter.extras));
+  })();
+
+  // (e) unknown id — a safe no-op, not a toast-only fake success.
+  (function(){
+    freshPlan();
+    const result = call(ctx, 'applyLogPickerAdd', [FIXED_MONDAY, 'lunch', 'recipe', 'not-a-real-recipe', 1, 'elena']);
+    assert(result === null, 'applyLogPickerAdd: returns null for an unknown recipe id (no partial/fake write)', JSON.stringify(result));
+  })();
+
+  // (f) Yesterday targets YESTERDAY's own date/week, never today's — the Log screen's
+  // Today/Yesterday toggle exists specifically so "correcting yesterday without touching
+  // today" (README) stays a real, isolated feature of the picker too, not just the old
+  // per-slot confirm/skip cards.
+  (function(){
+    const wk = freshPlan(); // FIXED_MONDAY's own week
+    const yesterdayISO = call(ctx, 'addDaysISO', [FIXED_MONDAY, -1]); // Sunday of the PREVIOUS week
+    const prevMonday = call(ctx, 'mondayOfWeek', [yesterdayISO]);
+    assert(prevMonday !== wk, 'test setup: yesterday resolves to a different week than today (Monday fixture)', 'prevMonday=' + prevMonday + ' wk=' + wk);
+    call(ctx, 'ensureWeekPlan', [prevMonday]);
+    const result = call(ctx, 'applyLogPickerAdd', [yesterdayISO, 'snack', 'food', 'spinach', 40, 'elena']);
+    assert(!!result, 'applyLogPickerAdd (Yesterday): succeeds against last week\'s plan', JSON.stringify(result));
+    const yEntry = get(ctx, 'weekPlans')[prevMonday].days[6].meals.snack.elena;
+    assert(Array.isArray(yEntry.extras) && yEntry.extras.some(function(x){ return x.foodId === 'spinach' && x.grams === 40; }),
+      'applyLogPickerAdd (Yesterday): the write lands on YESTERDAY\'s own day (days[6], last week\'s Sunday), not today\'s',
+      JSON.stringify(yEntry.extras));
+    const todayEntry = get(ctx, 'weekPlans')[wk].days[0].meals.snack.elena;
+    assert(!(Array.isArray(todayEntry.extras) && todayEntry.extras.some(function(x){ return x.foodId === 'spinach'; })),
+      'applyLogPickerAdd (Yesterday): does NOT also touch today\'s own snack slot', JSON.stringify(todayEntry.extras));
+  })();
+
+  // (g) Today's card buttons write to TODAY even while the Log screen is left on Yesterday.
+  // selectedLogDateISO is a module-level global that survives navigation, so before
+  // logConfirm/logSkip took an explicit date, tapping a Today card's log button after
+  // visiting Log in Yesterday mode wrote the entry to YESTERDAY while the card kept
+  // rendering (and re-reading) today's status via slotLogStatus(todayISO()) — the display
+  // and the write silently disagreed.
+  (function(){
+    freshPlan();
+    const yesterdayISO = call(ctx, 'addDaysISO', [FIXED_MONDAY, -1]);
+    call(ctx, 'ensureWeekPlan', [call(ctx, 'mondayOfWeek', [yesterdayISO])]);
+    // logConfirm/logSkip are the DOM-touching wrappers (toast, ring, card repaint) and this
+    // suite deliberately runs without a document double — stub just the render side so the
+    // assertions below can exercise the real date-routing logic. Top-level `function`
+    // declarations are writable context properties, so these restore cleanly; a `let`
+    // binding would NOT (see testMealShareOverride's leak, fixed in the diets batch).
+    const domFns = ['toast', 'refreshRingAndBars', 'updateLogTotalPill', 'renderTodaySoFar', 'renderTodayRecords', 'renderTodayCardActions', 'persist'];
+    const savedFns = {};
+    domFns.forEach(function(f){ savedFns[f] = ctx[f]; run(ctx, f + ' = function(){};'); });
+    // logConfirm/logSkip write to the currentProf global (unlike applyLogPickerAdd, which
+    // takes its person explicitly) — pin it so an earlier test leaving it on 'partner'
+    // can't make these assertions read an empty 'elena' log and look like a routing bug.
+    const savedProf = get(ctx, 'currentProf');
+    run(ctx, "currentProf = 'elena';");
+    run(ctx, 'selectedLogDateISO = ' + JSON.stringify(yesterdayISO) + ';'); // Log screen left on "Yesterday"
+    assert(call(ctx, 'currentLogDateISO', []) === yesterdayISO, 'test setup: Log screen is on Yesterday', call(ctx, 'currentLogDateISO', []));
+
+    call(ctx, 'logConfirm', ['lunch', FIXED_MONDAY]); // what a Today card button now passes
+    assert(call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'lunch']) === 'confirmed',
+      'logConfirm(slot, todayISO()): logs to TODAY even while the Log screen is set to Yesterday',
+      String(call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'lunch'])));
+    assert(call(ctx, 'slotLogStatus', [yesterdayISO, 'elena', 'lunch']) === null,
+      'logConfirm(slot, todayISO()): does NOT write to the Log screen\'s selected Yesterday',
+      String(call(ctx, 'slotLogStatus', [yesterdayISO, 'elena', 'lunch'])));
+
+    call(ctx, 'logSkip', ['dinner', FIXED_MONDAY]);
+    assert(call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'dinner']) === 'skipped',
+      'logSkip(slot, todayISO()): skips TODAY, not the Log screen\'s selected Yesterday',
+      String(call(ctx, 'slotLogStatus', [FIXED_MONDAY, 'elena', 'dinner'])));
+    assert(call(ctx, 'slotLogStatus', [yesterdayISO, 'elena', 'dinner']) === null,
+      'logSkip(slot, todayISO()): leaves Yesterday untouched',
+      String(call(ctx, 'slotLogStatus', [yesterdayISO, 'elena', 'dinner'])));
+
+    // The default (no explicit date) still follows the Log screen's own selection — that is
+    // what the picker and the Yesterday-correction flow rely on.
+    call(ctx, 'logConfirm', ['snack']);
+    assert(call(ctx, 'slotLogStatus', [yesterdayISO, 'elena', 'snack']) === 'confirmed',
+      'logConfirm(slot) with no date: still follows the Log screen\'s Yesterday selection',
+      String(call(ctx, 'slotLogStatus', [yesterdayISO, 'elena', 'snack'])));
+
+    run(ctx, 'selectedLogDateISO = todayISO();'); // restore for later tests
+    run(ctx, 'currentProf = ' + JSON.stringify(savedProf) + ';');
+    domFns.forEach(function(f){ ctx[f] = savedFns[f]; });
+  })();
+
+  run(ctx, 'logHistory = {}; weekPlans = {}; weekPlan = null;'); // don't leak fixture days/plans into later tests
+}
+
+/* ---------------- Log-screen-mirror dead code stays deleted ----------------
+   Source-grep guard, same style as readAllRenderSrc()'s other wiring tests: every symbol
+   the "delete the plan mirror" batch removed (buildLogSlotCard and its four #log-* cards,
+   openLogSwap/logDateSwapContext, appendTagRow, logSlotView/logMenu, restoreTodayLog,
+   EMOJI/TITLES/LOGKCAL, the old renderLogPlan() name, stepMealServings, the old
+   openFoodSearch() quick-add-without-a-slot sheet, and the 'add' kind's .act-add CSS) must
+   never quietly reappear, and every call site must have moved to the new names. */
+function testLogScreenDeadCodeRemoved(){
+  const renderSrc = readAllRenderSrc();
+  const appSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'app.js'), 'utf8');
+  const stateSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'state.js'), 'utf8');
+  const plannerSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'planner.js'), 'utf8');
+  const cssSrc = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+
+  [
+    ['function buildLogSlotCard(', renderSrc, 'render*.js'],
+    ['function openLogSwap(', renderSrc, 'render*.js'],
+    ['function logDateSwapContext(', renderSrc, 'render*.js'],
+    ['function appendTagRow(', renderSrc, 'render*.js'],
+    ['function logSlotView(', renderSrc, 'render*.js'],
+    ['function renderLogPlan(', renderSrc, 'render*.js'],
+    ['let logMenu', renderSrc, 'render*.js'],
+    ['function openFoodSearch(', renderSrc, 'render*.js'],
+    ['function confirmQuickAdd(', renderSrc, 'render*.js'],
+    ['function buildFoodSearchSheet(', renderSrc, 'render*.js'],
+    ['function buildGramsStepperSheet(', renderSrc, 'render*.js'],
+    ['let quickAdd ', renderSrc, 'render*.js'],
+    ['function stepMealServings(', plannerSrc, 'planner.js'],
+    ['function restoreTodayLog(', appSrc, 'app.js'],
+    ['const EMOJI = {}', stateSrc, 'state.js'],
+    ['const TITLES = {}', stateSrc, 'state.js'],
+    ['const LOGKCAL = {}', stateSrc, 'state.js']
+  ].forEach(function(row){
+    assert(row[1].indexOf(row[0]) === -1, 'dead-code guard: "' + row[0] + '" no longer exists in ' + row[2], '');
+  });
+
+  assert(indexHtml.indexOf('id="log-breakfast"') === -1 && indexHtml.indexOf('id="log-lunch"') === -1
+      && indexHtml.indexOf('id="log-dinner"') === -1 && indexHtml.indexOf('id="log-snack"') === -1,
+    'dead-code guard: index.html no longer has the four #log-* plan-mirror cards', '');
+  assert(indexHtml.indexOf('id="logPlanTitle"') === -1, 'dead-code guard: index.html no longer has #logPlanTitle', '');
+  assert(indexHtml.indexOf('id="logSearchInput"') !== -1 && indexHtml.indexOf('id="logSearchResults"') !== -1,
+    'setup: the new picker\'s search input/results containers exist in index.html', '');
+
+  assert(cssSrc.indexOf('.act-add') === -1, 'dead-code guard: .meal-act-btn.act-add CSS no longer exists', '');
+  assert(cssSrc.indexOf('.logactions') === -1, 'dead-code guard: .logactions CSS no longer exists', '');
+
+  assert(renderSrc.indexOf('function renderLogScreen(') !== -1, 'setup: renderLogScreen() (renderLogPlan()\'s rename) is defined', '');
+  assert(renderSrc.indexOf('function applyLogPickerAdd(') !== -1, 'setup: applyLogPickerAdd() (the picker\'s DOM-free write path) is defined', '');
+
+  // A leftover call to the old renderLogPlan() name anywhere would be a silent runtime
+  // ReferenceError the next time that code path ran — check every app/js/*.js file, not
+  // just the render* subset readAllRenderSrc() covers (planner.js/app.js/log.js also had
+  // call sites before this batch).
+  const allJsSrc = fs.readdirSync(path.join(APP_DIR, 'js')).filter(function(f){ return f.endsWith('.js'); })
+    .map(function(f){ return fs.readFileSync(path.join(APP_DIR, 'js', f), 'utf8'); }).join('\n');
+  // The literal no-arg call shape every real call site used — narrower than a bare
+  // 'renderLogPlan(' substring so this doesn't also trip on the handful of doc comments that
+  // legitimately still say "the old renderLogPlan()" while explaining the rename.
+  assert(allJsSrc.indexOf('renderLogPlan();') === -1, 'dead-code guard: no call site anywhere still calls the old renderLogPlan() name', '');
+  assert(allJsSrc.indexOf('openFoodSearch()') === -1, 'dead-code guard: no call site anywhere still calls the deleted openFoodSearch()', '');
 }
 
 /* ---------------- escaping helpers (stored-XSS hardening) ----------------
@@ -8158,8 +8392,10 @@ function main(){
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('openAddMenu "Log food" routes to the Log screen', function(){ testOpenAddMenuRoutesToLogScreen(); });
-  runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today and Log', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });
+  runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today\'s pending row', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });
   runTest('no toast-only fake features remain (Water/Apple Health/Notifications/Calendar/duplicate Meal search)', function(){ testNoToastOnlyFakeFeaturesRemain(); });
+  runTest('Log screen is a search-and-add picker: applyLogPickerAdd() reuses the meal-extras funnel', function(){ testLogScreenIsSearchAndAddPicker(ctx); });
+  runTest('Log screen plan-mirror dead code stays deleted', function(){ testLogScreenDeadCodeRemoved(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
   runTest('diet preferences: per-diet exclude/permit matrix + plant-milk trap', function(){ testDietFilterSemantics(ctx); });
   runTest('diet preferences: optionGroups any-variant conservatism', function(){ testDietOptionGroupsConservatism(ctx); });

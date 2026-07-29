@@ -174,8 +174,8 @@ function upsertLogEntry(dateISO, personKey, entry){
 // Builds + upserts a plan-kind LogEntry from a recipe id + portion, computing every macro
 // fresh via recipeNutrition() (engine.js). Used by logConfirm (first confirm — breakfast
 // included, see FIX 1: breakfast is a normal meal with its own Confirm/Swap/Skip, no more
-// auto-log), by chooseSwap (editing an already-logged slot), by restoreTodayLog's replay
-// guard, and by render.js:weekLogConfirm (B5 catch-up logging from the Week view).
+// auto-log), by chooseSwap (editing an already-logged slot), and by
+// render.js:weekLogConfirm (B5 catch-up logging from the Week view).
 // `opts.tNull` (B5): backdated corrections for a PAST date carry `t: null` (unknown eating
 // time, same as the migrateV1TodayLog precedent) instead of the real clock time — passed as
 // a trailing opts argument rather than mutating the entry after the fact, so
@@ -220,11 +220,11 @@ function markSlotSkipped(dateISO, personKey, slot){
 }
 
 // FIX 2 (feedback) — undo paths. Removing a slot's plan entry (and clearing any skipped
-// flag) sends slotLogStatus() back to null, which is exactly what restores the card's
-// Confirm/Swap/Skip actions on the next renderLogPlan(). Pure logHistory mutations:
-// every surface (Today ring/macros, Log pill, "Today so far", Insights) re-derives from
-// logHistory, so callers just re-render + persist() afterwards (same convention as every
-// other mutator in this file).
+// flag) sends slotLogStatus() back to null, which is exactly what restores the Today
+// card's Confirm/Swap/Skip actions on the next renderTodayCardActions() repaint. Pure
+// logHistory mutations: every surface (Today ring/macros, Log pill, "Today so far",
+// Insights) re-derives from logHistory, so callers just re-render + persist() afterwards
+// (same convention as every other mutator in this file).
 // Task S1 (couple sync): records a tombstone for whatever this actually undid — a
 // confirmed plan entry ('plan:'+slot) and/or a skipped flag ('skip:'+slot) — so the undo
 // propagates to the other phone instead of the other side's still-standing copy quietly
@@ -276,9 +276,9 @@ function setLogEntryEatenOut(dateISO, personKey, index, value){
   return entry;
 }
 
-// 'confirmed' | 'skipped' | null — drives the Log screen's per-slot restore (app.js:
-// restoreTodayLog) and lets chooseSwap (planner.js) know whether a swapped slot needs its
-// log entry corrected in place.
+// 'confirmed' | 'skipped' | null — drives the Today screen's per-slot action row
+// (render-today.js:renderTodayCardActions) and lets chooseSwap (planner.js) know whether a
+// swapped slot needs its log entry corrected in place.
 function slotLogStatus(dateISO, personKey, slot){
   const day = getDayLog(dateISO);
   if(day[personKey].some(function(e){ return e.kind === 'plan' && e.slot === slot; })) return 'confirmed';

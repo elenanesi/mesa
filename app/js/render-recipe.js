@@ -461,7 +461,7 @@ function refreshAfterRecipeServingOverride(dateISO){
     refreshRingAndBars();
     renderTodayMeals();
   }
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
 }
 
@@ -603,8 +603,8 @@ function markEatenFromRecipe(){
 // logged — it kept reading "Mark as eaten" after the tap, and showed the same un-eaten
 // button when re-opening a recipe that was already confirmed today. This re-derives the
 // CTA's state fresh from slotLogStatus() every call (same source of truth as
-// renderTodayCardActions()/renderLogPlan() — logHistory), so it can never drift from the
-// Today/Log screens. Resolves the slot exactly like markEatenFromRecipe() does; the
+// renderTodayCardActions() — logHistory), so it can never drift from the Today screen.
+// Resolves the slot exactly like markEatenFromRecipe() does; the
 // eaten/skipped tag-row ONLY ever appears for TODAY's plan for the CURRENT person — a
 // recipe opened from a Week row for a different day (recipeDayCtx) or one that isn't
 // today's planned slot for this person keeps the plain button (tapping it now swaps it
@@ -674,6 +674,6 @@ function undoRecipeEatenSlot(slot){
   renderRecipeEatenState();
   renderRecipeMealStrip();
   toast(status === 'confirmed'
-    ? '↺ Un-logged ' + (TITLES[slot] || SLOT_LABEL[slot]) + ' — confirm it again anytime'
+    ? '↺ Un-logged ' + SLOT_LABEL[slot] + ' — confirm it again anytime'
     : '↺ ' + SLOT_LABEL[slot] + ' un-skipped');
 }

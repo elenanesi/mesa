@@ -285,21 +285,27 @@
     <!-- ============ LOG / ADD ============ -->
     <section class="screen" id="log">
       <h1>Log food</h1>
-      <p class="sub">Confirm a planned meal, or correct yesterday without touching today.</p>
+      <p class="sub">Search a recipe or ingredient, pick the meal, add it to the plan.</p>
 
       <div class="seg" id="logDateSeg" style="width:max-content;margin-top:14px">
         <button class="on" onclick="setLogDateMode('today',this)">Today</button>
         <button onclick="setLogDateMode('yesterday',this)">Yesterday</button>
       </div>
 
-      <h2 id="logPlanTitle" style="margin-top:18px">Today's plan</h2>
-
-      <!-- FIX 1 (feedback): breakfast is a normal meal — no pre-set "done" class; all
-           four cards are built identically by renderLogPlan() with Confirm/Swap/Skip. -->
-      <div class="card meal" id="log-breakfast" style="cursor:default"></div>
-      <div class="card meal" id="log-lunch" style="cursor:default"></div>
-      <div class="card meal" id="log-dinner" style="cursor:default"></div>
-      <div class="card meal" id="log-snack" style="cursor:default"></div>
+      <!-- The picker (owner feedback: the old Log screen mirrored the whole day's plan
+           back at the user — "confusing and repetitive"; this replaces it with search +
+           add). ONE box across both recipes and plain ingredients, grouped/badged in the
+           results (render-today.js:renderLogSearchResults) so the two stay visually
+           distinguishable. Deliberately NOT autofocused — README's handoff lessons: never
+           auto-focus a top-level mobile page search, only an explicit picker/sheet where
+           typing is the next action (this box IS that explicit action, but the screen
+           itself is reached from the nav, not a sheet, so it follows the landing-page
+           rule). Tapping a result opens the "which meal + how much" sheet
+           (openLogPickerSheet), which adds through the SAME addExtraRecipeToMeal()/
+           addExtraFoodToMeal() funnel every other "add to a meal" entry point
+           (openAddMealRecipeSheet) uses. -->
+      <input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:14px" type="text" id="logSearchInput" placeholder="Search recipes or ingredients…" oninput="onLogSearchInput(this.value)" autocomplete="off">
+      <div id="logSearchResults" style="margin-top:4px"></div>
 
       <div class="card" style="padding:14px;margin-top:20px">
         <div class="row between"><b style="font-size:14px" id="logSoFarTitle">Today so far</b><span class="pill" id="logTotalPill">400 kcal</span></div>
@@ -317,12 +323,12 @@
       <div class="eyebrow" style="margin-top:24px;display:block">More ways to log</div>
       <!-- FIX 4 (feedback): library shortcuts surfaced here (they were Profile-only and
            hard to find) — same sheets as Profile's "Food library" section (library.js
-           openers). .quick is a 4-column grid, so these 4 buttons fill exactly one row at
-           375px; targets stay >=44px. (Water/duplicate Meal search removed — toast-only
-           demo buttons, no state.) -->
+           openers). The old "Search" shortcut (openFoodSearch()) is gone — the screen
+           itself is the search now, so a second entry point to the same idea was
+           redundant. (Water/duplicate Meal search removed earlier — toast-only demo
+           buttons, no state.) -->
       <div class="quick">
         <button onclick="openBarcodeScanner()"><span class="qi">📷</span>Scan</button>
-        <button onclick="openFoodSearch()"><span class="qi">🔎</span>Search</button>
         <button onclick="openFoodLibrary()"><span class="qi">🧺</span>Ingredients</button>
         <button onclick="openMyRecipes()"><span class="qi">📖</span>My recipes</button>
       </div>

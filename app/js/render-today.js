@@ -1,4 +1,4 @@
-/* render-today.js — today screen, add-meal sheet, log plan, eaten strip, progress, arc popover */
+/* render-today.js — today screen, add-meal sheet, log picker, eaten strip, progress, arc popover */
 function openSwap(mealKey, targetElId){
   // Recipe screen reached from a Week row carries that row's day (recipeDayCtx) —
   // swap THAT day/week, not today. Every other entry point still resolves to today.
@@ -7,16 +7,6 @@ function openSwap(mealKey, targetElId){
     ? {dayIndex: recipeDayCtx.dayIndex, slot: recipeDayCtx.slot, person: recipeDayCtx.person, weekStartDate: recipeDayCtx.weekStartDate}
     : resolveSwapContext(mealKey);
   openSwapSheetForContext(ctx, targetElId);
-}
-
-function logDateSwapContext(slot){
-  const dateISO = currentLogDateISO();
-  const weekStartDate = mondayOfWeek(dateISO);
-  return {dayIndex: diffDaysISO(dateISO, weekStartDate), slot: slot, person: currentProf, weekStartDate: weekStartDate};
-}
-
-function openLogSwap(slot, targetElId){
-  openSwapSheetForContext(logDateSwapContext(slot), targetElId);
 }
 
 // B3: explicit context, mirroring swapCtx/openSwapSheetForContext below — the sheet no
@@ -372,7 +362,7 @@ function chooseMealExtraRecipe(recipeId){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   closeSheet();
@@ -395,7 +385,7 @@ function chooseMealExtraFood(foodId){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
@@ -430,7 +420,7 @@ function removeMealExtraRecipe(recipeId){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
@@ -452,7 +442,7 @@ function removeMealExtraFood(foodId){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
@@ -588,7 +578,7 @@ function stepMealExtraPortion(recipeId, delta){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
@@ -625,7 +615,7 @@ function stepMealExtraFoodGrams(foodId, delta){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
@@ -633,7 +623,6 @@ function stepMealExtraFoodGrams(foodId, delta){
 
 /* ---------------- log / plan-first confirm (task D1: writes real LogEntrys) ---------------- */
 let selectedLogDateISO = todayISO();
-let logMenu = null;
 
 function currentLogDateISO(){
   return selectedLogDateISO || todayISO();
@@ -648,7 +637,7 @@ function setLogDateMode(mode, el){
   const seg = document.getElementById('logDateSeg');
   if(seg) seg.querySelectorAll('button').forEach(function(b){ b.classList.remove('on'); });
   if(el) el.classList.add('on');
-  renderLogPlan();
+  renderLogScreen();
 }
 
 // Recomputes the "Today so far" kcal pill straight from today's logHistory entries for
@@ -952,14 +941,14 @@ function deleteEditingTodayFood(){
 
 // FIX 2 (feedback): one refresh funnel for every undo/remove — everything below derives
 // from logHistory, so this is all that's needed for full parity across Today (ring/
-// macros/fat line), Log (cards, pill, "Today so far") and Insights (which repaints from
-// logHistory on next visit via go()).
+// macros/fat line), Log (search results, pill, "Today so far") and Insights (which repaints
+// from logHistory on next visit via go()).
 function refreshAfterLogChange(){
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan(); // rebuilds cards + replays statuses, then updates pill + "Today so far"
+  renderLogScreen(); // updates the Log screen's search box/results, pill and "Today so far"
   renderTodayRecords();
   renderBeverageCounts();
   if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // keep Today cards in sync only when editing today
@@ -976,13 +965,13 @@ function refreshAfterLogChange(){
 
 /* ---------------- FIX 1 (feedback): Confirm/Skip directly on the Today cards ----------------
    Owner: "lo skip si vede solo se clicco su '+', ma non in 'today'" — the four Today cards
-   only opened the recipe before. This paints a compact action row into each card, driven
-   by the EXACT SAME funnel the Log screen uses (logConfirm/logSkip/undoLogSlot,
-   slotLogStatus — logHistory is the one source of truth), so Today and Log can never
-   disagree: whichever screen you tap on, both re-derive from the same state.
+   only opened the recipe before. This paints a compact action row into each card, driven by
+   logConfirm/logSkip/undoLogSlot against slotLogStatus (logHistory is the one source of
+   truth) — the Log screen is a search-and-add picker now, not a second mirror of these same
+   four slots, so this is the only place that paints per-slot confirm/skip state.
    Re-derives all four slots fresh from slotLogStatus() every call (cheap — 4 lookups), so
-   it's safe to call after ANY log-affecting action regardless of which surface triggered
-   it (Today tap, Log tap, Undo, swap, profile switch, rebalance…) without tracking which
+   it's safe to call after ANY log-affecting action regardless of which surface triggered it
+   (Today tap, a picker add, Undo, swap, profile switch, rebalance…) without tracking which
    slot changed. */
 const TODAY_CARD_ACTION_EL = {breakfast: 'taBreakfast', lunch: 'taLunch', dinner: 'taDinner', snack: 'taSnack'};
 
@@ -1027,32 +1016,37 @@ function renderTodayCardActions(){
       // Remove any done badge
       var oldBadge = card3 ? card3.querySelector('.done-badge') : null;
       if(oldBadge) oldBadge.remove();
+      // todayISO() passed EXPLICITLY, not left to logConfirm/logSkip's currentLogDateISO()
+      // default — this row renders today's state (slotLogStatus(todayISO()) above), so it
+      // must write to today even when the Log screen is still set to Yesterday. See the doc
+      // on logConfirm below.
       wrap.innerHTML = '<div class="meal-actions-row">'
-        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"')", ariaLabel: 'Skip '+label, title: 'Skip'})
+        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"',todayISO())", ariaLabel: 'Skip '+label, title: 'Skip'})
         + mealActionButtonHtml('swap', {onclick: "event.stopPropagation();openSwap('"+slot+"',null)", ariaLabel: 'Swap '+label, title: 'Swap'})
-        + mealActionButtonHtml('log', {onclick: "event.stopPropagation();logConfirm('"+slot+"')", ariaLabel: 'Log '+label, title: 'Mark as eaten'})
+        + mealActionButtonHtml('log', {onclick: "event.stopPropagation();logConfirm('"+slot+"',todayISO())", ariaLabel: 'Log '+label, title: 'Mark as eaten'})
         + '</div>';
     }
   });
 }
 
-// FIX 2a/2b (feedback): "Undo" on a confirmed or skipped Log card — clears the slot's
-// plan entry / skipped flag (state.js:removeLoggedSlot), which restores the card's
-// Confirm/Swap/Skip actions on the renderLogPlan() rebuild.
+// FIX 2a/2b (feedback): "Undo" on a confirmed or skipped Today card's tag row — clears the
+// slot's plan entry / skipped flag (state.js:removeLoggedSlot), which restores the card's
+// Confirm/Swap/Skip actions on the next renderTodayCardActions() repaint (part of
+// refreshAfterLogChange()'s funnel, called below).
 function undoLogSlot(slot){
   const status = slotLogStatus(currentLogDateISO(), currentProf, slot);
   if(!status) return;
   removeLoggedSlot(currentLogDateISO(), currentProf, slot);
   refreshAfterLogChange();
   toast(status === 'confirmed'
-    ? '↺ Un-logged ' + (TITLES[slot] || SLOT_LABEL[slot]) + ' — confirm it again anytime'
+    ? '↺ Un-logged ' + SLOT_LABEL[slot] + ' — confirm it again anytime'
     : '↺ ' + SLOT_LABEL[slot] + ' un-skipped');
 }
 
 // FIX 2c (feedback): the "Today so far" ✕ — removes one specific entry from today's
 // logHistory. For a plan entry this also restores the matching card's actions (the card
-// state is re-derived from slotLogStatus on the renderLogPlan() rebuild, same path as
-// undoLogSlot — the two stay consistent by construction).
+// state is re-derived from slotLogStatus on the renderTodayCardActions() rebuild, same
+// path as undoLogSlot — the two stay consistent by construction).
 function removeTodayEntry(index){
   const removed = removeLogEntryAt(currentLogDateISO(), currentProf, index);
   if(!removed) return;
@@ -1068,130 +1062,301 @@ function removeTodayEntry(index){
   toast('✕ Removed ' + name + ' (−' + removed.kcal + ' kcal)');
 }
 
-// `silent` is used only by restoreTodayLog() (app.js) replaying a persisted
-// confirm/skip at boot, so reload doesn't re-fire the toast or re-log the entry (it's
-// already in logHistory) for something the user already actioned in a previous session.
-// FIX 2a/2b (feedback): the confirmed/skipped tag is now a ROW — the status text plus an
-// "Undo" ghost button (44px tap target, css .tag-undo) that reverses the action via
-// undoLogSlot(). Shared by logConfirm and logSkip below.
-function appendTagRow(card, slot, tagClass, tagText){
-  const actions = card.querySelector('.logactions'); if(actions) actions.remove();
-  const info = card.querySelector('.info');
-  const row = document.createElement('div');
-  row.className = 'tag-row';
-  const dateISO = currentLogDateISO();
-  const correctionBtns = tagClass === 'confirmed-tag'
-    ? '<button class="tag-undo" onclick="openLogSwap(\''+slot+'\',\'log-'+slot+'\')">↔ Swap</button>'
-      + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\''+slot+'\',\''+jsAttr(dateISO)+'\')">✎ Edit</button>'
-    : '';
-  row.innerHTML = '<span class="'+tagClass+'">'+tagText+'</span>'
-    + '<span class="tag-controls">' + correctionBtns + '<button class="tag-undo" onclick="undoLogSlot(\''+slot+'\')">↺ Undo</button></span>';
-  info.appendChild(row);
-}
-
-function logConfirm(key, silent){
-  const card = document.getElementById('log-' + key);
-  if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
-  card.classList.add('done');
-  appendTagRow(card, key, 'confirmed-tag', silent ? '✓ Logged · earlier today' : '✓ Logged · just now');
-
-  if(!silent){
-    const v = (logMenu || computeMenuForDate(currentLogDateISO(), currentProf))[key];
-    logPlanEntry(currentLogDateISO(), currentProf, key, v.recipeId, v.portion, v.components);
-    toast('✓ Logged to ' + logDateLabel().toLowerCase());
-  }
+// Confirm/skip a plan slot — the Today screen's pending-card Log/Skip buttons
+// (renderTodayCardActions) are the only callers now that the Log screen no longer mirrors
+// the daily plan as its own cards. Both re-derive every visible surface fresh from
+// logHistory afterward (renderTodayCardActions re-reads slotLogStatus() on its own, so no
+// DOM "replay" step is needed here the way the old Log-card mirror required).
+// dateISO (optional) — WHICH day this confirm/skip writes to. Defaults to
+// currentLogDateISO() for callers that legitimately follow the Log screen's Today/Yesterday
+// selection. The Today screen must pass todayISO() EXPLICITLY: selectedLogDateISO is a
+// module-level global that survives navigation, so leaving Log set to "Yesterday" and then
+// tapping a Today card's log button wrote the entry to yesterday while the card was showing
+// (and re-reading) today's status via renderTodayCardActions' slotLogStatus(todayISO()).
+// The two disagreed silently. Passing the date explicitly is what keeps the surface a
+// button lives on and the day it writes to the same thing.
+function logConfirm(key, dateISO){
+  const date = dateISO || currentLogDateISO();
+  if(slotLogStatus(date, currentProf, key)) return; // already confirmed or skipped
+  const v = computeMenuForDate(date, currentProf)[key];
+  logPlanEntry(date, currentProf, key, v.recipeId, v.portion, v.components);
+  toast('✓ Logged to ' + (date === todayISO() ? 'today' : 'yesterday'));
 
   // Task D1: Today ring/macros/good-sat-fat line and the "Today so far" list all derive
-  // from logHistory — refresh them on every confirm (live tap or silent replay alike).
+  // from logHistory — refresh them on every confirm.
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
   updateLogTotalPill();
   renderTodaySoFar();
   renderTodayRecords();
-  if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // mirror the confirm onto Today cards only for today
+  if(date === todayISO()) renderTodayCardActions(); // mirror the confirm onto Today cards only for today
   persist();
 }
 
-function logSkip(key, silent){
-  const card = document.getElementById('log-' + key);
-  if(!card || card.classList.contains('done') || card.classList.contains('skipped')) return;
-  card.classList.add('skipped');
-  appendTagRow(card, key, 'skipped-tag', 'Skipped for ' + logDateLabel().toLowerCase());
-  if(!silent) toast('Skipped — your plan stays balanced');
+function logSkip(key, dateISO){
+  const date = dateISO || currentLogDateISO();
+  if(slotLogStatus(date, currentProf, key)) return; // already confirmed or skipped
+  toast('Skipped — your plan stays balanced');
 
-  markSlotSkipped(currentLogDateISO(), currentProf, key);
-  if(currentLogDateISO() === todayISO()) renderTodayCardActions(); // mirror the skip onto Today cards only for today
+  markSlotSkipped(date, currentProf, key);
+  if(date === todayISO()) renderTodayCardActions(); // mirror the skip onto Today cards only for today
   persist();
 }
 
-// Builds the four "Today's plan" cards on the Log screen from the active menu (today's
-// row of weekPlan for the current person — kcal/protein are portion-scaled computed
-// values). Re-running this rebuilds the cards fresh, then replays today's persisted
-// confirm/skip status back onto them (restoreTodayLog, app.js) so confirms survive
-// profile switches and plan re-renders within the same day.
-// FIX 1 (feedback): breakfast is a normal meal now — same Confirm/Swap/Skip actions as
-// lunch/dinner/snack, nothing pre-logged. All four slots go through the same
-// buildLogSlotCard() path (the old breakfast-only "always done" branch is gone).
-function renderLogPlan(){
-  logMenu = computeMenuForDate(currentLogDateISO(), currentProf);
-  const title = document.getElementById('logPlanTitle'); if(title) title.textContent = logDateLabel() + "'s plan";
+// Search-and-add picker state: ONE search box across both recipes and plain ingredients
+// (owner feedback: the old Log screen mirrored the whole day's plan back at the user,
+// which read as confusing/repetitive — "clicking log food should simply let you pick a
+// recipe or ingredient to add to the daily plan"). logSearchQuery is preserved across
+// renderLogScreen() re-renders (every log-affecting action across the app calls this as
+// its generic refresh step, same as the old renderLogPlan() did) so a caller elsewhere in
+// the app refreshing state never wipes what the user is mid-typing here; a successful add
+// explicitly clears it so the box is ready for the next search.
+let logSearchQuery = '';
+let logPickerCtx = null; // {kind:'recipe'|'food', id, slot, portion, grams} while the "which meal + how much" sheet is open
+
+// Same favorite-first, then-alphabetical order as mealTitleSort (used by the add-meal
+// sheet's Sides/Sauces/Full recipes lists) — recipe search results sort the same way
+// everywhere in the app.
+function searchRecipesForLog(query){
+  const q = String(query || '').trim().toLowerCase();
+  if(q.length < 2) return [];
+  return Object.keys(RECIPES_DB)
+    .filter(function(id){ return RECIPES_DB[id].title.toLowerCase().indexOf(q) !== -1; })
+    .sort(mealTitleSort)
+    .slice(0, 20);
+}
+
+// data-log-add-recipe-id/data-log-add-food-id (not inline onclick): recipe/food ids can be
+// user-authored 'cr-'/'cf-' slugs, so the click is handled by attachLogSearchHandler's
+// delegation — same pattern as the add-meal sheet's own search rows.
+function logSearchResultRowHtml(kind, id){
+  if(kind === 'recipe'){
+    const r = RECIPES_DB[id];
+    const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
+    return '<div class="altrow" data-log-add-recipe-id="' + htmlAttr(id) + '">'
+      + '<div class="ae">' + r.emoji + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(r.title) + ' <span class="pill mini">Recipe</span></div>'
+      + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein / serving</div></div>'
+      + '</div>';
+  }
+  const f = FOODS[id];
+  const grams = defaultMealFoodGrams(id);
+  const nut = roundedNutritionTotals(foodMacros(id, grams));
+  return '<div class="altrow" data-log-add-food-id="' + htmlAttr(id) + '">'
+    + '<div class="ae">' + foodIconHtml(id) + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(f.name) + ' <span class="pill terra mini">Ingredient</span></div>'
+    + '<div class="ad">' + foodAmountLabel(f, grams) + ' · ' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+    + '</div>';
+}
+
+// Grouped (not interleaved) so recipes and ingredients stay visually distinguishable even
+// without reading the badge on each row — same "shop-cat" section-header convention the
+// add-meal sheet's Sides/Sauces/Full recipes groups already use.
+function renderLogSearchResults(q){
+  q = (q || '').trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search recipes and ingredients.</p>';
+  const recipeIds = searchRecipesForLog(q);
+  const foodIds = searchFoods(q);
+  if(!recipeIds.length && !foodIds.length) return '<p class="sub" style="margin-top:10px">Nothing matches “' + escapeHtml(q) + '”.</p>';
+  let html = '';
+  if(recipeIds.length) html += '<div class="shop-cat">Recipes</div>' + recipeIds.map(function(id){ return logSearchResultRowHtml('recipe', id); }).join('');
+  if(foodIds.length) html += '<div class="shop-cat">Ingredients</div>' + foodIds.map(function(id){ return logSearchResultRowHtml('food', id); }).join('');
+  return html;
+}
+
+function onLogSearchInput(value){
+  logSearchQuery = value;
+  const el = document.getElementById('logSearchResults');
+  if(el) el.innerHTML = renderLogSearchResults(value);
+}
+
+// One delegated handler on the results container — re-attached (assignment, not
+// addEventListener, so it never accumulates) every renderLogScreen() call, same
+// non-accumulating pattern as attachAddMealSheetHandler.
+function attachLogSearchHandler(){
+  const el = document.getElementById('logSearchResults');
+  if(!el) return;
+  el.onclick = function(e){
+    const recipeRow = e.target.closest('.altrow[data-log-add-recipe-id]');
+    if(recipeRow && el.contains(recipeRow)){ openLogPickerSheet('recipe', recipeRow.getAttribute('data-log-add-recipe-id')); return; }
+    const foodRow = e.target.closest('.altrow[data-log-add-food-id]');
+    if(foodRow && el.contains(foodRow)) openLogPickerSheet('food', foodRow.getAttribute('data-log-add-food-id'));
+  };
+}
+
+// "Which meal, how much" mini-sheet for a tapped search result — the second half of the
+// picker flow. Nothing here writes state; commitLogPickerAdd() below does that, through
+// the same addExtraRecipeToMeal()/addExtraFoodToMeal() funnel every other "add to a meal"
+// entry point (openAddMealRecipeSheet's chooseMealExtraRecipe/chooseMealExtraFood) uses.
+function openLogPickerSheet(kind, id){
+  if(kind === 'recipe' && !RECIPES_DB[id]) return;
+  if(kind === 'food' && !FOODS[id]) return;
+  logPickerCtx = {kind: kind, id: id, slot: null, portion: 1, grams: kind === 'food' ? defaultMealFoodGrams(id) : null};
+  document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
+  attachLogPickerSheetHandler();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function logPickerNutrition(){
+  if(!logPickerCtx) return roundedNutritionTotals(null);
+  return logPickerCtx.kind === 'recipe'
+    ? roundedNutritionTotals(recipeNutrition(logPickerCtx.id, logPickerCtx.portion).totals)
+    : roundedNutritionTotals(foodMacros(logPickerCtx.id, logPickerCtx.grams));
+}
+
+function buildLogPickerSheet(){
+  if(!logPickerCtx) return '';
+  const isRecipe = logPickerCtx.kind === 'recipe';
+  const title = isRecipe ? RECIPES_DB[logPickerCtx.id].title : FOODS[logPickerCtx.id].name;
+  const emoji = isRecipe ? RECIPES_DB[logPickerCtx.id].emoji : foodIconHtml(logPickerCtx.id);
+  const nut = logPickerNutrition();
+  const slotButtons = SLOT_ORDER.map(function(slot){
+    return '<button class="' + (logPickerCtx.slot === slot ? 'on' : '') + '" data-log-picker-slot="' + slot + '">' + (SLOT_LABEL[slot] || slot) + '</button>';
+  }).join('');
+  const amountRow = isRecipe
+    ? ('<div class="sv-stepper"><button data-log-picker-step="-0.5" aria-label="Fewer servings">-</button>'
+       + '<span class="sv-val">' + logPickerCtx.portion + 'x</span>'
+       + '<button data-log-picker-step="0.5" aria-label="More servings">+</button></div>')
+    : ('<div class="sv-stepper"><button data-log-picker-step="-10" aria-label="Decrease grams">-</button>'
+       + '<span class="sv-val">' + logPickerCtx.grams + 'g</span>'
+       + '<button data-log-picker-step="10" aria-label="Increase grams">+</button></div>');
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(title) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub" style="margin-top:6px">Pick the meal and amount, then add it to ' + logDateLabel().toLowerCase() + '’s plan.</p>'
+    + '<div class="shop-cat">Meal</div>'
+    + '<div class="quick">' + slotButtons + '</div>'
+    + '<div class="shop-cat">Amount</div>'
+    + '<div class="serve-row" style="margin-top:8px"><div class="serve-card me" style="flex:1">'
+    + '<div class="sv-name">' + emoji + ' ' + escapeHtml(title) + '</div>'
+    + amountRow + '</div></div>'
+    + '<div class="nutri" style="margin-top:14px">'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>' + nut.kcal + ' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>' + nut.protein + ' g</b></div></div>'
+    + '</div>'
+    + '<button class="cta" style="margin-top:14px" onclick="commitLogPickerAdd()">＋ Add' + (logPickerCtx.slot ? ' to ' + (SLOT_LABEL[logPickerCtx.slot] || '').toLowerCase() : '') + '</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+function attachLogPickerSheetHandler(){
+  const el = document.getElementById('sheetBody');
+  if(!el) return;
+  el.onclick = function(e){
+    const slotBtn = e.target.closest('button[data-log-picker-slot]');
+    if(slotBtn && el.contains(slotBtn)){ selectLogPickerSlot(slotBtn.getAttribute('data-log-picker-slot')); return; }
+    const stepBtn = e.target.closest('button[data-log-picker-step]');
+    if(stepBtn && el.contains(stepBtn)) stepLogPickerAmount(parseFloat(stepBtn.getAttribute('data-log-picker-step')));
+  };
+}
+
+function selectLogPickerSlot(slot){
+  if(!logPickerCtx || SLOT_ORDER.indexOf(slot) === -1) return;
+  logPickerCtx.slot = slot;
+  document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
+  attachLogPickerSheetHandler();
+}
+
+function stepLogPickerAmount(delta){
+  if(!logPickerCtx) return;
+  if(logPickerCtx.kind === 'recipe'){
+    logPickerCtx.portion = Math.min(4, Math.max(0.5, +(logPickerCtx.portion + delta).toFixed(1)));
+  } else {
+    logPickerCtx.grams = Math.max(1, Math.min(2000, Math.round(logPickerCtx.grams + delta)));
+  }
+  document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
+  attachLogPickerSheetHandler();
+}
+
+// The picker's one write path: addExtraRecipeToMeal()/addExtraFoodToMeal() (planner.js) —
+// the SAME funnel openAddMealRecipeSheet(slot, dateISO)'s chooseMealExtraRecipe/
+// chooseMealExtraFood reach, mirrored here for a bare (kind, id) plus the slot/amount
+// picked in this sheet rather than a slot chosen up front. `logged` and the dual
+// plan+log write when true copy that pair's exact contract (and stepMealExtraPortion's,
+// for the portion follow-up) so a meal already confirmed today gets corrected in place
+// instead of silently drifting from what was actually logged.
+// Pure/DOM-free (same applySwap/chooseSwap split planner.js already uses) — resolves
+// (weekStartDate, dayIndex, logged) from a bare (dateISO, slot) and performs the write,
+// nothing else, so tools/check.js can exercise the picker's actual write path directly.
+// Returns {title, logged} on success, null on failure (unknown id, or no plan cell to add
+// to — e.g. an out-of-range dateISO).
+function applyLogPickerAdd(dateISO, slot, kind, id, amount, person){
+  person = person || currentProf;
+  const weekStartDate = mondayOfWeek(dateISO);
+  const dayIndex = diffDaysISO(dateISO, weekStartDate);
+  const logged = dateISO <= todayISO() && slotLogStatus(dateISO, person, slot) === 'confirmed';
+  if(kind === 'recipe'){
+    if(!RECIPES_DB[id]) return null;
+    if(logged){
+      addExtraToLoggedMeal(dateISO, person, slot, id);
+      addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, id);
+    } else {
+      if(!addExtraRecipeToMeal(weekStartDate, dayIndex, slot, person, id)) return null;
+    }
+    if(amount !== 1){
+      if(logged) setExtraPortionInLoggedMeal(dateISO, person, slot, id, amount);
+      setExtraRecipePortion(weekStartDate, dayIndex, slot, person, id, amount);
+    }
+    return {title: RECIPES_DB[id].title, logged: logged};
+  }
+  if(kind === 'food'){
+    if(!FOODS[id]) return null;
+    if(logged){
+      addFoodExtraToLoggedMeal(dateISO, person, slot, id, amount);
+      addExtraFoodToMeal(weekStartDate, dayIndex, slot, person, id, amount);
+    } else {
+      if(!addExtraFoodToMeal(weekStartDate, dayIndex, slot, person, id, amount)) return null;
+    }
+    return {title: FOODS[id].name, logged: logged};
+  }
+  return null;
+}
+
+function commitLogPickerAdd(){
+  if(!logPickerCtx) return;
+  if(!logPickerCtx.slot){ toast('Pick a meal first'); return; }
+  const ctx = logPickerCtx;
+  const dateISO = currentLogDateISO();
+  const amount = ctx.kind === 'recipe' ? ctx.portion : ctx.grams;
+  const result = applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
+  if(!result){ toast('Could not add — try again'); return; }
+  const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  logSearchQuery = ''; // ready for the next search
+  renderLogScreen();
+  renderWeek();
+  persist();
+  closeSheet();
+  logPickerCtx = null;
+  toast('＋ Added ' + result.title + ' to ' + logDateLabel().toLowerCase() + '’s ' + slotLabel);
+}
+
+// Repaints the Log screen's search box/results plus the shared "so far"/coffee widgets —
+// called from every log-affecting action across the app (swap, extras, rebalance,
+// regenerate, profile switch…) as the generic "Log screen is stale" refresh, exactly like
+// the old renderLogPlan() it replaces. No longer rebuilds per-slot plan cards (deleted —
+// owner feedback: mirroring the whole day's plan back here read as confusing/repetitive)
+// so it no longer needs restoreTodayLog()'s replay step either: renderTodayCardActions()
+// (called via renderTodayMeals(), itself called by every one of this function's own
+// callers already) re-derives Today's confirm/skip state fresh from slotLogStatus() on
+// every call, with nothing left here to keep in sync with it.
+function renderLogScreen(){
   const soFar = document.getElementById('logSoFarTitle'); if(soFar) soFar.textContent = logDateLabel() + ' so far';
   const coffee = document.getElementById('coffeeCountTitle'); if(coffee) coffee.textContent = 'Coffee ' + logDateLabel().toLowerCase();
-  SLOT_ORDER.forEach(function(slot){
-    const v = logSlotView(slot);
-    buildLogSlotCard(slot, v.recipe.emoji, mealTitleWithExtras(v), v.kcal, SLOT_LABEL[slot] + ' · ' + macroSummaryFromTotals(v), v.portion);
-  });
+
+  const input = document.getElementById('logSearchInput');
+  if(input) input.value = logSearchQuery;
+  const results = document.getElementById('logSearchResults');
+  if(results) results.innerHTML = renderLogSearchResults(logSearchQuery);
+  attachLogSearchHandler();
 
   updateLogTotalPill();
   renderTodaySoFar();
   renderTodayRecords();
   renderBeverageCounts();
-
-  if(typeof restoreTodayLog === 'function') restoreTodayLog();
-}
-
-function buildLogSlotCard(slot, emoji, title, kcal, desc, portionOverride){
-  EMOJI[slot] = emoji; TITLES[slot] = title; LOGKCAL[slot] = kcal;
-  const card = document.getElementById('log-' + slot);
-  card.className = 'card meal';
-  card.style.cursor = 'default';
-  // Servings-eaten stepper (FEATURE: recipe servings) — the plan entry's portion is
-  // "servings of the recipe", user-adjustable before confirming.
-  const portion = (typeof portionOverride === 'number') ? portionOverride : ((activeMenu && activeMenu[slot]) ? activeMenu[slot].portion : 1);
-  const dateISO = currentLogDateISO();
-  const canEditSelectedDate = dateISO <= todayISO();
-  const label = SLOT_LABEL[slot] || slot;
-  const swapAction = canEditSelectedDate
-    ? mealActionButtonHtml('swap', {onclick: "openLogSwap('"+slot+"','log-"+slot+"')", ariaLabel: 'Swap '+label, title: 'Swap'})
-    : '';
-  // USER FEEDBACK item 3: relabel to "Edit" once the meal has extras, same as the Today
-  // card's add button — the only path to removing an extra, so it shouldn't read as "add".
-  const hasExtras = logSlotView(slot).extras.length > 0;
-  const addAction = canEditSelectedDate
-    ? mealActionButtonHtml('add', {onclick: "openAddMealRecipeSheet('"+slot+"','"+jsAttr(dateISO)+"')", ariaLabel: (hasExtras ? 'Edit ' : 'Add to ')+label, title: hasExtras ? 'Edit' : 'Add', hasExtras: hasExtras})
-    : '';
-  const logAction = mealActionButtonHtml('log', {onclick: "logConfirm('"+slot+"')", ariaLabel: 'Log '+label, title: 'Mark as eaten'});
-  const skipAction = mealActionButtonHtml('skip', {onclick: "logSkip('"+slot+"')", ariaLabel: 'Skip '+label, title: 'Skip'});
-  const servingStepper = canEditSelectedDate ? '<span class="sv-stepper" style="margin-left:auto">'
-    + '<button onclick="stepMealServings(\''+slot+'\',-0.5,\''+jsAttr(dateISO)+'\')" aria-label="Fewer servings">-</button>'
-    + '<span class="sv-val">'+portion+'x</span>'
-    + '<button onclick="stepMealServings(\''+slot+'\',0.5,\''+jsAttr(dateISO)+'\')" aria-label="More servings">+</button>'
-    + '</span>' : '';
-  card.innerHTML = '<div class="thumb">'+emoji+'</div><div class="info">'
-    + '<div class="row between"><span class="t">'+escapeHtml(title)+'</span><span class="kcal">'+kcal+'</span></div>'
-    + '<div class="d">'+desc+'</div>'
-    // Button ORDER mirrors the Today card (render-today.js:renderTodayCardActions):
-    // destructive first, primary last — skip, swap, [add], log. "Same action => same
-    // component" is only half of homogeneity; the same action also has to sit in the
-    // same place, or muscle memory from one screen misfires on the other.
-    + '<div class="logactions">'
-    + skipAction
-    + swapAction
-    + addAction
-    + logAction
-    + servingStepper
-    + '</div></div>';
 }
 
 /* ---------------- shared-meals toggle + Today rendering ---------------- */
@@ -1259,12 +1424,6 @@ function todaySlotView(slot){
   return displayedSlotViewForDate(todayISO(), currentProf, slot, activeMenu && activeMenu[slot]);
 }
 
-function logSlotView(slot){
-  const dateISO = currentLogDateISO();
-  const menu = logMenu || computeMenuForDate(dateISO, currentProf);
-  return displayedSlotViewForDate(dateISO, currentProf, slot, menu && menu[slot]);
-}
-
 function displayedTodayRecipeId(slot){
   const view = todaySlotView(slot);
   return view.recipeId;
@@ -1303,7 +1462,7 @@ function toggleShared(slot, el){
   // Shared-toggles are part of the plan signature, so the next ensureWeekPlan() (inside
   // renderTodayMeals -> computeActiveMenu) regenerates the week; refresh every surface.
   renderTogetherPills();
-  renderLogPlan();
+  renderLogScreen();
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();

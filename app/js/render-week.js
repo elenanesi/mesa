@@ -178,7 +178,7 @@ function renderWeek(){
       // B3: sides/extras button on EVERY row (This week and Next week alike) — opens
       // openAddMealSheetForContext via the delegated handler below, same sheet the Today
       // card ✎/＋ and recipe-screen "Manage" strip already use. Icon/label follow the same
-      // hasExtras convention as those entry points (renderTodayCardActions/buildLogSlotCard).
+      // hasExtras convention as that entry point (renderTodayCardActions's add/edit glyph).
       const hasExtras = !!(view.extras && view.extras.length);
       const extrasAria = (hasExtras ? 'Edit ' : 'Add to ') + (SLOT_LABEL[slot] || slot);
       const extrasBtn = '<button class="dm-extras" data-act="extras" aria-label="'+extrasAria+'">'+(hasExtras ? '✎' : '＋')+'</button>';
@@ -371,7 +371,7 @@ function confirmRegenerateWeek(){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   closeSheet();
@@ -520,7 +520,7 @@ function refreshAfterMealRuleStateChange(){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
 }

@@ -727,6 +727,6 @@ function setNextWeekTuning(key){
   renderInsights();
   renderWeek();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
 }
 

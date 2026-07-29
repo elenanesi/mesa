@@ -126,9 +126,9 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .meta-line{display:flex;gap:14px;font-size:12px;color:var(--muted);margin-top:4px;flex-wrap:wrap;}
 
 /* FIX 1 (feedback): Confirm/Skip round buttons directly on the Today cards — same color
-   language as .swap/.logactions (sage=confirm, terra=skip) but round like .sv-stepper
-   button, sized to the 44px tap-target minimum (ground rule 4) since these sit right next
-   to the card's own recipe-open tap target. */
+   language as .swap (sage=confirm, terra=skip) but round like .sv-stepper button, sized to
+   the 44px tap-target minimum (ground rule 4) since these sit right next to the card's own
+   recipe-open tap target. */
 .today-actions{margin-top:9px;}
 .ta-actions{display:flex;gap:10px;}
 .ta-btn{width:44px;height:44px;border-radius:50%;border:0;font-size:17px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;}
@@ -137,12 +137,6 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .ta-swap{background:#eef0ec;color:var(--ink-soft);}
 .ta-skip{background:#f6e6dc;color:#b25e35;}
 .today-actions .tag-row{margin-top:0;}
-
-/* log plan actions — the row now holds the SAME .meal-act-btn/.meal-log-btn components
-   as the Today screen (see mealActionButtonHtml() in render.js); this container only
-   handles layout (left-aligned icon buttons, serving stepper pushed right via its own
-   margin-left:auto), not button skin. */
-.logactions{display:flex;align-items:center;gap:8px;margin-top:11px;width:100%;flex-wrap:wrap;}
 
 /* nutrient coverage chips */
 .nutri{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
@@ -275,6 +269,9 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .quick{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-top:6px;}
 .quick button{border:1px solid var(--line);background:#fff;border-radius:16px;padding:12px 4px;font:inherit;font-size:11px;font-weight:600;color:var(--ink-soft);cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:5px;min-height:44px;}
 .quick button .qi{font-size:22px;}
+/* log picker: selected meal-slot button (buildLogPickerSheet, render-today.js) — same
+   sage "selected" language as .seg button.on/.pill.chipsel elsewhere in the app. */
+.quick button.on{border-color:var(--sage);background:var(--sage-tint);color:var(--sage-deep);}
 .logitem{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);}
 #todaySoFar .logitem:last-child,#todayRecordsList .logitem:last-child{border-bottom:0;}
 .logitem .li-i{width:42px;height:42px;border-radius:12px;background:var(--terra-tint);display:grid;place-items:center;font-size:20px;flex:0 0 42px;}
@@ -556,10 +553,6 @@ body.gate-open{overflow:hidden;}
 .meal-act-btn:active{transform:scale(.88);}
 .meal-act-btn:hover{border-color:var(--sage);color:var(--sage);}
 .meal-act-btn.act-skip:hover{border-color:var(--muted);color:var(--text);}
-/* add/edit variant (Log screen's former text "+ Add"/"✎ Edit" .la-swap button) — same
-   36px icon-button shell, sage-tinted glyph so it reads distinct from the neutral swap. */
-.meal-act-btn.act-add{color:var(--sage-deep);font-weight:700;}
-.meal-act-btn.act-add:hover{border-color:var(--sage);color:var(--sage-deep);}
 
 /* cute meal log button */
 .meal-log-btn{

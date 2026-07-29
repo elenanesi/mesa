@@ -466,15 +466,6 @@ let recipeDayCtx = null;
 let currentRecipeKey = 'salmon';
 let svE = 1, svM = 1.5, svS = 1;
 
-/* ---------------- log / plan-first state ---------------- */
-// Keyed by slot name (breakfast/lunch/dinner/snack), not recipe key — rebuilt by
-// renderLogPlan() each time the active menu (profile or split) changes. Card display
-// only (title/emoji/kcal shown before a slot is confirmed) — the source of truth for
-// what's actually logged is logHistory (state.js), not these.
-const EMOJI = {};
-const TITLES = {};
-const LOGKCAL = {};
-
 /* ---------------- shared-meals model ---------------- */
 const SHARED = {breakfast:false, lunch:false, dinner:true, snack:false};
 const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack', side:'Side'};
@@ -662,7 +653,7 @@ const PROF = {
    loadState() runs once at boot, before the first render. persist()
    is the single write-through call, invoked from the end of every
    mutating action (see render.js: applyProf, toggleShared, adjServe,
-   toggleShop, logConfirm/logSkip, confirmQuickAdd).
+   toggleShop, logConfirm/logSkip, commitLogPickerAdd).
    =================================================================== */
 const STORE_KEY = 'mesa.v1';
 const LEGACY_ONBOARD_KEY = 'mesaOnboarded';

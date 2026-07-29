@@ -47,16 +47,15 @@ function closeSheet(){
 }
 
 /* ---------------- shared meal-card action button ----------------
-   Single source of markup for the pending-meal action buttons so Today
-   (render-today.js:renderTodayCardActions) and Log (render-today.js:
-   buildLogSlotCard) can never visually drift again — "same action => same
-   component" everywhere a meal card can be confirmed/swapped/skipped/edited.
-   kind: 'skip' | 'swap' | 'log' | 'add'.
+   Single source of markup for the Today screen's pending-meal action buttons
+   (render-today.js:renderTodayCardActions) — "same action => same component"
+   for skip/swap/log wherever a meal card can be confirmed/swapped/skipped.
+   kind: 'skip' | 'swap' | 'log'.
    opts.onclick is the FULLY BUILT onclick attribute value (including any
    event.stopPropagation() prefix) — callers keep their exact existing
    behaviour, this only standardizes the visual component around it.
    opts.ariaLabel / opts.title are required for the icon-only buttons (they
-   are the only accessible name). opts.hasExtras picks the add/edit glyph. */
+   are the only accessible name). */
 function mealActionButtonHtml(kind, opts){
   opts = opts || {};
   const onclick = opts.onclick || '';
@@ -70,10 +69,6 @@ function mealActionButtonHtml(kind, opts){
   }
   if(kind === 'swap'){
     return '<button class="meal-act-btn act-swap" aria-label="'+aria+'" onclick="'+onclick+'" title="'+title+'"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></svg></button>';
-  }
-  if(kind === 'add'){
-    const glyph = opts.hasExtras ? '✎' : '＋';
-    return '<button class="meal-act-btn act-add" aria-label="'+aria+'" onclick="'+onclick+'" title="'+title+'">'+glyph+'</button>';
   }
   return '';
 }
@@ -273,7 +268,7 @@ function applyProf(key){
   if(typeof renderAccountSection === 'function') renderAccountSection(); // js/auth.js (Phase 3A): "Account" section
   if(typeof renderCoupleSync === 'function') renderCoupleSync(); // js/sync.js (task S1): "Couple sync" section
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   if(typeof renderInsights === 'function') renderInsights(); // task D1: keep Insights in sync with whoever's now current
   updateRecipeWhy();     // task C3: re-personalize the why-box if the recipe screen is open

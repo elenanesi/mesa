@@ -282,7 +282,7 @@ function applyRebalance(){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   closeSheet();
@@ -439,7 +439,7 @@ function applyTodayRebalance(){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   persist();
   todayRebalanceProposal = null;
@@ -449,41 +449,11 @@ function applyTodayRebalance(){
   toast('✓ Today re-balanced — ' + changedSuggestions.length + (changedSuggestions.length === 1 ? ' change' : ' changes'));
 }
 
-/* ===================================================================
-   Quick-add: food search sheet (task D1 item 2)
-   "Search" and "Meal" quick actions (Log screen) both open this sheet
-   — Meal is a documented MVP alias, same flow. Two sub-views painted
-   into #sheetBody: a live text-filtered food list (>=2 chars, client-
-   side substring match on FOODS[..].name), then a grams stepper with a
-   live-computed kcal/protein/carbs/fat preview (foodMacros(), engine.js)
-   before writing a food-kind LogEntry (state.js:logFoodEntry) for
-   currentProf. Barcode/photo stay demo toasts (index.html); water stays
-   a toast too (it's not a nutrition entry).
-   =================================================================== */
-let quickAdd = {query: '', selectedId: null, grams: 100};
-
-function openFoodSearch(){
-  quickAdd = {query: '', selectedId: null, grams: 100};
-  document.getElementById('sheetBody').innerHTML = buildFoodSearchSheet();
-  // Delegated click for the result rows (data-food-id, not inline onclick — food ids can
-  // be user-authored 'cf-' slugs). Attached on sheetBody so it also survives the
-  // grams-stepper "‹ Back" path and #foodSearchResults child-only re-renders.
-  const sheetBody = document.getElementById('sheetBody');
-  sheetBody.onclick = function(e){
-    const row = e.target.closest('.altrow[data-food-id]');
-    if(!row || !sheetBody.contains(row)) return;
-    selectQuickAddFood(row.getAttribute('data-food-id'));
-  };
-  document.getElementById('sheet').classList.remove('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
-  const input = document.getElementById('foodSearchInput');
-  if(input) input.focus();
-}
-
 // Client-side substring match on food display names, case-insensitive, capped to keep the
-// sheet scannable. Requires >=2 characters (task D1 item 2) — shorter queries show a hint
-// instead of the whole 60-food DB.
+// list scannable. Requires >=2 characters (task D1 item 2) — shorter queries show a hint
+// instead of the whole food DB. Shared by the add-meal sheet's ingredient search
+// (render-today.js:renderMealFoodResults), the Log screen's picker
+// (render-today.js:searchRecipesForLog's food half) and the Library ingredient list.
 function searchFoods(query){
   const q = query.trim().toLowerCase();
   if(q.length < 2) return [];
@@ -491,104 +461,6 @@ function searchFoods(query){
     .filter(function(id){ return FOODS[id].name.toLowerCase().indexOf(q) !== -1; })
     .sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : (FOODS[a].name > FOODS[b].name ? 1 : 0); })
     .slice(0, 20);
-}
-
-function buildFoodSearchSheet(){
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add a food</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<div class="field"><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line)" type="text" id="foodSearchInput" placeholder="Search foods… (e.g. yogurt)" value="'+htmlAttr(quickAdd.query)+'" oninput="onFoodSearchInput(this.value)" autocomplete="off"></div>'
-    + '<div id="foodSearchResults">' + renderFoodSearchResults() + '</div>';
-}
-
-function renderFoodSearchResults(){
-  const q = quickAdd.query.trim();
-  if(q.length < 2) return '<p class="sub" style="margin-top:10px">Type at least 2 letters to search.</p>';
-  const ids = searchFoods(q);
-  if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + escapeHtml(q) + '”.</p>';
-  return ids.map(function(id){
-    const f = FOODS[id];
-    const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
-    return '<div class="altrow" data-food-id="'+htmlAttr(id)+'">'
-      + '<div class="ae">' + foodIconHtml(id) + '</div>'
-      + '<div class="at"><div class="an">'+escapeHtml(f.name)+'</div>'
-      + '<div class="ad">'+Math.round(f.kcal)+' kcal · '+f.protein+'g protein · '+Math.round(f.sugars || 0)+'g sugars <b>/ '+per+'</b></div></div>'
-      + '</div>';
-  }).join('');
-}
-
-function onFoodSearchInput(value){
-  quickAdd.query = value;
-  const el = document.getElementById('foodSearchResults');
-  if(el) el.innerHTML = renderFoodSearchResults();
-}
-
-function selectQuickAddFood(id){
-  if(!FOODS[id]) return;
-  quickAdd.selectedId = id;
-  quickAdd.grams = 100;
-  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
-}
-
-// FIX 2 (feedback): grams typeable directly, integer 1–2000 (same bound the stepper now
-// clamps to as well, so typing and tapping can never disagree). Invalid/empty text reverts
-// to the previous grams with a toast; a valid typed value re-renders through the exact same
-// sheet builder a stepper tap uses, so the live kcal/protein/carbs/fat preview recomputes
-// identically either way.
-function commitQuickAddGrams(raw){
-  const n = parseDecimalInput(raw);
-  if(n === null || n < 0){ toast('Enter grams, e.g. 125'); document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet(); return; }
-  quickAdd.grams = Math.max(1, Math.min(2000, Math.round(n)));
-  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
-}
-
-function stepQuickAddGrams(delta){
-  quickAdd.grams = Math.max(1, Math.min(2000, quickAdd.grams + delta));
-  document.getElementById('sheetBody').innerHTML = buildGramsStepperSheet();
-}
-
-function buildGramsStepperSheet(){
-  const food = FOODS[quickAdd.selectedId];
-  if(!food) return buildFoodSearchSheet();
-  const nut = foodMacros(quickAdd.selectedId, quickAdd.grams);
-  const pieceHint = food.unit === 'piece' ? ' (≈' + (+(quickAdd.grams / food.avgG).toFixed(1)) + ' piece)' : '';
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">'+escapeHtml(food.name)+'</h2><button class="backbtn" style="margin:0" onclick="openFoodSearch()">‹ Back</button></div>'
-    + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
-    + '<div class="sv-name">Amount</div>'
-    + '<div class="sv-stepper"><button onclick="stepQuickAddGrams(-10)" aria-label="Decrease grams">–</button>'
-    + '<input class="sv-val" type="text" inputmode="decimal" value="'+quickAdd.grams+'" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitQuickAddGrams(this.value)" aria-label="Grams">'
-    + '<span class="sv-unit">g'+pieceHint+'</span>'
-    + '<button onclick="stepQuickAddGrams(10)" aria-label="Increase grams">+</button></div></div></div>'
-    + '<div class="nutri" style="margin-top:16px">'
-    + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Protein</span><b>'+Math.round(nut.protein)+' g</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Carbs</span><b>'+Math.round(nut.carbs)+' g</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Sugars</span><b>'+Math.round(nut.sugars)+' g</b></div></div>'
-    + '<div class="n"><div class="nt"><span>Fat</span><b>'+Math.round(nut.fat)+' g</b></div></div>'
-    + '</div>'
-    + '<button class="cta" onclick="confirmQuickAdd()">Add to today</button>'
-    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
-}
-
-function confirmQuickAdd(){
-  if(!quickAdd.selectedId || !FOODS[quickAdd.selectedId]) return;
-  const food = FOODS[quickAdd.selectedId];
-  const grams = quickAdd.grams;
-  logFoodEntry(currentLogDateISO(), currentProf, quickAdd.selectedId, grams);
-  recomputeConsumed(currentProf);
-  recomputeProf(currentProf);
-  refreshRingAndBars();
-  updateLogTotalPill();
-  renderTodaySoFar();
-  renderTodayRecords();
-  renderBeverageCounts();
-  // C3: a quick-add is a kind:'food' logHistory entry, which weekDayNutriViews now folds
-  // into the CURRENT week's day totals (Week screen header/macro line) whenever the
-  // logged date is today-or-earlier — repaint Week here too, same as every other
-  // logHistory mutator in this file (confirm/skip/swap/extras), so it can't show stale
-  // numbers until some unrelated action happens to repaint it next.
-  renderWeek();
-  persist();
-  closeSheet();
-  toast('✓ Added ' + grams + 'g ' + food.name + ' to ' + logDateLabel().toLowerCase());
 }
 
 function logBeverage(foodId){
@@ -603,7 +475,7 @@ function logBeverage(foodId){
   renderTodaySoFar();
   renderTodayRecords();
   renderBeverageCounts();
-  renderWeek(); // C3: same reasoning as confirmQuickAdd() above — this also writes a kind:'food' entry.
+  renderWeek(); // C3: this writes a kind:'food' logHistory entry, same as any other quick-add — keep Week in sync.
   persist();
   toast('✓ Added ' + food.name);
 }

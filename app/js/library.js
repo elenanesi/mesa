@@ -1593,8 +1593,8 @@ function attachFoodDetailHandler(){
    correction never leaves the depletion-origin stale (which would double-subtract
    consumption that already happened and show less than what was just set). Decrease and
    remove sit directly on each row (not behind a sheet, per the plan); the add flow is a
-   sheet, same shape as render.js's quick-add-food search (openFoodSearch/buildFoodSearchSheet),
-   reusing its searchFoods() helper rather than re-implementing food search.
+   sheet (openPantryAddSheet below), reusing render-sheets.js's searchFoods() helper rather
+   than re-implementing food search.
    =================================================================== */
 let libPantryQuery = '';
 // Category-only, unlike the Ingredients page's {cats, flags, seasons}. A pantry holds the
@@ -1826,9 +1826,9 @@ function attachPantryListHandler(){
   };
 }
 
-// Direct-on-row decrease (plan: "not behind a sheet"). Step mirrors render.js's quick-add
-// grams stepper granularity (stepQuickAddGrams's 10) for gram/ml foods; whole pieces for
-// unit:'piece' foods. Floored at 0 by setPantryRemaining itself.
+// Direct-on-row decrease (plan: "not behind a sheet"). Step mirrors the app's other grams
+// steppers (10g/ml per tap) for gram/ml foods; whole pieces for unit:'piece' foods. Floored
+// at 0 by setPantryRemaining itself.
 function decreasePantryItem(foodId){
   const food = FOODS[foodId];
   if(!food) return;
@@ -1851,7 +1851,7 @@ function removePantryItem(foodId){
 // Typed "set-exact" correction — the row's qty input doubles as both the at-a-glance
 // number and the direct-edit field (FIX 2's typeable-everywhere convention). Invalid/empty
 // text reverts to the real stored value with a toast, same convention as
-// commitQuickAddGrams/commitRecipeIngredientGrams.
+// commitRecipeIngredientGrams.
 function commitPantryQtyInput(foodId, raw){
   const food = FOODS[foodId];
   if(!food) return;
@@ -1866,9 +1866,8 @@ function commitPantryQtyInput(foodId, raw){
 }
 
 /* ---------------- add to pantry (search + quantity, sheet flow) ----------------
-   Same shape as render.js's quick-add-food sheet (openFoodSearch/buildFoodSearchSheet/
-   selectQuickAddFood/buildGramsStepperSheet) — reuses its searchFoods() helper rather than
-   re-implementing food search. Unlike quick-add (which LOGS a food), confirming here calls
+   Reuses render-sheets.js's searchFoods() helper rather than re-implementing food search.
+   Unlike logging a food (which writes a LogEntry), confirming here calls
    setPantryRemaining with current-remaining + typed amount: "Add to pantry" always means
    "I got more of this", stacking onto whatever's already left rather than replacing it. */
 let pantryAdd = {query: '', selectedId: null, qty: 0};
@@ -1887,7 +1886,8 @@ function openPantryAddSheet(){
   document.getElementById('sheet').classList.add('show');
   // Explicit picker flow, opened by an intentional tap — README's "no auto-focus" rule is
   // for top-level landing-page searches (like this page's own #libPantrySearchInput above,
-  // which does NOT auto-focus); auto-focus stays correct here, same as openFoodSearch's.
+  // which does NOT auto-focus); auto-focus stays correct here, same as any other explicit
+  // add-flow sheet's search box.
   const input = document.getElementById('pantryAddSearchInput');
   if(input) input.focus();
 }

@@ -22,7 +22,7 @@
    here), so the same inputs always produce a byte-identical plan.
 
    The result is `weekPlan` (state.js) — the source of truth every
-   other screen reads from: renderWeek/renderTodayMeals/renderLogPlan
+   other screen reads from: renderWeek/renderTodayMeals/renderLogScreen
    (render.js) and computeShoppingList (below). ensureWeekPlan() keeps
    it fresh, regenerating when the inputs that produced it (style,
    avoid-lists, calorie/protein targets, SHARED toggles, or the week
@@ -2996,48 +2996,13 @@ function chooseSwapRecipe(recipeId, alt){
   recomputeProf(currentProf);
   refreshRingAndBars();
   renderTodayMeals();
-  renderLogPlan();
+  renderLogScreen();
   renderWeek();
   const recipeScreen = document.getElementById('recipe');
   if(recipeScreen && recipeScreen.classList.contains('active') && isCurrentWeek) renderRecipe(view.recipeId);
   persist();
   closeSheet();
   toast('🔁 Swapped to ' + view.title + ' (' + (alt.kcalDelta >= 0 ? '+' : '') + Math.round(alt.kcalDelta) + ' kcal)');
-}
-
-/* ---------------- servings eaten (FEATURE: recipe servings) ---------------- */
-// User-set "how many servings am I eating" for one of today's meals — a manual
-// override of the auto-picked portion for the CURRENT person only (each person
-// plates their own amount, shared dish or not). kcal/protein recompute from the
-// per-serving base; a slot already confirmed today gets its LogEntry corrected in
-// place (same contract as a swap). 0.5-serving steps, 0.5–4.
-function stepMealServings(slot, delta, dateISO){
-  dateISO = dateISO || todayISO();
-  const weekStartDate = mondayOfWeek(dateISO);
-  const dayIndex = diffDaysISO(dateISO, weekStartDate);
-  const plan = editableWeekPlan(weekStartDate);
-  const meal = plan.days[dayIndex] && plan.days[dayIndex].meals[slot];
-  if(!meal || !meal[currentProf]) return;
-  const entry = meal[currentProf];
-  const next = Math.max(0.5, Math.min(4, +(entry.portion + delta).toFixed(1)));
-  if(next === entry.portion) return;
-  // Servings are per-person (each plates their own, shared dish or not). For a solo meal
-  // stamp the person's half so the couple-sync merge doesn't clobber the other person's
-  // half; a shared dish still moves as one cell (its recipe is joint), so stamp the cell.
-  if(meal.shared){ meal.t = Date.now(); } else { entry.t = Date.now(); delete meal.t; }
-  entry.portion = next;
-  refreshPlanEntryNutrition(entry);
-  markWeekPlanEdited(plan);
-  if(slotLogStatus(dateISO, currentProf, slot) === 'confirmed'){
-    logPlanEntry(dateISO, currentProf, slot, entry.recipeId, entry.portion, planEntryComponents(entry));
-  }
-  recomputeConsumed(currentProf);
-  recomputeProf(currentProf);
-  refreshRingAndBars();
-  renderTodayMeals();
-  renderLogPlan();
-  renderWeek();
-  persist();
 }
 
 /* ---------------- re-balance (task C2 item 4) ---------------- */
