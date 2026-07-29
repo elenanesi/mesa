@@ -9232,6 +9232,8 @@ function testTodayGoalSummaryRemoved(){
     'Today meal card: action controls sit beside the meal info rather than on their own lower row', breakfastCard);
   assert(css.indexOf('#today .meal{align-items:center;flex-wrap:nowrap') !== -1 && css.indexOf('#today .meal .meal-actions-row{gap:4px;}') !== -1,
     'Today meal card: compact row treatment keeps meal controls visible without a second action line', '');
+  assert(css.indexOf('#today .meal .info .d{font-size:11.5px;line-height:1.2;margin-top:2px;white-space:normal;overflow:visible;text-overflow:clip;}') !== -1,
+    'Today meal card: recipe description wraps in full instead of being truncated for compactness', '');
   assert(todayTop.indexOf('id="todayGlance"') !== -1 && todayTop.indexOf('id="todayGlanceKcal"') !== -1 && todayTop.indexOf('onclick="showTodayProgress()"') !== -1,
     'Today: a compact coloured progress glance sits near the greeting and links to the fuller nutrition detail', todayTop);
   assert(renderSrc.indexOf('function showTodayProgress()') !== -1 && renderSrc.indexOf("detail.scrollIntoView({behavior:'smooth', block:'start'})") !== -1,
