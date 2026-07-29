@@ -1890,8 +1890,8 @@ function offTagLabel(tag){
   return s ? s.charAt(0).toUpperCase() + s.slice(1) : String(tag || '');
 }
 
-function foodDetailNutriPill(label, value, unit){
-  return '<div class="n"><div class="nt"><span>' + escapeHtml(label) + '</span><b>' + value + (unit ? ' ' + unit : '') + '</b></div></div>';
+function foodDetailNutriPill(label, value, unit, detailHtml){
+  return '<div class="n"><div class="nt"><span>' + escapeHtml(label) + '</span><b>' + value + (unit ? ' ' + unit : '') + '</b></div>' + (detailHtml || '') + '</div>';
 }
 
 // Barcode-import metadata (brand/quantity/label kcal/Nutri-Score/NOVA/allergens/traces/
@@ -1982,12 +1982,9 @@ function buildFoodDetailMarkup(id){
     + foodDetailNutriPill('Calories', Math.round(dm.kcal || 0), 'kcal')
     + foodDetailNutriPill('Protein', +(dm.protein || 0).toFixed(1), 'g')
     + foodDetailNutriPill('Carbs', +(dm.carbs || 0).toFixed(1), 'g')
-    + foodDetailNutriPill('Fat', +(dm.fat || 0).toFixed(1), 'g')
-    + foodDetailNutriPill('— saturated', +satFat.toFixed(1), 'g')
-    + foodDetailNutriPill('— unsaturated', +unsatFat.toFixed(1), 'g')
+    + foodDetailNutriPill('Fat', +(dm.fat || 0).toFixed(1), 'g', '<div class="ndetail"><span><b>' + satFat.toFixed(1) + ' g</b> saturated</span><span><b>' + unsatFat.toFixed(1) + ' g</b> unsaturated</span></div>')
     + foodDetailNutriPill('Fiber', +(dm.fiber || 0).toFixed(1), 'g')
-    + foodDetailNutriPill('Sugars', +(dm.sugars || 0).toFixed(1), 'g')
-    + foodDetailNutriPill('— free sugars', +(dm.freeSugars || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Sugars', +(dm.sugars || 0).toFixed(1), 'g', '<div class="ndetail"><span><b>' + (dm.freeSugars || 0).toFixed(1) + ' g</b> free sugars</span></div>')
     + '</div>';
 
   const srcLine = f.src ? '<p class="sub" style="margin-top:10px">' + escapeHtml(f.src) + '</p>' : '';
