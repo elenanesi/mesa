@@ -9220,6 +9220,15 @@ function testTodayGoalSummaryRemoved(){
   assert(firstMeal < progress,
     'Today: actionable meal cards come before the calorie and macro progress card', 'meal@' + firstMeal + ' progress@' + progress);
   const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  assert(todayTop.indexOf('id="todayGlance"') !== -1 && todayTop.indexOf('id="todayGlanceKcal"') !== -1 && todayTop.indexOf('onclick="showTodayProgress()"') !== -1,
+    'Today: a compact coloured progress glance sits near the greeting and links to the fuller nutrition detail', todayTop);
+  assert(renderSrc.indexOf('function showTodayProgress()') !== -1 && renderSrc.indexOf("detail.scrollIntoView({behavior:'smooth', block:'start'})") !== -1,
+    'Today progress glance: its interaction scrolls to the existing detailed progress card instead of duplicating tracking logic', '');
+  assert(renderSrc.indexOf('var rawLeft = Number.isFinite(p.calGoalNum)') !== -1 && renderSrc.indexOf('Math.round(p.calLeft)') === -1,
+    'Today progress glance: calculates its calorie value from raw numbers, never the comma-formatted display value', '');
+  assert(css.indexOf('.today-glance{') !== -1 && css.indexOf('.today-glance-macro.glance-c:before') !== -1,
+    'Today progress glance: compact visual treatment preserves calorie and macro colour cues', '');
   assert(renderSrc.indexOf('var goalTag = document.getElementById(\'goalTag\');') !== -1 && renderSrc.indexOf('if(goalTag) goalTag.textContent=p.goalTag;') !== -1,
     'applyProf(): tolerates the removed Today #goalTag mount for compatibility', '');
 }
@@ -9251,6 +9260,8 @@ function testWeekCompactPlanningWorkspace(){
     'Week compact workspace: old bottom full-width Shopping/Re-balance/Regenerate CTA stack is gone', afterList);
   assert(weekHtml.indexOf('id="weekQualityToggle"') !== -1 && weekHtml.indexOf('aria-expanded="false"') !== -1 && weekHtml.indexOf('aria-controls="weekQualityPanel"') !== -1 && weekHtml.indexOf('id="weekQualityPanel" hidden') !== -1,
     'Week quality: drawer defaults collapsed with button semantics', weekHtml);
+  assert(weekHtml.indexOf('This week’s balance') !== -1 && weekHtml.indexOf('id="weekQualitySignals"') !== -1,
+    'Planner balance check: uses a plain-language name and exposes its headline signals before expansion', weekHtml);
 
   assert(weekSrc.indexOf('let weekQualityExpanded = false;') !== -1,
     'render-week.js: Week quality drawer state is in-memory and defaults collapsed', '');
@@ -9258,6 +9269,8 @@ function testWeekCompactPlanningWorkspace(){
     'render-week.js: Week quality drawer toggles open/closed through renderWeek()', '');
   assert(weekSrc.indexOf("panel.hidden = !weekQualityExpanded") !== -1 && weekSrc.indexOf("toggle.setAttribute('aria-expanded'") !== -1,
     'render-week.js: Week quality drawer updates hidden state and aria-expanded', '');
+  assert(weekSrc.indexOf('uniqueRecipeCount') !== -1 && weekSrc.indexOf('signal-variety') !== -1 && weekSrc.indexOf('signal-protein') !== -1 && weekSrc.indexOf('signal-fiber') !== -1,
+    'Planner balance check: identifies variety, protein, and fiber from computed plan data', '');
   assert(weekSrc.indexOf("btn.textContent = 'Re-balance';") !== -1 && weekSrc.indexOf("Re-balance next week") !== -1 && weekSrc.indexOf("Re-balance this week") !== -1,
     'Week toolbar: Re-balance keeps a short visible label with week-specific aria text', '');
   assert(weekSrc.indexOf("regenBtn.setAttribute('aria-label'") !== -1 && weekSrc.indexOf('Regenerate next week') !== -1 && weekSrc.indexOf('Regenerate this week') !== -1,

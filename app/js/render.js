@@ -184,11 +184,34 @@ function refreshRingAndBars(){
   if(pctC) pctC.textContent = cPct + '%';
   if(pctF) pctF.textContent = fPct + '%';
 
+  // The compact Today glance is intentionally a status cue, not a second dashboard.
+  // It keeps some colour and immediate feedback near the greeting while the full ring
+  // and target bars remain after the meal actions.
+  var glanceKcal = document.getElementById('todayGlanceKcal');
+  var glanceP = document.getElementById('todayGlanceP');
+  var glanceC = document.getElementById('todayGlanceC');
+  var glanceF = document.getElementById('todayGlanceF');
+  // calLeft is deliberately display-formatted by recomputeProf() (e.g. "2,150"),
+  // so never feed it to Math.round(): parsing that localized string produces NaN.
+  var rawLeft = Number.isFinite(p.calGoalNum) ? p.calGoalNum - (p.consumedKcal || 0) : null;
+  if(glanceKcal) glanceKcal.textContent = rawLeft === null ? 'Set a calorie target' : fmtKcal(Math.round(rawLeft)) + ' kcal left';
+  if(glanceP) glanceP.textContent = Math.round(pEaten) + 'g';
+  if(glanceC) glanceC.textContent = Math.round(cEaten) + 'g';
+  if(glanceF) glanceF.textContent = Math.round(fEaten) + 'g';
+
   // --- Progress dots ---
   renderProgressDots();
 
   // --- Eaten chip strip ---
   renderEatenStrip();
+}
+
+// The fuller calorie and nutrient view deliberately stays after the meal cards. This
+// glance is a shortcut to it, keeping Today action-first without hiding the information.
+function showTodayProgress(){
+  var detail = document.getElementById('todayProgressCard');
+  if(!detail) return;
+  detail.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
 /* ===================================================================

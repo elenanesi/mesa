@@ -3206,6 +3206,7 @@ const WEEK_SUMMARY_THRESHOLDS = {fiberMinPerDay: 25, satFatMaxShare: 0.33, omega
 
 function summarizeWeekPlan(plan, personKey){
   const tagCounts = {};
+  const recipeIds = {};
   let fiberSum = 0, proteinSum = 0, fatSum = 0, satFatSum = 0, omega3Count = 0;
   const mealCount = plan.days.length * SLOT_ORDER.length;
 
@@ -3214,6 +3215,7 @@ function summarizeWeekPlan(plan, personKey){
       const entry = day.meals[slot][personKey];
       const r = RECIPES_DB[entry.recipeId];
       if(!r) return;
+      recipeIds[entry.recipeId] = true;
       (r.tags || []).forEach(function(t){ tagCounts[t] = (tagCounts[t] || 0) + 1; });
       // Components-aware (base + extras), same reasoning as computeWeeklyCoverage above —
       // this headline must agree with what Today/Log actually counted for the person.
@@ -3272,6 +3274,7 @@ function summarizeWeekPlan(plan, personKey){
     metricText: metric.text,
     metricGood: metric.good,
     mealCount: mealCount,
+    uniqueRecipeCount: Object.keys(recipeIds).length,
     avgFiberPerDay: avgFiberPerDay,
     avgProteinPerDay: avgProteinPerDay,
     satFatShare: satFatShare,

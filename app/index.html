@@ -40,6 +40,22 @@
       </div>
       <div class="tint-stripe tint-elena" id="tintStripe"></div>
 
+      <!-- A calm, glanceable read on today's intake.  The richer ring and macro
+           breakdown remains below the meal plan; this button simply takes people there
+           when they want the detail rather than making tracking the first task. -->
+      <button class="today-glance" id="todayGlance" type="button" onclick="showTodayProgress()" aria-controls="todayProgressCard" aria-label="View today's calorie and nutrient details">
+        <span class="today-glance-copy">
+          <span class="today-glance-label">Today so far</span>
+          <b id="todayGlanceKcal">—</b>
+        </span>
+        <span class="today-glance-macros" aria-hidden="true">
+          <i class="today-glance-macro glance-p"><span>Protein</span><em id="todayGlanceP">—</em></i>
+          <i class="today-glance-macro glance-c"><span>Carbs</span><em id="todayGlanceC">—</em></i>
+          <i class="today-glance-macro glance-f"><span>Fat</span><em id="todayGlanceF">—</em></i>
+        </span>
+        <span class="today-glance-chev" aria-hidden="true">⌄</span>
+      </button>
+
       <div class="arc-popover" id="arcPopover">
         <div class="ap-label"><span class="ap-dot" id="apDot"></span><span id="apName"></span></div>
         <div class="ap-detail" id="apDetail"></div>
@@ -209,11 +225,12 @@
       <div class="week-quality" id="weekQuality">
         <button class="week-quality-toggle" id="weekQualityToggle" aria-expanded="false" aria-controls="weekQualityPanel" onclick="toggleWeekQualityDrawer()">
           <span>
-            <b>Plan quality</b>
-            <small id="weekSummaryLine">Balanced week</small>
+            <b>This week’s balance</b>
+            <small id="weekSummaryLine">A quick check on variety and nutrition targets</small>
           </span>
           <span class="chev" aria-hidden="true">⌄</span>
         </button>
+        <div class="week-quality-signals" id="weekQualitySignals" aria-label="Weekly balance signals"></div>
         <div class="week-quality-panel" id="weekQualityPanel" hidden>
           <div id="weekNutriCard"></div>
         </div>

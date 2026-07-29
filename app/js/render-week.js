@@ -307,16 +307,23 @@ function renderWeekNutriCard(plan, person, dayViews){
     + '<div class="nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
 }
 
-// T6: paints planner.js:summarizeWeekPlan(plan, person) into the collapsed Week quality
-// row as a concise one-line readout. The expanded metrics live below it in #weekNutriCard.
+// Paints a plain-language balance check into the Planner drawer. The visible signals make
+// clear that this is about the proposed week's variety and nutrition targets — not a grade
+// for how someone has eaten. The expanded metrics live below it in #weekNutriCard.
 function renderWeekQuality(plan, person, dayViews){
   const row = document.getElementById('weekQuality');
   const toggle = document.getElementById('weekQualityToggle');
   const panel = document.getElementById('weekQualityPanel');
   const summaryEl = document.getElementById('weekSummaryLine');
+  const signalsEl = document.getElementById('weekQualitySignals');
   const s = summarizeWeekPlan(plan, person);
-  const tagText = s.tags.length ? s.tags[0] : 'Balanced week';
-  if(summaryEl) summaryEl.textContent = tagText + ' · ' + s.metricText;
+  const proteinOnTarget = s.targetProtein > 0 && s.avgProteinPerDay >= s.targetProtein;
+  if(summaryEl) summaryEl.textContent = s.uniqueRecipeCount + ' dishes planned · ' + s.metricText;
+  if(signalsEl){
+    signalsEl.innerHTML = '<span class="week-quality-signal signal-variety"><b>Variety</b><em>' + s.uniqueRecipeCount + ' dishes</em></span>'
+      + '<span class="week-quality-signal signal-protein"><b>Protein</b><em>' + (proteinOnTarget ? 'On target' : Math.round(s.avgProteinPerDay) + 'g/day') + '</em></span>'
+      + '<span class="week-quality-signal signal-fiber"><b>Fiber</b><em>' + Math.round(s.avgFiberPerDay) + 'g/day</em></span>';
+  }
   if(row) row.classList.toggle('open', weekQualityExpanded);
   if(toggle) toggle.setAttribute('aria-expanded', weekQualityExpanded ? 'true' : 'false');
   if(panel) panel.hidden = !weekQualityExpanded;
