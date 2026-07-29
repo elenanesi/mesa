@@ -8471,6 +8471,197 @@ function testOnboardingSlotTargeting(){
 }
 
 /* ===================================================================
+   UX-REVIEW-plan.md item 6: WHY_RULES muscle/heart gate on the goal
+
+   `thyroid` and `skin` already gated their "why this fits you" clause on the person's live
+   goal toggle; `muscle` and `heart` were `applies: function(){ return true; }` — always on,
+   regardless of whether that person has the goal switched on. Inconsistent, and stale now
+   that the goal audit (KNOWLEDGE-BASE.md §3) made muscle/heart real per-person planner
+   levers via goalTuningBonus(), not just copy. Fixed by mirroring thyroid/skin's
+   `PROF[profKey].goals.X` check.
+
+   Uses two synthetic fixture recipes (same "insert into RECIPES_DB, delete in a finally"
+   pattern testDietMultiSelectCombinations uses above) so the match is fully controlled —
+   tags: ['muscle'] / ['heart'] only, no thyroid/skin/veggie/highFiber/lowGI tag and no
+   selenium/omega3/highFiber ingredient flag, so with the goal off NO rule matches and
+   whyText() must fall back to the generic "simple, Mediterranean-style ... fits your plan"
+   copy (proving the gating doesn't just suppress the clause but leaves sensible fallback
+   copy, per the task brief) rather than an empty/broken string.
+   =================================================================== */
+function testWhyRulesGoalGating(ctx){
+  const pristineGoals = cloneJSON(get(ctx, 'PROF.elena.goals'));
+  const pristinePartnerGoals = cloneJSON(get(ctx, 'PROF.partner.goals'));
+  const FIX_MUSCLE = '__why_gate_muscle_fixture__';
+  const FIX_HEART = '__why_gate_heart_fixture__';
+
+  function withRecipe(id, tags, fn){
+    const recipe = {
+      title: 'Why-gate fixture', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 10, ingredients: [['chicken-breast', 150]],
+      toTaste: [], steps: ['Cook and serve.'], tags: tags, avoid: []
+    };
+    run(ctx, "RECIPES_DB['" + id + "'] = " + JSON.stringify(recipe) + ';');
+    try{ fn(); } finally { run(ctx, "delete RECIPES_DB['" + id + "'];"); }
+  }
+
+  withRecipe(FIX_MUSCLE, ['muscle'], function(){
+    run(ctx, "PROF.elena.goals.hashi = false; PROF.elena.goals.skin = false; PROF.elena.goals.heart = false; PROF.elena.goals.muscle = false; recomputeProf('elena');");
+    const off = call(ctx, 'whyText', [FIX_MUSCLE, 'elena']);
+    assert(!/protein supports your muscle/.test(off), 'whyText: muscle clause dropped when goals.muscle is off', off);
+    assert(/simple, Mediterranean-style dinner that fits your plan/.test(off), 'whyText: muscle-tagged recipe falls back to the generic sensible copy when the goal is off (not empty/broken)', off);
+
+    run(ctx, "PROF.elena.goals.muscle = true; recomputeProf('elena');");
+    const on = call(ctx, 'whyText', [FIX_MUSCLE, 'elena']);
+    assert(/protein supports your muscle & protein goal/.test(on), 'whyText: muscle clause present when goals.muscle is on (elena wording)', on);
+
+    // partner wording branch ("muscle-gain surplus") — same gate, different clause text.
+    run(ctx, "PROF.partner.goals.muscle = true; recomputeProf('partner');");
+    const onPartner = call(ctx, 'whyText', [FIX_MUSCLE, 'partner']);
+    assert(/protein backs your muscle-gain surplus/.test(onPartner), 'whyText: muscle clause present for partner when goals.muscle is on (partner wording)', onPartner);
+    run(ctx, "PROF.partner.goals.muscle = false; recomputeProf('partner');");
+    const offPartner = call(ctx, 'whyText', [FIX_MUSCLE, 'partner']);
+    assert(!/protein backs your muscle-gain surplus/.test(offPartner), 'whyText: muscle clause dropped for partner when goals.muscle is off', offPartner);
+  });
+
+  withRecipe(FIX_HEART, ['heart'], function(){
+    run(ctx, "PROF.elena.goals.hashi = false; PROF.elena.goals.skin = false; PROF.elena.goals.muscle = false; PROF.elena.goals.heart = false; recomputeProf('elena');");
+    const off = call(ctx, 'whyText', [FIX_HEART, 'elena']);
+    assert(!/heart-smart/.test(off), 'whyText: heart clause dropped when goals.heart is off', off);
+    assert(/simple, Mediterranean-style dinner that fits your plan/.test(off), 'whyText: heart-tagged recipe falls back to the generic sensible copy when the goal is off (not empty/broken)', off);
+
+    run(ctx, "PROF.elena.goals.heart = true; recomputeProf('elena');");
+    const on = call(ctx, 'whyText', [FIX_HEART, 'elena']);
+    assert(/heart-smart choice for your Mediterranean base/.test(on), 'whyText: heart clause present when goals.heart is on', on);
+  });
+
+  run(ctx, "PROF.elena.goals = " + JSON.stringify(pristineGoals) + "; PROF.partner.goals = " + JSON.stringify(pristinePartnerGoals) + "; recomputeProf('elena'); recomputeProf('partner');");
+}
+
+/* ===================================================================
+   UX-REVIEW-plan.md item 7: goals editor renders two labelled groups
+
+   GOAL_DEFS_UNION (state.js) now carries a `kind` per goal ('calorie' for fatLoss/
+   muscleGain, 'nudge' for muscle/heart/skin/hashi) and renderGoalsEditor()
+   (render-profile.js) sections #goalsList by it via GOAL_KIND_GROUPS, so the two
+   adjacent-looking "muscle" goals read as structurally different rather than six flat
+   rows. Drives the REAL render function against the richer makeObFakeDocument() double
+   (same swap-then-restore pattern testGoalAudit above uses for toggleGoal()), then checks
+   the group headers appear in order and each contains exactly its expected members —
+   catches both "grouping silently disappeared" and "a goal landed in the wrong group".
+   =================================================================== */
+function testGoalsEditorGrouping(ctx){
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try{
+    run(ctx, "currentProf = 'elena';");
+    call(ctx, 'renderGoalsEditor', []);
+    const html = get(ctx, "document.getElementById('goalsList').innerHTML");
+
+    const calorieIdx = html.indexOf('Moves your calorie target');
+    const nudgeIdx = html.indexOf('Nudges which meals get picked');
+    assert(calorieIdx !== -1, 'goals editor: "Moves your calorie target" group header renders', html);
+    assert(nudgeIdx !== -1, 'goals editor: "Nudges which meals get picked" group header renders', html);
+    assert(calorieIdx < nudgeIdx, 'goals editor: the calorie-target group renders before the nudge group', html);
+
+    const calorieSection = html.slice(calorieIdx, nudgeIdx);
+    const nudgeSection = html.slice(nudgeIdx);
+    ['Gentle fat loss', 'Muscle gain'].forEach(function(title){
+      assert(calorieSection.indexOf(title) !== -1, 'goals editor: "' + title + '" is in the calorie-target group', calorieSection);
+    });
+    ['Muscle & protein', 'Heart & metabolic', 'Beautiful skin', 'Hashimoto'].forEach(function(title){
+      assert(nudgeSection.indexOf(title) !== -1, 'goals editor: "' + title + '" is in the nudge group', nudgeSection);
+    });
+    // Cross-check: neither calorie-goal title leaks into the nudge section, and vice versa.
+    assert(calorieSection.indexOf('Muscle & protein') === -1, 'goals editor: "Muscle & protein" (a nudge goal) is NOT in the calorie-target section', calorieSection);
+    assert(nudgeSection.indexOf('Muscle gain') === -1, 'goals editor: "Muscle gain" (a calorie goal) is NOT in the nudge section', nudgeSection);
+
+    // Toggle wiring survives the regrouping — same onclick convention as before.
+    assert(html.indexOf("toggleGoal('elena','fatLoss',this)") !== -1, 'goals editor: fatLoss row keeps its original toggleGoal() onclick', html);
+    assert(html.indexOf("toggleGoal('elena','muscle',this)") !== -1, 'goals editor: muscle row keeps its original toggleGoal() onclick', html);
+  } finally {
+    ctx.document = savedDocument;
+  }
+}
+
+/* ===================================================================
+   UX-REVIEW-plan.md item 8: diet editor grouping + normalizeDietsArray legacy convergence
+
+   (a) renderDietEditor() (render-profile.js) now sections #dietList via DIET_EDITOR_GROUPS
+   (state.js) into "Eating style — choose one" (No restriction/vegan/vegetarian/
+   pescatarian) vs. "Intolerances — stack freely" (gluten-free/lactose-intolerant) — the
+   underlying toggleDiet()/normalizeDietsArray() exclusive-vs-independent behavior was
+   already correct and already regression-covered (testDietToggleExclusiveGroupCollapse,
+   testDietMultiSelectCombinations above); this test covers the NEW part, the editor's own
+   rendered grouping, the same way testGoalsEditorGrouping covers renderGoalsEditor() above.
+
+   (b) normalizeDietsArray() converging a legacy/synced array that carries more than one
+   DIET_EXCLUSIVE_GROUP member at once (e.g. an old buggy client, or two devices whose
+   pre-normalization diet edits merged) — the "converges a legacy multi-style array" case
+   named in the task brief, distinct from testDietMultiSelectCombinations's combo (which
+   deliberately has only ONE exclusive-group member, to prove independent axes DON'T
+   collapse). Not covered by any pre-existing test.
+   =================================================================== */
+function testDietEditorGroupingAndLegacyConvergence(ctx){
+  // ---- (a) editor grouping ----
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try{
+    run(ctx, "currentProf = 'elena'; PROF.elena.diets = [];");
+    call(ctx, 'renderDietEditor', []);
+    const html = get(ctx, "document.getElementById('dietList').innerHTML");
+
+    const styleIdx = html.indexOf('Eating style');
+    const intolIdx = html.indexOf('Intolerances');
+    assert(styleIdx !== -1, 'diet editor: "Eating style" group header renders', html);
+    assert(intolIdx !== -1, 'diet editor: "Intolerances" group header renders', html);
+    assert(styleIdx < intolIdx, 'diet editor: the eating-style group renders before the intolerances group', html);
+
+    const styleSection = html.slice(styleIdx, intolIdx);
+    const intolSection = html.slice(intolIdx);
+    ['No restriction', 'Vegan', 'Vegetarian', 'Pescatarian'].forEach(function(label){
+      assert(styleSection.indexOf(label) !== -1, 'diet editor: "' + label + '" is in the eating-style group', styleSection);
+    });
+    ['Gluten-free', 'Lactose-intolerant'].forEach(function(label){
+      assert(intolSection.indexOf(label) !== -1, 'diet editor: "' + label + '" is in the intolerances group', intolSection);
+    });
+    assert(styleSection.indexOf('Gluten-free') === -1, 'diet editor: "Gluten-free" (an intolerance) is NOT in the eating-style section', styleSection);
+    assert(intolSection.indexOf('Vegan') === -1, 'diet editor: "Vegan" (an eating style) is NOT in the intolerances section', intolSection);
+
+    // Drive the actual rendered onclick handlers end to end: vegan then vegetarian
+    // REPLACES (exclusive group), gluten-free STACKS (independent axis) — proves the
+    // grouped markup still funnels through the real toggleDiet(), not a stale copy.
+    call(ctx, 'toggleDiet', ['elena', 'vegan']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['vegan']),
+      'diet editor grouping: picking vegan via the grouped editor funnel sets diets to [\'vegan\']', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+    call(ctx, 'toggleDiet', ['elena', 'vegetarian']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['vegetarian']),
+      'diet editor grouping: picking vegetarian REPLACES vegan (same exclusive-group behavior survives the regrouped render)', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+    call(ctx, 'toggleDiet', ['elena', 'lactose-intolerant']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets').slice().sort()) === JSON.stringify(['lactose-intolerant', 'vegetarian']),
+      'diet editor grouping: lactose-intolerant stacks on top of vegetarian (independent axis survives the regrouped render) — the exact "lactose-intolerant AND vegetarian" case the owner asked for', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+
+    run(ctx, "PROF.elena.diets = [];");
+  } finally {
+    ctx.document = savedDocument;
+  }
+
+  // ---- (b) normalizeDietsArray converges a legacy multi-style array ----
+  const allThree = call(ctx, 'normalizeDietsArray', [['vegan', 'vegetarian', 'pescatarian']]);
+  assert(JSON.stringify(allThree) === JSON.stringify(['vegan']),
+    'normalizeDietsArray: a legacy array carrying all three eating styles at once converges to the strictest ("vegan")', JSON.stringify(allThree));
+
+  const twoStylesPlusIndependent = call(ctx, 'normalizeDietsArray', [['pescatarian', 'vegetarian', 'gluten-free']]);
+  assert(JSON.stringify(twoStylesPlusIndependent) === JSON.stringify(['vegetarian', 'gluten-free']),
+    'normalizeDietsArray: a legacy array carrying two eating styles converges to the strictest present ("vegetarian" over "pescatarian"), leaving the independent gluten-free axis untouched', JSON.stringify(twoStylesPlusIndependent));
+
+  // Order-independence: strictest-wins is decided by DIET_EXCLUSIVE_GROUP order, not by
+  // which position the legacy array happened to list them in.
+  const reversedOrder = call(ctx, 'normalizeDietsArray', [['pescatarian', 'vegan', 'vegetarian']]);
+  assert(JSON.stringify(reversedOrder) === JSON.stringify(['vegan']),
+    'normalizeDietsArray: strictest-wins collapse is independent of the legacy array\'s input order', JSON.stringify(reversedOrder));
+}
+
+/* ===================================================================
    UX-REVIEW-plan.md item 4: snack tap-to-recipe affordance
 
    #todaySnack used to be the only Today meal card with a hardcoded cursor:default and no
@@ -8760,6 +8951,9 @@ function main(){
   runTest('person-switcher: a switch preserves the active screen + Week/Log view state', function(){ testPersonSwitchPreservesScreenAndViewState(ctx); });
   runTest('UX-REVIEW-plan.md item 4: snack card tap-to-recipe affordance (present with a recipe, absent without one)', function(){ testSnackTapAffordance(); });
   runTest('UX-REVIEW-plan.md item 5: Today screen Shopping/Pantry quick links call the existing openers, placed below the meal cards', function(){ testTodayShoppingPantryQuickLinks(); });
+  runTest('UX-REVIEW-plan.md item 6: WHY_RULES muscle/heart clauses gate on the goal, with a sensible fallback when off', function(){ testWhyRulesGoalGating(ctx); });
+  runTest('UX-REVIEW-plan.md item 7: goals editor renders two labelled groups (calorie-target vs. meal-nudge) with the right members', function(){ testGoalsEditorGrouping(ctx); });
+  runTest('UX-REVIEW-plan.md item 8: diet editor renders eating-style vs. intolerances groups + normalizeDietsArray converges a legacy multi-style array', function(){ testDietEditorGroupingAndLegacyConvergence(ctx); });
   runTest('UX-REVIEW-plan.md item 9: Profile jump-nav grouped into You/Plan/Data & more, every original chip still wired', function(){ testProfileNavGrouping(); });
   runTest('UX-REVIEW-plan.md P3: Library ingredient count tracks an active search', function(){ testLibraryIngredientCountTracksSearch(ctx); });
   runTest('build-stamp guard: sw.js CACHE === auth.js AUTH_BUILD', function(){ testBuildStampMatch(); });

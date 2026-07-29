@@ -108,10 +108,23 @@ grouping (You / Plan / Data) or collapsing the rarely-used ones.
 ## P3 — Known small stuff
 
 - **Insights contains a nested `<h2>Insights</h2>`** inside the Insights screen.
-- **`validateData()` emits 5 warnings**, all `baked-fish`: computed kcal 96 is outside the
-  250–650 plausible band for `role:'main'`, once for the base and once per fish option.
-  Pre-existing at `eba0edf` and NOT introduced by the diets batch — but the repo's standard
-  is zero warnings, so either the recipe needs a realistic portion or the role/band is wrong.
+- ~~`validateData()` emits 5 warnings, all `baked-fish`~~ — **not reproducible (2026-07-29
+  re-check).** Ran `validateData()` against the real catalog (current HEAD and, separately, a
+  `git archive` of `eba0edf`, the commit this item cited as "pre-existing at"): both report
+  `ok:true`, 0 errors, 0 warnings. `recipeMacros('baked-fish')` (no opts, i.e. the default
+  combo validateData() actually checks) resolves through `recipeEffectiveIngredients()` —
+  base `ingredients` (olive oil + lemon juice) PLUS the default `fish` optionGroups choice
+  (salmon, 180g) — giving 459.8 kcal, comfortably inside the `role:'main'` 250–650 band; every
+  individual fish choice (salmon 459.8, sea-bass 298.6, sole 285.4, cod 267.8) is in-band too.
+  The "96 kcal" this item originally cited is exactly `olive-oil(10g) + lemon-juice(20g)`
+  WITHOUT the fish — i.e. what you get by reading `baked-fish.ingredients` directly and
+  skipping `optionGroups`, which isn't what `validateData()`/`recipeMacros()` actually do (they
+  already went through `recipeEffectiveIngredients()` since the `optionGroups` engine landed,
+  well before `eba0edf`). Best guess: whoever wrote this item computed the base-ingredients sum
+  by hand rather than calling `recipeMacros()`/`validateData()`. No code or data changed for
+  this; `node tools/check.js`'s `data: validateData()` test already asserts `ok:true` and still
+  passes. If a real zero-warning regression shows up later, diagnose with `recipeMacros(id)` and
+  `recipeMacros(id, {group: choiceId})` directly rather than trusting a hand sum.
 - **Library ingredient-count label goes stale while typing a search** (known since the
   2026-07-17 code-health batch).
 - **Empty-pool guard fires in a real configuration:** the default avoid list

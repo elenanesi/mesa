@@ -128,11 +128,21 @@ const LEGACY_WHY = {
    (protein grams for the muscle clause) comes straight from
    recipeNutrition(), same as every other displayed nutrition number.
 
-   Priority order (WHY_RULES below) is chosen so the person's most
-   DISTINCTIVE goals surface first: thyroid + skin only ever apply to
-   Elena (hashi flag / skin is one of her defaults), so for her they
-   out-rank muscle/heart; for Andrea (no hashi, no skin goal) those two
-   rules never match, so muscle (his surplus goal) naturally leads.
+   Priority order (WHY_RULES below) lists thyroid/skin ahead of
+   muscle/heart so that whichever of a person's active goals is most
+   distinctive surfaces first when several match at once — a slot is
+   opaque (ground rule) and any of the four goal-gated rules can apply
+   to either profile now.
+
+   UX-REVIEW-plan.md item 6 (2026-07-29): every goal-gated rule below
+   now actually gates on the person's live goal toggle. `muscle` and
+   `heart` used to be `applies: true` (always on) while `thyroid`/`skin`
+   already checked `PROF[profKey].goals` — an inconsistency left over
+   from before the goal audit made muscle/heart real per-person planner
+   levers (KNOWLEDGE-BASE.md §3). A recipe that only carries a `muscle`/
+   `heart` tag now falls through to the generic "simple, Mediterranean-
+   style ... that fits your plan" copy below for anyone who doesn't have
+   that goal on, same as it already did for thyroid/skin.
    =================================================================== */
 function recipeFlagSet(recipeId){
   const r = RECIPES_DB[recipeId];
@@ -176,7 +186,12 @@ const WHY_RULES = [
   },
   {
     goal: 'muscle',
-    applies: function(){ return true; },
+    // UX-REVIEW-plan.md item 6: was `applies: true` (unconditional) — inconsistent with
+    // thyroid/skin above, and stale now that `muscle` gates a real planner bias
+    // (goalTuningBonus, KNOWLEDGE-BASE.md §3), not just this copy. Mirrors the
+    // muscleGain-vs-muscle-gain-surplus wording split below, which is about WHICH clause
+    // to use once the rule already matched, not whether it applies.
+    applies: function(profKey){ return !!(PROF[profKey].goals && PROF[profKey].goals.muscle); },
     matches: function(recipe){ return hasTag(recipe, 'muscle'); },
     clause: function(recipe, flags, profKey, proteinG){
       return profKey === 'partner'
@@ -186,7 +201,8 @@ const WHY_RULES = [
   },
   {
     goal: 'heart',
-    applies: function(){ return true; },
+    // UX-REVIEW-plan.md item 6: same fix as 'muscle' above — was unconditional.
+    applies: function(profKey){ return !!(PROF[profKey].goals && PROF[profKey].goals.heart); },
     matches: function(recipe, flags){ return hasTag(recipe, 'heart') || hasTag(recipe, 'highFiber') || flags.highFiber; },
     clause: function(recipe, flags){
       return (hasTag(recipe, 'highFiber') || flags.highFiber)
@@ -521,6 +537,20 @@ function dietLabel(key){ return DIET_LABELS[key] || capitalizeFirst(key); }
 // Strictest-first: vegan implies vegetarian implies pescatarian's allowances.
 const DIET_EXCLUSIVE_GROUP = ['vegan', 'vegetarian', 'pescatarian'];
 
+// UX-REVIEW-plan.md item 8: render-grouping hint for the diet editor — vegan/vegetarian/
+// pescatarian (plus the "No restriction" pseudo-choice) are one mutually-exclusive EATING
+// STYLE, while gluten-free/lactose-intolerant are independent INTOLERANCES that stack on
+// top of any style. Read by render-profile.js:renderDietEditor() (Profile screen) and
+// mirrored by hand into app/index.html's static onboarding checkboxes (that markup isn't
+// JS-rendered, so it can't read this array directly, but the two lists must stay in sync —
+// see the onboarding HTML's own comment). Purely presentational, same as GOAL_KIND_GROUPS
+// above: normalizeDietsArray()/toggleDiet() already enforce the real exclusive-vs-
+// independent behavior regardless of how the editor visually groups the rows.
+const DIET_EDITOR_GROUPS = [
+  {label: 'Eating style — choose one', keys: [NONE_DIET_KEY].concat(DIET_EXCLUSIVE_GROUP)},
+  {label: 'Intolerances — stack freely', keys: DIET_KEYS.filter(function(d){ return DIET_EXCLUSIVE_GROUP.indexOf(d) === -1; })}
+];
+
 // Accepts the CURRENT array shape, a LEGACY single string (task D4's pre-multi-select
 // `diet` field — including its 'none' sentinel), or garbage, and always returns a clean,
 // deduplicated, normalized array: unknown keys dropped, non-array/non-string coerced to
@@ -574,15 +604,31 @@ function normalizeDietsArray(v){
 // and no code path computes protein from bodyweight (KNOWLEDGE-BASE.md §5 lists the
 // same gaps for foods.js's data-sourcing side). Restating an unenforced rule here would
 // be exactly the drift this audit removed.
+// UX-REVIEW-plan.md item 7: `kind` is purely a render-grouping hint — renderGoalsEditor()
+// (render-profile.js) sections the list by it so the two calorie-target goals (already
+// mutually exclusive, toggleGoal()) read as visibly different from the four meal-nudge
+// goals, instead of six adjacent-looking rows where "Muscle gain" and "Muscle & protein"
+// are easy to mistake for the same toggle. Deliberately NOT a data-model change: `kind`
+// never gets persisted (goals stay one flat {key: boolean} map per profile, PROF[key].goals)
+// and every key/toggle/persisted shape is exactly as before — see KNOWLEDGE-BASE.md §3 for
+// why the two "muscle" goals stay separate keys rather than merging.
 const GOAL_DEFS_UNION = [
-  {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance'},
-  {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance — calorie target only'},
-  {key:'muscle', title:'Muscle & protein', desc:'Nudges meal picks toward higher protein — does not change your split or calories'},
-  {key:'heart', title:'Heart & metabolic', desc:'Nudges meal picks toward more fiber and less saturated fat'},
-  {key:'skin', title:'Beautiful skin', desc:'Nudges meal picks toward more omega-3 and less free sugar'},
-  {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Tracks weekly selenium coverage (≥3 sources) while this is on'}
+  {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance', kind:'calorie'},
+  {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance — calorie target only', kind:'calorie'},
+  {key:'muscle', title:'Muscle & protein', desc:'Nudges meal picks toward higher protein — does not change your split or calories', kind:'nudge'},
+  {key:'heart', title:'Heart & metabolic', desc:'Nudges meal picks toward more fiber and less saturated fat', kind:'nudge'},
+  {key:'skin', title:'Beautiful skin', desc:'Nudges meal picks toward more omega-3 and less free sugar', kind:'nudge'},
+  {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Tracks weekly selenium coverage (≥3 sources) while this is on', kind:'nudge'}
 ];
 const GOAL_DEFS = {elena: GOAL_DEFS_UNION, partner: GOAL_DEFS_UNION};
+// Group order + header copy for renderGoalsEditor() — 'calorie' first (fatLoss/muscleGain,
+// the two goals that move recommendedCal() via deriveGoalAdj) then 'nudge' (muscle/heart/
+// skin/hashi, the goals that only bias which recipes the weekly planner picks, per
+// goalTuningBonus()/hashiGoalOn() — KNOWLEDGE-BASE.md §3).
+const GOAL_KIND_GROUPS = [
+  {kind: 'calorie', label: 'Moves your calorie target'},
+  {kind: 'nudge', label: 'Nudges which meals get picked'}
+];
 
 // Task B2: neutral in-code defaults for a FRESH household (no saved localStorage data at
 // all) — displayName 'You'/'Partner' (state.js:DISPLAY_NAME_DEFAULTS), every goal off,

@@ -384,7 +384,9 @@ function obPopulateBodyStats(){
 }
 
 // Multi-select diet slide: obDiet is now a group of CHECKBOXES (index.html), one per
-// DIET_EDITOR_ORDER entry (state.js) — 'No restriction' checked means diets is empty,
+// DIET_KEYS entry (state.js) plus the NONE_DIET_KEY pseudo-choice, grouped into the two
+// <div class="field"> blocks DIET_EDITOR_GROUPS also drives on the Profile screen (see
+// that constant's doc in state.js) — 'No restriction' checked means diets is empty,
 // every other box checked means that key is in PROF[obProfile].diets. Called on slide
 // entry (below) AND after every obToggleDiet() write, so a collapse inside
 // normalizeDietsArray (e.g. picking "Vegan" while "Vegetarian" was already checked) is

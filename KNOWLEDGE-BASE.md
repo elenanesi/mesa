@@ -110,6 +110,10 @@ Source: `GOAL_DEFS_UNION`, `app/js/state.js:550-557` — the single copy source 
 
 **On keeping `muscleGain` and `muscle` as two separate toggles** (not merged): they are genuinely different levers — `muscleGain` is a calorie-target lever (surplus vs. not), `muscle` is a recipe-selection lever (protein-forward picks vs. not) — and a real use case wants them independently (e.g. a protein-forward cut: `muscle` on, `fatLoss` on, `muscleGain` off). Merging them would force every protein-focused person into a surplus. The two descriptions above were reworded specifically so the mechanism difference ("calorie target" vs. "meal picks") is stated in the copy itself rather than only visible in code.
 
+**Editor grouping (UX-REVIEW-plan.md item 7, 2026-07-29)**: the reworded copy above made the mechanism difference readable in each row's own description, but six adjacent rows in one flat list still put "Muscle gain" and "Muscle & protein" next to each other with no structural cue. Each entry in `GOAL_DEFS_UNION` (`state.js:615-622`) now also carries a `kind` — `'calorie'` for `fatLoss`/`muscleGain`, `'nudge'` for `muscle`/`heart`/`skin`/`hashi` — and `GOAL_KIND_GROUPS` (`state.js:628-631`) pairs each `kind` with a header ("Moves your calorie target" / "Nudges which meals get picked"). `renderGoalsEditor()` (`render-profile.js:394-409`) sections `#goalsList` by this into two labelled groups instead of one flat list; every row keeps its exact original `.opt`/`toggleGoal()` markup and onclick, and `kind` is never persisted — pure render-layer grouping over the same `PROF[key].goals` flat boolean map, no data-model or toggle-behavior change.
+
+**WHY_RULES goal gating (UX-REVIEW-plan.md item 6, 2026-07-29)**: the per-recipe "why this fits you" copy (`whyText()`, `state.js:223-254`) assembles up to 3 clauses from `WHY_RULES` (`state.js:163-219`), one per goal (`thyroid`/`skin`/`muscle`/`heart`/`veggie`), each gated by an `applies(profKey)` check. `thyroid` and `skin` already checked the person's live goal toggle (`PROF[profKey].hashi` / `PROF[profKey].goals.skin`); `muscle` and `heart` were `applies: function(){ return true; }` — the clause showed unconditionally, regardless of whether that person had `goals.muscle`/`goals.heart` on. Inconsistent, and stale once the goal audit above made `muscle`/`heart` real per-person planner levers rather than just copy. Both now check `PROF[profKey].goals.muscle` / `.heart` — same pattern as `thyroid`/`skin`. A recipe tagged `muscle` or `heart` for someone who doesn't have that goal on now falls through to `whyText()`'s existing generic fallback ("*Title* is a simple, Mediterranean-style *slot* that fits your plan.", `state.js:248`) instead of a clause that doesn't apply to them — the same fallback thyroid/skin-gated recipes already used.
+
 ---
 
 ## 4. Nutrition flags & recipe-tag auto-classification thresholds
@@ -231,21 +235,40 @@ excluded entirely if any other variant wouldn't be.
 
 ### 6.4 Multi-select editor + normalization
 
-`normalizeDietsArray(v)` (`state.js:538-549`) is the single funnel every diets-array write
+`normalizeDietsArray(v)` (`state.js:561-571`) is the single funnel every diets-array write
 goes through — `state.js:loadState()`'s migration, `sync.js:applyProfileSectionData()`'s
 sync ingest, and `render-profile.js:toggleDiet()` (the Profile screen editor and, via
 `app.js:obToggleDiet()`, the onboarding wizard) all call it. It accepts the current array
 shape, a legacy single string (including the old `'none'` sentinel), or garbage, and always
 returns a clean, deduplicated array: unknown keys dropped, non-array/non-string coerced to
 `[]`, and — because vegan/vegetarian/pescatarian are mutually exclusive
-(`DIET_EXCLUSIVE_GROUP`, `state.js:529`) — collapses that trio down to whichever one comes
-first in `DIET_KEYS` (vegan, the strictest, wins). `toggleDiet(profKey, key)`
+(`DIET_EXCLUSIVE_GROUP`, `state.js:538`) — collapses that trio down to whichever one comes
+first in `DIET_KEYS` (vegan, the strictest, wins), regardless of the order the legacy/synced
+array happened to list them in. `toggleDiet(profKey, key)`
 (`render-profile.js:201-219`) behaves like a segmented control *within* the exclusive group
 (picking vegan while vegetarian was active replaces it, not stacks) while gluten-free/
 lactose-intolerant toggle independently; `key === NONE_DIET_KEY` clears every diet at once.
-Both the Profile screen (`renderDietEditor()`, `render-profile.js:226-238`, `#dietList` in
+Both the Profile screen (`renderDietEditor()`, `render-profile.js:230-243`, `#dietList` in
 `index.html`) and onboarding (`index.html`'s checkbox group, `obToggleDiet`) render off this
 same array and funnel through the same `toggleDiet()` — they cannot disagree.
+
+**Editor grouping (UX-REVIEW-plan.md item 8, 2026-07-29)**: the funnel above already made
+vegan/vegetarian/pescatarian behave like one mutually-exclusive choice and gluten-free/
+lactose-intolerant behave as independent stacking toggles — but a flat `#dietList` gave no
+visual cue that these are two structurally different kinds of constraint. `DIET_EDITOR_GROUPS`
+(`state.js:549-552`) pairs a header with each group's keys — `'Eating style — choose one'` for
+`[NONE_DIET_KEY].concat(DIET_EXCLUSIVE_GROUP)`, `'Intolerances — stack freely'` for the two
+independent axes — and `renderDietEditor()` sections `#dietList` by it (same `.opt`/`.ck`
+markup and `toggleDiet()` onclick per row as before, only a `.filter-label` header is new).
+`app/index.html`'s static onboarding checkboxes (which aren't JS-rendered, so can't read
+`DIET_EDITOR_GROUPS` directly) mirror the same two-group split by hand, in two
+`<div class="field">` blocks — same `name="obDiet"` checkboxes, same `obToggleDiet()`
+per-checkbox wiring, so `obPopulateDiet()` (which queries by `name`, not DOM position) and the
+Profile editor still can't disagree. Pure render-layer grouping, same as `GOAL_KIND_GROUPS`
+above — no change to `normalizeDietsArray()`/`toggleDiet()`'s actual exclusive-vs-independent
+behavior, which was already correct before this pass (this batch's diagnosis found the
+underlying data-model normalization already shipped in `609710f`; only the editor's visual
+grouping was still flat).
 
 ### 6.5 Empty-pool guard
 

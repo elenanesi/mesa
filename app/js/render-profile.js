@@ -222,18 +222,26 @@ function toggleDiet(profKey, key){
 // renderAvoidEditor() elsewhere in this file — tap a row to toggle it. Re-rendered by
 // applyProf() (like renderGoalsEditor/renderAvoidEditor) so switching "Whose plan" or
 // toggling a diet always repaints whichever profile is now active.
-const DIET_EDITOR_ORDER = [NONE_DIET_KEY].concat(DIET_KEYS);
+// UX-REVIEW-plan.md item 8: sectioned via DIET_EDITOR_GROUPS (state.js) into "Eating
+// style — choose one" (No restriction/vegan/vegetarian/pescatarian, DIET_EXCLUSIVE_GROUP)
+// and "Intolerances — stack freely" (gluten-free/lactose-intolerant) — same .filter-label
+// header convention renderGoalsEditor() uses above for its own calorie-vs-nudge split, and
+// the same reasoning: the rows and their toggleDiet() onclick are unchanged, only a group
+// header is new, so no behavior/persisted-shape change rides along with the visual grouping.
 function renderDietEditor(){
   const key = currentProf;
   const p = PROF[key];
   const el = document.getElementById('dietList');
   if(!el) return; // Profile screen markup not present (shouldn't happen, but don't crash)
   const diets = p.diets || [];
-  el.innerHTML = DIET_EDITOR_ORDER.map(function(dk){
-    const on = dk === NONE_DIET_KEY ? diets.length === 0 : diets.indexOf(dk) !== -1;
-    return '<div class="opt' + (on ? ' sel' : '') + '" onclick="toggleDiet(\'' + key + '\',\'' + dk + '\')">'
-      + '<div class="ck">' + (on ? '✓' : '') + '</div>'
-      + '<div><div class="ot">' + dietLabel(dk) + '</div></div></div>';
+  el.innerHTML = DIET_EDITOR_GROUPS.map(function(group){
+    return '<div class="filter-label">' + group.label + '</div>'
+      + group.keys.map(function(dk){
+        const on = dk === NONE_DIET_KEY ? diets.length === 0 : diets.indexOf(dk) !== -1;
+        return '<div class="opt' + (on ? ' sel' : '') + '" onclick="toggleDiet(\'' + key + '\',\'' + dk + '\')">'
+          + '<div class="ck">' + (on ? '✓' : '') + '</div>'
+          + '<div><div class="ot">' + dietLabel(dk) + '</div></div></div>';
+      }).join('');
   }).join('');
 }
 
@@ -376,17 +384,29 @@ function renderSplitEditor(){
    developer copy (not user input), same trust level as ACTIVITY_LEVELS/renderBasics
    above, so no escapeHtml needed. Mirrors renderAvoidEditor()'s structure: one function,
    called from applyProf(), full re-render on every toggle (cheap — five rows). */
+// UX-REVIEW-plan.md item 7: two adjacent-looking "muscle" goals (muscleGain moves calories,
+// muscle nudges meal picks) read as one confusing pair in a flat list. Sections the same six
+// rows (same order, same toggleGoal() onclick, same .opt/.ck/.ot/.od markup as before — only
+// a .filter-label group header is new) via GOAL_DEFS_UNION's `kind` (state.js) into the two
+// groups the copy in each `desc` already states in words: goals that move the calorie target
+// vs. goals that only nudge which recipes the planner picks. No group is ever empty for the
+// current 6-goal union, but the `.filter(...).length` guard keeps this safe if that changes.
 function renderGoalsEditor(){
   const key = currentProf;
   const p = PROF[key];
   const el = document.getElementById('goalsList');
   if(!el) return; // Profile screen markup not present (shouldn't happen, but don't crash)
   const defs = GOAL_DEFS[key] || [];
-  el.innerHTML = defs.map(function(g){
-    const on = !!p.goals[g.key];
-    return '<div class="opt' + (on ? ' sel' : '') + '" onclick="toggleGoal(\'' + key + '\',\'' + g.key + '\',this)">'
-      + '<div class="ck">' + (on ? '✓' : '') + '</div>'
-      + '<div><div class="ot">' + g.title + '</div><div class="od">' + g.desc + '</div></div></div>';
+  el.innerHTML = GOAL_KIND_GROUPS.map(function(group){
+    const groupDefs = defs.filter(function(g){ return g.kind === group.kind; });
+    if(!groupDefs.length) return '';
+    return '<div class="filter-label">' + group.label + '</div>'
+      + groupDefs.map(function(g){
+        const on = !!p.goals[g.key];
+        return '<div class="opt' + (on ? ' sel' : '') + '" onclick="toggleGoal(\'' + key + '\',\'' + g.key + '\',this)">'
+          + '<div class="ck">' + (on ? '✓' : '') + '</div>'
+          + '<div><div class="ot">' + g.title + '</div><div class="od">' + g.desc + '</div></div></div>';
+      }).join('');
   }).join('');
 }
 

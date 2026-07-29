@@ -769,16 +769,29 @@
            vegetarian/pescatarian behave like a segmented control WITHIN themselves
            (obToggleDiet -> render-profile.js:toggleDiet collapses the trio to the
            strictest pick and calls obPopulateDiet() to reflect that back here), while
-           gluten-free/lactose-intolerant toggle independently. -->
+           gluten-free/lactose-intolerant toggle independently.
+           UX-REVIEW-plan.md item 8: split into two <div class="field"> blocks so the two
+           DIFFERENT kinds of constraint read that way — an eating style (pick one; picking a
+           second REPLACES the first) vs. intolerances (independent, stack on top of the style
+           and each other). Mirrors render-profile.js:renderDietEditor()'s DIET_EDITOR_GROUPS
+           grouping (state.js) by hand, since this markup is static, not JS-rendered — same
+           #obDiet name/value/onchange wiring as before per checkbox, so obPopulateDiet()
+           (app.js, queries by name regardless of DOM position) and obToggleDiet() ->
+           toggleDiet() (render-profile.js, the one funnel every diets write goes through)
+           are both untouched by the grouping. -->
       <div class="ob-slide">
         <h1 style="text-align:center">Dietary preference</h1>
         <p class="sub" style="text-align:center">Shapes what meals the planner suggests. You can change this anytime in Profile → Diet.</p>
-        <div class="field" style="margin-top:14px"><label>Your preference (pick any that apply)</label>
+        <div class="field" style="margin-top:14px"><label>Eating style — choose one</label>
           <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="none" onchange="obToggleDiet('none')"> No restriction</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="vegan" onchange="obToggleDiet('vegan')"> Vegan</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="vegetarian" onchange="obToggleDiet('vegetarian')"> Vegetarian</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="pescatarian" onchange="obToggleDiet('pescatarian')"> Pescatarian</label>
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px"><label>Intolerances — stack freely</label>
+          <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="gluten-free" onchange="obToggleDiet('gluten-free')"> Gluten-free</label>
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="lactose-intolerant" onchange="obToggleDiet('lactose-intolerant')"> Lactose-intolerant</label>
           </div>
