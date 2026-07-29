@@ -565,8 +565,10 @@ function buildFoodLibrarySheet(){
   return '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Ingredients</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(libFoodQuery) + '" oninput="onLibFoodSearchInput(this.value)" autocomplete="off">'
     + '<div id="libFoodFilterBar">' + renderLibFoodFilterBar() + '</div>'
-    + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openBarcodeScanner(true)">📷 Scan barcode</button>'
-    + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openNewFoodForm()">＋ New ingredient</button>'
+    + '<div class="library-action-row" aria-label="Ingredient actions">'
+    + '<button class="library-action" onclick="openBarcodeScanner(true)">📷 Scan barcode</button>'
+    + '<button class="library-action" onclick="openNewFoodForm()">＋ New ingredient</button>'
+    + '</div>'
     + '<div id="libFoodList" style="margin-top:4px">' + renderLibFoodListMarkup(libFoodQuery) + '</div>';
 }
 
@@ -1017,26 +1019,26 @@ function renderLibFoodFilterBar(){
   libFoodFilters.flags.forEach(function(fl){ labels.push(flagLabel(fl)); });
   libFoodFilters.seasons.forEach(function(s){ labels.push(seasonLabel(s)); });
   const count = countFilteredFoods(libFoodQuery);
-  let html = '<div class="filter-compact">'
-    + '<button class="filter-toggle" onclick="toggleLibFoodFiltersPanel()">' + (libFoodFiltersOpen ? 'Hide filters' : 'Filters') + (activeCount ? ' · ' + activeCount : '') + '</button>'
-    + '<span class="sub" style="margin:0">' + count + ' ingredient' + (count === 1 ? '' : 's') + '</span>'
+  let html = '<div class="recipe-filter-toolbar ingredient-filter-toolbar">'
+    + '<button class="recipe-filter-toggle" onclick="toggleLibFoodFiltersPanel()" aria-expanded="' + (libFoodFiltersOpen ? 'true' : 'false') + '" aria-controls="libFoodFilterControls"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg><span>Filters' + (activeCount ? ' · ' + activeCount : '') + '</span></button>'
+    + '<span class="recipe-filter-count" aria-live="polite">' + count + ' ingredient' + (count === 1 ? '' : 's') + '</span>'
     + '</div>'
-    + filterSummaryChips(labels, 'clearLibFoodFilters()');
+    + (labels.length ? '<div class="recipe-filter-summary" aria-label="Active ingredient filters">' + labels.map(function(label){ return '<span class="recipe-filter-summary-chip active-filter-label">' + escapeHtml(label) + '</span>'; }).join('') + '<button class="recipe-filter-clear" onclick="clearLibFoodFilters()">Clear all</button></div>' : '');
   if(libFoodFiltersOpen){
-    html += '<div class="filter-panel">'
+    html += '<div class="recipe-filter-panel ingredient-filter-panel" id="libFoodFilterControls">'
       + '<div class="filter-label">Category</div>'
-      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
-      + FOOD_CATEGORIES.map(function(c){ return filterChipHtml(c, libFoodFilters.cats.has(c), 'toggleLibFoodCatFilter(\'' + c + '\')'); }).join('')
+      + '<div class="recipe-filter-options">'
+      + FOOD_CATEGORIES.map(function(c){ return recipeFilterChipHtml(c, libFoodFilters.cats.has(c), 'toggleLibFoodCatFilter(\'' + c + '\')'); }).join('')
       + '</div>'
       + '<div class="filter-label">Season</div>'
-      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
-      + SEASON_VALUES.map(function(s){ return filterChipHtml(seasonLabel(s), libFoodFilters.seasons.has(s), 'toggleLibFoodSeasonFilter(\'' + s + '\')'); }).join('')
+      + '<div class="recipe-filter-options">'
+      + SEASON_VALUES.map(function(s){ return recipeFilterChipHtml(seasonLabel(s), libFoodFilters.seasons.has(s), 'toggleLibFoodSeasonFilter(\'' + s + '\')'); }).join('')
       + '</div>'
       + '<div class="filter-label">Tags</div>'
-      + '<div class="row" style="gap:7px;flex-wrap:wrap">'
-      + FOOD_FILTER_FLAGS.map(function(fl){ return filterChipHtml(flagLabel(fl), libFoodFilters.flags.has(fl), 'toggleLibFoodFlagFilter(\'' + fl + '\')'); }).join('')
+      + '<div class="recipe-filter-options">'
+      + FOOD_FILTER_FLAGS.map(function(fl){ return recipeFilterChipHtml(flagLabel(fl), libFoodFilters.flags.has(fl), 'toggleLibFoodFlagFilter(\'' + fl + '\')'); }).join('')
       + '</div>'
-      + (anyActive ? '<button class="filter-clear full" onclick="clearLibFoodFilters()">Clear filters</button>' : '')
+      + (anyActive ? '<button class="recipe-filter-clear" style="margin-top:10px" onclick="clearLibFoodFilters()">Clear all filters</button>' : '')
       + '</div>';
   }
   return html;

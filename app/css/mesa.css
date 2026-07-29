@@ -261,8 +261,15 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .recipe-filter-sheet .sheet-body{padding-bottom:34px;}
 .recipe-filter-sheet-count{margin-top:5px;font-size:12px;font-weight:700;color:var(--muted);}
 .recipe-filter-sheet-controls{margin-top:11px;}
+.library-action-row{display:flex;gap:8px;margin-top:10px;}
+.library-action{flex:1;min-width:0;min-height:38px;padding:0 10px;border:1px solid rgba(126,149,99,.38);border-radius:10px;background:rgba(255,250,240,.95);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;}
+.library-action:active{transform:scale(.97);}
+.ingredient-filter-toolbar{margin-top:10px;}
+.ingredient-filter-panel{position:relative;left:auto;right:auto;top:auto;max-width:none;max-height:none;margin-top:6px;}
+.active-filter-label{cursor:default;}
 @media (max-width:640px){
   .recipe-filter-panel{display:none;}
+  .ingredient-filter-panel{display:block;}
 }
 
 /* macro split editor */
