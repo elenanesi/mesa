@@ -330,6 +330,22 @@ function showTodayProgress(){
   detail.scrollIntoView({behavior:'smooth', block:'start'});
 }
 
+// Keep the two primary planning surfaces in the order users expect: Today opens
+// with the full nutrition view, while Planner ends with the weekly balance check.
+// This is deliberately a small DOM arrangement step so the existing renderers,
+// IDs and event handlers remain unchanged.
+function arrangePlanningSurfaces(){
+  var today = document.getElementById('today');
+  var ring = document.getElementById('todayProgressCard');
+  var arc = document.getElementById('arcPopover');
+  if(today && ring && arc && ring.parentElement === today) today.insertBefore(ring, arc);
+
+  var planner = document.getElementById('week');
+  var list = document.getElementById('weekList');
+  var quality = document.getElementById('weekQuality');
+  if(planner && list && quality && quality.parentElement === planner) planner.insertBefore(quality, list.nextSibling);
+}
+
 /* ===================================================================
    Phase 3C (C3) — avatar photo-or-initial helper
 
@@ -420,6 +436,7 @@ function applyProf(key){
   if(typeof renderAccountSection === 'function') renderAccountSection(); // js/auth.js (Phase 3A): "Account" section
   if(typeof renderCoupleSync === 'function') renderCoupleSync(); // js/sync.js (task S1): "Couple sync" section
   if(typeof renderProfileHubSummaries === 'function') renderProfileHubSummaries();
+  arrangePlanningSurfaces();
   renderTodayMeals();
   renderLogScreen();
   renderWeek();
