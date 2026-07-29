@@ -14,6 +14,119 @@ function toast(msg){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
 }
 
+/* ---------------- Botanical log rewards ----------------
+   These are deliberately presentation-only: call sites mutate and refresh first, then
+   hand the successful action to this controller. Keeping completion reads directly on
+   logHistory avoids getDayLog() creating records while merely checking status. */
+let logRewardTimer = null;
+const logRewardCompletionKeys = new Set();
+
+function rewardMotionReduced(){
+  return typeof window !== 'undefined' && window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+}
+
+function accountedSlotCount(dateISO, person){
+  const day = logHistory && logHistory[dateISO];
+  if(!day || !Array.isArray(day[person])) return 0;
+  const skipped = day.skipped && day.skipped[person] ? day.skipped[person] : {};
+  return SLOT_ORDER.reduce(function(total, slot){
+    const confirmed = day[person].some(function(entry){
+      return entry && entry.kind === 'plan' && entry.slot === slot;
+    });
+    return total + (confirmed || skipped[slot] ? 1 : 0);
+  }, 0);
+}
+
+function clearLogReward(){
+  clearTimeout(logRewardTimer);
+  logRewardTimer = null;
+  const layer = document.getElementById('logRewardLayer');
+  const live = document.getElementById('logRewardLive');
+  if(layer) layer.replaceChildren();
+  if(live) live.textContent = '';
+}
+
+function rewardLeafHtml(index){
+  const values = [
+    ['-34px','-43px','-46deg','-36deg','.03s','#7f9364'],
+    ['2px','-55px','-12deg','-26deg','.08s','#a9b982'],
+    ['39px','-35px','35deg','36deg','.12s','#c79a48'],
+    ['43px','14px','71deg','42deg','.05s','#7f9364'],
+    ['-8px','45px','145deg','34deg','.14s','#b9c590'],
+    ['-42px','22px','-113deg','-41deg','.1s','#c79a48'],
+    ['-31px','-21px','-77deg','-28deg','.16s','#a9b982'],
+    ['32px','27px','107deg','31deg','.18s','#b9c590']
+  ][index % 8];
+  return '<svg class="log-reward-leaf" viewBox="0 0 16 22" aria-hidden="true" style="--leaf-x:'+values[0]+';--leaf-y:'+values[1]+';--leaf-rotate:'+values[2]+';--leaf-turn:'+values[3]+';--leaf-delay:'+values[4]+';--leaf-color:'+values[5]+'"><path d="M8 21C3 17 1 12 2 7c1-4 4-6 8-6 3 4 4 8 2 12-1 4-3 6-4 8Z"/><path d="M8 20C8 13 8 8 9 3" fill="none"/></svg>';
+}
+
+function rewardPoint(anchorEl){
+  const phone = document.querySelector('.phone');
+  const phoneRect = phone && phone.getBoundingClientRect();
+  const rect = anchorEl && typeof anchorEl.left === 'number'
+    ? anchorEl
+    : (anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : null);
+  if(!phoneRect || !rect) return {x: phoneRect ? phoneRect.width / 2 : 160, y: phoneRect ? phoneRect.height / 2 : 280};
+  return {
+    x: Math.max(38, Math.min(phoneRect.width - 38, rect.left - phoneRect.left + rect.width / 2)),
+    y: Math.max(38, Math.min(phoneRect.height - 78, rect.top - phoneRect.top + rect.height / 2))
+  };
+}
+
+function captureRewardAnchor(anchorEl){
+  if(!anchorEl || !anchorEl.getBoundingClientRect) return null;
+  const rect = anchorEl.getBoundingClientRect();
+  return {left: rect.left, top: rect.top, width: rect.width, height: rect.height};
+}
+
+function startLogReward(node, message, duration){
+  const layer = document.getElementById('logRewardLayer');
+  const live = document.getElementById('logRewardLive');
+  if(!layer || !live) return false;
+  clearLogReward();
+  layer.appendChild(node);
+  live.textContent = message;
+  if(!rewardMotionReduced() && typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(12);
+  logRewardTimer = setTimeout(clearLogReward, rewardMotionReduced() ? 1200 : duration);
+  return true;
+}
+
+function playLogReward(payload){
+  payload = payload || {};
+  const point = rewardPoint(payload.anchorRect || payload.anchorEl);
+  const title = String(payload.title || 'Meal');
+  const kcal = Math.round(Number(payload.kcal) || 0);
+  const message = title + ' recorded · ' + kcal + ' kcal.';
+  const node = document.createElement('div');
+  node.className = 'log-reward';
+  node.style.setProperty('--reward-x', point.x + 'px');
+  node.style.setProperty('--reward-y', point.y + 'px');
+  node.innerHTML = '<div class="log-reward-stamp" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"><path d="m8 16 5 5 11-12"/><path d="M16 3.5c7.2 0 12.5 5.3 12.5 12.5S23.2 28.5 16 28.5 3.5 23.2 3.5 16 8.8 3.5 16 3.5Z" opacity=".55"/></svg></div>'
+    + rewardLeafHtml(0) + rewardLeafHtml(1) + rewardLeafHtml(2) + rewardLeafHtml(3) + rewardLeafHtml(4) + rewardLeafHtml(5)
+    + '<div class="log-reward-message"></div>';
+  node.querySelector('.log-reward-message').textContent = message;
+  return startLogReward(node, message, 1550);
+}
+
+function playDayCompletionReward(payload){
+  payload = payload || {};
+  const key = String(payload.dateISO || '') + '|' + String(payload.person || '');
+  if(!payload.dateISO || !payload.person || typeof todayISO !== 'function' || payload.dateISO !== todayISO() || accountedSlotCount(payload.dateISO, payload.person) < SLOT_ORDER.length || logRewardCompletionKeys.has(key)) return false;
+  logRewardCompletionKeys.add(key);
+  const message = 'Today’s record is complete.';
+  const node = document.createElement('div');
+  node.className = 'log-reward log-reward--complete';
+  const wreath = document.createElement('div');
+  wreath.className = 'log-reward-wreath';
+  wreath.innerHTML = '<div class="log-reward-wreath-seal" aria-hidden="true">✓</div>'
+    + rewardLeafHtml(0) + rewardLeafHtml(1) + rewardLeafHtml(2) + rewardLeafHtml(3) + rewardLeafHtml(4) + rewardLeafHtml(5) + rewardLeafHtml(6) + rewardLeafHtml(7)
+    + '<div class="log-reward-message"></div>';
+  wreath.querySelector('.log-reward-message').textContent = message;
+  node.appendChild(wreath);
+  return startLogReward(node, message, 2200);
+}
+
 // Implements the optional onMesaPersistFailed(err) hook state.js calls (see persist() in
 // state.js) on the healthy->unhealthy transition of a localStorage write — i.e. once when
 // storage first fails, not again on every subsequent failed write while it stays broken.
@@ -112,7 +225,7 @@ function refreshRingAndBars(){
   document.getElementById('bc').style.width = p.bc;
   document.getElementById('bff').style.width = p.bff;
   // fat split line is hidden; fatSplit still set for recipe detail etc.
-  document.getElementById('fatSplit').textContent = '💚 ' + p.fatGood + 'g good fats · ' + p.fatSat + 'g sat.';
+  document.getElementById('fatSplit').textContent = '◌ ' + p.fatGood + 'g non-saturated fat (estimate) · ' + p.fatSat + 'g sat.';
 
   // --- Segmented donut ---
   var C = 351.8; // 2 * PI * 56

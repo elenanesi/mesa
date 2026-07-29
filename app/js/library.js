@@ -164,14 +164,8 @@ function applyCustomRecipes(){
    preview footer) from whatever ingredients are currently in the list.
    =================================================================== */
 const AUTO_TAG_THRESHOLDS = {
-  omega3MinG: 40,            // any omega3-flagged ingredient >= this many grams -> tags: omega3
-  seleniumMinG: 15,          // any selenium-flagged ingredient >= this many grams -> tags: thyroid
   highFiberMinG: 6,          // total fiber/serving >= this -> tags: highFiber
-  lowGICarbContributorMinG: 5, // an ingredient counts as "carb-contributing" once it supplies
-                              // >= this many carb grams to the dish (used by the lowGI rule)
   muscleProteinMinG: 25,     // total protein/serving >= this -> tags: muscle
-  heartFiberMinG: 5,         // total fiber/serving >= this (AND heartSatFatMaxShare below) -> tags: heart
-  heartSatFatMaxShare: 0.33, // satFat / fat <= this (AND heartFiberMinG above) -> tags: heart
   quickMaxMinutes: 15        // prep time <= this -> tags: quick
 };
 const AUTO_STYLE_THRESHOLDS = {
@@ -246,26 +240,10 @@ function deriveRecipeMeta(ingredients, totals, timeMinutes){
     .filter(function(x){ return !!x.food; });
 
   const tags = [];
-  function hasFlagAtLeast(flag, minG){
-    return rows.some(function(x){ return (x.food.flags || []).indexOf(flag) !== -1 && x.row.grams >= minG; });
-  }
-  if(hasFlagAtLeast('omega3', T.omega3MinG)) tags.push('omega3');
-  if(hasFlagAtLeast('selenium', T.seleniumMinG)) tags.push('thyroid');
   if(totals.fiber >= T.highFiberMinG) tags.push('highFiber');
 
-  // lowGI: every carb-contributing ingredient (>=5g carbs in the dish) must be lowGI-flagged.
-  // A dish with no carb-contributing ingredient at all doesn't qualify (vacuous truth guard).
-  const carbContributors = rows.filter(function(x){
-    return foodMacros(x.row.foodId, x.row.grams).carbs >= T.lowGICarbContributorMinG;
-  });
-  if(carbContributors.length && carbContributors.every(function(x){ return (x.food.flags || []).indexOf('lowGI') !== -1; })){
-    tags.push('lowGI');
-  }
 
   if(totals.protein >= T.muscleProteinMinG) tags.push('muscle');
-
-  const satShare = totals.fat > 0 ? totals.satFat / totals.fat : 0;
-  if(totals.fiber >= T.heartFiberMinG && satShare <= T.heartSatFatMaxShare) tags.push('heart');
 
   const isVeggie = !rows.some(function(x){ return ANIMAL_FOOD_IDS.indexOf(x.row.foodId) !== -1; });
   if(isVeggie) tags.push('veggie');
@@ -402,7 +380,7 @@ let libFoodFiltersOpen = false;
 // Full flag facet per the task brief (data/foods.js's actual flag vocabulary) — a
 // superset of FOOD_FORM_FLAGS below, which is only the subset offered when hand-authoring
 // a NEW custom ingredient.
-const FOOD_FILTER_FLAGS = ['lowGI', 'omega3', 'selenium', 'highIodine', 'glutenFree', 'highFiber', 'fermented'];
+const FOOD_FILTER_FLAGS = ['glutenFree', 'highFiber', 'fermented'];
 
 const DEFAULT_FOOD_ICON_ASSET = 'assets/ingredients/default-food.png';
 
@@ -1181,11 +1159,11 @@ function onLibFoodSearchInput(v){
 
 /* ---------------- new ingredient form ---------------- */
 const FOOD_CATEGORIES = ['Produce', 'Protein', 'Dairy', 'Pantry', 'Bakery', 'Frozen']; // matches data/foods.js ALLOWED_CATS
-const FOOD_FORM_FLAGS = ['lowGI', 'omega3', 'highFiber', 'glutenFree']; // offered when hand-authoring a new custom ingredient
+const FOOD_FORM_FLAGS = ['highFiber', 'glutenFree']; // factual/categorical flags offered when hand-authoring a new custom ingredient
 // T5: extended with selenium/highIodine/fermented — the rest of data/foods.js's flag
 // vocabulary, needed for the Ingredients sheet's tag filter (FOOD_FILTER_FLAGS above)
 // even though the new-ingredient form only offers the original 4.
-const FOOD_FLAG_LABELS = {lowGI: 'Low-GI', omega3: 'Omega-3', highFiber: 'High fiber', glutenFree: 'Gluten-free', selenium: 'Selenium', highIodine: 'High iodine', fermented: 'Fermented'};
+const FOOD_FLAG_LABELS = {highFiber: 'Higher fibre', glutenFree: 'Gluten-free', fermented: 'Fermented'};
 function flagLabel(fl){ return FOOD_FLAG_LABELS[fl] || fl; }
 function sugarQualityLabel(q){
   if(q === 'intrinsic') return 'Intrinsic sugars';

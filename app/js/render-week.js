@@ -301,7 +301,7 @@ function renderWeekNutriCard(plan, person, dayViews){
   // Two headline household coverage chips, evaluated against the DISPLAYED week's plan
   // (This or Next) via the exact same computeWeeklyCoverage/coverageGaps/coverageChipHtml
   // Insights uses — never re-derived.
-  const covChips = ['omega3', 'satFat'].map(function(k){ return coverageChipHtml(s.gaps[k]); }).join('');
+  const covChips = ['satFat'].map(function(k){ return coverageChipHtml(s.gaps[k]); }).join('');
 
   wrap.innerHTML = '<div class="sub" style="margin:0 0 10px">' + macroLine + '</div>'
     + '<div class="nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
@@ -598,17 +598,20 @@ function openWeekLogSheet(weekStartDate, dayIndex, slot, person){
     '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(titleText) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<p class="sub">Log what actually happened for ' + SLOT_LABEL[slot].toLowerCase() + ' on this day.</p>'
     + '<div class="card" style="padding:14px;margin-top:12px"><div class="row between"><b>Current</b><span class="pill ghost">' + weekLogStatusLabel(status) + '</span></div></div>'
-    + '<button class="cta" onclick="weekLogConfirm()">✓ Eaten as planned</button>'
-    + '<button class="cta ghostbtn" onclick="weekLogSkip()">∅ Skipped</button>'
+    + '<button class="cta" onclick="weekLogConfirm(this)">✓ Eaten as planned</button>'
+    + '<button class="cta ghostbtn" onclick="weekLogSkip(this)">∅ Skipped</button>'
     + (status ? '<button class="cta ghostbtn" onclick="weekLogUndo()">↺ Undo</button>' : '');
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
 }
 
-function weekLogConfirm(){
+function weekLogConfirm(anchorEl){
   if(!weekLogCtx) return;
   const ctx = weekLogCtx;
+  const anchorRect = typeof captureRewardAnchor === 'function' ? captureRewardAnchor(anchorEl) : null;
+  const accountedBefore = ctx.dateISO === todayISO() && typeof accountedSlotCount === 'function'
+    ? accountedSlotCount(ctx.dateISO, ctx.person) : null;
   const plan = ensureWeekPlan(ctx.weekStartDate);
   const entry = plan.days[ctx.dayIndex] && plan.days[ctx.dayIndex].meals[ctx.slot][ctx.person];
   if(!entry || !entry.recipeId){ closeSheet(); return; }
@@ -622,16 +625,36 @@ function weekLogConfirm(){
   logPlanEntry(ctx.dateISO, ctx.person, ctx.slot, entry.recipeId, entry.portion, components, opts);
   closeSheet();
   refreshAfterLogChange(); // task C1: now renders Week itself — see that function's doc comment
-  toast('✓ Logged ' + dayDateLabel(ctx.dateISO).toLowerCase());
+  const logged = loggedPlanEntryForSlot(ctx.dateISO, ctx.person, ctx.slot);
+  triggerMealLogReward({
+    anchorEl: anchorEl,
+    anchorRect: anchorRect,
+    title: logEntryTitleWithComponents(logged) || SLOT_LABEL[ctx.slot] || 'Meal',
+    kcal: Math.round(logEntryNutrition(logged).kcal || 0),
+    dateISO: ctx.dateISO,
+    person: ctx.person,
+    type: 'meal'
+  }, accountedBefore);
 }
 
-function weekLogSkip(){
+function weekLogSkip(anchorEl){
   if(!weekLogCtx) return;
   const ctx = weekLogCtx;
+  const anchorRect = typeof captureRewardAnchor === 'function' ? captureRewardAnchor(anchorEl) : null;
+  const accountedBefore = ctx.dateISO === todayISO() && typeof accountedSlotCount === 'function'
+    ? accountedSlotCount(ctx.dateISO, ctx.person) : null;
   markSlotSkipped(ctx.dateISO, ctx.person, ctx.slot);
   closeSheet();
   refreshAfterLogChange(); // task C1: now renders Week itself — see that function's doc comment
-  toast('∅ Skipped ' + dayDateLabel(ctx.dateISO).toLowerCase());
+  triggerMealLogReward({
+    anchorEl: anchorEl,
+    anchorRect: anchorRect,
+    title: SLOT_LABEL[ctx.slot] || 'Meal',
+    kcal: 0,
+    dateISO: ctx.dateISO,
+    person: ctx.person,
+    type: 'meal'
+  }, accountedBefore, true);
 }
 
 function weekLogUndo(){
@@ -645,17 +668,12 @@ function weekLogUndo(){
   toast('↺ Un-logged ' + dayDateLabel(ctx.dateISO).toLowerCase());
 }
 
-// The "Weekly nutrient coverage" card (FIX 3: moved from the Week screen to the TOP of
-// Insights — same markup/ids, same live wiring: renderWeek() still calls this after every
-// plan change, and renderInsights() also refreshes it on each visit): the 4 REAL computed metrics from
-// planner.js:computeWeeklyCoverage (omega-3 meals/wk ≥3, selenium sources/wk ≥3 while
-// EITHER profile's thyroid (hashi) goal is on, fiber g/day avg vs 25g for whoever of the
-// two is lower, sat-fat share of fat ≤33%), replacing the hardcoded Vitamin D demo chips. The chip
-// markup (.n/.nt/.nbar) is unchanged — same visual design, real numbers.
+// The "Weekly nutrition guidance" card uses the computed fibre, free-sugar and
+// saturated-fat measures that Mesa can compare with public-health guidance.
 function coverageValueText(g){
   if(g.key === 'fiber') return g.value + ' g/day';
-  if(g.key === 'satFat') return g.value + '% of fat';
-  if(g.key === 'freeSugars' || g.key === 'freeSugarsWarn'){
+  if(g.key === 'satFat') return g.value + '% of energy';
+  if(g.key === 'freeSugars'){
     const kcal = (PROF && PROF[currentProf] && PROF[currentProf].calGoalNum) || 0;
     const grams = kcal > 0 ? Math.round((g.value / 100) * kcal / 4) : 0;
     return grams + ' g/day (' + g.value + '% of kcal)';
@@ -664,11 +682,11 @@ function coverageValueText(g){
 }
 function coverageTargetText(g){
   if(g.key === 'fiber') return g.target + ' g/day';
-  if(g.key === 'satFat') return '≤' + g.target + '%';
-  if(g.key === 'freeSugars' || g.key === 'freeSugarsWarn'){
+  if(g.key === 'satFat') return '<' + g.target + '% of energy';
+  if(g.key === 'freeSugars'){
     const kcal = (PROF && PROF[currentProf] && PROF[currentProf].calGoalNum) || 0;
     const grams = kcal > 0 ? Math.round((g.target / 100) * kcal / 4) : 0;
-    return (g.key === 'freeSugars' ? '≈' : '≤') + grams + ' g/day (' + g.target + '% of kcal)';
+    return '<' + grams + ' g/day (' + g.target + '% of energy)';
   }
   return '≥' + g.target + '/wk';
 }
@@ -678,28 +696,15 @@ function coverageTargetText(g){
 // re-deriving the markup, per the B4 design note "reuse renderNutrientChips' chip styling".
 function coverageChipHtml(g){
   const low = g.gap > 1e-9;
-  const capNote = g.cap ? '<div class="cap-note">Keep under ' + g.target + '% — staying below is good</div>' : '';
+  const capNote = g.cap ? '<div class="cap-note">WHO guidance: keep under ' + g.target + '% of energy</div>' : '';
   return '<div class="n'+(low ? ' low' : '')+'"><div class="nt"><span>'+g.label+'</span><b>'+coverageValueText(g)+'</b></div>'
     + '<div class="nbar"><i style="width:'+g.pct+'%"></i></div>'+capNote+'</div>';
 }
-// Goal-audit fix: used to be inlined as `PROF.elena.hashi`, so a slot-2 (partner)
-// thyroid goal never surfaced the selenium coverage target. The plan is household-level
-// and either person's dish can carry the selenium coverage (planner.js:
-// computeWeeklyCoverage), so the gate follows WHICHEVER profile has the goal on, not a
-// fixed slot. Factored out to its own top-level function (rather than a local var inside
-// renderNutrientChips) so it's a plain, DOM-free boolean tools/check.js's regression test
-// can call directly — renderNutrientChips itself is DOM-painting and returns early under
-// the test harness's stubbed document.
-function hashiGoalOn(){ return !!(PROF.elena.hashi || PROF.partner.hashi); }
-
 function renderNutrientChips(){
   const wrap = document.getElementById('nutriChips');
   if(!wrap) return;
   const gaps = coverageGaps(computeWeeklyCoverage(weekPlan));
-  const hashiOn = hashiGoalOn();
-  const order = ['omega3', 'selenium', 'fiber', 'satFat', 'freeSugars', 'freeSugarsWarn'].filter(function(k){
-    return k !== 'selenium' || hashiOn; // selenium target tracked only with the thyroid goal on (either profile)
-  });
+  const order = ['fiber', 'satFat', 'freeSugars'];
   wrap.innerHTML = order.map(function(k){ return coverageChipHtml(gaps[k]); }).join('');
   const worstKey = order.reduce(function(a, b){ return gaps[b].gap > gaps[a].gap ? b : a; });
   const worst = gaps[worstKey];
@@ -708,8 +713,8 @@ function renderNutrientChips(){
   const note = document.getElementById('coverageNote');
   if(note){
     note.innerHTML = worst.gap > 1e-9
-      ? '📌 <b>' + worst.label + ' is the biggest gap</b> — at ' + coverageValueText(worst) + ' vs a ' + coverageTargetText(worst) + ' target. “Re-balance my week” proposes the fewest swaps to close it.'
-      : '✅ <b>All coverage targets are on track this week.</b> Omega-3, ' + (hashiOn ? 'selenium, ' : '') + 'fiber, saturated fat and free sugars are all within the current guide.';
+      ? '📌 <b>' + worst.label + ' is the biggest gap</b> — at ' + coverageValueText(worst) + ' vs ' + coverageTargetText(worst) + '. Re-balance proposes the fewest swaps Mesa found.'
+      : '✅ <b>These computed measures are within the displayed WHO guidance.</b> <button class="why-link" onclick="openHowMesaPlans(\'guidance\')">Why?</button>';
   }
 }
 

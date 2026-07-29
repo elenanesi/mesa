@@ -471,11 +471,13 @@ function searchFoods(query){
     .slice(0, 20);
 }
 
-function logBeverage(foodId){
+function logBeverage(foodId, anchorEl){
   const food = FOODS[foodId];
   if(!food) return;
   const grams = (food.unit === 'piece' && food.avgG) ? food.avgG : 1;
-  logFoodEntry(currentLogDateISO(), currentProf, foodId, grams);
+  const dateISO = currentLogDateISO();
+  const anchorRect = typeof captureRewardAnchor === 'function' ? captureRewardAnchor(anchorEl) : null;
+  const logged = logFoodEntry(dateISO, currentProf, foodId, grams);
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
@@ -485,7 +487,17 @@ function logBeverage(foodId){
   renderBeverageCounts();
   renderWeek(); // C3: this writes a kind:'food' logHistory entry, same as any other quick-add — keep Week in sync.
   persist();
-  toast('✓ Added ' + food.name);
+  if(typeof playLogReward === 'function'){
+    playLogReward({
+      anchorEl: anchorEl,
+      anchorRect: anchorRect,
+      title: food.name,
+      kcal: Math.round(logEntryNutrition(logged).kcal || 0),
+      dateISO: dateISO,
+      person: currentProf,
+      type: 'food'
+    });
+  }
 }
 
 /* ===================================================================

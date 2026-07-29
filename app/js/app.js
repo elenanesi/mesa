@@ -37,6 +37,16 @@ function go(id, el){
   if(id === 'today' && typeof renderTodayHeader === 'function') renderTodayHeader();
 }
 
+// Shared destination for the small contextual “Why?” links. The page works without JS
+// history state, and a target section is scrolled into view after its screen is active.
+function openHowMesaPlans(sectionId){
+  go('howMesaPlans');
+  if(sectionId){
+    var section = document.getElementById(sectionId);
+    if(section && typeof section.scrollIntoView === 'function') section.scrollIntoView({block:'start'});
+  }
+}
+
 /* ---------------- open a recipe from a tap ---------------- */
 function openRecipe(key, origin, dayCtx){
   recipeOrigin = origin || 'today';
@@ -257,19 +267,12 @@ function renderObGoals(key){
   // chosen by the user after completing profile setup. Only show goals when replaying
   // onboarding (non-fresh install), where PROF[key] already has saved preferences.
   const g = PROF[key] && PROF[key].goals;
-  // Goal-audit fix: was g.hashimoto, a key that never existed on PROF[key].goals (the
-  // real key is `hashi` — see GOAL_DEFS_UNION, state.js) — a dead condition that could
-  // never be true. Also restored the missing `muscleGain` check (both calorie goals are
-  // now available on every profile, not just fatLoss — see engine.js:deriveGoalAdj) so
-  // this checks every real key in GOAL_DEFS_UNION, not an ad-hoc subset.
-  const hasAnyGoal = g && (g.fatLoss || g.muscleGain || g.muscle || g.hashi || g.skin || g.heart);
+  const hasAnyGoal = g && (g.fatLoss || g.muscleGain || g.muscle || g.heart);
   if(!hadStoredStateOnBoot || !hasAnyGoal){
     document.getElementById('obGoalsPreview').innerHTML = '';
     return;
   }
-  const goals = key === 'elena'
-    ? ['🎯 Gentle fat loss', '🦋 Hashimoto-friendly', '✨ Skin-supporting']
-    : ['💪 Muscle & protein', '❤️ Heart-smart'];
+  const goals = GOAL_DEFS_UNION.filter(function(def){ return !!g[def.key]; }).map(function(def){ return def.title; });
   document.getElementById('obGoalsPreview').innerHTML = goals.map(function(g){ return '<span class="pill">'+g+'</span>'; }).join('');
 }
 

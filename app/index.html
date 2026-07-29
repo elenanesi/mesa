@@ -138,7 +138,7 @@
             <div class="macro">
               <div class="mhead"><span>Fat <span class="macro-pct macro-pct-f" id="pctF">33%</span></span><b id="mf">12 / 62 g</b></div>
               <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
-              <div class="sub" id="fatSplit" style="display:none;margin:5px 0 0;font-size:11.5px">💚 9g good fats · 3g sat.</div>
+              <div class="sub" id="fatSplit" style="display:none;margin:5px 0 0;font-size:11.5px">◌ 9g non-saturated fat (estimate) · 3g sat.</div>
             </div>
           </div>
         </div>
@@ -230,6 +230,7 @@
         <div class="week-quality-signals" id="weekQualitySignals" aria-label="Weekly balance signals"></div>
         <div class="week-quality-panel" id="weekQualityPanel" hidden>
           <div id="weekNutriCard"></div>
+          <button class="why-link" onclick="openHowMesaPlans('rules')">How is this planned?</button>
         </div>
       </div>
 
@@ -288,7 +289,8 @@
         </div>
       </div>
 
-      <div class="why" style="margin-top:16px" id="recipeWhy"></div>
+      <div class="row between" style="margin-top:16px"><b>Why Mesa picked this</b><button class="why-link" onclick="openHowMesaPlans('rules')">Why?</button></div>
+      <div class="why" style="margin-top:8px" id="recipeWhy"></div>
 
       <h2><span id="nutriHeader">Nutrition (per serving)</span> <span class="chip-computed">✓ computed</span></h2>
       <div class="nutri" id="recipeNutri"></div>
@@ -303,7 +305,7 @@
       <!-- Eaten-state CTA: renderRecipeEatenState() (render.js) owns everything inside this
            wrap and swaps the plain button for a "✓ Eaten today"/"Skipped for today" tag-row
            once today's plan for this slot is confirmed/skipped — see render.js for the states. -->
-      <div id="recipeEatenWrap"><button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe()">✓ Mark as eaten</button></div>
+      <div id="recipeEatenWrap"><button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe(this)">✓ Mark as eaten</button></div>
 
       <!-- USER FEEDBACK item 2: renderRecipeMealStrip() (render.js) owns everything inside
            this card — shown only when this recipe is today's planned slot AND that slot has
@@ -353,8 +355,8 @@
       <div class="card" style="padding:14px;margin-top:14px">
         <div class="row between"><b style="font-size:14px" id="coffeeCountTitle">Coffee today</b><span class="pill" id="coffeeCountPill">0 coffee · 0 cappuccino</span></div>
         <div class="quick" style="margin-top:12px">
-          <button onclick="logBeverage('espresso-unsweetened')"><span class="qi">☕</span>Coffee</button>
-          <button onclick="logBeverage('cappuccino-unsweetened')"><span class="qi">🥛</span>Cappuccino</button>
+          <button onclick="logBeverage('espresso-unsweetened',this)"><span class="qi">☕</span>Coffee</button>
+          <button onclick="logBeverage('cappuccino-unsweetened',this)"><span class="qi">🥛</span>Cappuccino</button>
         </div>
       </div>
 
@@ -418,7 +420,7 @@
            every Insights visit (renderInsights). -->
       <div class="card" style="padding:14px">
         <div class="row between" style="margin-bottom:4px">
-          <b style="font-size:14px">Weekly nutrient coverage <span class="chip-computed">✓ computed</span></b>
+          <b style="font-size:14px">Weekly nutrition guidance <span class="chip-computed">✓ computed</span></b>
           <span class="pill" id="coveragePill">On track</span>
         </div>
         <!-- Rendered by renderNutrientChips() (render.js): the 4 real computed metrics
@@ -495,6 +497,11 @@
         <button class="settings-row" onclick="go('profileAccountData')">
           <span class="settings-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg></span>
           <span class="settings-copy"><b>Account &amp; data</b><small id="profileAccountSummary">Sign-in, sync, app info</small></span>
+          <span class="settings-chev" aria-hidden="true">›</span>
+        </button>
+        <button class="settings-row" onclick="openHowMesaPlans()">
+          <span class="settings-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 8v.01"/></svg></span>
+          <span class="settings-copy"><b>How Mesa plans</b><small>Guidelines, estimates, Mesa rules and sources</small></span>
           <span class="settings-chev" aria-hidden="true">›</span>
         </button>
       </div>
@@ -595,7 +602,7 @@
         <h1 style="margin:0">Nutrition plan</h1>
         <div class="avatar" id="profileNutritionAv">Y</div>
       </div>
-      <p class="sub">Calories, macro split and the goals that nudge your menu.</p>
+      <p class="sub">Calories, macro split and preferences that nudge your menu.</p>
       <div class="seg profile-editor-switcher" id="profileNutritionWhoSeg" data-person-switcher></div>
 
       <h2 id="sec-calories"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>Daily target</h2>
@@ -609,11 +616,13 @@
           </span>
         </div>
         <div class="cap-note" id="calFormula"></div>
+        <button class="why-link" onclick="openHowMesaPlans('estimate')">Why this estimate?</button>
         <div class="cap-note" id="calNote" style="color:#b25e35"></div>
         <button class="pill gold chip-preset" id="calRestoreBtn" style="display:none;margin-top:8px;padding:11px 14px;font-size:12px" onclick="restoreCal()">↺ Restore recommended (1,820)</button>
       </div>
 
       <h2 id="sec-macro"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
+      <button class="why-link" onclick="openHowMesaPlans('rules')">Why these controls?</button>
       <p class="sub">Choose where your calories come from — Mesa keeps it adding up to 100% and rebuilds your menu to match.</p>
       <div class="row" id="macroPresets" style="gap:7px;flex-wrap:wrap;margin-top:6px">
         <button class="pill ghost chip-preset" onclick="applyPreset('default')">Mesa default</button>
@@ -649,11 +658,54 @@
       </div>
       <p class="sub" style="margin-top:8px;display:flex;align-items:center;gap:6px;flex-wrap:wrap">Your total calories stay the same — the split changes where they come from.<span class="chip-computed">✓ computed</span></p>
 
-      <h2 id="sec-goals"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Health goals</h2>
+      <h2 id="sec-goals"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1"/></svg>Planning preferences</h2>
       <!-- task B1: rendered per-profile by render.js:renderGoalsEditor() from GOAL_DEFS
            (state.js) — was 5 static checkboxes shared by both profiles (the bug: unchecking
            "Gentle fat loss" as Andrea did nothing, and he saw a fat-loss goal he doesn't have). -->
       <div id="goalsList"></div>
+    </section>
+
+    <section class="screen" id="howMesaPlans">
+      <button class="backbtn" onclick="go('profile')">‹ Profile</button>
+      <h1 style="margin-top:10px">How Mesa plans</h1>
+      <p class="sub">A clear distinction between public-health guidance, estimates from your information, and Mesa’s own planning rules.</p>
+
+      <div class="how-legend"><span class="claim-badge guideline">Guideline</span><span class="claim-badge estimate">Estimate</span><span class="claim-badge rule">Mesa rule</span></div>
+
+      <div class="how-card" id="estimate">
+        <span class="claim-badge estimate">Estimate</span>
+        <h2>Daily calories and recipe nutrition</h2>
+        <p>Your recommended calories use the Mifflin–St Jeor equation, your age, height, weight, sex and selected activity level. It is a population equation, not a measurement of your metabolism. Recipe energy and macros are calculated from Mesa’s ingredient data and portions.</p>
+      </div>
+
+      <div class="how-card" id="guidance">
+        <span class="claim-badge guideline">Guideline</span>
+        <h2>What Mesa compares with public guidance</h2>
+        <ul>
+          <li>Fibre: 25g per day.</li>
+          <li>Free sugars: under 10% of daily energy.</li>
+          <li>Saturated fat: under 10% of daily energy.</li>
+        </ul>
+        <p>These are general population measures, not personalised prescriptions. Mesa shows them only where its data can calculate the measure.</p>
+      </div>
+
+      <div class="how-card" id="rules">
+        <span class="claim-badge rule">Mesa rule</span>
+        <h2>How the planner chooses meals</h2>
+        <p>Mesa fits meals to your calorie target, selected macro split, dietary restrictions, avoids, sharing choices and recipe variety. The calorie adjustments for fat loss (−325 kcal), muscle gain (+60 kcal), macro ranges, favourite boosts and the ±10% target-consistency band are Mesa settings—not clinical guidelines.</p>
+        <p>“Higher protein” and “higher fibre, lower saturated fat” are preference nudges in the planner. They do not diagnose, treat or prevent a condition.</p>
+      </div>
+
+      <div class="how-card" id="limits">
+        <h2>What Mesa does not claim</h2>
+        <p>Mesa does not assess thyroid or skin conditions, iodine, selenium, omega-3 adequacy, low-GI suitability, micronutrient sufficiency or medical dietary needs. Ask a qualified clinician for individual advice, especially for a condition, medication, pregnancy or a therapeutic diet.</p>
+      </div>
+
+      <div class="how-card" id="sources">
+        <h2>Sources</h2>
+        <p><a href="https://www.who.int/health-topics/healthy-diet" target="_blank" rel="noopener">WHO healthy diet guidance</a> (fibre and saturated fat) · <a href="https://www.who.int/publications-detail-redirect/WHO-NMH-NHD-15.3" target="_blank" rel="noopener">WHO sugars guideline</a> · <a href="https://pubmed.ncbi.nlm.nih.gov/2305711/" target="_blank" rel="noopener">Mifflin–St Jeor equation</a>.</p>
+        <p class="cap-note">Reviewed July 2026. Sources describe broad guidance; they do not validate every individual meal or outcome.</p>
+      </div>
     </section>
 
     <section class="screen" id="profilePreferences">
@@ -708,7 +760,7 @@
       <h2 id="sec-about"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8v.01"/></svg>About</h2>
       <div class="opt" onclick="replayOnboarding()"><div class="ck" style="background:#eee;border-color:#eee;color:var(--ink-soft)">🔄</div><div><div class="ot">Replay intro</div><div class="od">Watch the welcome walkthrough again</div></div></div>
 
-      <p class="sub" style="text-align:center;margin-top:14px">Mesa offers general nutrition guidance, not medical advice. For Hashimoto's, check changes with your doctor.</p>
+      <p class="sub" style="text-align:center;margin-top:14px">Mesa offers general nutrition guidance, not medical advice. Ask a qualified clinician about individual dietary care or a medical condition.</p>
     </section>
 
   </div><!-- /app -->
@@ -828,6 +880,8 @@
 
   <!-- toast -->
   <div class="toast" id="toast"></div>
+  <div class="log-reward-layer" id="logRewardLayer" aria-hidden="true"></div>
+  <div class="sr-only" id="logRewardLive" role="status" aria-live="polite" aria-atomic="true"></div>
 
   <!-- bottom nav -->
   <nav class="tabbar">

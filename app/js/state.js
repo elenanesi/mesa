@@ -90,60 +90,21 @@ function deepClone(obj){
    called fresh by render.js wherever the why-box paints.
    =================================================================== */
 const LEGACY_RECIPE_IDS = ['yogurt', 'omelette', 'lentil', 'salmon', 'skyrbowl', 'eggsturkey', 'chickenfarro', 'chiapudding', 'tunasalad', 'salmongreens'];
-// Task C2: the planner picks from the FULL RECIPES_DB (32-36 recipes), not just these 10.
-// LEGACY_RECIPE_IDS + LEGACY_WHY are kept only for their special-cased hand-written "why"
-// copy on the 10 original mockup recipes (see whyText() below).
+// Task C2: the planner picks from the FULL RECIPES_DB, not just these original mockups.
+// All recipes use the same factual, goal-aware explanation below. The former handwritten
+// copy made thyroid, skin, iodine, selenium and low-GI suitability claims Mesa cannot
+// substantiate from its food data, so it is intentionally retired.
+const LEGACY_WHY = {};
 
-// The mockup's hand-written "why this fits you" copy, kept verbatim per recipe id so
-// nothing user-visible degrades for the 10 legacy recipes (task C3 replaces this with
-// template text generated from tags × goals for the full RECIPES_DB).
-// Task B2 (generic identity): omelette/eggsturkey used to name-drop "Andrea" (these were
-// originally the partner slot's default breakfasts) — reworded to plain second-person
-// copy rather than interpolating PROF.partner.displayName, since this object is a plain
-// string map (not per-render functions) and the plain rewrite reads naturally either way.
-const LEGACY_WHY = {
-  yogurt: 'Greek yogurt brings casein and whey protein plus gut-friendly probiotics; berries add skin-supporting antioxidants at a low glycemic load. Naturally low in iodine — an easy fit alongside a Hashimoto\'s-aware day. <i>General guidance, not medical advice.</i>',
-  omelette: 'Eggs bring complete protein plus choline and selenium; rye toast adds fiber and slow-release carbs for steady energy through a day of training. <i>General guidance, not medical advice.</i>',
-  lentil: 'Lentils bring plant-based iron, B-vitamins and slow-release carbs; roasted veg add fiber and polyphenols, while a little feta gives calcium without loading up on dairy. A heart-smart, high-fiber midday reset. <i>General guidance, not medical advice.</i>',
-  salmon: 'Salmon delivers omega-3 and vitamin D for skin and thyroid; quinoa is a gluten-free, lower-GI carb; leafy greens add iron + folate. Iodine stays moderate — good for Hashimoto\'s balance. <i>General guidance, not medical advice.</i>',
-  skyrbowl: 'Skyr packs even more protein than Greek yogurt for barely any fat; mixed seeds add omega-3 and a little crunch. Naturally low in iodine — an easy fit for a higher-protein, thyroid-aware morning. <i>General guidance, not medical advice.</i>',
-  eggsturkey: 'Eggs and lean turkey stack complete protein to fuel training; rye brings fiber and slow-release carbs. A higher-protein spin on your usual morning. <i>General guidance, not medical advice.</i>',
-  chickenfarro: 'Grilled chicken breast is a lean, high-protein anchor; farro adds fiber and a nutty bite with a lower glycemic load than white grains. A satisfying, muscle-supporting midday reset. <i>General guidance, not medical advice.</i>',
-  chiapudding: 'Chia seeds soak up coconut milk into a creamy, low-carb pudding rich in omega-3 and fiber; berries keep it low-GI and skin-supporting. A gentle, thyroid-friendly start with steady energy. <i>General guidance, not medical advice.</i>',
-  tunasalad: 'Tuna is lean, high-protein and rich in omega-3; avocado swaps in healthy fat for starchy carbs, keeping this lunch low-carb without losing staying power. Heart-smart with moderate iodine — Hashimoto\'s-friendly. <i>General guidance, not medical advice.</i>',
-  salmongreens: 'Same salmon, same omega-3 and selenium — just without the quinoa, so carbs stay low while protein and healthy fat carry the meal. Iodine stays moderate for Hashimoto\'s balance. <i>General guidance, not medical advice.</i>'
+// Claims Mesa can calculate against public-health guidance. These are deliberately
+// separate from calorie targets, macro splits and variety rules, which are Mesa settings.
+const NUTRITION_GUIDANCE = {
+  fiber: {kind:'Guideline', target:25, unit:'g/day', source:'WHO healthy diet guidance'},
+  satFat: {kind:'Guideline', target:10, unit:'% of energy', source:'WHO healthy diet guidance'},
+  freeSugars: {kind:'Guideline', target:10, unit:'% of energy', source:'WHO sugars guideline'}
 };
 
-/* ===================================================================
-   whyText() — task C3: deterministic "why this fits you" generator
-
-   Replaces the LEGACY_WHY-only mechanism for the ~26 non-legacy recipes.
-   Where LEGACY_WHY has hand-written copy, whyText() returns it verbatim
-   (it's better prose than a template can produce and the plan says to
-   keep it). For everything else it assembles 2-3 sentences from the
-   recipe's tags (RECIPES_DB) and its ingredients' FOODS flags, crossed
-   with the person's ACTIVE goals (hashi/skin/muscle/heart — derived
-   from PROF, not typed in per recipe), always ending with the existing
-   guidance line. Never invents a number — the one quantity it can cite
-   (protein grams for the muscle clause) comes straight from
-   recipeNutrition(), same as every other displayed nutrition number.
-
-   Priority order (WHY_RULES below) lists thyroid/skin ahead of
-   muscle/heart so that whichever of a person's active goals is most
-   distinctive surfaces first when several match at once — a slot is
-   opaque (ground rule) and any of the four goal-gated rules can apply
-   to either profile now.
-
-   UX-REVIEW-plan.md item 6 (2026-07-29): every goal-gated rule below
-   now actually gates on the person's live goal toggle. `muscle` and
-   `heart` used to be `applies: true` (always on) while `thyroid`/`skin`
-   already checked `PROF[profKey].goals` — an inconsistency left over
-   from before the goal audit made muscle/heart real per-person planner
-   levers (KNOWLEDGE-BASE.md §3). A recipe that only carries a `muscle`/
-   `heart` tag now falls through to the generic "simple, Mediterranean-
-   style ... that fits your plan" copy below for anyone who doesn't have
-   that goal on, same as it already did for thyroid/skin.
-   =================================================================== */
+/* Deterministic, factual "Why Mesa picked this" explanations. */
 function recipeFlagSet(recipeId){
   const r = RECIPES_DB[recipeId];
   const set = {};
@@ -162,63 +123,26 @@ function hasTag(recipe, tag){ return recipe.tags.indexOf(tag) !== -1; }
 // naturally whether it lands first (after an em dash) or later (as its own sentence).
 const WHY_RULES = [
   {
-    goal: 'thyroid',
-    applies: function(profKey){ return !!PROF[profKey].hashi; },
-    matches: function(recipe, flags){ return hasTag(recipe, 'thyroid') || flags.selenium; },
-    clause: function(recipe, flags){
-      return flags.selenium
-        ? 'selenium here supports your thyroid focus'
-        : 'this stays gentle on iodine, in line with your Hashimoto’s-aware plan';
-    }
-  },
-  {
-    goal: 'skin',
-    // task B1: was `profKey === 'elena'` (skin is only ever offered to Elena, but that
-    // hardcoded the goal as always-on for her); now reads the real toggle so turning
-    // "Beautiful skin" off actually drops the clause, same as the thyroid rule below.
-    applies: function(profKey){ return !!(PROF[profKey].goals && PROF[profKey].goals.skin); },
-    matches: function(recipe, flags){ return hasTag(recipe, 'skin') || flags.omega3 || hasTag(recipe, 'lowGI'); },
-    clause: function(recipe, flags){
-      return flags.omega3
-        ? 'omega-3 here supports your skin goal'
-        : 'the low glycemic load here is kind to your skin goal';
-    }
-  },
-  {
     goal: 'muscle',
-    // UX-REVIEW-plan.md item 6: was `applies: true` (unconditional) — inconsistent with
-    // thyroid/skin above, and stale now that `muscle` gates a real planner bias
-    // (goalTuningBonus, KNOWLEDGE-BASE.md §3), not just this copy. Mirrors the
-    // muscleGain-vs-muscle-gain-surplus wording split below, which is about WHICH clause
-    // to use once the rule already matched, not whether it applies.
     applies: function(profKey){ return !!(PROF[profKey].goals && PROF[profKey].goals.muscle); },
     matches: function(recipe){ return hasTag(recipe, 'muscle'); },
-    clause: function(recipe, flags, profKey, proteinG){
-      return profKey === 'partner'
-        ? proteinG + 'g of protein backs your muscle-gain surplus'
-        : proteinG + 'g of protein supports your muscle & protein goal';
-    }
+    clause: function(recipe, flags, profKey, proteinG){ return proteinG + 'g of protein gave this a preference boost for your higher-protein setting'; }
   },
   {
     goal: 'heart',
-    // UX-REVIEW-plan.md item 6: same fix as 'muscle' above — was unconditional.
     applies: function(profKey){ return !!(PROF[profKey].goals && PROF[profKey].goals.heart); },
     matches: function(recipe, flags){ return hasTag(recipe, 'heart') || hasTag(recipe, 'highFiber') || flags.highFiber; },
-    clause: function(recipe, flags){
-      return (hasTag(recipe, 'highFiber') || flags.highFiber)
-        ? 'the fiber here makes it a heart-smart pick'
-        : 'this is a heart-smart choice for your Mediterranean base';
-    }
+    clause: function(recipe, flags){ return 'Mesa gave its higher-fibre, lower-saturated-fat preference extra weight here'; }
   },
   {
     goal: 'veggie',
     applies: function(){ return true; },
     matches: function(recipe){ return hasTag(recipe, 'veggie'); },
-    clause: function(){ return 'it’s plant-forward and easy on digestion'; }
+    clause: function(){ return 'it is plant-forward under Mesa’s ingredient classification'; }
   }
 ];
 
-const WHY_GUIDANCE = '<i>General guidance, not medical advice.</i>';
+const WHY_GUIDANCE = '<i>Planning explanation, not medical advice.</i>';
 
 function whyText(recipeId, profKey){
   if(LEGACY_WHY[recipeId]) return LEGACY_WHY[recipeId];
@@ -245,7 +169,7 @@ function whyText(recipeId, profKey){
   const safeTitle = escapeHtml(capitalizeFirst(recipe.title));
   let body;
   if(!clauses.length){
-    body = safeTitle + ' is a simple, Mediterranean-style ' + recipe.slot + ' that fits your plan.';
+    body = safeTitle + ' fits your calorie, macro and variety settings for this ' + recipe.slot + '.';
   } else {
     body = safeTitle + ' — ' + clauses[0] + '.';
     if(clauses.length > 1) body += ' ' + capitalizeFirst(clauses.slice(1).join('; ')) + '.';
@@ -259,13 +183,8 @@ function whyText(recipeId, profKey){
 // micronutrient flourishes like "Iron + B12" or "Selenium" that have no equivalent in
 // RECIPES_DB's tag vocabulary) — a systematic, generic mapping instead.
 const TAG_PILL_MAP = {
-  thyroid: ['berry', 'Thyroid-friendly'],
-  skin: ['berry', 'Skin-supporting'],
-  heart: ['', 'Heart-smart'],
-  muscle: ['terra', 'High protein'],
-  lowGI: ['', 'Low-GI'],
-  omega3: ['', 'Omega-3'],
-  highFiber: ['', 'High fiber'],
+  muscle: ['terra', '25g+ protein'],
+  highFiber: ['', 'Higher-fibre option'],
   quick: ['', 'Quick'],
   veggie: ['', 'Plant-based']
 };
@@ -406,8 +325,7 @@ const NEXT_WEEK_TUNING_DEFS = [
   {key: 'protein', title: 'More protein', note: "Nudges next week's picks toward more protein, within your calorie targets."},
   {key: 'fiber', title: 'More fiber', note: "Nudges next week's picks toward more fiber, within your calorie targets."},
   {key: 'lowSugar', title: 'Less free sugar', note: "Nudges next week's picks toward less free sugar, within your calorie targets."},
-  {key: 'lowSatFat', title: 'Less saturated fat', note: "Nudges next week's picks toward less saturated fat, within your calorie targets."},
-  {key: 'omega3', title: 'More omega-3', note: "Nudges next week's picks toward more omega-3, within your calorie targets."}
+  {key: 'lowSatFat', title: 'Less saturated fat', note: "Nudges next week's picks toward less saturated fat, within your calorie targets."}
 ];
 const NEXT_WEEK_TUNING_KEYS = NEXT_WEEK_TUNING_DEFS.map(function(d){ return d.key; });
 function nextWeekTuningDef(key){
@@ -581,50 +499,15 @@ function normalizeDietsArray(v){
 // are all-false (see PROF below) — a brand-new household starts with nothing toggled;
 // loadState() restores a returning user's real saved booleans over these on top.
 //
-// Goal-audit fix (KNOWLEDGE-BASE.md §3): every `desc` below now states only what the
-// code actually enforces for that goal — no more copy promising a rule nothing checks.
-//   - fatLoss / muscleGain move recommendedCal() by a fixed offset (engine.js:
-//     deriveGoalAdj) — BOTH goals are available on BOTH profiles now (no more slot
-//     pinning) and are mutually exclusive (render-profile.js:toggleGoal enforces it:
-//     turning one on turns the other off — you can't be in a deficit and a surplus at
-//     once).
-//   - muscle/heart/skin each nudge which recipes the WEEKLY PLANNER picks for that
-//     person, via GOAL_TUNING_KEYS (planner.js, next to tuningBonus) — the same
-//     per-metric scoring term nextWeekTuning already uses, just keyed per-person off
-//     `goals` instead of off the one shared household dial. They do NOT touch the
-//     person's macro split or calorie target (SPLIT_BOUNDS/kP/kC/kF stay exactly what
-//     the user set on the Split editor) — see planner.js:goalTuningBonus's doc for why a
-//     per-person goal is scoped to nudging shared-meal candidates, not overriding them.
-//   - hashi additionally gates the selenium coverage target (render-week.js:
-//     renderNutrientChips) so it's tracked (≥3 sources/wk) only while at least one
-//     person has it on.
-// "Low sodium" (heart), "moderate iodine"/"anti-inflammatory" (hashi), "low-GI"/"dairy
-// down" (skin) and "g/kg"-style protein math are deliberately NOT in this copy — no
-// sodium field exists in FOODS at all, no iodine cap or dairy threshold exists anywhere,
-// and no code path computes protein from bodyweight (KNOWLEDGE-BASE.md §5 lists the
-// same gaps for foods.js's data-sourcing side). Restating an unenforced rule here would
-// be exactly the drift this audit removed.
-// UX-REVIEW-plan.md item 7: `kind` is purely a render-grouping hint — renderGoalsEditor()
-// (render-profile.js) sections the list by it so the two calorie-target goals (already
-// mutually exclusive, toggleGoal()) read as visibly different from the four meal-nudge
-// goals, instead of six adjacent-looking rows where "Muscle gain" and "Muscle & protein"
-// are easy to mistake for the same toggle. Deliberately NOT a data-model change: `kind`
-// never gets persisted (goals stay one flat {key: boolean} map per profile, PROF[key].goals)
-// and every key/toggle/persisted shape is exactly as before — see KNOWLEDGE-BASE.md §3 for
-// why the two "muscle" goals stay separate keys rather than merging.
 const GOAL_DEFS_UNION = [
   {key:'fatLoss', title:'Gentle fat loss', desc:'~325 kcal below maintenance', kind:'calorie'},
   {key:'muscleGain', title:'Muscle gain', desc:'~60 kcal above maintenance — calorie target only', kind:'calorie'},
   {key:'muscle', title:'Muscle & protein', desc:'Nudges meal picks toward higher protein — does not change your split or calories', kind:'nudge'},
-  {key:'heart', title:'Heart & metabolic', desc:'Nudges meal picks toward more fiber and less saturated fat', kind:'nudge'},
-  {key:'skin', title:'Beautiful skin', desc:'Nudges meal picks toward more omega-3 and less free sugar', kind:'nudge'},
-  {key:'hashi', title:'Hashimoto\'s-friendly 🦋', desc:'Tracks weekly selenium coverage (≥3 sources) while this is on', kind:'nudge'}
+  {key:'heart', title:'Higher fibre, lower saturated fat', desc:'Nudges meal picks toward these measurable nutrition characteristics', kind:'nudge'}
 ];
 const GOAL_DEFS = {elena: GOAL_DEFS_UNION, partner: GOAL_DEFS_UNION};
-// Group order + header copy for renderGoalsEditor() — 'calorie' first (fatLoss/muscleGain,
-// the two goals that move recommendedCal() via deriveGoalAdj) then 'nudge' (muscle/heart/
-// skin/hashi, the goals that only bias which recipes the weekly planner picks, per
-// goalTuningBonus()/hashiGoalOn() — KNOWLEDGE-BASE.md §3).
+// Group order + header copy for renderGoalsEditor(): calorie-target choices first, then
+// measurable meal-preference nudges. Retired saved skin/thyroid booleans are ignored.
 const GOAL_KIND_GROUPS = [
   {kind: 'calorie', label: 'Moves your calorie target'},
   {kind: 'nudge', label: 'Nudges which meals get picked'}
@@ -647,13 +530,13 @@ const PROF = {
             activity:1.55,
             diets:[],
             calCustom:null, calNote:'',
-            coachT:'Today leans thyroid-friendly 🦋', hashi:false,
+            coachT:'Today’s menu is ready', hashi:false,
             // goals (task B1/B2): source of truth for goalAdj/goalName/goalTag, all derived
             // by engine.js:recomputeProf() every call — see deriveGoalAdj/deriveGoalName/
             // deriveGoalTag. Never set goalAdj etc. here: a stored magic number next to a
             // derivation function is exactly the drift this batch removes.
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
-            coachD:'Brazil nuts + salmon cover your selenium and omega-3. Iodine kept moderate, gluten-light. Tap any meal to see why it fits.',
+            coachD:'Calories and macros are estimates from your profile and recipe portions. Tap a meal to see what Mesa considered.',
             kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'],
             // consumed*/consumedKcal start at zero (task D1): they're overwritten by
             // planner.js:recomputeConsumed() from real logHistory entries before first

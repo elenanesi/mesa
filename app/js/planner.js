@@ -98,21 +98,9 @@ function weeklyCapForRecipe(id, persons){
 // catalog must still produce a complete week (see applyLightConsecutiveFilter's doc).
 // `persons` mirrors applyVarietyFilter's dayUsePersons: a shared slot must count against
 // both people's weeks, since a shared dish lands on both plates.
-/* ---------------- VARIETY-plan.md P2: Mediterranean protein balance ----------------
-   Decision Q1: red meat at most once a week, poultry at most three times, fish at least
-   twice, and at least two fully meatless days. Measured before this rule: meat in 15 of 28
-   meals, on 7 days out of 7 — even though the catalog is 60 meatless / 21 poultry /
-   10 fish / 5 red meat. That is a SCORING bias, not a catalog gap: mealScore rewards
-   hitting the protein target and meat scores best on it, so no amount of new vegetarian
-   recipes would have fixed it. Only an explicit frequency rule does.
-
-   Ceilings are enforced by filtering. The two FLOORS (fish, meatless days) cannot be — you
-   cannot filter your way to a food being present — so instead the week deterministically
-   designates which days carry them, spread from the week seed. That is also how a person
-   actually plans: "Tuesday and Friday are fish nights." */
-const PROTEIN_WEEK_LIMITS = {red: 1, poultry: 3}; // ceilings, per person per week
-const MEATLESS_DAYS_MIN = 2;                       // household days with no animal protein
-const FISH_DAYS_MIN = 2;                           // household dinners designated fish
+// Variety is a Mesa planning rule. Fixed weekly red-meat/poultry/fish/meatless quotas
+// were retired: they were product preferences presented as nutrition guidance, not a
+// rule Mesa can claim as a personalised or authoritative requirement.
 
 /* ---------------- composite ingredients: seeing through a composite's components ----------------
    A composite FOODS entry (data/foods.js — `components` present, e.g. 'pesto-elena')
@@ -282,41 +270,14 @@ function entryProteinKind(entry){
 // three days apart, so the meatless days never bunch together and never land on day 0 (the
 // week's first day, which is often already half-logged when a plan is regenerated). Fish
 // days are offset from the meatless days so the two never collide.
-function proteinScheduleForWeek(weekSeed){
-  const base = Math.abs(weekSeed) % 3; // 0..2
-  const meatless = {}, fish = {};
-  for(let i = 0; i < MEATLESS_DAYS_MIN; i++) meatless[1 + base + i * 3] = true;
-  for(let i = 0; i < FISH_DAYS_MIN; i++){
-    const d = 2 + ((base + 1) % 3) + i * 3;
-    if(!meatless[d] && d <= 6) fish[d] = true;
-  }
-  return {meatless: meatless, fish: fish};
-}
+function proteinScheduleForWeek(){ return {}; }
 
 // Applies the ceilings and the designated-day floors to a candidate pool. Like every other
 // rule here it RELAXES rather than emptying the pool — a day whose only legal candidates are
 // meaty still gets a meal, it just misses the target, and that is strictly better than a
 // blank slot.
-function applyProteinBalanceFilter(pool, history, persons, dayIndex, schedule){
-  let out = pool;
-  if(schedule.meatless[dayIndex]){
-    const meatless = out.filter(function(id){ return !recipeMayContainAnimalProtein(id); });
-    if(meatless.length) return meatless; // a meatless day outranks every other protein rule
-    proteinRuleRelaxations++;
-  }
-  const underCeiling = out.filter(function(id){
-    const kind = recipeProteinKind(id);
-    if(kind !== 'red' && kind !== 'poultry') return true;
-    return persons.every(function(p){ return (history[p].proteinUse[kind] || 0) < PROTEIN_WEEK_LIMITS[kind]; });
-  });
-  if(underCeiling.length) out = underCeiling; else proteinRuleRelaxations++;
-  if(schedule.fish[dayIndex]){
-    const fish = out.filter(function(id){ return recipeProteinKind(id) === 'fish'; });
-    if(fish.length) return fish;
-  }
-  return out;
-}
-let proteinRuleRelaxations = 0;
+function applyProteinBalanceFilter(pool){ return pool; }
+let proteinRuleRelaxations = 0; // retained for old plan diagnostics; always zero.
 
 // Counts how often a weekly cap had to be relaxed during one generateWeek(). A relaxation
 // is not a bug — every rule here degrades rather than returning an empty pool — but it does
@@ -1556,10 +1517,10 @@ function recipeHasOmega3(recipeId){
 // Scales one recipe's nutrition totals (already at 1x/dbBaseNutrition) by a portion —
 // only the fields tuningBonus needs, not a full nutrition object.
 function scaleNutrientTotals(base, portion){
-  return {protein: base.protein * portion, fiber: base.fiber * portion, freeSugars: base.freeSugars * portion, fat: base.fat * portion, satFat: base.satFat * portion};
+  return {kcal: base.kcal * portion, protein: base.protein * portion, fiber: base.fiber * portion, freeSugars: base.freeSugars * portion, fat: base.fat * portion, satFat: base.satFat * portion};
 }
 function addNutrientTotals(a, b){
-  return {protein: a.protein + b.protein, fiber: a.fiber + b.fiber, freeSugars: a.freeSugars + b.freeSugars, fat: a.fat + b.fat, satFat: a.satFat + b.satFat};
+  return {kcal: a.kcal + b.kcal, protein: a.protein + b.protein, fiber: a.fiber + b.fiber, freeSugars: a.freeSugars + b.freeSugars, fat: a.fat + b.fat, satFat: a.satFat + b.satFat};
 }
 function withOmega3(totals, flag){ totals.hasOmega3 = flag; return totals; }
 
@@ -1568,7 +1529,7 @@ function tuningBonus(totals, tuningKey){
   if(tuningKey === 'protein') return TUNING_WEIGHT * (totals.protein / TUNING_PROTEIN_NORM);
   if(tuningKey === 'fiber') return TUNING_WEIGHT * (totals.fiber / TUNING_FIBER_NORM);
   if(tuningKey === 'lowSugar') return -TUNING_WEIGHT * (totals.freeSugars / TUNING_SUGAR_NORM);
-  if(tuningKey === 'lowSatFat') return -TUNING_WEIGHT * (totals.fat > 0 ? totals.satFat / totals.fat : 0);
+  if(tuningKey === 'lowSatFat') return -TUNING_WEIGHT * (totals.kcal > 0 ? totals.satFat * 9 / totals.kcal : 0);
   if(tuningKey === 'omega3') return totals.hasOmega3 ? TUNING_WEIGHT : 0;
   return 0; // unknown key (shouldn't happen — state.js validates on load/sync) behaves like 'none'
 }
@@ -1611,11 +1572,7 @@ function tuningBonus(totals, tuningKey){
    fiber + less saturated fat; skin -> more omega-3 + less free sugar. There is no lowGI or
    sodium tuningBonus key (no such food data — see foods.js's header / KNOWLEDGE-BASE.md §5),
    so skin/heart's copy was reworded to match exactly this, not the other way around. */
-const GOAL_TUNING_KEYS = {
-  muscle: ['protein'],
-  heart: ['fiber', 'lowSatFat'],
-  skin: ['omega3', 'lowSugar']
-};
+const GOAL_TUNING_KEYS = {muscle: ['protein'], heart: ['fiber', 'lowSatFat']};
 function goalTuningBonus(totals, person){
   if(!totals) return 0;
   const goals = PROF[person] && PROF[person].goals;
@@ -2115,8 +2072,8 @@ function computePlanSignature(){
     // tuningBonus) — flipping one of these must regenerate future days the same way
     // nextWeekTuning does. fatLoss/muscleGain need no entry here: they only move
     // calGoalNum, already in this signature above.
-    e.goals.muscle ? 1 : 0, e.goals.heart ? 1 : 0, e.goals.skin ? 1 : 0,
-    a.goals.muscle ? 1 : 0, a.goals.heart ? 1 : 0, a.goals.skin ? 1 : 0
+    e.goals.muscle ? 1 : 0, e.goals.heart ? 1 : 0,
+    a.goals.muscle ? 1 : 0, a.goals.heart ? 1 : 0
   ].join('|');
 }
 
@@ -2362,7 +2319,7 @@ function computeInsights(personKey){
   const totalLoggedDays = loggedDayCount(personKey);
   if(totalLoggedDays < 2){
     return {hasEnoughData: false, days: days, inBandCount: 0, daysLoggedCount: 0,
-      avgProtein: 0, avgFiber: 0, pctUnsaturated: 0, targetProtein: PROF[personKey].targetP,
+      avgProtein: 0, avgFiber: 0, satFatEnergyPct: 0, targetProtein: PROF[personKey].targetP,
       bandTargets: bandTargets, callouts: []};
   }
 
@@ -2370,16 +2327,16 @@ function computeInsights(personKey){
   const sum = function(key){ return loggedDays.reduce(function(s, d){ return s + d[key]; }, 0); };
   const avgProtein = loggedDays.length ? sum('protein') / loggedDays.length : 0;
   const avgFiber = loggedDays.length ? sum('fiber') / loggedDays.length : 0;
-  const totalFat = sum('fat'), totalSatFat = sum('satFat');
-  const pctUnsaturated = totalFat > 0 ? (1 - totalSatFat / totalFat) * 100 : 0;
+  const totalKcal = sum('kcal'), totalSatFat = sum('satFat');
+  const satFatEnergyPct = totalKcal > 0 ? totalSatFat * 9 / totalKcal * 100 : 0;
   const inBandCount = days.filter(function(d){ return d.inBand; }).length;
   const targetProtein = PROF[personKey].targetP;
 
   return {
     hasEnoughData: true, days: days, inBandCount: inBandCount, daysLoggedCount: loggedDays.length,
-    avgProtein: avgProtein, avgFiber: avgFiber, pctUnsaturated: pctUnsaturated, targetProtein: targetProtein,
+    avgProtein: avgProtein, avgFiber: avgFiber, satFatEnergyPct: satFatEnergyPct, targetProtein: targetProtein,
     bandTargets: bandTargets,
-    callouts: buildInsightCallouts(avgProtein, targetProtein, avgFiber, pctUnsaturated, inBandCount)
+    callouts: buildInsightCallouts(avgProtein, targetProtein, avgFiber, satFatEnergyPct, inBandCount)
   };
 }
 
@@ -2387,8 +2344,7 @@ function computeInsights(personKey){
 // deterministically by which metric sits furthest (relatively) from its target — the most
 // notable fact wins; ties broken by this fixed rule order (protein, fiber, satFat,
 // adherence). Every clause has fixed phrasing per rule × verdict — no free text.
-function buildInsightCallouts(avgProtein, targetProtein, avgFiber, pctUnsaturated, inBandCount){
-  const satSharePct = 100 - pctUnsaturated;
+function buildInsightCallouts(avgProtein, targetProtein, avgFiber, satFatEnergyPct, inBandCount){
   const rules = [
     {
       key: 'protein', magnitude: targetProtein > 0 ? Math.abs(avgProtein - targetProtein) / targetProtein : 0,
@@ -2403,24 +2359,24 @@ function buildInsightCallouts(avgProtein, targetProtein, avgFiber, pctUnsaturate
       good: avgFiber >= 25,
       icon: function(good){ return good ? '🌾' : '📌'; },
       text: function(good){ return good
-        ? 'Fiber is solidly heart-smart — averaging ' + Math.round(avgFiber) + 'g/day, at or above the 25g guide.'
+        ? 'Fibre averages ' + Math.round(avgFiber) + 'g/day, at or above the 25g WHO guide.'
         : 'Fiber is under the 25g guide — averaging ' + Math.round(avgFiber) + 'g/day this week.'; }
     },
     {
-      key: 'satFat', magnitude: Math.abs(satSharePct - 33) / 33,
-      good: satSharePct <= 33,
+      key: 'satFat', magnitude: Math.abs(satFatEnergyPct - NUTRITION_GUIDANCE.satFat.target) / NUTRITION_GUIDANCE.satFat.target,
+      good: satFatEnergyPct <= NUTRITION_GUIDANCE.satFat.target,
       icon: function(good){ return good ? '❤️' : '📌'; },
       text: function(good){ return good
-        ? 'Saturated fat stays in check — ' + Math.round(satSharePct) + '% of fat vs the 33% cap.'
-        : 'Saturated fat is creeping up — ' + Math.round(satSharePct) + '% of fat vs the 33% cap.'; }
+        ? 'Saturated fat is ' + Math.round(satFatEnergyPct) + '% of energy, within the WHO <10% guidance.'
+        : 'Saturated fat is ' + Math.round(satFatEnergyPct) + '% of energy, above the WHO <10% guidance.'; }
     },
     {
       key: 'adherence', magnitude: Math.abs(inBandCount / 7 - 0.7),
       good: inBandCount >= 5,
       icon: function(good){ return good ? '🎉' : '📌'; },
       text: function(good){ return good
-        ? 'Adherence is steady — ' + inBandCount + ' of 7 days landed inside your target range.'
-        : 'A few days drifted outside your target range — ' + inBandCount + ' of 7 this week.'; }
+        ? 'Target consistency: ' + inBandCount + ' of 7 days landed inside Mesa’s ±10% planning band.'
+        : 'Target consistency: ' + inBandCount + ' of 7 days landed inside Mesa’s ±10% planning band.'; }
     }
   ];
   rules.sort(function(a, b){ return b.magnitude - a.magnitude; }); // stable sort (ES2019+): ties keep the fixed order above
@@ -3126,42 +3082,27 @@ function recipeHasFlag(recipeId, flag){
   });
 }
 
-// Real weekly nutrient coverage over a given plan (defaults to the live weekPlan):
-// omega-3 / selenium meal counts (a meal counts if EITHER person's dish that slot
-// contains the flag — for shared meals that's the one dish both eat), fiber g/day
-// average per person, and the household's saturated-fat + free-sugar share of total energy.
+// Real weekly nutrient coverage over a given plan (defaults to the live weekPlan).
+// Only measures with a clear, computable public-health comparator are shown here:
+// fibre g/day and saturated fat/free sugars as a share of energy.
 function computeWeeklyCoverage(plan){
   plan = plan || weekPlan;
-  let omega3Count = 0, seleniumCount = 0;
   let fiberSumE = 0, fiberSumA = 0;
-  let fatSum = 0, satFatSum = 0, freeSugarKcal = 0, totalKcal = 0;
+  let satFatSum = 0, freeSugarKcal = 0, totalKcal = 0;
   plan.days.forEach(function(day){
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
-      // Flag coverage must see extras, not just the base dish (task: Insights ignoring
-      // meal extras) — a meal counts if ANY component (base or extra) of either person's
-      // entry that slot has the flag, mirroring how Today/Log treat extras as real food.
-      const componentsE = planEntryComponents(m.elena);
-      const componentsA = planEntryComponents(m.partner);
-      const hasFlag = function(components, flag){
-        return components.some(function(c){ return recipeHasFlag(c.recipeId, flag); });
-      };
-      if(hasFlag(componentsE, 'omega3') || hasFlag(componentsA, 'omega3')) omega3Count++;
-      if(hasFlag(componentsE, 'selenium') || hasFlag(componentsA, 'selenium')) seleniumCount++;
       const nutE = planEntryNutrition(m.elena);
       const nutA = planEntryNutrition(m.partner);
       fiberSumE += nutE.fiber; fiberSumA += nutA.fiber;
-      fatSum += nutE.fat + nutA.fat;
       satFatSum += nutE.satFat + nutA.satFat;
       freeSugarKcal += (nutE.freeSugars + nutA.freeSugars) * 4;
       totalKcal += nutE.kcal + nutA.kcal;
     });
   });
   return {
-    omega3PerWeek: omega3Count,
-    seleniumPerWeek: seleniumCount,
     fiberAvgPerDay: {elena: fiberSumE / 7, partner: fiberSumA / 7},
-    satFatShareOfFat: fatSum > 0 ? satFatSum / fatSum : 0,
+    satFatShareOfKcal: totalKcal > 0 ? satFatSum * 9 / totalKcal : 0,
     freeSugarShareOfKcal: totalKcal > 0 ? freeSugarKcal / totalKcal : 0
   };
 }
@@ -3176,21 +3117,15 @@ function coverageGaps(cov){
   const worstFiberPerson = isSoloHousehold() ? 'elena'
     : (cov.fiberAvgPerDay.elena <= cov.fiberAvgPerDay.partner ? 'elena' : 'partner');
   const worstFiberVal = cov.fiberAvgPerDay[worstFiberPerson];
-  const satPct = cov.satFatShareOfFat * 100;
+  const satPct = cov.satFatShareOfKcal * 100;
   const sugarPct = cov.freeSugarShareOfKcal * 100;
   return {
-    omega3: {key: 'omega3', label: 'Omega-3 meals', value: cov.omega3PerWeek, target: 3, unit: '/wk',
-      gap: Math.max(0, (3 - cov.omega3PerWeek) / 3), pct: Math.min(100, Math.round(cov.omega3PerWeek / 3 * 100))},
-    selenium: {key: 'selenium', label: 'Selenium sources', value: cov.seleniumPerWeek, target: 3, unit: '/wk',
-      gap: Math.max(0, (3 - cov.seleniumPerWeek) / 3), pct: Math.min(100, Math.round(cov.seleniumPerWeek / 3 * 100))},
-    fiber: {key: 'fiber', label: 'Fiber', value: Math.round(worstFiberVal), target: 25, unit: 'g/day', person: worstFiberPerson,
-      gap: Math.max(0, (25 - worstFiberVal) / 25), pct: Math.min(100, Math.round(worstFiberVal / 25 * 100))},
-    satFat: {key: 'satFat', label: 'Sat. fat', value: Math.round(satPct), target: 33, unit: '% of fat', cap: true,
-      gap: Math.max(0, (satPct - 33) / 33), pct: Math.min(100, Math.round(satPct / 33 * 100))},
-    freeSugars: {key: 'freeSugars', label: 'Free sugars', value: Math.round(sugarPct), target: Math.round(6), unit: '% of kcal',
-      gap: Math.max(0, (sugarPct - 6) / 6), pct: Math.min(100, Math.round(sugarPct / 6 * 100)), cap: true, note: 'target from current profile calories'},
-    freeSugarsWarn: {key: 'freeSugarsWarn', label: 'Free sugars ceiling', value: Math.round(sugarPct), target: Math.round(10), unit: '% of kcal',
-      gap: Math.max(0, (sugarPct - 10) / 10), pct: Math.min(100, Math.round(sugarPct / 10 * 100)), cap: true}
+    fiber: {key: 'fiber', label: 'Fibre', value: Math.round(worstFiberVal), target: NUTRITION_GUIDANCE.fiber.target, unit: 'g/day', person: worstFiberPerson,
+      gap: Math.max(0, (NUTRITION_GUIDANCE.fiber.target - worstFiberVal) / NUTRITION_GUIDANCE.fiber.target), pct: Math.min(100, Math.round(worstFiberVal / NUTRITION_GUIDANCE.fiber.target * 100))},
+    satFat: {key: 'satFat', label: 'Saturated fat', value: Math.round(satPct), target: NUTRITION_GUIDANCE.satFat.target, unit: '% of energy', cap: true,
+      gap: Math.max(0, (satPct - NUTRITION_GUIDANCE.satFat.target) / NUTRITION_GUIDANCE.satFat.target), pct: Math.min(100, Math.round(satPct / NUTRITION_GUIDANCE.satFat.target * 100))},
+    freeSugars: {key: 'freeSugars', label: 'Free sugars', value: Math.round(sugarPct), target: NUTRITION_GUIDANCE.freeSugars.target, unit: '% of energy',
+      gap: Math.max(0, (sugarPct - NUTRITION_GUIDANCE.freeSugars.target) / NUTRITION_GUIDANCE.freeSugars.target), pct: Math.min(100, Math.round(sugarPct / NUTRITION_GUIDANCE.freeSugars.target * 100)), cap: true}
   };
 }
 
@@ -3202,12 +3137,12 @@ function coverageGaps(cov){
 // coverageGaps) so the wording never disagrees with the Insights screen:
 //   fiber >= 25 g/day · sat fat <= 33% of fat · protein >= personal goal · omega-3 >= 3 meals/wk
 // Nothing here is typed in — every number comes from recipeNutrition()/PROF[personKey].targetP.
-const WEEK_SUMMARY_THRESHOLDS = {fiberMinPerDay: 25, satFatMaxShare: 0.33, omega3MinPerWeek: 3};
+const WEEK_SUMMARY_THRESHOLDS = {fiberMinPerDay: NUTRITION_GUIDANCE.fiber.target, satFatMaxEnergyShare: NUTRITION_GUIDANCE.satFat.target / 100};
 
 function summarizeWeekPlan(plan, personKey){
   const tagCounts = {};
   const recipeIds = {};
-  let fiberSum = 0, proteinSum = 0, fatSum = 0, satFatSum = 0, omega3Count = 0;
+  let fiberSum = 0, proteinSum = 0, kcalSum = 0, satFatSum = 0;
   const mealCount = plan.days.length * SLOT_ORDER.length;
 
   plan.days.forEach(function(day){
@@ -3220,15 +3155,14 @@ function summarizeWeekPlan(plan, personKey){
       // Components-aware (base + extras), same reasoning as computeWeeklyCoverage above —
       // this headline must agree with what Today/Log actually counted for the person.
       const nut = planEntryNutrition(entry);
-      fiberSum += nut.fiber; proteinSum += nut.protein; fatSum += nut.fat; satFatSum += nut.satFat;
-      if(planEntryComponents(entry).some(function(c){ return recipeHasFlag(c.recipeId, 'omega3'); })) omega3Count++;
+      fiberSum += nut.fiber; proteinSum += nut.protein; kcalSum += nut.kcal; satFatSum += nut.satFat;
     });
   });
 
   const days = plan.days.length || 7;
   const avgFiberPerDay = fiberSum / days;
   const avgProteinPerDay = proteinSum / days;
-  const satFatShare = fatSum > 0 ? satFatSum / fatSum : 0;
+  const satFatEnergyShare = kcalSum > 0 ? satFatSum * 9 / kcalSum : 0;
   const targetProtein = PROF[personKey] ? PROF[personKey].targetP : 0;
 
   // Up to 3 headline tags, most-frequent first; ties broken by TAG_PILL_MAP's fixed key
@@ -3254,17 +3188,13 @@ function summarizeWeekPlan(plan, personKey){
       text: '≈' + Math.round(avgFiberPerDay) + 'g fiber/day'
     },
     {
-      good: satFatShare <= T.satFatMaxShare,
-      text: 'sat. fat in check — ' + Math.round(satFatShare * 100) + '% of fat'
+      good: satFatEnergyShare <= T.satFatMaxEnergyShare,
+      text: 'sat. fat ≈' + Math.round(satFatEnergyShare * 100) + '% of energy'
     },
     {
       good: targetProtein > 0 && avgProteinPerDay >= targetProtein,
       text: 'protein on target — ' + Math.round(avgProteinPerDay) + 'g/day'
     },
-    {
-      good: omega3Count >= T.omega3MinPerWeek,
-      text: 'omega-3 ' + omega3Count + ' meals this week'
-    }
   ];
   const metric = metricCandidates.find(function(m){ return m.good; })
     || {good: false, text: Math.round(avgFiberPerDay) + 'g fiber/day (goal ' + T.fiberMinPerDay + 'g)'};
@@ -3277,8 +3207,7 @@ function summarizeWeekPlan(plan, personKey){
     uniqueRecipeCount: Object.keys(recipeIds).length,
     avgFiberPerDay: avgFiberPerDay,
     avgProteinPerDay: avgProteinPerDay,
-    satFatShare: satFatShare,
-    omega3Count: omega3Count,
+    satFatEnergyShare: satFatEnergyShare,
     targetProtein: targetProtein
   };
 }
@@ -3316,11 +3245,9 @@ function enumerateSwapUnits(plan){
 // sat-fat is negated since lower is better there).
 function objectiveFor(metricKey, plan, fixedPerson){
   const cov = computeWeeklyCoverage(plan);
-  if(metricKey === 'omega3') return cov.omega3PerWeek;
-  if(metricKey === 'selenium') return cov.seleniumPerWeek;
   if(metricKey === 'fiber') return cov.fiberAvgPerDay[fixedPerson];
-  if(metricKey === 'satFat') return -cov.satFatShareOfFat;
-  if(metricKey === 'freeSugars' || metricKey === 'freeSugarsWarn') return -cov.freeSugarShareOfKcal;
+  if(metricKey === 'satFat') return -cov.satFatShareOfKcal;
+  if(metricKey === 'freeSugars') return -cov.freeSugarShareOfKcal;
   return 0;
 }
 

@@ -2,6 +2,8 @@
 
 A free, installable, offline-first PWA that plans a week of Mediterranean meals for a household — one person, or two with different calorie/macro targets and shared dinners — generates one shopping list, and logs what was actually eaten. **Every number is computed, never typed in** — Mifflin-St Jeor for targets, sums over the food DB for nutrition.
 
+> **Nutrition-claims policy (current as of 2026-07-29):** calorie and recipe values are estimates; fibre (25g/day), free sugars (<10% energy), and saturated fat (<10% energy) are general WHO guidance; macro splits, calorie adjustments, variety and tuning are Mesa product rules. Thyroid/Hashimoto, skin, selenium, iodine, omega-3 coverage, low-GI and fixed animal-protein quota claims were retired. See [KNOWLEDGE-BASE.md](KNOWLEDGE-BASE.md) and Profile → **How Mesa plans** in the app. Historical handoff entries below that describe those retired rules are superseded.
+
 Since Phase 3 it is a multi-user app: invite-only Google sign-in, one household
 per user, and no hardcoded people. Elena and Andrea are just the first
 household; nothing user-visible names them (see the Auth & accounts section).

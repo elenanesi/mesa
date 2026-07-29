@@ -1021,9 +1021,9 @@ function renderTodayCardActions(){
       // must write to today even when the Log screen is still set to Yesterday. See the doc
       // on logConfirm below.
       wrap.innerHTML = '<div class="meal-actions-row">'
-        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"',todayISO())", ariaLabel: 'Skip '+label, title: 'Skip'})
+        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"',todayISO(),this)", ariaLabel: 'Skip '+label, title: 'Skip'})
         + mealActionButtonHtml('swap', {onclick: "event.stopPropagation();openSwap('"+slot+"',null)", ariaLabel: 'Swap '+label, title: 'Swap'})
-        + mealActionButtonHtml('log', {onclick: "event.stopPropagation();logConfirm('"+slot+"',todayISO())", ariaLabel: 'Log '+label, title: 'Mark as eaten'})
+        + mealActionButtonHtml('log', {onclick: "event.stopPropagation();logConfirm('"+slot+"',todayISO(),this)", ariaLabel: 'Log '+label, title: 'Mark as eaten'})
         + '</div>';
     }
   });
@@ -1075,12 +1075,14 @@ function removeTodayEntry(index){
 // (and re-reading) today's status via renderTodayCardActions' slotLogStatus(todayISO()).
 // The two disagreed silently. Passing the date explicitly is what keeps the surface a
 // button lives on and the day it writes to the same thing.
-function logConfirm(key, dateISO){
+function logConfirm(key, dateISO, anchorEl, anchorRect){
   const date = dateISO || currentLogDateISO();
   if(slotLogStatus(date, currentProf, key)) return; // already confirmed or skipped
+  anchorRect = anchorRect || captureRewardAnchor(anchorEl);
+  const accountedBefore = date === todayISO() && typeof accountedSlotCount === 'function'
+    ? accountedSlotCount(date, currentProf) : null;
   const v = computeMenuForDate(date, currentProf)[key];
   logPlanEntry(date, currentProf, key, v.recipeId, v.portion, v.components);
-  toast('✓ Logged to ' + (date === todayISO() ? 'today' : 'yesterday'));
 
   // Task D1: Today ring/macros/good-sat-fat line and the "Today so far" list all derive
   // from logHistory — refresh them on every confirm.
@@ -1092,16 +1094,51 @@ function logConfirm(key, dateISO){
   renderTodayRecords();
   if(date === todayISO()) renderTodayCardActions(); // mirror the confirm onto Today cards only for today
   persist();
+  triggerMealLogReward({
+    anchorEl: anchorEl,
+    anchorRect: anchorRect,
+    title: logEntryTitleWithComponents(loggedPlanEntryForSlot(date, currentProf, key)) || SLOT_LABEL[key] || 'Meal',
+    kcal: Math.round(logEntryNutrition(loggedPlanEntryForSlot(date, currentProf, key)).kcal || 0),
+    dateISO: date,
+    person: currentProf,
+    type: 'meal'
+  }, accountedBefore);
 }
 
-function logSkip(key, dateISO){
+function logSkip(key, dateISO, anchorEl){
   const date = dateISO || currentLogDateISO();
   if(slotLogStatus(date, currentProf, key)) return; // already confirmed or skipped
-  toast('Skipped — your plan stays balanced');
+  const anchorRect = captureRewardAnchor(anchorEl);
+  const accountedBefore = date === todayISO() && typeof accountedSlotCount === 'function'
+    ? accountedSlotCount(date, currentProf) : null;
 
   markSlotSkipped(date, currentProf, key);
   if(date === todayISO()) renderTodayCardActions(); // mirror the skip onto Today cards only for today
   persist();
+  triggerMealLogReward({
+    anchorEl: anchorEl,
+    anchorRect: anchorRect,
+    title: SLOT_LABEL[key] || 'Meal',
+    kcal: 0,
+    dateISO: date,
+    person: currentProf,
+    type: 'meal'
+  }, accountedBefore, true);
+}
+
+// Reward calls stay at the explicit UI boundary: low-level log writers also service
+// corrections, imports, and swaps, which should remain intentionally quiet.
+function triggerMealLogReward(payload, accountedBefore, isSkip){
+  if(typeof accountedSlotCount !== 'function') return;
+  const completedToday = payload.dateISO === todayISO()
+    && accountedBefore !== null
+    && accountedBefore < SLOT_ORDER.length
+    && accountedSlotCount(payload.dateISO, payload.person) === SLOT_ORDER.length;
+  if(completedToday){
+    if(typeof playDayCompletionReward === 'function') playDayCompletionReward(payload);
+    return;
+  }
+  if(!isSkip && typeof playLogReward === 'function') playLogReward(payload);
 }
 
 // Search-and-add picker state: ONE search box across both recipes and plain ingredients

@@ -69,7 +69,7 @@ function deriveGoalName(p){
 function deriveGoalTag(p){
   const g = p.goals;
   const calChip = g.fatLoss ? '🎯 Gentle fat loss' : g.muscleGain ? '🎯 Muscle gain' : '🎯 At maintenance';
-  const other = g.hashi ? '🦋 Hashimoto' : g.skin ? '✨ Skin' : g.muscle ? '💪 Muscle & protein' : g.heart ? '❤️ Heart-smart' : null;
+  const other = g.muscle ? '💪 Muscle & protein' : g.heart ? '🌾 Higher fibre' : null;
   return other ? (calChip + ' · ' + other) : calChip;
 }
 
@@ -83,7 +83,8 @@ function recomputeProf(key){
   p.goalAdj = deriveGoalAdj(p);
   p.goalName = deriveGoalName(p);
   p.goalTag = deriveGoalTag(p);
-  p.hashi = !!p.goals.hashi; // mirrored convenience: Insights' selenium check reads PROF[key].hashi directly
+  // Legacy `hashi` values may remain in an older saved profile but are intentionally inert:
+  // Mesa does not calculate iodine/selenium adequacy or condition-specific suitability.
   // Task B2: displayName is the real source now — seg (segment-button label) and av
   // (avatar initial) DERIVE from it every recompute (state.js:avatarInitial), same
   // pattern as goalAdj/goalName/goalTag above deriving from `goals`. The trim/non-empty

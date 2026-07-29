@@ -77,7 +77,9 @@ function recipeDisplayIngredients(recipeId, opts){
 function recipeDisplayPills(recipeId){
   const src = RECIPES_DB[recipeId];
   if(!src || !Array.isArray(src.tags)) return [];
-  return src.tags.map(function(t){ return TAG_PILL_MAP[t] || ['', t]; });
+  // Tags without an approved, factual display label are internal catalog metadata, not
+  // user-facing health claims (for example the retired thyroid/skin/low-GI labels).
+  return src.tags.filter(function(t){ return !!TAG_PILL_MAP[t]; }).map(function(t){ return TAG_PILL_MAP[t]; });
 }
 
 // task D1: the ONE title helper every Today/Week/Log/recipe-screen path reads through
@@ -549,7 +551,7 @@ function updateNutritionGrid(servings, headerText){
     ['Sugars', Math.round(nut.sugars) + ' g'],
     ['Free sugars', Math.round(nut.freeSugars) + ' g'],
     ['Fat', Math.round(nut.fat) + ' g'],
-    ['Good fats (unsat.)', Math.round(nut.goodFat) + ' g'],
+    ['Non-saturated fat (estimate)', Math.round(nut.goodFat) + ' g'],
     ['Sat. fat', Math.round(nut.satFat) + ' g'],
     ['Fiber', Math.round(nut.fiber) + ' g']
   ];
@@ -574,7 +576,8 @@ function syncServeHighlight(){
 // (chooseSwapRecipe — the same path the swap sheet uses, so an already-confirmed
 // LogEntry gets corrected in place rather than duplicated) and then confirm it,
 // instead of the old dead-end toast that only told you to go do it from the Log tab.
-function markEatenFromRecipe(){
+function markEatenFromRecipe(anchorEl){
+  const anchorRect = typeof captureRewardAnchor === 'function' ? captureRewardAnchor(anchorEl) : null;
   const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
   if(!slot){ toast('Could not log this recipe'); return; }
   const planned = displayedTodayRecipeId(slot) === currentRecipeKey;
@@ -585,14 +588,14 @@ function markEatenFromRecipe(){
     swapCtx = {dayIndex: todayDayIndex(), slot: slot, person: currentProf, weekStartDate: null, targetElId: null};
     chooseSwapRecipe(currentRecipeKey); // swaps today's slot to this dish; toasts + re-renders Today/Log/Week
     const card = document.getElementById('log-' + slot);
-    if(card && !card.classList.contains('done')) logConfirm(slot); // wasn't already confirmed (nothing to correct) — log it fresh
+    if(card && !card.classList.contains('done')) logConfirm(slot, todayISO(), anchorEl, anchorRect); // wasn't already confirmed (nothing to correct) — log it fresh
     renderRecipeEatenState();
     renderRecipeMealStrip();
     return;
   }
   const card = document.getElementById('log-' + slot);
   if(card && !card.classList.contains('done') && !card.classList.contains('skipped')){
-    logConfirm(slot);
+    logConfirm(slot, todayISO(), anchorEl, anchorRect);
   } else {
     toast('Already logged for today');
   }
@@ -625,7 +628,7 @@ function renderRecipeEatenState(){
   } else {
     // not on today's plan, OR on today's plan but not yet logged — same plain CTA either
     // way; markEatenFromRecipe() itself still tells the two cases apart (toast vs. confirm).
-    wrap.innerHTML = '<button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe()">✓ Mark as eaten</button>';
+    wrap.innerHTML = '<button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe(this)">✓ Mark as eaten</button>';
   }
 }
 
