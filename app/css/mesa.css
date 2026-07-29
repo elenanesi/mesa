@@ -508,6 +508,15 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .detail-hero-body{min-width:0;}
 .detail-hero-badges{display:flex;flex-wrap:wrap;align-items:center;gap:6px;}
 .detail-hero-badges .pill{margin:0;}
+.ingredient-detail-intro{margin-top:10px;padding:14px;}
+.ingredient-detail-top{display:grid;grid-template-columns:148px minmax(0,1fr);gap:16px;align-items:center;}
+.ingredient-detail-image{display:grid;place-items:center;width:148px;height:148px;overflow:hidden;border-radius:14px;background:linear-gradient(135deg,#f6e8d1,#edf1df 55%,#dfebcd);}
+.ingredient-detail-image .ingredient-icon-lg{width:140px;height:140px;padding:5px;border-radius:12px;background:transparent;filter:drop-shadow(0 9px 7px rgba(73,54,32,.14));}
+.ingredient-detail-copy{min-width:0;}
+.ingredient-detail-copy h1,.ingredient-detail-copy h2{margin:3px 0 5px;overflow-wrap:anywhere;}
+.ingredient-detail-copy .sub{margin:0;}
+.ingredient-detail-copy .detail-hero-badges{margin-top:9px;}
+.ingredient-detail-nutrition{margin-top:14px;}
 .recipe-detail-hero{max-width:560px;}
 .recipe-hero-media{width:124px;min-height:124px;border-radius:20px;background:#fbf5e8;overflow:hidden;font-size:54px;}
 .recipe-image{width:100%;height:100%;display:block;object-fit:contain;border-radius:inherit;background:#fbf5e8;padding:4px;}
@@ -518,6 +527,11 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
   .detail-hero .ingredient-icon-lg{width:78px;height:78px;border-radius:14px;}
   .recipe-hero-media{width:92px;min-height:92px;font-size:42px;}
   .detail-hero-badges{justify-content:flex-start;}
+  .ingredient-detail-intro{padding:12px;}
+  .ingredient-detail-top{grid-template-columns:116px minmax(0,1fr);gap:12px;}
+  .ingredient-detail-image{width:116px;height:116px;border-radius:12px;}
+  .ingredient-detail-image .ingredient-icon-lg{width:110px;height:110px;border-radius:10px;}
+  .ingredient-detail-copy .detail-hero-badges{margin-top:7px;}
 }
 
 /* task C5: icon picker grid on the new/edit ingredient form */

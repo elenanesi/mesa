@@ -1978,7 +1978,7 @@ function buildFoodDetailMarkup(id){
     ? '<div style="margin-top:10px">' + f.flags.map(function(fl){ return '<span class="pill" style="margin:0 6px 6px 0">' + escapeHtml(flagLabel(fl)) + '</span>'; }).join('') + '</div>'
     : '';
 
-  const nutri = '<div class="nutri" style="margin-top:14px">'
+  const nutri = '<div class="nutri ingredient-detail-nutrition">'
     + foodDetailNutriPill('Calories', Math.round(dm.kcal || 0), 'kcal')
     + foodDetailNutriPill('Protein', +(dm.protein || 0).toFixed(1), 'g')
     + foodDetailNutriPill('Carbs', +(dm.carbs || 0).toFixed(1), 'g')
@@ -1993,13 +1993,16 @@ function buildFoodDetailMarkup(id){
   const srcLine = f.src ? '<p class="sub" style="margin-top:10px">' + escapeHtml(f.src) + '</p>' : '';
 
   return '<div id="libFoodDetail">'
-    + '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(f.name) + '</h2><button class="backbtn" style="margin:0" onclick="renderFoodLibraryList()">‹ Back</button></div>'
-    + '<div class="detail-hero ingredient-detail-hero">'
-    + '<div class="detail-hero-media">' + ingredientIconHtml(ingredientIconAssetForFood(f)).replace('class="ingredient-icon"', 'class="ingredient-icon-lg"') + '</div>'
-    + '<div class="detail-hero-body"><div class="detail-hero-badges">' + badges + '</div></div>'
+    + '<div class="row between detail-title-row" style="margin-top:6px"><h2 style="margin:0">Ingredient</h2><button class="backbtn" style="margin:0" onclick="renderFoodLibraryList()">‹ Back</button></div>'
+    + '<div class="card ingredient-detail-intro">'
+    + '<div class="ingredient-detail-top">'
+    + '<div class="ingredient-detail-image">' + ingredientIconHtml(ingredientIconAssetForFood(f)).replace('class="ingredient-icon"', 'class="ingredient-icon-lg"') + '</div>'
+    + '<div class="ingredient-detail-copy"><div class="eyebrow">' + escapeHtml(f.cat || 'Ingredient') + '</div><h2>' + escapeHtml(f.name) + '</h2>'
+    + '<p class="sub">' + foodDetailBasisLabel(f) + ' · ' + escapeHtml(sugarQualityLabel(f.sugarQuality)) + '</p>'
+    + '<div class="detail-hero-badges">' + badges + '</div></div>'
     + '</div>'
-    + '<p class="sub" style="margin-top:10px">' + foodDetailBasisLabel(f) + ' · ' + escapeHtml(sugarQualityLabel(f.sugarQuality)) + '</p>'
     + nutri
+    + '</div>'
     + flagsHtml
     + foodDetailCompositeSection(f)
     + foodDetailBarcodeSection(f)
