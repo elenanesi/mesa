@@ -1596,42 +1596,6 @@ function scrollToMealCard(slot){
   if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
-function renderEatenStrip(){
-  var wrap = document.getElementById('eatenStripWrap');
-  var strip = document.getElementById('eatenStrip');
-  var label = document.getElementById('eatenStripLabel');
-  if(!wrap || !strip) return;
-  var raw = getDayLog(todayISO())[currentProf];
-  if(!raw || !raw.length){
-    wrap.style.display = 'none';
-    return;
-  }
-  wrap.style.display = '';
-  var total = raw.reduce(function(s, e){ return s + logEntryNutrition(e).kcal; }, 0);
-  if(label) label.textContent = 'Eaten so far · ' + Math.round(total) + ' kcal';
-  var html = '';
-  // Group by slot/food for compact display (reuse grouped records)
-  var groups = groupedTodayRecords();
-  groups.forEach(function(g){
-    var emoji, name;
-    if(g.kind === 'plan'){
-      var r = RECIPES_DB[g.entry.ref];
-      emoji = r ? r.emoji : '🍽️';
-      name = r ? r.title : 'Meal';
-      if(name.length > 14) name = name.slice(0, 13) + '…';
-    } else {
-      emoji = '🥄';
-      var food = FOODS[g.ref];
-      name = food ? food.name : 'Food';
-      if(name.length > 14) name = name.slice(0, 13) + '…';
-    }
-    var kcal = g.kind === 'plan' ? Math.round(logEntryNutrition(g.entry).kcal) : Math.round(g.kcal);
-    html += '<div class="eaten-chip"><span class="ec-icon">' + emoji + '</span>' + escapeHtml(name) + ' <span class="ec-kcal">' + kcal + '</span></div>';
-  });
-  html += '<div class="eaten-chip eaten-chip-add" onclick="go(\'log\')"><span class="ec-icon">+</span>Log</div>';
-  strip.innerHTML = html;
-}
-
 function showArcPopover(macro, event){
   event.stopPropagation();
   var pop = document.getElementById('arcPopover');

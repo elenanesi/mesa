@@ -607,20 +607,14 @@ body.gate-open{overflow:hidden;}
 .pdot.pdot-skipped{border-color:var(--muted);background:#eee;opacity:.55;}
 .pdot-label{font-size:9px;color:var(--muted);margin-left:auto;white-space:nowrap;}
 
-/* eaten chip strip (scrollable row of logged-food chips) */
-.eaten-strip-wrap{margin-top:10px;}
-.eaten-strip-label{font-size:10px;font-weight:700;color:var(--sage-deep);margin-bottom:3px;}
-.eaten-strip{display:flex;gap:6px;overflow-x:auto;padding:4px 0;scrollbar-width:none;}
-.eaten-strip::-webkit-scrollbar{display:none;}
-.eaten-chip{
-  display:flex;align-items:center;gap:5px;font-size:10px;font-weight:600;color:var(--ink-soft);
-  background:rgba(255,250,240,.8);border:1px solid rgba(176,146,105,.3);border-radius:999px;
-  padding:3px 9px 3px 4px;white-space:nowrap;flex-shrink:0;
-}
-.eaten-chip .ec-icon{width:20px;height:20px;border-radius:50%;background:var(--terra-tint);display:grid;place-items:center;font-size:10px;}
-.eaten-chip .ec-kcal{font-weight:800;color:var(--ink);}
-.eaten-chip.eaten-chip-add{border-style:dashed;opacity:.5;cursor:pointer;}
-.eaten-chip.eaten-chip-add .ec-icon{background:#eef0ec;}
+/* Today keeps one compact, editable list rather than repeating logged food in a chip strip. */
+#todayRecordsCard{margin-top:14px;padding:12px 14px;}
+#todayRecordsCard .logitem{gap:8px;padding:8px 0;}
+#todayRecordsCard .logitem .li-i{width:30px;height:30px;flex-basis:30px;border-radius:9px;font-size:15px;}
+#todayRecordsCard .logitem .li-t{font-size:12.5px;line-height:1.2;}
+#todayRecordsCard .logitem .li-t small{font-size:10.5px;line-height:1.25;margin-top:2px;}
+#todayRecordsCard .logitem .li-k{font-size:12px;}
+#todayRecordsCard .logitem .li-x{width:36px;height:36px;min-width:36px;border-radius:10px;font-size:13px;}
 
 /* meal card action buttons row */
 .meal-actions-row{display:flex;align-items:center;gap:8px;flex-shrink:0;}
@@ -643,6 +637,25 @@ body.gate-open{overflow:hidden;}
 }
 .meal-log-btn:active{transform:scale(.88);}
 .meal-log-btn .log-icon{display:block;line-height:1;}
+
+/* Today is action-first, but its plan should still be scannable as a whole. Keep every
+   meal's Skip / Swap / Log controls in the same compact row instead of spending a second
+   line below the recipe copy. Other meal-card surfaces retain the roomier default above. */
+#today .meal{align-items:center;flex-wrap:nowrap;gap:9px;padding:10px 11px;}
+#today .meal .thumb{width:46px;height:46px;flex-basis:46px;border-radius:12px;font-size:22px;}
+#today .meal .info{min-width:0;}
+#today .meal .info .row.between{gap:6px;align-items:flex-start;}
+#today .meal .info .t{font-size:14px;line-height:1.16;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden;}
+#today .meal .info .d{font-size:11.5px;line-height:1.2;margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+#today .meal .info .tags{margin-top:3px;}
+#today .meal .kcal{font-size:12px;white-space:nowrap;padding-top:1px;}
+#today .meal .today-actions{margin:0;flex:0 0 auto;}
+#today .meal .meal-actions-row{gap:4px;}
+#today .meal .meal-act-btn{width:32px;height:32px;border-radius:10px;font-size:14px;}
+#today .meal .meal-log-btn{width:36px;height:36px;border-radius:11px;font-size:16px;}
+#today .meal .tag-row{flex-direction:column;align-items:center;gap:2px;}
+#today .meal .confirmed-tag,#today .meal .skipped-tag{margin:0;font-size:10px;white-space:nowrap;}
+#today .meal .tag-undo{min-height:30px;padding:0 7px;font-size:10px;}
 
 /* meal card states (confirmed/skipped visual treatment) */
 .meal.state-done{border-left:3px solid var(--sage);opacity:.8;}

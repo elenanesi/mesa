@@ -9206,6 +9206,12 @@ function testTodayShoppingPantryQuickLinks(){
   assert(snackIdx !== -1 && quickIdx !== -1 && recordsIdx !== -1, 'setup: #todaySnack, #todayQuickLinks and #todayRecordsCard all found in index.html', '');
   assert(snackIdx < quickIdx && quickIdx < recordsIdx,
     'index.html: #todayQuickLinks sits AFTER every meal card (#todaySnack is the last one) and BEFORE #todayRecordsCard — never pushes the meal cards below the fold', 'snack@' + snackIdx + ' quick@' + quickIdx + ' records@' + recordsIdx);
+  assert(indexHtml.indexOf('id="eatenStripWrap"') === -1 && indexHtml.indexOf('id="eatenStrip"') === -1,
+    'Today: the duplicate Eaten so far chip strip is removed in favour of one editable Eaten today list', '');
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  assert(renderSrc.indexOf('renderEatenStrip()') === -1 && css.indexOf('#todayRecordsCard .logitem') !== -1,
+    'Today eaten list: one compact record list remains, with no duplicate chip-strip renderer', '');
 }
 
 function testTodayGoalSummaryRemoved(){
@@ -9221,6 +9227,11 @@ function testTodayGoalSummaryRemoved(){
     'Today: actionable meal cards come before the calorie and macro progress card', 'meal@' + firstMeal + ' progress@' + progress);
   const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
   const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  const breakfastCard = indexHtml.slice(firstMeal, indexHtml.indexOf('id="todayLunchCard"', firstMeal));
+  assert(breakfastCard.indexOf('id="taBreakfast"') > breakfastCard.indexOf('</div>\n        </div>'),
+    'Today meal card: action controls sit beside the meal info rather than on their own lower row', breakfastCard);
+  assert(css.indexOf('#today .meal{align-items:center;flex-wrap:nowrap') !== -1 && css.indexOf('#today .meal .meal-actions-row{gap:4px;}') !== -1,
+    'Today meal card: compact row treatment keeps meal controls visible without a second action line', '');
   assert(todayTop.indexOf('id="todayGlance"') !== -1 && todayTop.indexOf('id="todayGlanceKcal"') !== -1 && todayTop.indexOf('onclick="showTodayProgress()"') !== -1,
     'Today: a compact coloured progress glance sits near the greeting and links to the fuller nutrition detail', todayTop);
   assert(renderSrc.indexOf('function showTodayProgress()') !== -1 && renderSrc.indexOf("detail.scrollIntoView({behavior:'smooth', block:'start'})") !== -1,

@@ -202,8 +202,6 @@ function refreshRingAndBars(){
   // --- Progress dots ---
   renderProgressDots();
 
-  // --- Eaten chip strip ---
-  renderEatenStrip();
 }
 
 // The fuller calorie and nutrient view deliberately stays after the meal cards. This

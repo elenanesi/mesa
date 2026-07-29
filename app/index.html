@@ -76,8 +76,8 @@
           <div class="row between"><span class="t" id="bfTitle"></span><span class="kcal" id="bfKcal"></span></div>
           <div class="d" id="bfDesc"></div>
           <div class="tags" id="bfTags"></div>
-          <div class="today-actions" id="taBreakfast"></div>
         </div>
+        <div class="today-actions" id="taBreakfast"></div>
       </div>
 
       <div class="card meal" id="todayLunchCard" onclick="openLunchRecipe()">
@@ -86,8 +86,8 @@
           <div class="row between"><span class="t" id="lunchTitle"></span><span class="kcal" id="lunchKcal"></span></div>
           <div class="d" id="lunchDesc"></div>
           <div class="tags" id="lunchTags"></div>
-          <div class="today-actions" id="taLunch"></div>
         </div>
+        <div class="today-actions" id="taLunch"></div>
       </div>
 
       <div class="card meal" id="todayDinnerCard" onclick="openDinnerRecipe()">
@@ -96,8 +96,8 @@
           <div class="row between"><span class="t" id="dinnerTitle"></span><span class="kcal" id="dinnerKcal"></span></div>
           <div class="d" id="dinnerDesc"></div>
           <div class="tags" id="dinnerTags"></div>
-          <div class="today-actions" id="taDinner"></div>
         </div>
+        <div class="today-actions" id="taDinner"></div>
       </div>
 
       <div class="card meal" id="todaySnack">
@@ -106,8 +106,8 @@
           <div class="row between"><span class="t" id="snackTitleEl"></span><span class="kcal" id="snackKcalEl"></span></div>
           <div class="d" id="snackDescEl"></div>
           <div class="tags" id="snackTags"></div>
-          <div class="today-actions" id="taSnack"></div>
         </div>
+        <div class="today-actions" id="taSnack"></div>
       </div>
 
       <!-- Tracking supports the plan; it follows the actionable meal cards so the first
@@ -145,11 +145,6 @@
         <div class="progress-dots" id="progressDots"></div>
       </div>
 
-      <div class="eaten-strip-wrap" id="eatenStripWrap">
-        <div class="eaten-strip-label" id="eatenStripLabel">Eaten so far</div>
-        <div class="eaten-strip" id="eatenStrip"></div>
-      </div>
-
       <div class="card" id="todayMacroCalCard" style="padding:14px 16px">
         <div class="row between" style="margin-bottom:2px"><b style="font-size:13px">Calories by macro</b><span class="chip-computed">✓ computed</span></div>
         <div class="macro-cal-list" style="margin-top:10px">
@@ -182,7 +177,9 @@
         <button onclick="openPantryLibrary()"><span class="qi">🥫</span>Pantry</button>
       </div>
 
-      <div class="card" id="todayRecordsCard" style="margin-top:18px">
+      <!-- One compact, editable source of truth for food already logged today. This replaces
+           the former duplicate "Eaten so far" chip strip above. -->
+      <div class="card" id="todayRecordsCard">
         <div class="row between"><b style="font-size:14px">Eaten today</b><span class="pill" id="todayRecordsPill">0 kcal</span></div>
         <div id="todayRecordsList"></div>
       </div>
