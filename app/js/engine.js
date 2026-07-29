@@ -149,9 +149,137 @@ function recomputeProf(key){
    single source both the recipe screen and the legacy-recipe
    compatibility view (state.js) read from. */
 
+/* ---------------- composite ingredients (task: composite-ingredients engine) ----------------
+   A composite FOODS entry (data/foods.js — `components` array present, e.g. 'pesto-elena')
+   behaves like a food (used by grams, everywhere a foodId is) but stores no macros of its
+   own: `components` is a batch formula ([foodId, grams] pairs — the exact convention recipe
+   ingredients already use) and `yieldG` is the batch's total output weight, so per-100g
+   macros are the summed component macros scaled by 100/yieldG. foodMacros() below is the
+   ONLY place this resolution happens — every real consumer (recipeNutrition,
+   nutritionForRecipeComponents, the shopping list/pantry via planner.js:
+   foodQuantitiesForComponents, the Library UI's food-detail/list/recipe-builder-search
+   screens, and data/validate.js's recipeMacros) reads a composite's numbers through
+   foodMacros(), never a frozen field on the record — so correcting a component (say,
+   parmesan's protein) moves every composite that contains it immediately, with no separate
+   "resync the frozen numbers" step to forget. That resync-forgetting is the literal bug this
+   feature retires (pesto-elena used to carry a hand-frozen kcal/protein/... snapshot).
+
+   NESTED COMPOSITES are allowed (a component can itself be a composite id) rather than
+   restricted — a future composite built from other composites (e.g. a sandwich containing
+   plain guacamole as one component) is a perfectly reasonable batch formula, and forbidding
+   it would be an arbitrary limit this recursive implementation doesn't actually need to
+   impose. `seen`/`depth` guard the one real risk nesting adds — a data-authoring cycle —
+   the same "bad data degrades one number, never crashes" contract foodMacros already has
+   for an unknown plain food id: a cycle logs loudly and resolves to zero instead of
+   recursing forever.
+
+   VARIANT SELECTION is HOUSEHOLD-WIDE, not per-meal or per-person — see
+   householdDietListForComposites()'s doc immediately below for why. */
+const COMPOSITE_MAX_DEPTH = 6;
+
+// Every diet active ANYWHERE in the household right now: both PROF slots, unioned via
+// planner.js:unionDiets (that file loads after this one; forward-referenced by name at call
+// time, the same convention planner.js itself already uses to reach library.js's
+// DAIRY_FOOD_IDS etc — see planner.js's own comment on proteinKindForIngredientIds).
+// Deliberately household-wide rather than per-person/per-meal: a composite like "pesto" is
+// one jar in the fridge, not a dish re-planned fresh per meal — a real household doesn't
+// keep a vegan jar AND a dairy jar side by side, it goes vegan wherever ANY member needs it
+// to. This also answers the "what does a SHARED meal satisfying both people mean" question
+// by construction, per the task brief: since the household union already includes both
+// people's diets, a shared meal and each person's own solo meals all resolve to the
+// IDENTICAL variant — there's no separate shared-vs-solo branch that could disagree. Pure
+// function of the live PROF state (no Math.random/Date.now), so it stays deterministic for
+// the planner.
+function householdDietListForComposites(){
+  if(typeof PROF === 'undefined' || typeof unionDiets !== 'function') return [];
+  return unionDiets(Object.keys(PROF));
+}
+
+// Picks the active {components, yieldG} combo for a composite: the first entry in
+// `food.variants` (authored array order = deterministic priority — same "authored order is
+// the tie-break" convention normalizeRecipeOpts already uses for recipe optionGroups) whose
+// `dietKeys` intersects the household's active diets; falls back to the composite's own
+// top-level fields (the declared default/"classic" combo) when no variant matches — exactly
+// the task's "when no diet forces a choice, use the composite's declared default" rule.
+function activeCompositeVariant(food){
+  const dietList = householdDietListForComposites();
+  if(Array.isArray(food.variants) && dietList.length){
+    for(let i = 0; i < food.variants.length; i++){
+      const v = food.variants[i];
+      if(v && Array.isArray(v.dietKeys) && v.dietKeys.some(function(k){ return dietList.indexOf(k) !== -1; })){
+        return v;
+      }
+    }
+  }
+  return food;
+}
+
+// Recursively resolves a composite's per-100g(/ml) macros. `seen` is a foodId->true map
+// guarding against a cycle (A contains B contains A); `depth` is a belt-and-braces cap in
+// case a cycle somehow slips the `seen` check (it shouldn't, but a bounded recursion is a
+// cheap extra guarantee against a stack overflow from bad data). Returns null when `foodId`
+// isn't a composite at all, so foodMacros() below can tell "not a composite" apart from "a
+// composite that resolved to zero."
+function compositeMacrosPer100(foodId, seen, depth){
+  seen = seen || {};
+  depth = depth || 0;
+  const food = (typeof FOODS !== 'undefined') ? FOODS[foodId] : undefined;
+  if(!food || !Array.isArray(food.components)) return null;
+  const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown'};
+  if(seen[foodId] || depth > COMPOSITE_MAX_DEPTH){
+    console.error('compositeMacrosPer100: cycle or excessive composite nesting at "' + foodId + '"');
+    return zero;
+  }
+  const combo = activeCompositeVariant(food);
+  const components = Array.isArray(combo.components) ? combo.components : food.components;
+  const yieldG = (typeof combo.yieldG === 'number' && combo.yieldG > 0) ? combo.yieldG
+    : (typeof food.yieldG === 'number' && food.yieldG > 0) ? food.yieldG : null;
+  if(!yieldG){
+    console.error('compositeMacrosPer100: composite "' + foodId + '" missing a positive yieldG');
+    return zero;
+  }
+  const nextSeen = Object.assign({}, seen);
+  nextSeen[foodId] = true;
+  const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0};
+  components.forEach(function(c){
+    const cId = c[0], cGrams = c[1];
+    const cFood = FOODS[cId];
+    if(!cFood){
+      console.error('compositeMacrosPer100: unknown component id "' + cId + '" in "' + foodId + '"');
+      return;
+    }
+    const cFactor = (cFood.unit === 'piece') ? (cGrams / cFood.avgG) : (cGrams / (cFood.per || 100));
+    const basis = Array.isArray(cFood.components) ? (compositeMacrosPer100(cId, nextSeen, depth + 1) || zero) : cFood;
+    totals.kcal += (basis.kcal || 0) * cFactor;
+    totals.protein += (basis.protein || 0) * cFactor;
+    totals.carbs += (basis.carbs || 0) * cFactor;
+    totals.fat += (basis.fat || 0) * cFactor;
+    totals.satFat += (basis.satFat || 0) * cFactor;
+    totals.fiber += (basis.fiber || 0) * cFactor;
+    totals.sugars += (basis.sugars || 0) * cFactor;
+    totals.freeSugars += (basis.freeSugars || 0) * cFactor;
+  });
+  const scale = 100 / yieldG;
+  const per100 = {
+    kcal: totals.kcal * scale, protein: totals.protein * scale, carbs: totals.carbs * scale,
+    fat: totals.fat * scale, satFat: totals.satFat * scale, fiber: totals.fiber * scale,
+    sugars: totals.sugars * scale, freeSugars: totals.freeSugars * scale,
+    sugarQuality: totals.freeSugars > 0 ? 'added/free' : (totals.sugars > 0 ? 'intrinsic' : 'unknown')
+  };
+  // kcal policy (data/foods.js's header comment): Atwater 4/4/9 recomputed from the
+  // composite's own summed macro grams, same as every plain food and recipeNutrition() —
+  // keeps a composite internally consistent even though it was authored in ingredient
+  // grams, never a typed-in kcal number.
+  per100.kcal = 4 * per100.protein + 4 * per100.carbs + 9 * per100.fat;
+  return per100;
+}
+
 // Scales one food's macros to `grams`. Per-piece foods (unit:'piece', e.g. eggs) store
 // PER-PIECE values with avgG documenting the assumed piece weight, so the scale factor
-// is grams/avgG rather than grams/per (per-100g/ml foods use grams/per, per === 100).
+// is grams/avgG rather than grams/per (per-100g/ml foods use grams/per, per === 100). A
+// COMPOSITE food (components present) has no static per/avgG-scaled fields of its own —
+// compositeMacrosPer100 resolves its live per-100g numbers first, then the exact same
+// grams/per scaling applies (composites always declare per:100, like every non-piece food).
 // A missing food id is a data bug, never a crash: log loudly and return zeros so a bad
 // id degrades one line of a nutrition grid to "0" instead of breaking the screen.
 function foodMacros(foodId, grams){
@@ -159,6 +287,21 @@ function foodMacros(foodId, grams){
   if(!food){
     console.error('foodMacros: unknown food id "' + foodId + '"');
     return {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown'};
+  }
+  if(Array.isArray(food.components)){
+    const per100 = compositeMacrosPer100(foodId) || {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown'};
+    const factor = grams / (food.per || 100);
+    return {
+      kcal: per100.kcal * factor,
+      protein: per100.protein * factor,
+      carbs: per100.carbs * factor,
+      fat: per100.fat * factor,
+      satFat: per100.satFat * factor,
+      fiber: per100.fiber * factor,
+      sugars: per100.sugars * factor,
+      freeSugars: per100.freeSugars * factor,
+      sugarQuality: per100.sugarQuality
+    };
   }
   const factor = (food.unit === 'piece') ? (grams / food.avgG) : (grams / food.per);
   return {

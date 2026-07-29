@@ -205,13 +205,21 @@ const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pum
 // each food defined in exactly one place here. Deliberately NOT derived from
 // FOODS[id].cat === 'Dairy': that shopping-list category also holds oat/soy/almond milk
 // (plant-based — cat is "which aisle", not "is this animal-derived"), which would make
-// the vegan/lactose-intolerant filters wrongly reject plant milks. DAIRY_FOOD_IDS also
-// includes 'pesto-elena' (Pantry category, but its containsAvoid already documents real
-// parmesan+pecorino inside it — see data/foods.js).
+// the vegan/lactose-intolerant filters wrongly reject plant milks.
+//
+// 'pesto-elena' is DELIBERATELY NOT listed here (composite-ingredients task) — it used to
+// be, with a comment admitting its Pantry category hides the dairy, which is exactly the
+// "one forgotten list entry" bug this feature retires. It's now a COMPOSITE (data/foods.js:
+// `components` includes 'parmesan'/'pecorino'), and planner.js:recipeMayContainDairy/
+// foodHitsAvoid see through composites into their components (planner.js:
+// foodOrComponentsMatch/compositeReachableFoodIds), so pesto-elena is still correctly
+// excluded from vegan/lactose-intolerant menus — DERIVED from parmesan being real dairy,
+// not from its own id appearing in this list. Same reasoning covers its vegan variant
+// (nutritional yeast, no dairy at all) automatically.
 const DAIRY_FOOD_IDS = [
   'greek-yogurt', 'skyr', 'feta-cheese', 'parmesan', 'pecorino', 'mozzarella', 'robiola',
   'cream-cheese', 'provola', 'scamorza', 'ricotta', 'butter', 'gorgonzola', 'milk',
-  'semi-skimmed-milk', 'cappuccino-unsweetened', 'pesto-elena',
+  'semi-skimmed-milk', 'cappuccino-unsweetened',
   // 'Nutella' (real-world chocolate-hazelnut spread) contains skimmed milk powder, unlike
   // the plain dark-chocolate-85 entry — a correctness fix noticed while building this list,
   // not something the pre-existing lactose avoid-key check ever covered either.
@@ -219,9 +227,13 @@ const DAIRY_FOOD_IDS = [
 ];
 // soy-yogurt is deliberately NOT here despite cat:'Dairy' — see foods.js's entry: it's a
 // plant-based dairy-AISLE item, same reasoning as oat-milk/soy-milk/almond-milk above.
-// 'egg-noodles'/'ravioli'/'mayonnaise' are composite foods.js entries that are genuinely
-// egg-based (see each entry's `name`/`src`), not just the bare 'eggs' ingredient.
-const EGG_FOOD_IDS = ['eggs', 'egg-noodles', 'ravioli', 'mayonnaise'];
+// 'egg-noodles'/'ravioli' are foods.js entries that are genuinely egg-based (see each
+// entry's `name`/`src`) but NOT modelled as composites (single-source USDA items, not a
+// blended batch formula) — they stay hand-listed here. 'mayonnaise' is DELIBERATELY NOT
+// listed (composite-ingredients task, same reasoning as pesto-elena above): it's now a
+// composite whose `components` include 'eggs', so recipeMayContainEggs derives the same
+// exclusion through foodOrComponentsMatch instead.
+const EGG_FOOD_IDS = ['eggs', 'egg-noodles', 'ravioli'];
 const HONEY_FOOD_IDS = ['honey'];
 
 // ingredients: [{foodId, grams}, ...] (the recipe as authored = exactly 1 serving, same
@@ -274,13 +286,16 @@ function deriveRecipeMeta(ingredients, totals, timeMinutes){
   // avoid
   const avoidSet = {};
   rows.forEach(function(x){
-    // Composite foods declare allergens their category hides (foods.js containsAvoid,
-    // e.g. pesto-elena) — same rule planner.js:foodHitsAvoid applies for options/pairing.
-    (Array.isArray(x.food.containsAvoid) ? x.food.containsAvoid : []).forEach(function(k){ avoidSet[k] = true; });
-    if(x.food.cat === 'Dairy') avoidSet.lactose = true;
-    if(GLUTEN_FOOD_IDS.indexOf(x.row.foodId) !== -1) avoidSet.gluten = true;
-    if(x.row.foodId === 'prawns') avoidSet.shellfish = true;
-    if(NUT_FOOD_IDS.indexOf(x.row.foodId) !== -1) avoidSet.nuts = true;
+    // planner.js:foodHitsAvoid is the single source of "which allergen keys does this food
+    // carry" — a hand-authored containsAvoid escape hatch, cat==='Dairy', GLUTEN_FOOD_IDS/
+    // NUT_FOOD_IDS/prawns, AND (composite-ingredients task) recursion into a COMPOSITE's
+    // components (e.g. pesto-elena -> parmesan -> lactose), so a custom recipe built from a
+    // composite ingredient gets the same derived allergen tags a built-in recipe would.
+    // foodHitsAvoid takes an avoid LIST and returns a bool, so every known key is probed
+    // once here rather than duplicating its internal rules.
+    (typeof VALID_AVOID !== 'undefined' ? VALID_AVOID : ['lactose', 'gluten', 'shellfish', 'nuts']).forEach(function(k){
+      if(foodHitsAvoid(x.row.foodId, [k])) avoidSet[k] = true;
+    });
   });
 
   return {tags: tags, styles: styles, avoid: Object.keys(avoidSet)};
@@ -416,6 +431,25 @@ function dropLegacyDefaultFoodIconCache(){
   try{ localStorage.removeItem('mesa.defaultFoodIcon.v1'); }catch(e){}
 }
 dropLegacyDefaultFoodIconCache();
+
+// Returns {kcal, protein, carbs, fat, satFat, fiber, sugars, freeSugars, sugarQuality} in
+// the food's own NATIVE unit — per 100g/ml, or per piece for unit:'piece' — i.e. exactly
+// the shape a plain FOODS[id] record's own fields already have. A COMPOSITE (data/foods.js:
+// `components` present) has no such fields of its own (computed, never stored — see that
+// file's header comment on the composite-ingredients task), so this resolves them live via
+// engine.js:foodMacros instead. Every UI read site that used to read FOODS[id].kcal/
+// .protein/... directly (the food detail page, the Ingredients list rows, the recipe-
+// builder's ingredient search) goes through this now, so a composite shows real numbers
+// instead of `undefined` — with zero behaviour change for the ~900 plain foods (foodMacros
+// on a plain food at its own per-100/per-piece amount just returns its own stored fields,
+// factor 1).
+function foodDisplayMacros(foodId){
+  const food = FOODS[foodId];
+  if(!food) return null;
+  if(!Array.isArray(food.components)) return food;
+  const base = (food.unit === 'piece') ? food.avgG : (food.per || 100);
+  return foodMacros(foodId, base);
+}
 
 function ingredientIconAssetForFood(food){
   if(!food) return '';
@@ -1100,14 +1134,15 @@ function renderLibFoodListMarkup(query){
     out += '<div class="shop-cat">' + cat + '</div>';
     ids.forEach(function(id){
       const f = FOODS[id];
+      const dm = foodDisplayMacros(id) || f; // composite-aware — see foodDisplayMacros's doc
       const isCustom = !!customFoods[id];
       const isEdited = !isCustom && !!foodOverrides[id];
-      const kcalPer100 = f.unit === 'piece' ? Math.round(f.kcal / f.avgG * 100) : Math.round(f.kcal);
+      const kcalPer100 = f.unit === 'piece' ? Math.round(dm.kcal / f.avgG * 100) : Math.round(dm.kcal);
       const factor = f.unit === 'piece' ? (100 / f.avgG) : (100 / f.per);
-      const macroLine = Math.round((f.protein || 0) * factor) + 'g P · '
-        + Math.round((f.carbs || 0) * factor) + 'g C, of which ' + Math.round((f.sugars || 0) * factor) + 'g sugars · '
-        + Math.round((f.fat || 0) * factor) + 'g F · '
-        + Math.round((f.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
+      const macroLine = Math.round((dm.protein || 0) * factor) + 'g P · '
+        + Math.round((dm.carbs || 0) * factor) + 'g C, of which ' + Math.round((dm.sugars || 0) * factor) + 'g sugars · '
+        + Math.round((dm.fat || 0) * factor) + 'g F · '
+        + Math.round((dm.fiber || 0) * factor) + 'g fiber / 100' + (f.unit === 'piece' ? 'g' : f.unit);
       // Food ids can be user-authored ('cf-<slug>' from a typed name), so the id rides in
       // a data-* attribute (htmlAttr-escaped once, never re-parsed as JS) and the buttons
       // carry a data-act verb for attachLibFoodListHandler's delegation below — same
@@ -1508,10 +1543,11 @@ function foodDetailBarcodeSection(f){
 function buildFoodDetailMarkup(id){
   const f = FOODS[id];
   if(!f) return '';
+  const dm = foodDisplayMacros(id) || f; // composite-aware — see foodDisplayMacros's doc
   const isCustom = !!customFoods[id];
   const isEdited = !isCustom && !!foodOverrides[id];
-  const satFat = f.satFat || 0;
-  const unsatFat = Math.max(0, (f.fat || 0) - satFat);
+  const satFat = dm.satFat || 0;
+  const unsatFat = Math.max(0, (dm.fat || 0) - satFat);
 
   let badges = '';
   if(isCustom) badges += '<span class="pill mini gold">yours</span>';
@@ -1525,15 +1561,15 @@ function buildFoodDetailMarkup(id){
     : '';
 
   const nutri = '<div class="nutri" style="margin-top:14px">'
-    + foodDetailNutriPill('Calories', Math.round(f.kcal || 0), 'kcal')
-    + foodDetailNutriPill('Protein', f.protein || 0, 'g')
-    + foodDetailNutriPill('Carbs', f.carbs || 0, 'g')
-    + foodDetailNutriPill('Fat', f.fat || 0, 'g')
-    + foodDetailNutriPill('— saturated', satFat, 'g')
+    + foodDetailNutriPill('Calories', Math.round(dm.kcal || 0), 'kcal')
+    + foodDetailNutriPill('Protein', +(dm.protein || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Carbs', +(dm.carbs || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Fat', +(dm.fat || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('— saturated', +satFat.toFixed(1), 'g')
     + foodDetailNutriPill('— unsaturated', +unsatFat.toFixed(1), 'g')
-    + foodDetailNutriPill('Fiber', f.fiber || 0, 'g')
-    + foodDetailNutriPill('Sugars', f.sugars || 0, 'g')
-    + foodDetailNutriPill('— free sugars', f.freeSugars || 0, 'g')
+    + foodDetailNutriPill('Fiber', +(dm.fiber || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('Sugars', +(dm.sugars || 0).toFixed(1), 'g')
+    + foodDetailNutriPill('— free sugars', +(dm.freeSugars || 0).toFixed(1), 'g')
     + '</div>';
 
   const srcLine = f.src ? '<p class="sub" style="margin-top:10px">' + escapeHtml(f.src) + '</p>' : '';
@@ -2742,11 +2778,12 @@ function renderRecipeIngredientResults(q){
   if(!ids.length) return '<p class="sub" style="margin-top:10px">No foods match “' + escapeHtml(q) + '”.</p>';
   return ids.map(function(id){
     const f = FOODS[id];
+    const dm = foodDisplayMacros(id) || f; // composite-aware — see foodDisplayMacros's doc
     const per = f.unit === 'piece' ? 'piece' : '100' + f.unit;
     return '<div class="altrow" data-food-id="' + htmlAttr(id) + '">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
-      + '<div class="ad">' + Math.round(f.kcal) + ' kcal · ' + f.protein + 'g protein <b>/ ' + per + '</b></div></div>'
+      + '<div class="ad">' + Math.round(dm.kcal) + ' kcal · ' + (+(dm.protein || 0).toFixed(1)) + 'g protein <b>/ ' + per + '</b></div></div>'
       + '</div>';
   }).join('');
 }

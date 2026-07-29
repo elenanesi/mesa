@@ -6978,22 +6978,24 @@ function testD2SauceRoleAndCatalog(ctx){
   const VALID_ROLES = get(ctx, 'VALID_ROLES');
   const SAUCE_IDS = ['tomato-basil-sauce', 'yogurt-herb-sauce'];
 
-  // -------- (0) containsAvoid: composite foods declare allergens their category hides.
-  // The regression this guards: pesto-elena (cat 'Pantry', contains parmesan/pecorino/
-  // almonds) passed foodHitsAvoid for a lactose avoider, so the pasta recipe's
-  // "Pesto Elena" option could be rotated onto Elena's plan. --------
+  // -------- (0) composite-derived allergens: pesto-elena used to hand-authored a
+  // `containsAvoid: ['lactose','nuts']` escape hatch (its Pantry category hides the real
+  // dairy/nuts inside it) — the composite-ingredients task retired that in favor of
+  // DERIVING lactose/nuts from its real `components` (parmesan/pecorino -> Dairy,
+  // almonds -> NUT_FOOD_IDS), so a future correction to those components can never leave a
+  // stale hand-typed list behind. See testCompositeIngredients (below) for the full
+  // composite-ingredients regression suite (macros, variants, shopping list/pantry). --------
   (function(){
-    const containsAvoid = FOODS['pesto-elena'] && FOODS['pesto-elena'].containsAvoid;
-    assert(Array.isArray(containsAvoid) && containsAvoid.indexOf('lactose') !== -1 && containsAvoid.indexOf('nuts') !== -1,
-      'pesto-elena declares containsAvoid lactose+nuts');
+    assert(!('containsAvoid' in (FOODS['pesto-elena'] || {})),
+      'pesto-elena no longer hand-authors containsAvoid — lactose/nuts are derived from components');
     const VALID_AVOID = get(ctx, 'VALID_AVOID');
     Object.keys(FOODS).forEach(function(id){
       (FOODS[id].containsAvoid || []).forEach(function(k){
         assert(VALID_AVOID.indexOf(k) !== -1, 'containsAvoid key "' + k + '" on ' + id + ' is a valid avoid key');
       });
     });
-    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['lactose']]) === true, 'foodHitsAvoid: pesto-elena hits lactose');
-    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['nuts']]) === true, 'foodHitsAvoid: pesto-elena hits nuts');
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['lactose']]) === true, 'foodHitsAvoid: pesto-elena hits lactose (derived from parmesan/pecorino component)');
+    assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['nuts']]) === true, 'foodHitsAvoid: pesto-elena hits nuts (derived from almonds component)');
     assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['gluten']]) === false, 'foodHitsAvoid: pesto-elena clean for gluten');
     // End-to-end: a lactose avoider's allowed choices for the pasta condiment group
     // exclude BOTH dairy routes — Pesto Elena (containsAvoid) and courgette & ricotta
@@ -8236,6 +8238,268 @@ function testDietGeneratedPlans(ctx){
 }
 
 /* ===================================================================
+   Composite ingredients (engine half): pesto-elena/olive-oil-lemon-dressing/
+   pumpkin-chia-seeds/mayonnaise migrated from frozen per-100g macros to a real
+   `components` batch formula (data/foods.js); guacamole added new. Macros/flags/
+   allergen-diet membership are all DERIVED, never stored (engine.js:foodMacros/
+   compositeMacrosPer100, planner.js:foodOrComponentsMatch/foodHitsAvoid). pesto-elena
+   also carries a vegan variant, auto-selected household-wide from active diets
+   (engine.js:activeCompositeVariant/householdDietListForComposites). Every assertion
+   below is the exact proof the task brief asks for.
+   =================================================================== */
+function testCompositeIngredients(ctx){
+  const FOODS = get(ctx, 'FOODS');
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const pristineElena = cloneJSON(get(ctx, 'PROF.elena'));
+  const pristinePartner = cloneJSON(get(ctx, 'PROF.partner'));
+
+  function resetHousehold(){
+    run(ctx, "PROF.elena = " + JSON.stringify(pristineElena) + "; PROF.partner = " + JSON.stringify(pristinePartner) + "; PROF.elena.diets = []; PROF.partner.diets = [];");
+  }
+  function withFixtureRecipe(id, ingredients, fn){
+    const recipe = {
+      title: 'Composite fixture', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 10, ingredients: ingredients,
+      toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: []
+    };
+    run(ctx, "RECIPES_DB['" + id + "'] = " + JSON.stringify(recipe) + ';');
+    try{ fn(); } finally { run(ctx, "delete RECIPES_DB['" + id + "'];"); }
+  }
+
+  try{
+    resetHousehold();
+
+    // -------- (1) model: pesto-elena/olive-oil-lemon-dressing/pumpkin-chia-seeds/
+    // mayonnaise carry `components`+`yieldG` instead of frozen macros; guacamole is new. --------
+    (function(){
+      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'mayonnaise', 'guacamole'].forEach(function(id){
+        const f = FOODS[id];
+        assert(!!f && Array.isArray(f.components) && f.components.length > 0, 'composite model: ' + id + ' has a non-empty components array', JSON.stringify(f));
+        assert(typeof f.yieldG === 'number' && f.yieldG > 0, 'composite model: ' + id + ' has a positive yieldG', JSON.stringify(f && f.yieldG));
+        assert(!('kcal' in f) && !('protein' in f), 'composite model: ' + id + ' stores NO static kcal/protein — computed only', JSON.stringify({kcal: f.kcal, protein: f.protein}));
+      });
+      assert(FOODS['mayonnaise'].bought === true, 'model: mayonnaise declares bought:true (buys itself, never decomposed)');
+      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'guacamole'].forEach(function(id){
+        assert(FOODS[id].bought === false, 'model: ' + id + ' declares bought:false (made at home, decomposes)');
+      });
+    })();
+
+    // -------- (2) a composite's macros equal the 4/4/9 sum of its components scaled to
+    // yield — independently recomputed here from the raw FOODS component records, never
+    // reusing foodMacros' own arithmetic. --------
+    (function(){
+      function expectedPer100(compositeId){
+        const f = FOODS[compositeId];
+        const totals = {protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
+        f.components.forEach(function(c){
+          const cf = FOODS[c[0]];
+          const factor = cf.unit === 'piece' ? c[1] / cf.avgG : c[1] / (cf.per || 100);
+          totals.protein += (cf.protein || 0) * factor;
+          totals.carbs += (cf.carbs || 0) * factor;
+          totals.fat += (cf.fat || 0) * factor;
+          totals.satFat += (cf.satFat || 0) * factor;
+          totals.fiber += (cf.fiber || 0) * factor;
+        });
+        const scale = 100 / f.yieldG;
+        const protein = totals.protein * scale, carbs = totals.carbs * scale, fat = totals.fat * scale;
+        return {kcal: 4 * protein + 4 * carbs + 9 * fat, protein: protein, carbs: carbs, fat: fat, satFat: totals.satFat * scale, fiber: totals.fiber * scale};
+      }
+      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'mayonnaise', 'guacamole'].forEach(function(id){
+        const expected = expectedPer100(id);
+        const got = call(ctx, 'foodMacros', [id, 100]);
+        ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].forEach(function(k){
+          assert(Math.abs(got[k] - expected[k]) < 1e-6, 'composite macros: ' + id + '.' + k + ' equals the 4/4/9 sum of components scaled to yield', 'got=' + got[k] + ' expected=' + expected[k]);
+        });
+      });
+    })();
+
+    // -------- (3) changing a COMPONENT's macros moves the composite — the whole point. --------
+    (function(){
+      const before = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      run(ctx, "FOODS['parmesan'].protein = 999;");
+      const after = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      run(ctx, "FOODS['parmesan'].protein = 35.8;"); // restore
+      const restored = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      assert(after.protein > before.protein + 50, 'live recompute: bumping parmesan.protein moves pesto-elena.protein immediately (no cache to resync)', 'before=' + before.protein + ' after=' + after.protein);
+      assert(after.kcal > before.kcal, 'live recompute: the kcal shift follows too (4/4/9 recomputed from the new protein)', 'before=' + before.kcal + ' after=' + after.kcal);
+      assert(Math.abs(restored.protein - before.protein) < 1e-6, 'sanity: restoring parmesan.protein restores pesto-elena.protein exactly', 'restored=' + restored.protein + ' before=' + before.protein);
+    })();
+
+    // -------- (4) vegan excludes classic pesto via DERIVED components, with pesto-elena
+    // absent from the hardcoded DAIRY_FOOD_IDS list — proves this is real derivation, not
+    // coincidence. Same proof for mayonnaise / EGG_FOOD_IDS. --------
+    (function(){
+      const DAIRY_FOOD_IDS = get(ctx, 'DAIRY_FOOD_IDS');
+      const EGG_FOOD_IDS = get(ctx, 'EGG_FOOD_IDS');
+      assert(DAIRY_FOOD_IDS.indexOf('pesto-elena') === -1, "proof setup: 'pesto-elena' is genuinely absent from DAIRY_FOOD_IDS", JSON.stringify(DAIRY_FOOD_IDS));
+      assert(EGG_FOOD_IDS.indexOf('mayonnaise') === -1, "proof setup: 'mayonnaise' is genuinely absent from EGG_FOOD_IDS", JSON.stringify(EGG_FOOD_IDS));
+
+      assert(call(ctx, 'foodHitsAvoid', ['pesto-elena', ['lactose']]) === true, 'foodHitsAvoid: pesto-elena still hits lactose (derived from parmesan component, not a list entry)');
+      assert(call(ctx, 'foodHitsAvoid', ['mayonnaise', ['egg'] ]) === false, 'sanity: mayonnaise has no "egg" avoid key in VALID_AVOID (eggs are diet-filtered, not avoid-listed)');
+
+      withFixtureRecipe('__composite_pesto_fixture__', [['pasta', 100], ['pesto-elena', 60]], function(){
+        assert(call(ctx, 'recipeMayContainDairy', ['__composite_pesto_fixture__']) === true,
+          'recipeMayContainDairy sees THROUGH pesto-elena into its parmesan/pecorino components');
+        assert(call(ctx, 'recipeViolatesDiet', ['__composite_pesto_fixture__', ['vegan']]) === true,
+          'vegan excludes a recipe containing pesto-elena, purely via derived components (DAIRY_FOOD_IDS has no pesto-elena entry)');
+        assert(call(ctx, 'recipeViolatesDiet', ['__composite_pesto_fixture__', ['lactose-intolerant']]) === true,
+          'lactose-intolerant excludes the same recipe, same derivation');
+      });
+
+      withFixtureRecipe('__composite_mayo_fixture__', [['rice', 100], ['mayonnaise', 30]], function(){
+        assert(call(ctx, 'recipeMayContainEggs', ['__composite_mayo_fixture__']) === true,
+          'recipeMayContainEggs sees THROUGH mayonnaise into its eggs component');
+        assert(call(ctx, 'recipeViolatesDiet', ['__composite_mayo_fixture__', ['vegan']]) === true,
+          'vegan excludes a recipe containing mayonnaise, purely via derived components (EGG_FOOD_IDS has no mayonnaise entry)');
+        assert(call(ctx, 'recipeViolatesDiet', ['__composite_mayo_fixture__', ['vegetarian']]) === false,
+          'vegetarian PERMITS the mayonnaise recipe (eggs are vegetarian-safe) — proves this is real egg derivation, not an over-broad exclusion');
+      });
+    })();
+
+    // -------- (5) a vegan (or lactose-intolerant) household deterministically
+    // auto-selects the vegan pesto variant, HOUSEHOLD-WIDE — see engine.js:
+    // householdDietListForComposites' doc for why it's not per-meal/per-person. --------
+    (function(){
+      function expectedVeganPer100(){
+        const variant = FOODS['pesto-elena'].variants[0];
+        const totals = {protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
+        variant.components.forEach(function(c){
+          const cf = FOODS[c[0]];
+          const factor = cf.unit === 'piece' ? c[1] / cf.avgG : c[1] / (cf.per || 100);
+          totals.protein += (cf.protein || 0) * factor;
+          totals.carbs += (cf.carbs || 0) * factor;
+          totals.fat += (cf.fat || 0) * factor;
+        });
+        const scale = 100 / variant.yieldG;
+        return {protein: totals.protein * scale, carbs: totals.carbs * scale, fat: totals.fat * scale};
+      }
+      resetHousehold();
+      const classic = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+
+      // Only ELENA is vegan; partner has no diet. Household union still includes 'vegan',
+      // so pesto resolves to the vegan variant EVERYWHERE — including a food lookup with no
+      // person attached at all, which is the point: there's no "whose meal is this" input
+      // to foodMacros in the first place, because the composite is household-wide.
+      run(ctx, "PROF.elena.diets = ['vegan']; PROF.partner.diets = [];");
+      const veganA = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      const veganB = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      const expectedVegan = expectedVeganPer100();
+      assert(JSON.stringify(veganA) === JSON.stringify(veganB), 'variant selection is deterministic: two calls with the same household diets return byte-identical macros', '');
+      assert(Math.abs(veganA.protein - expectedVegan.protein) < 1e-6, 'vegan household: pesto-elena resolves to the VEGAN variant\'s protein, not classic', 'got=' + veganA.protein + ' vegan-expected=' + expectedVegan.protein + ' classic=' + classic.protein);
+      assert(Math.abs(veganA.satFat - classic.satFat) > 3, 'vegan household: pesto-elena\'s satFat drops sharply vs classic (no parmesan/pecorino)', 'vegan=' + veganA.satFat + ' classic=' + classic.satFat);
+      assert(veganA.protein !== classic.protein, 'sanity: the vegan and classic combos are genuinely different macros, not coincidentally equal', '');
+
+      // lactose-intolerant alone (no vegan) also forces the vegan (dairy-free) variant —
+      // the variant's own dietKeys include both.
+      run(ctx, "PROF.elena.diets = ['lactose-intolerant']; PROF.partner.diets = [];");
+      const lactoseFree = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      assert(Math.abs(lactoseFree.protein - expectedVegan.protein) < 1e-6, 'lactose-intolerant household ALSO auto-selects the dairy-free variant (its dietKeys include lactose-intolerant)', 'got=' + lactoseFree.protein);
+
+      // no diet forcing a choice -> the composite's declared DEFAULT (classic).
+      resetHousehold();
+      const noD = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      assert(Math.abs(noD.protein - classic.protein) < 1e-6, 'no active diet forces a choice: pesto-elena resolves to its declared default (classic)', 'got=' + noD.protein);
+
+      // Vegetarian alone does NOT force the vegan variant (vegetarians can eat cheese) —
+      // proves the dietKeys match is specific, not "any diet at all triggers vegan".
+      run(ctx, "PROF.elena.diets = ['vegetarian']; PROF.partner.diets = [];");
+      const vegetarian = call(ctx, 'foodMacros', ['pesto-elena', 100]);
+      assert(Math.abs(vegetarian.protein - classic.protein) < 1e-6, 'vegetarian-only household stays on the classic variant (vegetarian is not in the vegan variant\'s dietKeys)', 'got=' + vegetarian.protein);
+
+      resetHousehold();
+    })();
+
+    // -------- (6) bought vs made composite, on BOTH the shopping list and the pantry. --------
+    (function(){
+      // Shopping list: a MADE composite (pesto-elena) decomposes into its components; a
+      // BOUGHT composite (mayonnaise) lists as itself.
+      withFixtureRecipe('__composite_shop_pesto__', [['pasta', 100], ['pesto-elena', 60]], function(){
+        withFixtureRecipe('__composite_shop_mayo__', [['rice', 100], ['mayonnaise', 30]], function(){
+          run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+          const wk = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+          const plan = call(ctx, 'ensureWeekPlan', [wk]);
+          run(ctx, "weekPlan.days[0].meals.dinner.elena = {recipeId: '__composite_shop_pesto__', portion: 1, shared: false};");
+          run(ctx, "weekPlan.days[0].meals.lunch.elena = {recipeId: '__composite_shop_mayo__', portion: 1, shared: false};");
+          const list = call(ctx, 'computeShoppingList', [wk]);
+          const names = Object.keys(list.totals);
+          assert(names.indexOf('Pesto Elena (basil, parmesan, pecorino, almonds)') === -1,
+            'shopping list: a MADE composite (pesto-elena) never appears as itself', JSON.stringify(names));
+          ['Basil, fresh', 'Parmesan, grated', 'Pecorino romano, grated', 'Almonds'].forEach(function(n){
+            assert(names.indexOf(n) !== -1, 'shopping list: made composite decomposes into its component "' + n + '"', JSON.stringify(names));
+          });
+          assert(names.indexOf('Mayonnaise') !== -1, 'shopping list: a BOUGHT composite (mayonnaise) lists as itself', JSON.stringify(names));
+          // (the full week plan legitimately buys eggs for OTHER recipes too, so "no eggs
+          // line at all" isn't a valid check here — the isolated foodQuantitiesForComponents
+          // check just below proves the bought-composite-doesn't-decompose claim precisely.)
+        });
+      });
+
+      // Pantry: logging a MADE composite directly (via foodQuantitiesForComponents, the
+      // same helper the pantry funnels through) decomposes into its components; a BOUGHT
+      // composite deducts itself.
+      run(ctx, 'logHistory = {}; pantry = {};');
+      const madeQty = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'pesto-elena', grams: 60}]]);
+      assert(madeQty['pesto-elena'] === undefined, 'pantry decomposition: a made composite never appears as itself in foodQuantitiesForComponents', JSON.stringify(madeQty));
+      assert(typeof madeQty['parmesan'] === 'number' && madeQty['parmesan'] > 0, 'pantry decomposition: a made composite deducts its components (parmesan > 0)', JSON.stringify(madeQty));
+      const boughtQty = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'mayonnaise', grams: 30}]]);
+      assert(Math.abs(boughtQty['mayonnaise'] - 30) < 1e-9, 'pantry decomposition: a bought composite deducts itself (30g mayonnaise)', JSON.stringify(boughtQty));
+      assert(boughtQty['eggs'] === undefined, 'pantry decomposition: a bought composite does not also deduct its components', JSON.stringify(boughtQty));
+
+      // End-to-end pantryRemaining(): a baseline set on 'parmesan' is depleted by logging a
+      // meal containing pesto-elena (made), never by logging mayonnaise (bought, unrelated).
+      run(ctx, 'logHistory = {}; pantry = {};');
+      run(ctx, "pantry['parmesan'] = {qty: 100, setAt: 0, u: 1};");
+      call(ctx, 'logFoodEntry', ['2026-07-10', 'elena', 'pesto-elena', 60]);
+      const remaining = call(ctx, 'pantryRemaining', []);
+      assert(remaining['parmesan'] < 100 && remaining['parmesan'] >= 0, "pantryRemaining: logging pesto-elena depletes the parmesan baseline (made composite consumes its components)", 'got=' + remaining['parmesan']);
+    })();
+
+    // -------- (7) nested composites: allowed, guarded against cycles. --------
+    (function(){
+      // A legitimate 2-level nest: a fixture composite built partly from guacamole (itself
+      // a composite) resolves correctly by summing straight through.
+      run(ctx, "FOODS['__nested_fixture__'] = {name: 'Nested fixture', per: 100, unit: 'g', components: [['guacamole', 100], ['salt', 0.001]], yieldG: 100.001, bought: false, flags: [], cat: 'Pantry', src: 'test fixture'};");
+      const nested = call(ctx, 'foodMacros', ['__nested_fixture__', 100.001]);
+      const guac = call(ctx, 'foodMacros', ['guacamole', 100]);
+      assert(Math.abs(nested.kcal - guac.kcal) < 0.5, 'nested composite: a composite containing another composite as a component resolves correctly (matches guacamole\'s own kcal at the same effective grams)', 'nested=' + nested.kcal + ' guac=' + guac.kcal);
+      run(ctx, "delete FOODS['__nested_fixture__'];");
+
+      // A cycle (A contains B contains A) must degrade to zero, not hang/crash.
+      run(ctx, "FOODS['__cycle_a__'] = {name: 'Cycle A', per: 100, unit: 'g', components: [['__cycle_b__', 50]], yieldG: 100, bought: false, flags: [], cat: 'Pantry', src: 'test fixture'};");
+      run(ctx, "FOODS['__cycle_b__'] = {name: 'Cycle B', per: 100, unit: 'g', components: [['__cycle_a__', 50]], yieldG: 100, bought: false, flags: [], cat: 'Pantry', src: 'test fixture'};");
+      let cycleResult, threw = false;
+      try{ cycleResult = call(ctx, 'foodMacros', ['__cycle_a__', 100]); } catch(e){ threw = true; }
+      assert(!threw, 'nested composite cycle guard: a self-referencing composite pair does not throw/hang', '');
+      assert(!threw && cycleResult && cycleResult.kcal === 0, 'nested composite cycle guard: a cycle resolves to zero macros instead of infinite recursion', JSON.stringify(cycleResult));
+      run(ctx, "delete FOODS['__cycle_a__']; delete FOODS['__cycle_b__'];");
+    })();
+
+    // -------- (8) determinism: composite resolution never uses Math.random/Date.now — a
+    // full week generation for a vegan household is byte-identical across two independent
+    // runs (this is testDietGeneratedPlans' determinism check (g), re-run here specifically
+    // WITH pesto-elena wired into a planned recipe, so a variant-selection bug that only
+    // shows up mid-plan can't hide behind a determinism check that never touches it). --------
+    (function(){
+      withFixtureRecipe('__composite_determinism_fixture__', [['pasta', 100], ['pesto-elena', 60]], function(){
+        run(ctx, "RECIPES_DB['__composite_determinism_fixture__'].slots = ['dinner']; RECIPES_DB['__composite_determinism_fixture__'].role = 'full';");
+        run(ctx, "PROF.elena.diets = ['vegan']; PROF.partner.diets = ['vegan']; PROF.elena.avoid = []; PROF.partner.avoid = []; householdStyle = 'balanced';");
+        run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+        const planA = call(ctx, 'ensureWeekPlan', []);
+        run(ctx, "weekPlans = {}; weekPlan = null;");
+        const planB = call(ctx, 'ensureWeekPlan', []);
+        assert(JSON.stringify(planA) === JSON.stringify(planB), 'composite-aware determinism: two independent week generations for a vegan household (with a pesto-elena-bearing recipe in the catalog) are byte-identical', '');
+      });
+    })();
+
+    resetHousehold();
+  } finally {
+    run(ctx, 'pantry = ' + JSON.stringify(savedPantry) + '; logHistory = ' + JSON.stringify(savedLogHistory) + ';');
+    run(ctx, "PROF.elena = " + JSON.stringify(pristineElena) + "; PROF.partner = " + JSON.stringify(pristinePartner) + '; weekPlans = {}; weekPlan = null;');
+  }
+}
+
+/* ===================================================================
    Onboarding slot-targeting fix (2026-07-28)
 
    Regression coverage for the bug fixed in app.js/render-profile.js/index.html: onboarding
@@ -8965,6 +9229,7 @@ function main(){
   runTest('diet preferences: loadState() migration from every legacy diet value + stale avoid cleanup', function(){ testDietLoadStateMigration(ctx); });
   runTest('diet preferences: sync robustness (legacy/new-shape payloads, both directions)', function(){ testDietSyncRobustness(ctx); });
   runTest('diet preferences: generated fortnight per diet (zero violations/empty slots), determinism, shared-vs-solo scoping', function(){ testDietGeneratedPlans(ctx); });
+  runTest('composite ingredients: model, live macro derivation, diet/allergen derivation, variant auto-selection, shopping list/pantry, nesting, determinism', function(){ testCompositeIngredients(ctx); });
   runTest('onboarding slot-targeting fix (2026-07-28)', function(){ testOnboardingSlotTargeting(); });
   runTest('person-switcher: shared component wiring guard', function(){ testPersonSwitcherSharedComponent(ctx); });
   runTest('person-switcher: personSwitcherHtml() active-state/names/solo-hiding/escaping', function(){ testPersonSwitcherHtml(ctx); });

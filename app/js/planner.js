@@ -114,17 +114,65 @@ const PROTEIN_WEEK_LIMITS = {red: 1, poultry: 3}; // ceilings, per person per we
 const MEATLESS_DAYS_MIN = 2;                       // household days with no animal protein
 const FISH_DAYS_MIN = 2;                           // household dinners designated fish
 
+/* ---------------- composite ingredients: seeing through a composite's components ----------------
+   A composite FOODS entry (data/foods.js — `components` present, e.g. 'pesto-elena')
+   behaves like a food but isn't itself a real ingredient id in the hand-picked lists below
+   (DAIRY_FOOD_IDS etc, js/library.js) — its DAIRY-ness lives in its components (parmesan),
+   not in the composite id. Every helper below that used to test a bare food id against one
+   of those lists now goes through `foodOrComponentsMatch`, so a diet/protein-kind check
+   "sees through" a composite into what it's actually made of.
+
+   Conservative like `recipeAllPossibleIngredientIds` above (any optionGroups variant, not
+   just the default) and for the same reason: this filtering runs on the CANDIDATE POOL
+   before engine.js:activeCompositeVariant picks which variant a household actually gets, so
+   it has to assume the worst variant a composite could resolve to, not just its declared
+   default. `compositeReachableFoodIds` collects every component id reachable from a
+   composite across its default AND every declared `variants[*]` entry, recursively through
+   nested composites (engine.js:compositeMacrosPer100's doc explains the nesting decision) —
+   `seen`/`depth` guard the same authoring-cycle risk that resolver guards against.
+   Task proof: removing 'pesto-elena' from DAIRY_FOOD_IDS and 'mayonnaise' from
+   EGG_FOOD_IDS (js/library.js) must NOT change what recipeMayContainDairy/Eggs report —
+   they're now found via parmesan/eggs in `components` instead of the hardcoded id itself
+   (tools/check.js:testCompositeIngredients covers this explicitly). */
+function compositeReachableFoodIds(foodId, seen, depth){
+  seen = seen || {};
+  depth = depth || 0;
+  const food = FOODS[foodId];
+  const out = [];
+  if(!food || !Array.isArray(food.components) || seen[foodId] || depth > 6) return out;
+  const nextSeen = Object.assign({}, seen);
+  nextSeen[foodId] = true;
+  const combos = [food.components].concat((food.variants || []).map(function(v){ return v.components; }));
+  combos.forEach(function(components){
+    (components || []).forEach(function(c){
+      const cId = c && c[0];
+      if(!cId || out.indexOf(cId) !== -1) return;
+      out.push(cId);
+      compositeReachableFoodIds(cId, nextSeen, depth + 1).forEach(function(deepId){
+        if(out.indexOf(deepId) === -1) out.push(deepId);
+      });
+    });
+  });
+  return out;
+}
+function foodOrComponentsMatch(foodId, idList){
+  if(idList.indexOf(foodId) !== -1) return true;
+  return compositeReachableFoodIds(foodId).some(function(cId){ return idList.indexOf(cId) !== -1; });
+}
+
 // Which kind of animal protein a meal carries, from its EFFECTIVE ingredients (so an
 // optionGroups variant is judged by the choice actually planned, not the default). Red
 // outranks poultry outranks fish when a dish somehow contains several. null = meatless.
 // The id lists live in js/library.js, which loads AFTER this file — function bodies resolve
 // names at call time, and the `typeof` guard matches how foodHitsAvoid already reaches
-// GLUTEN_FOOD_IDS/NUT_FOOD_IDS from here.
+// GLUTEN_FOOD_IDS/NUT_FOOD_IDS from here. foodOrComponentsMatch (above) sees through a
+// composite ingredient into its real components, so a hypothetical meat-based composite
+// would be caught here too, not just a bare meat food id.
 function proteinKindForIngredientIds(ids){
   if(typeof RED_MEAT_FOOD_IDS === 'undefined') return null;
-  if(ids.some(function(i){ return RED_MEAT_FOOD_IDS.indexOf(i) !== -1; })) return 'red';
-  if(ids.some(function(i){ return POULTRY_FOOD_IDS.indexOf(i) !== -1; })) return 'poultry';
-  if(ids.some(function(i){ return FISH_FOOD_IDS.indexOf(i) !== -1; })) return 'fish';
+  if(ids.some(function(i){ return foodOrComponentsMatch(i, RED_MEAT_FOOD_IDS); })) return 'red';
+  if(ids.some(function(i){ return foodOrComponentsMatch(i, POULTRY_FOOD_IDS); })) return 'poultry';
+  if(ids.some(function(i){ return foodOrComponentsMatch(i, FISH_FOOD_IDS); })) return 'fish';
   return null;
 }
 function recipeProteinKind(recipeId, opts){
@@ -171,22 +219,29 @@ function recipeMayContainMeatOrPoultry(id){
   const r = RECIPES_DB[id];
   if(!r || typeof RED_MEAT_FOOD_IDS === 'undefined') return false;
   const ids = recipeAllPossibleIngredientIds(r);
-  return ids.some(function(i){ return RED_MEAT_FOOD_IDS.indexOf(i) !== -1 || POULTRY_FOOD_IDS.indexOf(i) !== -1; });
+  return ids.some(function(i){ return foodOrComponentsMatch(i, RED_MEAT_FOOD_IDS) || foodOrComponentsMatch(i, POULTRY_FOOD_IDS); });
 }
+// foodOrComponentsMatch (above) sees THROUGH a composite ingredient (e.g. 'pesto-elena')
+// into its real components (parmesan, pecorino) — this is what lets 'pesto-elena' be
+// removed from the hardcoded DAIRY_FOOD_IDS list (js/library.js) and STILL get excluded
+// from vegan/lactose-intolerant menus, purely because parmesan is real dairy.
 function recipeMayContainDairy(id){
   const r = RECIPES_DB[id];
   if(!r || typeof DAIRY_FOOD_IDS === 'undefined') return false;
-  return recipeAllPossibleIngredientIds(r).some(function(i){ return DAIRY_FOOD_IDS.indexOf(i) !== -1; });
+  return recipeAllPossibleIngredientIds(r).some(function(i){ return foodOrComponentsMatch(i, DAIRY_FOOD_IDS); });
 }
+// Same composite-aware derivation as recipeMayContainDairy above — this is what lets
+// 'mayonnaise' be removed from the hardcoded EGG_FOOD_IDS list and still get excluded from
+// vegan menus, purely because 'eggs' is one of its real components.
 function recipeMayContainEggs(id){
   const r = RECIPES_DB[id];
   if(!r || typeof EGG_FOOD_IDS === 'undefined') return false;
-  return recipeAllPossibleIngredientIds(r).some(function(i){ return EGG_FOOD_IDS.indexOf(i) !== -1; });
+  return recipeAllPossibleIngredientIds(r).some(function(i){ return foodOrComponentsMatch(i, EGG_FOOD_IDS); });
 }
 function recipeMayContainHoney(id){
   const r = RECIPES_DB[id];
   if(!r || typeof HONEY_FOOD_IDS === 'undefined') return false;
-  return recipeAllPossibleIngredientIds(r).some(function(i){ return HONEY_FOOD_IDS.indexOf(i) !== -1; });
+  return recipeAllPossibleIngredientIds(r).some(function(i){ return foodOrComponentsMatch(i, HONEY_FOOD_IDS); });
 }
 // "Fish/meat dinners that are not salads or pasta" (user, 2026-07-22): a fish- or meat-based,
 // PROTEIN-FORWARD dish (more kcal from protein than carbs) belongs at DINNER, not lunch —
@@ -493,13 +548,26 @@ function foodHitsAvoid(foodId, avoidList){
   if(!avoidList || !avoidList.length) return false;
   const food = FOODS[foodId];
   if(!food) return false;
-  // Explicit allergen list for composite foods (e.g. pesto-elena: Pantry cat, but
-  // contains dairy + almonds) — checked before the category/id heuristics below.
+  // Explicit allergen list — a hand-authored escape hatch for a custom food whose real
+  // ingredients Mesa has no other way to see (e.g. a trace-allergen warning with no
+  // `components` behind it). A COMPOSITE (pesto-elena etc) no longer needs this: its
+  // allergen membership is DERIVED below by recursing into `components`, which is what
+  // lets removing pesto-elena's hand-authored containsAvoid stay correct (task: composite-
+  // ingredients engine) — the recursion finds parmesan (Dairy) and almonds (NUT_FOOD_IDS)
+  // on its own.
   if(Array.isArray(food.containsAvoid) && food.containsAvoid.some(function(k){ return avoidList.indexOf(k) !== -1; })) return true;
   if(avoidList.indexOf('lactose') !== -1 && food.cat === 'Dairy') return true;
   if(avoidList.indexOf('gluten') !== -1 && typeof GLUTEN_FOOD_IDS !== 'undefined' && GLUTEN_FOOD_IDS.indexOf(foodId) !== -1) return true;
   if(avoidList.indexOf('shellfish') !== -1 && foodId === 'prawns') return true;
   if(avoidList.indexOf('nuts') !== -1 && typeof NUT_FOOD_IDS !== 'undefined' && NUT_FOOD_IDS.indexOf(foodId) !== -1) return true;
+  // Composite: recurse into every variant's components (any-variant conservative, same
+  // reasoning as compositeReachableFoodIds/foodOrComponentsMatch above the diet helpers) —
+  // reusing this same function per component means lactose/gluten/shellfish/nuts are all
+  // derived through the identical rules a plain food already gets, recursively through a
+  // nested composite too.
+  if(Array.isArray(food.components)){
+    return compositeReachableFoodIds(foodId).some(function(cId){ return foodHitsAvoid(cId, avoidList); });
+  }
   return false;
 }
 
@@ -2400,6 +2468,44 @@ function foodCategoryForName(name){
 // always emitted and the pantry (state.js) stores, so subtraction later needs no
 // conversion layer.
 //
+// Adds `grams` of `foodId` into `out` (foodId -> qty; pieces for unit:'piece' foods,
+// grams/ml otherwise) — the ONE place a composite ingredient is decomposed for the shopping
+// list AND the pantry (both go through foodQuantitiesForComponents below, per its own doc:
+// "so pantry consumption can run the IDENTICAL operation"). Task: composite-ingredients
+// engine, item 4 (shopping list + pantry, per-composite declaration):
+//   - MADE (data/foods.js: `components` present, `bought` not true — pesto-elena, the
+//     dressing, the seed blend, guacamole) explodes into its components instead of adding
+//     itself, using the SAME household-diet-resolved variant engine.js:activeCompositeVariant
+//     picks for nutrition (so a vegan household's shopping list asks for nutritional yeast,
+//     not parmesan, for the exact same jar of pesto their plan is actually built from).
+//     Recurses for a nested composite (engine.js's nesting decision applies here too);
+//     `seen`/`depth` guard the same authoring-cycle risk.
+//   - BOUGHT (mayonnaise, soy sauce — soy sauce isn't even a composite) adds itself, exactly
+//     like a plain food, because that's what actually gets bought off a shelf.
+// This is the single decomposition path both addFromIngredient and addFromFoodComponent
+// below funnel into — there is deliberately no second place a composite gets exploded.
+function addFoodQty(out, foodId, grams, seen, depth){
+  seen = seen || {};
+  depth = depth || 0;
+  const food = FOODS[foodId];
+  if(!food) return;
+  if(Array.isArray(food.components) && !food.bought && !seen[foodId] && depth <= 6){
+    const combo = (typeof activeCompositeVariant === 'function') ? activeCompositeVariant(food) : food;
+    const yieldG = (typeof combo.yieldG === 'number' && combo.yieldG > 0) ? combo.yieldG
+      : (typeof food.yieldG === 'number' && food.yieldG > 0) ? food.yieldG : null;
+    if(yieldG){
+      const nextSeen = Object.assign({}, seen);
+      nextSeen[foodId] = true;
+      const scale = grams / yieldG;
+      (Array.isArray(combo.components) ? combo.components : food.components).forEach(function(c){
+        addFoodQty(out, c[0], c[1] * scale, nextSeen, depth + 1);
+      });
+      return;
+    }
+  }
+  out[foodId] = (food.unit === 'piece') ? (out[foodId] || 0) + grams / food.avgG : (out[foodId] || 0) + grams;
+}
+
 // This is a PURE REFACTOR of the old addRecipe/addFood bodies (tools/check.js's
 // decomposition-parity test is the contract) — preserves batch-yield (r.servings),
 // optionGroups resolution via recipeEffectiveIngredients(r, opts), and the exact
@@ -2409,6 +2515,10 @@ function foodCategoryForName(name){
 // path (addFood) always required `grams > 0`. Two small internal accumulators mirror that
 // asymmetry exactly rather than unifying it, so behaviour cannot drift even in a
 // (currently nonexistent, data/validate.js-enforced-positive) zero/negative-qty edge case.
+// Both now funnel into addFoodQty above for the actual accumulation, which is also where a
+// composite ingredient gets exploded into its components (task: composite-ingredients
+// engine, item 4) — so this function's own guards are unchanged, only the final "add it"
+// step gained composite-awareness.
 function foodQuantitiesForComponents(components){
   const out = {}; // foodId -> qty, in the SAME accumulation order the old inline totals
                    // object used, so the running per-food sums stay float-bit-identical
@@ -2416,12 +2526,12 @@ function foodQuantitiesForComponents(components){
   function addFromIngredient(foodId, grams){ // mirrors old addRecipe's inner guard/branch
     const food = FOODS[foodId];
     if(!food) return;
-    out[foodId] = (food.unit === 'piece') ? (out[foodId] || 0) + grams / food.avgG : (out[foodId] || 0) + grams;
+    addFoodQty(out, foodId, grams);
   }
   function addFromFoodComponent(foodId, grams){ // mirrors old addFood exactly
     const food = FOODS[foodId];
     if(!food || !(grams > 0)) return;
-    out[foodId] = (food.unit === 'piece') ? (out[foodId] || 0) + grams / food.avgG : (out[foodId] || 0) + grams;
+    addFoodQty(out, foodId, grams);
   }
   (components || []).forEach(function(c){
     if(c && c.recipeId){

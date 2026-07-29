@@ -98,6 +98,21 @@ const FOODS = {
     kcal: 31, protein: 0.4, carbs: 6.9, fat: 0.2, satFat: 0.0, fiber: 0.3,
     flags: [], cat: 'Produce', iconKey: 'lemon-juice', src: 'USDA FDC 167747 (lemon juice, raw); kcal per 4/4/9'
   },
+  'lime-juice': {
+    name: 'Lime juice, raw', per: 100, unit: 'ml',
+    kcal: 37, protein: 0.4, carbs: 8.4, fat: 0.2, satFat: 0.0, fiber: 0.4, sugars: 1.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Produce', iconKey: 'lime-juice', src: 'USDA FDC 173728 (lime juice, raw); kcal per 4/4/9. Added for the guacamole composite (composite-ingredients task).'
+  },
+  'coriander': {
+    name: 'Coriander (cilantro), fresh', per: 100, unit: 'g',
+    kcal: 28, protein: 2.1, carbs: 3.7, fat: 0.5, satFat: 0.0, fiber: 2.8, sugars: 0.9, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Produce', iconKey: 'coriander', src: 'USDA FDC 169997 (coriander/cilantro leaves, raw); kcal per 4/4/9. Added for the guacamole composite (composite-ingredients task).'
+  },
+  'salt': {
+    name: 'Salt', per: 100, unit: 'g',
+    kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0,
+    flags: [], cat: 'Pantry', iconKey: 'salt', src: 'Table salt — no caloric/macro contribution; no sodium field exists in FOODS (see this file\'s header). Added for the guacamole composite (composite-ingredients task).'
+  },
   'cherry-tomatoes': {
     name: 'Cherry tomatoes, raw', per: 100, unit: 'g',
     kcal: 21, protein: 0.9, carbs: 3.9, fat: 0.2, satFat: 0.0, fiber: 1.2,
@@ -641,10 +656,19 @@ const FOODS = {
     kcal: 57, protein: 8.1, carbs: 4.9, fat: 0.1, satFat: 0.0, fiber: 0.8,
     flags: [], cat: 'Pantry', iconKey: 'soy-sauce', src: 'USDA FDC 174277-style (soy sauce); kcal per 4/4/9'
   },
+  // COMPOSITE, but BOUGHT (composite-ingredients task): `components` exists so allergen/
+  // diet derivation can see the real egg inside it (engine.js:foodOrComponentsMatch,
+  // planner.js — this is what lets 'mayonnaise' be removed from library.js's hardcoded
+  // EGG_FOOD_IDS and still get excluded from vegan menus, purely because its components
+  // contain 'eggs'), but `bought:true` means the shopping list/pantry still list it as
+  // itself (a jar of mayo), never decomposed into egg+oil+lemon+mustard — see
+  // planner.js:foodQuantitiesForComponents's doc for the bought-vs-made distinction.
   'mayonnaise': {
     name: 'Mayonnaise', per: 100, unit: 'g',
-    kcal: 684, protein: 1.0, carbs: 0.6, fat: 75.0, satFat: 11.0, fiber: 0, sugars: 0.6, freeSugars: 0.6, sugarQuality: 'added/free',
-    flags: [], cat: 'Pantry', iconKey: 'mayonnaise', src: 'USDA FDC-style regular mayonnaise; kcal per 4/4/9'
+    components: [['eggs', 50], ['olive-oil', 200], ['lemon-juice', 15], ['mustard', 5]],
+    yieldG: 270,
+    bought: true,
+    cat: 'Pantry', iconKey: 'mayonnaise', src: 'Composite: ~1 whole egg (50g) + 200g oil + 15g lemon juice + 5g mustard, USDA FDC-style component macros; kcal per 4/4/9. Bought as itself (bought:true) — components exist only so allergen/diet derivation can see the egg.'
   },
   // Multi-select diets batch: sourced for the new vegan breakfast recipes below.
   'peanut-butter': {
@@ -722,15 +746,40 @@ const FOODS = {
     kcal: 620, protein: 21.2, carbs: 21.6, fat: 49.9, satFat: 3.8, fiber: 12.5,
     flags: ['highFiber'], cat: 'Pantry', iconKey: 'almonds', src: 'USDA FDC 170567 (nuts, almonds)'
   },
+  'nutritional-yeast': {
+    name: 'Nutritional yeast, fortified flakes', per: 100, unit: 'g',
+    kcal: 398, protein: 50.0, carbs: 36.0, fat: 6.0, satFat: 1.0, fiber: 20.0,
+    flags: ['highFiber'], cat: 'Pantry', iconKey: 'nutritional-yeast', src: 'USDA FDC-style branded fortified nutritional yeast flake average; kcal per 4/4/9. Added for the vegan Pesto Elena variant (composite-ingredients task).'
+  },
+  // COMPOSITE ingredient (composite-ingredients task) — macros/flags/allergen membership
+  // are all COMPUTED from `components` below via engine.js:foodMacros/compositeMacrosPer100,
+  // never hand-frozen (this entry used to carry a frozen kcal/protein/... snapshot plus a
+  // hand-authored `containsAvoid: ['lactose','nuts']` that could silently drift from the
+  // real formula — see this repo's task brief for the exact bug). `components`: the batch
+  // formula as [foodId, grams] pairs, the same convention recipe ingredients already use.
+  // `yieldG`: the batch's total weight (185g here, matching the original hand-authored
+  // comment this migrated from) — per-100g macros = componentTotals * 100/yieldG.
+  // `bought:false`: this is MADE at home, so planner.js:foodQuantitiesForComponents
+  // decomposes it into basil/parmesan/pecorino/almonds/olive-oil on the shopping list and
+  // pantry rather than buying "Pesto Elena" as itself.
+  // `variants`: a vegan combo (nutritional yeast + more almonds standing in for the two
+  // cheeses) that engine.js:activeCompositeVariant auto-selects whenever 'vegan' or
+  // 'lactose-intolerant' is active anywhere in the household — see that function's doc for
+  // why selection is household-wide, not per-meal.
   'pesto-elena': {
     name: 'Pesto Elena (basil, parmesan, pecorino, almonds)', per: 100, unit: 'g',
-    kcal: 362, protein: 20.8, carbs: 4.3, fat: 29.1, satFat: 10.8, fiber: 1.4,
-    // containsAvoid: composite food whose category can't reveal its allergens — the
-    // avoid-derivation helpers (planner.js:foodHitsAvoid, library.js:deriveRecipeMeta)
-    // read this explicitly, since cat:'Pantry' would otherwise hide the dairy + almonds.
-    containsAvoid: ['lactose', 'nuts'],
-    flags: ['fermented'], cat: 'Pantry', season: 'spring/summer',
-    iconKey: 'basil', src: 'Composite Elena recipe: 50g fresh basil + 70g parmesan + 30g pecorino romano + 15g almonds + assumed 20ml olive oil ("a sentimento"); per 100g of ~185g batch, kcal per 4/4/9'
+    components: [['basil', 50], ['parmesan', 70], ['pecorino', 30], ['almonds', 15], ['olive-oil', 20]],
+    yieldG: 185,
+    bought: false,
+    variants: [
+      {
+        key: 'vegan', label: 'Pesto Elena (vegan)', dietKeys: ['vegan', 'lactose-intolerant'],
+        components: [['basil', 50], ['nutritional-yeast', 35], ['almonds', 25], ['olive-oil', 25]],
+        yieldG: 135
+      }
+    ],
+    cat: 'Pantry', season: 'spring/summer',
+    iconKey: 'basil', src: 'Composite Elena recipe: 50g fresh basil + 70g parmesan + 30g pecorino romano + 15g almonds + 20g olive oil ("a sentimento"); vegan variant swaps the two cheeses for nutritional yeast + more almonds. Macros/flags/allergens computed from these grams (data/foods.js composite-ingredient machinery), never hand-frozen.'
   },
   'oats': {
     name: 'Oats, rolled, dry', per: 100, unit: 'g',
@@ -747,15 +796,36 @@ const FOODS = {
     kcal: 245, protein: 2.3, carbs: 5.5, fat: 23.8, satFat: 21.1, fiber: 2.2,
     flags: [], cat: 'Pantry', iconKey: 'coconut-milk', src: 'USDA FDC 170173 (coconut milk, canned)'
   },
+  // COMPOSITE, made at home (composite-ingredients task) — see pesto-elena's comment above
+  // for the general model. No diet-driven variant needed: olive oil + lemon juice is
+  // already vegan/vegetarian/pescatarian/lactose-safe under every diet, so there's nothing
+  // for a variant to switch.
   'olive-oil-lemon-dressing': {
     name: 'Olive oil & lemon dressing (blend)', per: 100, unit: 'ml',
-    kcal: 726, protein: 0.1, carbs: 1.4, fat: 80.0, satFat: 11.0, fiber: 0.1,
-    flags: [], cat: 'Pantry', iconKey: 'olive-oil-lemon-dressing', src: 'Composite: 80% olive oil + 20% lemon juice by weight'
+    components: [['olive-oil', 80], ['lemon-juice', 20]],
+    yieldG: 100,
+    bought: false,
+    cat: 'Pantry', iconKey: 'olive-oil-lemon-dressing', src: 'Composite: 80% olive oil + 20% lemon juice by weight; macros computed from these grams, never hand-frozen.'
   },
+  // COMPOSITE, made at home — see pesto-elena's comment above. Already vegan/gluten-free,
+  // no variant needed.
   'pumpkin-chia-seeds': {
     name: 'Pumpkin & chia seeds (blend)', per: 100, unit: 'g',
-    kcal: 558, protein: 23.4, carbs: 26.4, fat: 39.9, satFat: 6.0, fiber: 20.2,
-    flags: ['omega3', 'highFiber'], cat: 'Pantry', iconKey: 'pumpkin-chia-seeds', src: 'Composite: 50/50 pumpkin seeds + chia seeds by weight'
+    components: [['pumpkin-seeds', 50], ['chia-seeds', 50]],
+    yieldG: 100,
+    bought: false,
+    cat: 'Pantry', iconKey: 'pumpkin-chia-seeds', src: 'Composite: 50/50 pumpkin seeds + chia seeds by weight; macros computed from these grams, never hand-frozen.'
+  },
+  // COMPOSITE, made at home — new for the composite-ingredients task. Watercolor icon
+  // already committed at assets/ingredients/guacamole.png. Already vegan/vegetarian/
+  // pescatarian/lactose-safe under every diet, no variant needed.
+  'guacamole': {
+    name: 'Guacamole', per: 100, unit: 'g',
+    components: [['avocado', 200], ['lime-juice', 20], ['red-onion', 30], ['tomatoes', 80], ['coriander', 10], ['salt', 2]],
+    yieldG: 342,
+    bought: false,
+    cat: 'Pantry', season: 'evergreen',
+    iconKey: 'guacamole', src: 'Composite: 200g avocado + 20g lime juice + 30g red onion + 80g tomato + 10g coriander + a 2g pinch of salt; macros computed from these grams, never hand-frozen.'
   },
   'herbs-black-pepper': {
     name: 'Herbs & black pepper (mixed, to taste)', per: 100, unit: 'g',
@@ -793,6 +863,56 @@ function normalizeFoodSugarFields(food){
 }
 
 Object.keys(FOODS).forEach(function(id){ normalizeFoodSugarFields(FOODS[id]); });
+
+/* ===================================================================
+   Composite ingredients — component-derived flags (composite-ingredients task).
+
+   A COMPOSITE food (a `components` array present, see e.g. 'pesto-elena' above) carries
+   no static macro fields (kcal/protein/...) at all — those are resolved LIVE, and
+   diet-variant-aware, by engine.js:foodMacros/compositeMacrosPer100 (the single source
+   every real consumer — recipeNutrition, the shopping list/pantry, the Library UI, this
+   file's own validateFoods() below — reads through). That's deliberate: a static snapshot
+   baked in here would go stale the moment a component's own macros are corrected, which is
+   exactly the bug this feature exists to retire (see this repo's task brief — pesto-elena
+   used to carry a frozen kcal/protein/... snapshot that could never react to a parmesan
+   correction).
+
+   `.flags` is a narrower case: it's authored UI vocabulary (badges/filters), not a number
+   a test needs to react live to a component edit, and nothing in the app re-derives it
+   per-diet. So it's computed ONCE here, from the composite's DECLARED DEFAULT component
+   list only (never the diet-selected variant — flags aren't diet-reactive anywhere in the
+   app today), via a small self-contained walk that doesn't need engine.js (which loads
+   after this file). Still genuinely "computed, not hand-typed": edit a component's own
+   flags/fiber and reload, and a composite's flags follow — no separate list to remember,
+   the same forgotten-list-entry bug this feature targets, just for flags instead of macros.
+   =================================================================== */
+const COMPOSITE_FLAG_FIBER_MIN_G = 6; // matches library.js:AUTO_TAG_THRESHOLDS.highFiberMinG
+const COMPOSITE_INHERITABLE_FLAGS = ['fermented', 'omega3', 'selenium', 'highIodine'];
+
+function deriveCompositeFlags(food){
+  const components = Array.isArray(food.components) ? food.components : [];
+  const flags = {};
+  let fiber100 = 0;
+  components.forEach(function(c){
+    const cFood = FOODS[c[0]];
+    if(!cFood) return;
+    const factor = (cFood.unit === 'piece') ? (c[1] / cFood.avgG) : (c[1] / (cFood.per || 100));
+    // A nested composite's own fiber isn't walked further here (flags are a load-time
+    // approximation, not the live resolver) — none of this batch's composites nest, and a
+    // future nested one would just under-count fiber slightly rather than mis-derive a
+    // flag, the same "degrade gracefully" bias used everywhere else in this feature.
+    fiber100 += (cFood.fiber || 0) * factor;
+    (cFood.flags || []).forEach(function(fl){ if(COMPOSITE_INHERITABLE_FLAGS.indexOf(fl) !== -1) flags[fl] = true; });
+  });
+  const yieldG = (typeof food.yieldG === 'number' && food.yieldG > 0) ? food.yieldG : 100;
+  if(fiber100 * (100 / yieldG) >= COMPOSITE_FLAG_FIBER_MIN_G) flags.highFiber = true;
+  return Object.keys(flags).sort();
+}
+
+Object.keys(FOODS).forEach(function(id){
+  const food = FOODS[id];
+  if(food && Array.isArray(food.components)) food.flags = deriveCompositeFlags(food);
+});
 
 /* ===================================================================
    FOOD_ALIASES — every ingredient-name string used in RECIPES
@@ -881,9 +1001,61 @@ function validateFoods(){
     if (typeof f.name !== 'string' || !f.name) errors.push(where + ': name missing/invalid');
     if (typeof f.per !== 'number') errors.push(where + ': per missing/not a number');
     if (typeof f.unit !== 'string' || !f.unit) errors.push(where + ': unit missing/invalid');
-    ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(field){
-      if (typeof f[field] !== 'number' || Number.isNaN(f[field])) errors.push(where + ': ' + field + ' missing/not a number');
-    });
+    const isComposite = Array.isArray(f.components);
+    if (isComposite) {
+      // Composite ingredients (composite-ingredients task) deliberately carry NO static
+      // kcal/protein/carbs/fat/satFat/fiber — those are resolved LIVE from `components` by
+      // engine.js:foodMacros, never stored here (this file's header comment on
+      // deriveCompositeFlags explains why a frozen snapshot is exactly the bug this feature
+      // retires). Structural checks below stand in for the numeric-field checks a plain
+      // food gets: every component id must resolve, every gram must be positive, and
+      // yieldG (the divisor those grams get scaled against) must be a positive number —
+      // the three ways a hand-authored composite formula can actually be broken.
+      if (!f.components.length) errors.push(where + ': components must be a non-empty array');
+      f.components.forEach(function(c){
+        if (!Array.isArray(c) || c.length !== 2 || typeof c[0] !== 'string' || typeof c[1] !== 'number' || c[1] <= 0) {
+          errors.push(where + ': malformed component entry ' + JSON.stringify(c));
+        } else if (!FOODS[c[0]]) {
+          errors.push(where + ': component id "' + c[0] + '" not found in FOODS');
+        } else if (c[0] === id) {
+          errors.push(where + ': component references itself (cycle)');
+        }
+      });
+      if (typeof f.yieldG !== 'number' || f.yieldG <= 0) errors.push(where + ': yieldG missing/not a positive number');
+      if (f.variants !== undefined) {
+        if (!Array.isArray(f.variants) || !f.variants.length) {
+          errors.push(where + ': variants must be a non-empty array when present');
+        } else {
+          const variantKeysSeen = {};
+          f.variants.forEach(function(v){
+            const vWhere = where + '.variants';
+            if (!v || typeof v.key !== 'string' || !v.key) { errors.push(vWhere + ': entry missing a valid "key"'); return; }
+            if (variantKeysSeen[v.key]) errors.push(vWhere + ': duplicate variant key "' + v.key + '"');
+            variantKeysSeen[v.key] = true;
+            if (typeof v.label !== 'string' || !v.label) errors.push(vWhere + '["' + v.key + '"]: missing a "label"');
+            if (!Array.isArray(v.dietKeys) || !v.dietKeys.length) errors.push(vWhere + '["' + v.key + '"]: dietKeys must be a non-empty array');
+            if (!Array.isArray(v.components) || !v.components.length) {
+              errors.push(vWhere + '["' + v.key + '"]: components must be a non-empty array');
+            } else {
+              v.components.forEach(function(c){
+                if (!Array.isArray(c) || c.length !== 2 || typeof c[0] !== 'string' || typeof c[1] !== 'number' || c[1] <= 0) {
+                  errors.push(vWhere + '["' + v.key + '"]: malformed component entry ' + JSON.stringify(c));
+                } else if (!FOODS[c[0]]) {
+                  errors.push(vWhere + '["' + v.key + '"]: component id "' + c[0] + '" not found in FOODS');
+                } else if (c[0] === id) {
+                  errors.push(vWhere + '["' + v.key + '"]: component references itself (cycle)');
+                }
+              });
+            }
+            if (typeof v.yieldG !== 'number' || v.yieldG <= 0) errors.push(vWhere + '["' + v.key + '"]: yieldG missing/not a positive number');
+          });
+        }
+      }
+    } else {
+      ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(field){
+        if (typeof f[field] !== 'number' || Number.isNaN(f[field])) errors.push(where + ': ' + field + ' missing/not a number');
+      });
+    }
     if (typeof f.sugarQuality !== 'string' || !SUGAR_QUALITY_VALUES[f.sugarQuality]) {
       errors.push(where + ': sugarQuality missing/invalid');
     }
