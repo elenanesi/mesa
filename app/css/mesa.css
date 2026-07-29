@@ -500,28 +500,144 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .toast{position:absolute;left:50%;bottom:104px;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;font-size:13px;font-weight:600;padding:11px 18px;border-radius:999px;opacity:0;transition:.3s;z-index:80;box-shadow:var(--shadow);pointer-events:none;max-width:82%;text-align:center;}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0);}
 
-/* A brief, tactile acknowledgement for an explicit food log. The layer lives above
-   transient toasts but remains transparent to every tap underneath it. */
+/* A brief, tactile acknowledgement for an explicit food log. The little pressed-paper
+   composition is deliberately made from gradients, SVG and pseudo-elements: it stays
+   sharp on every screen without loading an image or asking the main thread to draw. */
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;}
 .log-reward-layer{position:absolute;inset:0;overflow:hidden;pointer-events:none;z-index:81;}
-.log-reward{position:absolute;left:var(--reward-x);top:var(--reward-y);width:0;height:0;color:var(--sage-deep);}
-.log-reward-stamp{position:absolute;left:-26px;top:-26px;width:52px;height:52px;display:grid;place-items:center;border:1px solid rgba(86,107,67,.42);border-radius:46% 54% 51% 49% / 53% 45% 55% 47%;background:linear-gradient(135deg,#fffdf6 0%,#edf1df 58%,#dbe4ca 100%);box-shadow:0 7px 15px rgba(73,54,32,.18),inset 0 0 0 3px rgba(255,255,255,.54);opacity:0;transform:scale(.58) rotate(-10deg);animation:log-reward-stamp .28s cubic-bezier(.2,.9,.25,1.25) forwards;}
-.log-reward-stamp svg{width:28px;height:28px;filter:drop-shadow(0 1px 0 rgba(255,255,255,.8));}
-.log-reward-leaf{position:absolute;left:-8px;top:-11px;width:16px;height:22px;opacity:0;transform:translate(0,0) rotate(var(--leaf-rotate)) scale(.7);animation:log-reward-leaf .62s cubic-bezier(.16,.8,.24,1) var(--leaf-delay) forwards;}
-.log-reward-leaf path{fill:var(--leaf-color,var(--sage));stroke:rgba(86,107,67,.38);stroke-width:.7;}
-.log-reward-message{position:absolute;left:50%;top:42px;width:max-content;max-width:210px;padding:7px 11px;border:1px solid rgba(86,107,67,.22);border-radius:999px;background:rgba(255,250,240,.96);box-shadow:0 5px 14px rgba(73,54,32,.13);color:var(--ink);font-size:12px;font-weight:700;line-height:1.2;text-align:center;opacity:0;transform:translate(-50%,7px);animation:log-reward-message .22s ease .32s forwards;}
-.log-reward--complete{inset:0;width:auto;height:auto;display:grid;place-items:center;--reward-x:auto;--reward-y:auto;}
-.log-reward-wreath{position:relative;width:176px;height:176px;display:grid;place-items:center;opacity:0;transform:scale(.82);animation:log-reward-wreath .42s cubic-bezier(.2,.85,.25,1.15) forwards;}
-.log-reward-wreath .log-reward-leaf{left:80px;top:3px;width:18px;height:28px;transform:rotate(var(--leaf-rotate)) translateY(-66px) scale(.72);animation-name:log-reward-wreath-leaf;animation-duration:.62s;animation-delay:var(--leaf-delay);}
-.log-reward-wreath .log-reward-message{top:auto;bottom:42px;white-space:nowrap;animation-delay:.48s;}
-.log-reward-wreath-seal{width:74px;height:74px;display:grid;place-items:center;border:1px solid rgba(86,107,67,.4);border-radius:50%;background:rgba(255,250,240,.93);box-shadow:0 8px 20px rgba(73,54,32,.16),inset 0 0 0 4px rgba(237,241,223,.9);color:var(--sage-deep);font-size:30px;}
-@keyframes log-reward-stamp{to{opacity:1;transform:scale(1) rotate(0);}}
-@keyframes log-reward-leaf{35%{opacity:1;}100%{opacity:0;transform:translate(var(--leaf-x),var(--leaf-y)) rotate(calc(var(--leaf-rotate) + var(--leaf-turn))) scale(1);}}
-@keyframes log-reward-message{to{opacity:1;transform:translate(-50%,0);}}
-@keyframes log-reward-wreath{to{opacity:1;transform:scale(1);}}
-@keyframes log-reward-wreath-leaf{to{opacity:1;transform:rotate(var(--leaf-rotate)) translateY(-66px) scale(1);}}
+.log-reward{
+  position:absolute;left:var(--reward-x);top:var(--reward-y);width:0;height:0;
+  color:var(--sage-deep);contain:layout style;
+  animation:log-reward-life 1.55s linear both;
+}
+.log-reward:before{
+  content:"";position:absolute;left:-66px;top:-66px;width:132px;height:132px;border-radius:50%;
+  background:radial-gradient(circle,rgba(255,250,224,.92) 0 15%,rgba(218,227,186,.46) 36%,rgba(199,154,72,.13) 57%,transparent 70%);
+  opacity:0;transform:scale(.28);animation:log-reward-bloom .72s cubic-bezier(.16,.76,.22,1) both;
+}
+.log-reward:after{
+  content:"";position:absolute;left:-2px;top:-2px;width:4px;height:4px;border-radius:50%;background:#fff9cf;
+  box-shadow:-43px -33px 0 -1px rgba(255,249,207,.9),45px -25px 0 -1px rgba(199,154,72,.78),35px 37px 0 -1px rgba(255,249,207,.84),-39px 31px 0 -1px rgba(199,154,72,.7);
+  opacity:0;transform:scale(.2) rotate(-12deg);animation:log-reward-glints .78s ease-out .12s both;
+}
+.log-reward-stamp{
+  position:absolute;left:-29px;top:-29px;width:58px;height:58px;display:grid;place-items:center;
+  border:1px solid rgba(86,107,67,.5);border-radius:47% 53% 45% 55% / 55% 45% 54% 46%;
+  background:
+    radial-gradient(circle at 31% 24%,rgba(255,255,255,.94) 0 6%,transparent 24%),
+    linear-gradient(145deg,#fffdf4 0%,#eef2dd 46%,#d8e2bd 100%);
+  box-shadow:0 12px 25px rgba(73,54,32,.2),0 3px 7px rgba(73,54,32,.16),inset 0 0 0 4px rgba(255,255,255,.5);
+  opacity:0;transform:translateY(-12px) scale(1.32) rotate(-12deg);
+  animation:log-reward-stamp .46s cubic-bezier(.18,.82,.22,1.22) forwards;will-change:transform,opacity;
+}
+.log-reward-stamp:before{
+  content:"";position:absolute;inset:6px;border:1px dashed rgba(86,107,67,.34);
+  border-radius:51% 49% 55% 45% / 46% 57% 43% 54%;
+}
+.log-reward-stamp svg{position:relative;width:34px;height:34px;overflow:visible;filter:drop-shadow(0 1px 0 rgba(255,255,255,.92));}
+.log-reward-stamp .seal-branch{fill:none;stroke:currentColor;stroke-width:2.45;stroke-linecap:round;stroke-linejoin:round;}
+.log-reward-stamp .seal-leaf{fill:currentColor;stroke:none;opacity:.78;}
+.log-reward-leaf{
+  position:absolute;left:-9px;top:-14px;width:var(--leaf-width,18px);height:var(--leaf-height,27px);
+  overflow:visible;opacity:0;filter:drop-shadow(0 2px 2px rgba(73,54,32,.12));
+  transform:translate(0,0) rotate(var(--leaf-rotate)) scale(.12);
+  animation:log-reward-leaf .98s cubic-bezier(.16,.76,.22,1) var(--leaf-delay) both;
+  will-change:transform,opacity;
+}
+.log-reward-leaf .leaf-body{fill:var(--leaf-color,var(--sage));stroke:rgba(86,107,67,.45);stroke-width:.62;}
+.log-reward-leaf .leaf-vein{fill:none;stroke:rgba(69,88,52,.54);stroke-width:.66;stroke-linecap:round;}
+.log-reward-message{
+  position:absolute;left:var(--reward-message-x,0);top:43px;width:max-content;max-width:min(232px,calc(100vw - 32px));
+  padding:9px 13px 9px 29px;border:1px solid rgba(127,147,100,.3);border-radius:13px;
+  background:linear-gradient(135deg,rgba(255,253,247,.98),rgba(247,241,224,.98));
+  box-shadow:0 9px 24px rgba(73,54,32,.15),inset 0 1px 0 rgba(255,255,255,.9);
+  color:var(--ink);font-size:12px;font-weight:700;line-height:1.28;text-align:left;
+  opacity:0;transform:translate(-50%,9px) scale(.96);
+  animation:log-reward-message .3s cubic-bezier(.2,.8,.25,1) .39s forwards;
+  will-change:transform,opacity;
+}
+.log-reward-message:before{
+  content:"";position:absolute;left:11px;top:50%;width:9px;height:9px;border-radius:48% 52% 45% 55%;
+  background:var(--sage);box-shadow:inset 0 0 0 2px rgba(255,255,255,.45);
+  transform:translateY(-50%) rotate(-18deg);
+}
+.log-reward--complete{
+  inset:0;width:auto;height:auto;display:grid;place-items:center;--reward-x:auto;--reward-y:auto;
+  background:radial-gradient(circle at 50% 48%,rgba(255,250,230,.72),rgba(237,241,223,.28) 29%,transparent 62%);
+  animation:log-reward-complete-life 2.2s ease both;
+}
+.log-reward--complete:before{
+  left:50%;top:50%;width:330px;height:330px;
+  background:radial-gradient(circle,rgba(255,251,226,.88),rgba(218,227,186,.38) 38%,rgba(199,154,72,.1) 57%,transparent 70%);
+  transform:translate(-50%,-50%) scale(.55);animation:log-reward-complete-bloom .92s cubic-bezier(.16,.76,.22,1) both;
+}
+.log-reward--complete:after{left:50%;top:50%;animation-duration:1.05s;}
+.log-reward-wreath{
+  position:relative;width:216px;height:216px;display:grid;place-items:center;opacity:0;
+  transform:scale(.68) rotate(-5deg);
+  animation:log-reward-wreath .58s cubic-bezier(.18,.82,.22,1.16) forwards;will-change:transform,opacity;
+}
+.log-reward-wreath:before,.log-reward-wreath:after{
+  content:"";position:absolute;inset:29px;border-radius:50%;border:1px solid rgba(127,147,100,.32);
+  opacity:0;transform:scale(.72);animation:log-reward-ring .52s ease-out .18s forwards;
+}
+.log-reward-wreath:after{inset:36px;border-color:rgba(199,154,72,.42);border-style:dashed;animation-delay:.27s;}
+.log-reward-wreath .log-reward-leaf{
+  left:99px;top:93px;width:var(--leaf-width,19px);height:var(--leaf-height,30px);filter:drop-shadow(0 3px 3px rgba(73,54,32,.13));
+  transform:rotate(var(--leaf-rotate)) translateY(-78px) scale(.08);
+  animation-name:log-reward-wreath-leaf;animation-duration:.72s;animation-delay:var(--leaf-delay);
+}
+.log-reward-wreath .log-reward-message{
+  top:181px;bottom:auto;left:50%;width:max-content;max-width:min(250px,calc(100vw - 28px));
+  padding:10px 15px 10px 34px;white-space:nowrap;font-size:13px;letter-spacing:.05px;
+  animation-delay:.58s;
+}
+.log-reward-wreath .log-reward-message:before{left:13px;width:11px;height:11px;background:var(--gold);}
+.log-reward-wreath-seal{
+  position:relative;width:94px;height:94px;display:grid;place-items:center;border:1px solid rgba(86,107,67,.45);
+  border-radius:47% 53% 49% 51% / 52% 47% 53% 48%;
+  background:
+    radial-gradient(circle at 34% 24%,rgba(255,255,255,.9),transparent 28%),
+    linear-gradient(145deg,rgba(255,253,244,.98),rgba(224,232,199,.98));
+  box-shadow:0 14px 32px rgba(73,54,32,.18),inset 0 0 0 6px rgba(255,255,255,.5);
+  color:var(--sage-deep);
+}
+.log-reward-wreath-seal:before{
+  content:"";position:absolute;inset:9px;border:1px dashed rgba(86,107,67,.33);
+  border-radius:50%;
+}
+.log-reward-wreath-seal svg{position:relative;width:52px;height:52px;overflow:visible;filter:drop-shadow(0 1px 0 #fff);}
+.log-reward-wreath-seal .seal-branch{fill:none;stroke:currentColor;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round;}
+.log-reward-wreath-seal .seal-leaf{fill:currentColor;stroke:none;opacity:.76;}
+@keyframes log-reward-life{0%,86%{opacity:1;}100%{opacity:0;}}
+@keyframes log-reward-bloom{0%{opacity:0;transform:scale(.28);}35%{opacity:1;}100%{opacity:0;transform:scale(1.18);}}
+@keyframes log-reward-glints{0%{opacity:0;transform:scale(.2) rotate(-12deg);}42%{opacity:1;}100%{opacity:0;transform:scale(1.6) rotate(16deg);}}
+@keyframes log-reward-stamp{
+  0%{opacity:0;transform:translateY(-12px) scale(1.32) rotate(-12deg);}
+  52%{opacity:1;transform:translateY(2px) scale(.91) rotate(2deg);}
+  76%{opacity:1;transform:translateY(-1px) scale(1.045) rotate(-1deg);}
+  100%{opacity:1;transform:translateY(0) scale(1) rotate(0);}
+}
+@keyframes log-reward-leaf{
+  0%{opacity:0;transform:translate(0,0) rotate(var(--leaf-rotate)) scale(.12);}
+  24%{opacity:1;}
+  68%,82%{opacity:1;transform:translate(var(--leaf-x),var(--leaf-y)) rotate(calc(var(--leaf-rotate) + var(--leaf-turn))) scale(var(--leaf-scale,1));}
+  100%{opacity:0;transform:translate(var(--leaf-x),var(--leaf-y)) rotate(calc(var(--leaf-rotate) + var(--leaf-turn) + 4deg)) scale(var(--leaf-scale,1));}
+}
+@keyframes log-reward-message{to{opacity:1;transform:translate(-50%,0) scale(1);}}
+@keyframes log-reward-complete-life{0%,88%{opacity:1;}100%{opacity:0;}}
+@keyframes log-reward-complete-bloom{0%{opacity:0;transform:translate(-50%,-50%) scale(.55);}45%{opacity:1;}100%{opacity:0;transform:translate(-50%,-50%) scale(1.08);}}
+@keyframes log-reward-wreath{to{opacity:1;transform:scale(1) rotate(0);}}
+@keyframes log-reward-ring{to{opacity:1;transform:scale(1);}}
+@keyframes log-reward-wreath-leaf{
+  0%{opacity:0;transform:rotate(var(--leaf-rotate)) translateY(-38px) scale(.08);}
+  58%{opacity:1;}
+  100%{opacity:1;transform:rotate(var(--leaf-rotate)) translateY(-78px) scale(var(--leaf-scale,1));}
+}
 @media (prefers-reduced-motion:reduce){
-  .log-reward-stamp,.log-reward-wreath,.log-reward-leaf,.log-reward-message{animation:none;}
+  .log-reward,.log-reward:before,.log-reward:after,.log-reward-stamp,.log-reward-wreath,.log-reward-wreath:before,.log-reward-wreath:after,.log-reward-leaf,.log-reward-message{animation:none;}
+  .log-reward--complete{background:none;}
+  .log-reward:before,.log-reward:after,.log-reward-wreath:before,.log-reward-wreath:after{display:none;}
   .log-reward-stamp,.log-reward-wreath,.log-reward-message{opacity:1;transform:translate(-50%,0);}
   .log-reward-stamp{transform:scale(1);}
   .log-reward-wreath{transform:scale(1);}

@@ -49,16 +49,19 @@ function clearLogReward(){
 
 function rewardLeafHtml(index){
   const values = [
-    ['-34px','-43px','-46deg','-36deg','.03s','#7f9364'],
-    ['2px','-55px','-12deg','-26deg','.08s','#a9b982'],
-    ['39px','-35px','35deg','36deg','.12s','#c79a48'],
-    ['43px','14px','71deg','42deg','.05s','#7f9364'],
-    ['-8px','45px','145deg','34deg','.14s','#b9c590'],
-    ['-42px','22px','-113deg','-41deg','.1s','#c79a48'],
-    ['-31px','-21px','-77deg','-28deg','.16s','#a9b982'],
-    ['32px','27px','107deg','31deg','.18s','#b9c590']
+    ['-42px','-48px','-48deg','-24deg','.04s','#70875a','.94','18px','29px'],
+    ['0px','-62px','-10deg','18deg','.1s','#9eb176','1.08','19px','31px'],
+    ['45px','-40px','38deg','25deg','.15s','#c69a48','.86','17px','27px'],
+    ['50px','15px','77deg','19deg','.07s','#71895b','1.02','18px','30px'],
+    ['-7px','51px','151deg','-19deg','.17s','#aebd85','.9','17px','28px'],
+    ['-49px','24px','-111deg','-26deg','.12s','#bd874f','1.04','19px','31px'],
+    ['-37px','-24px','-71deg','20deg','.2s','#91a56f','.86','17px','27px'],
+    ['38px','31px','112deg','-21deg','.23s','#aaba82','1.06','19px','31px']
   ][index % 8];
-  return '<svg class="log-reward-leaf" viewBox="0 0 16 22" aria-hidden="true" style="--leaf-x:'+values[0]+';--leaf-y:'+values[1]+';--leaf-rotate:'+values[2]+';--leaf-turn:'+values[3]+';--leaf-delay:'+values[4]+';--leaf-color:'+values[5]+'"><path d="M8 21C3 17 1 12 2 7c1-4 4-6 8-6 3 4 4 8 2 12-1 4-3 6-4 8Z"/><path d="M8 20C8 13 8 8 9 3" fill="none"/></svg>';
+  const leafPath = index % 2
+    ? '<path class="leaf-body" d="M8 22C4 18 1.5 14 2.1 9.4 2.7 4.8 6.2 1.7 11.5 1c2.2 5 1.8 9.7-.8 13.9C9.5 17 8.6 19.4 8 22Z"/><path class="leaf-vein" d="M8.2 21C8.4 14.3 9.2 8.7 11 3.2M8.8 13.4l-3.5-3.1M9.4 9.4l2.8-2.8"/>'
+    : '<path class="leaf-body" d="M8.1 22C3.7 18.7 1.2 14.2 1.8 9.2 2.4 4.6 5.5 1.7 9.8.9c3.5 4.1 4.6 8.5 2.5 13-1.2 2.7-2.8 5.4-4.2 8.1Z"/><path class="leaf-vein" d="M8.1 21C7.7 14.9 8.1 9 9.5 3.1M8 14.2l-3.4-3M8.2 10.1l3-3.1"/>';
+  return '<svg class="log-reward-leaf" viewBox="0 0 16 23" aria-hidden="true" style="--leaf-x:'+values[0]+';--leaf-y:'+values[1]+';--leaf-rotate:'+values[2]+';--leaf-turn:'+values[3]+';--leaf-delay:'+values[4]+';--leaf-color:'+values[5]+';--leaf-scale:'+values[6]+';--leaf-width:'+values[7]+';--leaf-height:'+values[8]+'">'+leafPath+'</svg>';
 }
 
 function rewardPoint(anchorEl){
@@ -67,10 +70,11 @@ function rewardPoint(anchorEl){
   const rect = anchorEl && typeof anchorEl.left === 'number'
     ? anchorEl
     : (anchorEl && anchorEl.getBoundingClientRect ? anchorEl.getBoundingClientRect() : null);
-  if(!phoneRect || !rect) return {x: phoneRect ? phoneRect.width / 2 : 160, y: phoneRect ? phoneRect.height / 2 : 280};
+  if(!phoneRect || !rect) return {x: phoneRect ? phoneRect.width / 2 : 160, y: phoneRect ? phoneRect.height / 2 : 280, width: phoneRect ? phoneRect.width : 320};
   return {
     x: Math.max(38, Math.min(phoneRect.width - 38, rect.left - phoneRect.left + rect.width / 2)),
-    y: Math.max(38, Math.min(phoneRect.height - 78, rect.top - phoneRect.top + rect.height / 2))
+    y: Math.max(38, Math.min(phoneRect.height - 78, rect.top - phoneRect.top + rect.height / 2)),
+    width: phoneRect.width
   };
 }
 
@@ -102,7 +106,8 @@ function playLogReward(payload){
   node.className = 'log-reward';
   node.style.setProperty('--reward-x', point.x + 'px');
   node.style.setProperty('--reward-y', point.y + 'px');
-  node.innerHTML = '<div class="log-reward-stamp" aria-hidden="true"><svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="2.7" stroke-linecap="round" stroke-linejoin="round"><path d="m8 16 5 5 11-12"/><path d="M16 3.5c7.2 0 12.5 5.3 12.5 12.5S23.2 28.5 16 28.5 3.5 23.2 3.5 16 8.8 3.5 16 3.5Z" opacity=".55"/></svg></div>'
+  node.style.setProperty('--reward-message-x', (Math.max(122, Math.min(point.width - 122, point.x)) - point.x) + 'px');
+  node.innerHTML = '<div class="log-reward-stamp" aria-hidden="true"><svg viewBox="0 0 36 36"><path class="seal-branch" d="m8.5 18.3 5.4 5.2L27.2 9.8M14 23.1c3.2-3.1 6.5-6.2 10.5-8.9"/><path class="seal-leaf" d="M17 20.3c-3.9.3-6.2-1.1-7.2-4.2 3.6-.7 6.1.7 7.2 4.2ZM21 16.8c-.2-3.7 1.3-6 4.5-6.9.5 3.5-1 5.8-4.5 6.9ZM17.7 19.8c3.5.5 5.4 2.2 5.8 5.1-3.4.1-5.3-1.6-5.8-5.1Z"/></svg></div>'
     + rewardLeafHtml(0) + rewardLeafHtml(1) + rewardLeafHtml(2) + rewardLeafHtml(3) + rewardLeafHtml(4) + rewardLeafHtml(5)
     + '<div class="log-reward-message"></div>';
   node.querySelector('.log-reward-message').textContent = message;
@@ -119,7 +124,7 @@ function playDayCompletionReward(payload){
   node.className = 'log-reward log-reward--complete';
   const wreath = document.createElement('div');
   wreath.className = 'log-reward-wreath';
-  wreath.innerHTML = '<div class="log-reward-wreath-seal" aria-hidden="true">✓</div>'
+  wreath.innerHTML = '<div class="log-reward-wreath-seal" aria-hidden="true"><svg viewBox="0 0 56 56"><path class="seal-branch" d="m12 29 9 8.5L44 16M21.2 37c5.6-5.2 11.1-10.4 18-15.2"/><path class="seal-leaf" d="M26 32c-6.7.4-10.7-2-12.3-7.3 6.2-1.1 10.3 1.4 12.3 7.3ZM33 26c-.3-6.3 2.3-10.2 7.8-11.8.8 6-1.8 9.9-7.8 11.8ZM27.3 31.2c5.9.8 9.2 3.7 9.8 8.7-5.8.1-9-2.8-9.8-8.7Z"/></svg></div>'
     + rewardLeafHtml(0) + rewardLeafHtml(1) + rewardLeafHtml(2) + rewardLeafHtml(3) + rewardLeafHtml(4) + rewardLeafHtml(5) + rewardLeafHtml(6) + rewardLeafHtml(7)
     + '<div class="log-reward-message"></div>';
   wreath.querySelector('.log-reward-message').textContent = message;
