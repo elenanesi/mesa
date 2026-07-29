@@ -3788,10 +3788,13 @@ function testComposedMeals(ctx){
       const components = call(ctx, 'planEntryComponents', [recipeSample]);
       const got = call(ctx, 'nutritionForRecipeComponents', [components]);
       const mainNut = call(ctx, 'recipeNutrition', [recipeSample.recipeId, recipeSample.portion]).totals;
-      const sideNut = call(ctx, 'recipeNutrition', [recipeSample.extras[0].recipeId, recipeSample.extras[0].portion]).totals;
-      assert(Math.abs(got.kcal - (mainNut.kcal + sideNut.kcal)) < 1e-6 && Math.abs(got.protein - (mainNut.protein + sideNut.protein)) < 1e-6,
-        'extras parity (lunch/dinner side): planEntryComponents/nutritionForRecipeComponents on a composed unit equals main-nutrition + side-nutrition summed independently',
-        'got=' + JSON.stringify(got) + ' main=' + JSON.stringify(mainNut) + ' side=' + JSON.stringify(sideNut));
+      const extrasNut = recipeSample.extras.reduce(function(sum, extra){
+        const n = call(ctx, 'recipeNutrition', [extra.recipeId, extra.portion]).totals;
+        sum.kcal += n.kcal; sum.protein += n.protein; return sum;
+      }, {kcal: 0, protein: 0});
+      assert(Math.abs(got.kcal - (mainNut.kcal + extrasNut.kcal)) < 1e-6 && Math.abs(got.protein - (mainNut.protein + extrasNut.protein)) < 1e-6,
+        'extras parity (lunch/dinner sides): planEntryComponents/nutritionForRecipeComponents on a composed unit equals main + every side summed independently',
+        'got=' + JSON.stringify(got) + ' main=' + JSON.stringify(mainNut) + ' extras=' + JSON.stringify(extrasNut));
     } else {
       pass('extras parity (lunch/dinner side): SKIPPED — no composed lunch/dinner unit in this run\'s two weeks to sample');
     }
@@ -3808,6 +3811,40 @@ function testComposedMeals(ctx){
       pass('extras parity (breakfast pairing food): SKIPPED — no composed breakfast unit in this run\'s two weeks to sample');
     }
   })();
+}
+
+function testRequiredLunchDinnerStructure(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const VALID_ROLES = get(ctx, 'VALID_ROLES');
+  assert(VALID_ROLES.indexOf('sauce') === -1,
+    'meal structure: the retired sauce/condiment recipe role is not valid', JSON.stringify(VALID_ROLES));
+  assert(!RECIPES_DB['tomato-basil-sauce'] && !RECIPES_DB['yogurt-herb-sauce'],
+    'meal structure: retired standalone sauce recipes are absent from the catalog');
+
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+  const first = call(ctx, 'ensureWeekPlan', []);
+  const second = call(ctx, 'ensureWeekPlan', [call(ctx, 'nextMondayISO', [])]);
+  const failures = [];
+  [first, second].forEach(function(plan){ (plan.days || []).forEach(function(day){
+    ['lunch', 'dinner'].forEach(function(slot){ ['elena', 'partner'].forEach(function(person){
+      const entry = day.meals[slot] && day.meals[slot][person];
+      if(!entry || !entry.recipeId) return;
+      const base = RECIPES_DB[entry.recipeId];
+      if(!base) { failures.push(day.date + '/' + slot + '/' + person + ': missing base'); return; }
+      if(base.role === 'full'){
+        if(!call(ctx, 'isCompleteLunchDinnerRecipe', [entry.recipeId])) failures.push(day.date + '/' + slot + '/' + person + ': incomplete full ' + entry.recipeId);
+        return;
+      }
+      const extras = (entry.extras || []).filter(function(e){ return e.recipeId; }).map(function(e){ return e.recipeId; });
+      if(base.role !== 'main' || !call(ctx, 'isProteinMain', [entry.recipeId]) ||
+        !extras.some(function(id){ return call(ctx, 'isCarbSide', [id]); }) ||
+        !extras.some(function(id){ return call(ctx, 'isVegSide', [id]); })){
+        failures.push(day.date + '/' + slot + '/' + person + ': invalid composition ' + entry.recipeId + '+' + extras.join(','));
+      }
+    }); });
+  }); });
+  assert(failures.length === 0,
+    'meal structure: every planned lunch/dinner is a complete recipe or protein main + carbohydrate side + vegetable/fibre side', failures.join('; '));
 }
 
 /* ---------------- planner.js meal-extras (add/remove/set) ----------------
@@ -9630,7 +9667,7 @@ function main(){
   runTest('computeShoppingList: Q1 logged-exclusion + pantry subtraction + next-week projection (PANTRY-plan.md P3)', function(){ testShoppingListLoggedExclusionAndPantrySubtraction(ctx); });
   runTest('solo households: no ghost-planned partner, no shopping doubling, two-person round-trip byte-identical (Phase 3B B3)', function(){ testHouseholdSizeSoloMode(ctx); });
   runTest('restockTickedShopItems: Add ticked items to pantry (PANTRY-plan.md P3 Q2)', function(){ testRestockTickedShopItems(ctx); });
-  runTest('sauce role + catalog additions (task D2)', function(){ testD2SauceRoleAndCatalog(ctx); });
+  runTest('required lunch/dinner structure + retired sauce role', function(){ testRequiredLunchDinnerStructure(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('openAddMenu "Log food" routes to the Log screen', function(){ testOpenAddMenuRoutesToLogScreen(); });

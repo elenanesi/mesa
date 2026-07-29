@@ -301,12 +301,10 @@ function normalizeSeason(v){
 function seasonLabel(v){ return SEASON_LABELS[normalizeSeason(v)]; }
 
 // task B2: recipe `role` picker (data/validate.js's VALID_ROLES = ['full','main','side',
-// 'sauce'] as of task D2) — orthogonal to meal slots, defaults to 'full' (a complete
+// ] — orthogonal to meal slots, defaults to 'full' (a complete
 // one-dish meal) so an existing custom recipe or a builder draft that never touches this
-// field behaves exactly as every recipe did before this field existed. 'sauce' (task D2):
-// a condiment/sauce meant to be added to another dish, never planned standalone — see
-// data/validate.js's role-kcal band and js/render.js's add-meal sheet "Sauces" section.
-const ROLE_LABELS = {full: 'Full meal', main: 'Main', side: 'Side', sauce: 'Sauce & condiment'};
+// field behaves exactly as every recipe did before this field existed.
+const ROLE_LABELS = {full: 'Full meal', main: 'Main', side: 'Side'};
 function normalizeRecipeRole(v){
   return (typeof VALID_ROLES !== 'undefined' && VALID_ROLES.indexOf(v) !== -1) ? v : 'full';
 }

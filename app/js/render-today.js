@@ -20,9 +20,7 @@ let addMealCtx = null;
 let addMealFoodQuery = '';
 
 // (b)/(a) fix: the sheet is now sections instead of one undifferentiated, slot-filtered
-// pile — "In this meal" (with a remove control per extra), "Sides", "Sauces" (task D2:
-// role:'sauce' recipes — condiments meant to be added to a meal, never planned standalone,
-// same delegated-row pattern as Sides), and "Full recipes" (every remaining recipe from ANY
+// pile — "In this meal" (with a remove control per extra), "Sides", and "Full recipes" (every remaining recipe from ANY
 // slot, not just this one — owner complaint (a): "I should always be able to add both sides
 // specifically or full main course recipes"). `components` is the meal's CURRENT components
 // (base + extras) so all three pick lists exclude what's already in — same resolution
@@ -39,12 +37,10 @@ function mealRecipeOptions(components){
   const used = {};
   (components || []).forEach(function(c){ if(c.recipeId) used[c.recipeId] = true; });
   const ids = Object.keys(RECIPES_DB).filter(function(id){ return !used[id]; });
-  const isSauce = function(id){ return RECIPES_DB[id].role === 'sauce'; };
-  const isSide = function(id){ return !isSauce(id) && recipeSlotList(RECIPES_DB[id]).indexOf('side') !== -1; };
+  const isSide = function(id){ return recipeSlotList(RECIPES_DB[id]).indexOf('side') !== -1; };
   return {
     sides: ids.filter(isSide).sort(mealTitleSort),
-    sauces: ids.filter(isSauce).sort(mealTitleSort),
-    full: ids.filter(function(id){ return !isSide(id) && !isSauce(id); }).sort(mealTitleSort)
+    full: ids.filter(function(id){ return !isSide(id); }).sort(mealTitleSort)
   };
 }
 
@@ -186,9 +182,6 @@ function openAddMealSheetForContext(ctx){
 
   html += '<div class="shop-cat">Sides</div>';
   html += opts.sides.length ? opts.sides.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No side recipes available.</p>';
-
-  html += '<div class="shop-cat">Sauces</div>';
-  html += opts.sauces.length ? opts.sauces.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No sauces available.</p>';
 
   html += '<div class="shop-cat">Full recipes</div>';
   html += opts.full.length ? opts.full.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No other recipes available.</p>';
@@ -743,15 +736,28 @@ function renderTodaySoFar(){
     list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet for ' + logDateLabel().toLowerCase() + '.</p>';
     return;
   }
-  list.innerHTML = entries.map(function(row){
+  // Group repeated quick-added foods (e.g. two cappuccinos) into one readable row.
+  // Keep the original indexes so the row controls can still mutate the source entries.
+  const displayRows = [];
+  const foodGroups = {};
+  entries.forEach(function(row){
+    if(row.e.kind !== 'food') { displayRows.push({e: row.e, indices: [row.i]}); return; }
+    const key = 'food:' + row.e.ref;
+    if(!foodGroups[key]) { foodGroups[key] = {e: row.e, indices: [], grams: 0, kcal: 0}; displayRows.push(foodGroups[key]); }
+    foodGroups[key].indices.push(row.i);
+    foodGroups[key].grams += Number(row.e.grams) || 0;
+    foodGroups[key].kcal += logEntryNutrition(row.e).kcal;
+    foodGroups[key].e.eatenOut = foodGroups[key].e.eatenOut || row.e.eatenOut;
+  });
+  list.innerHTML = displayRows.map(function(row){
     const e = row.e;
-    const removeBtn = '<button class="li-x" aria-label="Remove this entry" onclick="removeTodayEntry('+row.i+')">✕</button>';
+    const removeBtn = '<button class="li-x" aria-label="Remove this entry" onclick="removeTodayEntryGroup('+JSON.stringify(row.indices)+')">✕</button>';
     // FAVORITES-EATENOUT-plan.md item 3: a per-row toggle for the eaten-out flag — kcal
     // stays in the day total either way (logEntryNutrition doesn't look at it), the only
     // effect is on pantryConsumedSince (pantry.js). The pill makes an eaten-out row read as
     // such at a glance, since its absence from pantry depletion is otherwise invisible.
     const outPill = e.eatenOut ? ' <span class="chip-computed">🍴 out</span>' : '';
-    const toggleBtn = '<button class="li-x" aria-label="'+(e.eatenOut ? 'Mark eaten at home' : 'Mark eaten out')+'" onclick="toggleTodayEntryEatenOut('+row.i+')">'+(e.eatenOut ? '🏠' : '🍴')+'</button>';
+    const toggleBtn = '<button class="li-x" aria-label="'+(e.eatenOut ? 'Mark eaten at home' : 'Mark eaten out')+'" onclick="toggleTodayEntryEatenOut('+row.indices[0]+')">'+(e.eatenOut ? '🏠' : '🍴')+'</button>';
     if(e.kind === 'plan'){
       const r = RECIPES_DB[e.ref];
       const emoji = r ? r.emoji : '🍽️';
@@ -761,10 +767,20 @@ function renderTodaySoFar(){
     }
     const food = FOODS[e.ref];
     const name = escapeHtml(food ? food.name : 'Food');
-    const amount = foodAmountLabel(food, e.grams);
-    const label = (e.ref === 'espresso-unsweetened' || e.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + amount + (e.t ? ' · ' + e.t : '');
-    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+toggleBtn+removeBtn+'</div>';
+    const grams = row.grams;
+    const amount = foodAmountLabel(food, grams);
+    const label = (e.ref === 'espresso-unsweetened' || e.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + amount + (row.indices.length > 1 ? ' · ' + row.indices.length + ' logged' : '') + (e.t ? ' · ' + e.t : '');
+    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(row.kcal || logEntryNutrition(e).kcal)+'</div>'+toggleBtn+removeBtn+'</div>';
   }).join('');
+}
+
+function removeTodayEntryGroup(indices){
+  if(!Array.isArray(indices) || !indices.length) return;
+  let removed = 0;
+  indices.slice().sort(function(a,b){ return b-a; }).forEach(function(index){ if(removeLogEntryAt(currentLogDateISO(), currentProf, index)) removed++; });
+  if(!removed) return;
+  refreshAfterLogChange();
+  toast('✕ Removed ' + removed + (removed === 1 ? ' entry' : ' entries'));
 }
 
 // FAVORITES-EATENOUT-plan.md item 3: toggles ONE "Today so far" row's eaten-out flag by its

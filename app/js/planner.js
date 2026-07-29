@@ -78,7 +78,7 @@ const SIDE_TOP_K = 4;
      - everything else -> 2: lunch/dinner pools are 24 and breakfast 13, so 2 is generous.
    Raise these once VARIETY-plan.md P3 widens the catalog — that is the whole point of P3,
    and this block is the only place to change. */
-const WEEKLY_RECIPE_CAP = {side: 3, sauce: 3, main: 2, full: 2};
+const WEEKLY_RECIPE_CAP = {side: 3, main: 2, full: 2};
 const WEEKLY_RECIPE_CAP_DEFAULT = 2;
 // FAVORITES-EATENOUT-plan.md item 2, Decision Q1: a favorited recipe's weekly cap is +1
 // over the same recipe unfavorited (full/main 2->3, side/sauce 3->4) -- the ONE place caps
@@ -498,6 +498,36 @@ function sidePoolFor(avoidList, persons){
       && !recipeViolatesDiet(id, dietList);
   }).sort();
 }
+
+/* Lunch and dinner have a non-negotiable composition contract.  We deliberately
+   derive it from the actual ingredient quantities rather than recipe titles/tags:
+   protein must contribute at least 12g, the carbohydrate ingredient at least 15g
+   carbs, and vegetables/fibre must include at least 80g of Produce.  Option-group
+   ingredients are not used here: a full recipe is eligible only when its base recipe
+   is complete for every selectable variant. */
+function mealStructureForRecipe(recipe){
+  const parts = {protein: 0, carbs: 0, vegG: 0};
+  (recipe && recipe.ingredients || []).forEach(function(ing){
+    const food = FOODS[ing[0]];
+    if(!food) return;
+    const grams = Number(ing[1]) || 0;
+    const m = foodMacros(ing[0], grams);
+    if(food.cat === 'Protein' || food.cat === 'Dairy' || m.protein >= 12) parts.protein += m.protein;
+    // Plant proteins such as legumes and tofu are Protein-category foods in Mesa;
+    // this threshold also prevents oil, seasoning, or a few vegetables from posing
+    // as the requested carbohydrate source.
+    if(m.carbs >= 10) parts.carbs += m.carbs;
+    if(food.cat === 'Produce') parts.vegG += grams;
+  });
+  return {protein: parts.protein >= 12, carbs: parts.carbs >= 15, veg: parts.vegG >= 80};
+}
+function isCompleteLunchDinnerRecipe(id){
+  const p = mealStructureForRecipe(RECIPES_DB[id]);
+  return p.protein && p.carbs && p.veg;
+}
+function isProteinMain(id){ return mealStructureForRecipe(RECIPES_DB[id]).protein; }
+function isCarbSide(id){ return mealStructureForRecipe(RECIPES_DB[id]).carbs; }
+function isVegSide(id){ return mealStructureForRecipe(RECIPES_DB[id]).veg; }
 
 // Plain-FOODS avoid check, mirroring library.js's own ingredient-derived avoid tagging
 // (deriveRecipeMeta: Dairy -> lactose, GLUTEN_FOOD_IDS -> gluten, prawns -> shellfish,
@@ -1772,15 +1802,19 @@ function pushBreakfastPairCandidates(push, mainId, mainBase, bp, desired, foodPo
 // ONE person's desired kcal — top-K sides (topKSideIds) x fixed side-portion steps {0.5,1},
 // main portion re-searched via bestPortion against (desired − side kcal at that step).
 // `push` is called once per (side, sidePortion) candidate.
-function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, maxPortion, sidePool, topSideIds){
-  topSideIds.forEach(function(sideId){
-    const sideBase = dbBaseNutrition(sideId);
-    [0.5, 1].forEach(function(sidePortion){
-      const sideKcal = sideBase.kcal * sidePortion, sideProtein = sideBase.protein * sidePortion;
-      const bp = bestPortion(mainBase.kcal, desired - sideKcal, anchor, maxPortion);
-      push(mainId + '|side|' + sideId + '@' + sidePortion, bp.kcal + sideKcal, mainBase.protein * bp.portion + sideProtein, {recipeId: sideId, portion: sidePortion}, bp.portion);
-    });
-  });
+function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, maxPortion, carbIds, vegIds){
+  carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
+    if(carbId === vegId) return;
+    const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
+    [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){
+      const extrasKcal = carbBase.kcal * carbPortion + vegBase.kcal * vegPortion;
+      const extrasProtein = carbBase.protein * carbPortion + vegBase.protein * vegPortion;
+      const bp = bestPortion(mainBase.kcal, desired - extrasKcal, anchor, maxPortion);
+      push(mainId + '|carb|' + carbId + '@' + carbPortion + '|veg|' + vegId + '@' + vegPortion,
+        bp.kcal + extrasKcal, mainBase.protein * bp.portion + extrasProtein,
+        [{recipeId: carbId, portion: carbPortion}, {recipeId: vegId, portion: vegPortion}], bp.portion);
+    }); });
+  }); });
 }
 
 function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludePrevWeekId){
@@ -1827,8 +1861,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       pushFull(id, base, bpE, bpA);
     });
   } else {
-    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full'; });
-    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main'; });
+    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); });
+    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); });
     fullIds.forEach(function(id){
       const base = dbBaseNutrition(id);
       const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
@@ -1878,34 +1912,29 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       // VARIETY-plan.md P1+P2 for sides, as one priority ladder (sidePoolLadder's doc
       // explains why nesting the rules ranked them wrong). Shared slot -> both people.
       const sidePool = sidePoolLadder(sidePoolRaw, history, ['elena', 'partner'], dayIndex);
-      if(sidePool.length){
+      const carbPool = sidePool.filter(isCarbSide), vegPool = sidePool.filter(isVegSide);
+      if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
           const mainBase = dbBaseNutrition(mainId);
-          const topsE = topKSideIds(mainBase.kcal, sidePool, desiredE, SIDE_TOP_K);
-          const topsA = topKSideIds(mainBase.kcal, sidePool, desiredA, SIDE_TOP_K);
-          const topsSet = {};
-          topsE.concat(topsA).forEach(function(id){ topsSet[id] = true; });
-          const tops = Object.keys(topsSet).sort();
-          // Side portion is shared (same dish, same amount for both); main portion is
-          // searched per person against (desired − side kcal at that shared portion).
-          tops.forEach(function(sideId){
-            const sideBase = dbBaseNutrition(sideId);
-            [0.5, 1].forEach(function(sidePortion){
-              const sideKcal = sideBase.kcal * sidePortion, sideProtein = sideBase.protein * sidePortion;
-              const bpE = bestPortion(mainBase.kcal, desiredE - sideKcal, PERSON_ANCHOR.elena, maxPortion);
-              const bpA = bestPortion(mainBase.kcal, desiredA - sideKcal, PERSON_ANCHOR.partner, maxPortion);
-              const hasO3 = recipeHasOmega3(mainId) || recipeHasOmega3(sideId);
-              const sideTotals = scaleNutrientTotals(sideBase, sidePortion);
-              candidates.push({
-                tieId: mainId + '|side|' + sideId + '@' + sidePortion, mainId: mainId, extra: {recipeId: sideId, portion: sidePortion},
-                portionE: bpE.portion, portionA: bpA.portion,
-                kcalE: bpE.kcal + sideKcal, kcalA: bpA.kcal + sideKcal,
-                proteinE: mainBase.protein * bpE.portion + sideProtein, proteinA: mainBase.protein * bpA.portion + sideProtein,
-                totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpE.portion), sideTotals), hasO3),
-                totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpA.portion), sideTotals), hasO3)
-              });
-            });
-          });
+          const carbIds = topKSideIds(mainBase.kcal, carbPool, desiredE / 2, SIDE_TOP_K);
+          const vegIds = topKSideIds(mainBase.kcal, vegPool, desiredE / 2, SIDE_TOP_K);
+          carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
+            if(carbId === vegId) return;
+            const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
+            [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){
+              const extrasKcal = carbBase.kcal * carbPortion + vegBase.kcal * vegPortion;
+              const extrasProtein = carbBase.protein * carbPortion + vegBase.protein * vegPortion;
+              const bpE = bestPortion(mainBase.kcal, desiredE - extrasKcal, PERSON_ANCHOR.elena, maxPortion);
+              const bpA = bestPortion(mainBase.kcal, desiredA - extrasKcal, PERSON_ANCHOR.partner, maxPortion);
+              const extras = [{recipeId: carbId, portion: carbPortion}, {recipeId: vegId, portion: vegPortion}];
+              const extraTotals = addNutrientTotals(scaleNutrientTotals(carbBase, carbPortion), scaleNutrientTotals(vegBase, vegPortion));
+              const hasO3 = recipeHasOmega3(mainId) || recipeHasOmega3(carbId) || recipeHasOmega3(vegId);
+              candidates.push({tieId: mainId + '|carb|' + carbId + '@' + carbPortion + '|veg|' + vegId + '@' + vegPortion, mainId: mainId, extras: extras,
+                portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal + extrasKcal, kcalA: bpA.kcal + extrasKcal,
+                proteinE: mainBase.protein * bpE.portion + extrasProtein, proteinA: mainBase.protein * bpA.portion + extrasProtein,
+                totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpE.portion), extraTotals), hasO3), totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpA.portion), extraTotals), hasO3)});
+            }); });
+          }); });
         });
       }
     }
@@ -1940,7 +1969,9 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   const sharedOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidBoth);
   const elenaEntry = makePlanEntry(best.mainId, best.portionE, undefined, sharedOpts);
   const partnerEntry = makePlanEntry(best.mainId, best.portionA, undefined, sharedOpts);
-  if(best.extra){
+  if(best.extras){
+    elenaEntry.extras = best.extras.slice(); partnerEntry.extras = best.extras.slice();
+  } else if(best.extra){
     if(best.extra.foodId !== undefined && best.extra.gramsE !== undefined){
       elenaEntry.extras = [{foodId: best.extra.foodId, grams: best.extra.gramsE}];
       partnerEntry.extras = [{foodId: best.extra.foodId, grams: best.extra.gramsA}];
@@ -1979,8 +2010,8 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
       pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion));
     });
   } else {
-    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full'; });
-    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main'; });
+    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); });
+    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); });
     fullIds.forEach(function(id){
       const base = dbBaseNutrition(id);
       pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion));
@@ -2002,15 +2033,17 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidP, [person]);
       const sidePool = sidePoolLadder(sidePoolRaw, history, [person], dayIndex);
-      if(sidePool.length){
+      const carbPool = sidePool.filter(isCarbSide), vegPool = sidePool.filter(isVegSide);
+      if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
           const mainBase = dbBaseNutrition(mainId);
-          const tops = topKSideIds(mainBase.kcal, sidePool, desired, SIDE_TOP_K);
-          pushComposedSideCandidates(function(tieId, kcal, protein, extra, portion){
-            const sideBase = dbBaseNutrition(extra.recipeId);
-            candidates.push({tieId: tieId, mainId: mainId, extra: extra, portion: portion, kcal: kcal, protein: protein,
-              totals: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, portion), scaleNutrientTotals(sideBase, extra.portion)), recipeHasOmega3(mainId) || recipeHasOmega3(extra.recipeId))});
-          }, mainId, mainBase, desired, anchor, maxPortion, sidePool, tops);
+          const carbIds = topKSideIds(mainBase.kcal, carbPool, desired / 2, SIDE_TOP_K);
+          const vegIds = topKSideIds(mainBase.kcal, vegPool, desired / 2, SIDE_TOP_K);
+          pushComposedSideCandidates(function(tieId, kcal, protein, extras, portion){
+            const extraTotals = addNutrientTotals(scaleNutrientTotals(dbBaseNutrition(extras[0].recipeId), extras[0].portion), scaleNutrientTotals(dbBaseNutrition(extras[1].recipeId), extras[1].portion));
+            candidates.push({tieId: tieId, mainId: mainId, extras: extras, portion: portion, kcal: kcal, protein: protein,
+              totals: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, portion), extraTotals), recipeHasOmega3(mainId) || recipeHasOmega3(extras[0].recipeId) || recipeHasOmega3(extras[1].recipeId))});
+          }, mainId, mainBase, desired, anchor, maxPortion, carbIds, vegIds);
         });
       }
     }
@@ -2035,7 +2068,8 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   // list can allow a different set of choices. null for a recipe without optionGroups.
   const soloOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidP);
   const entry = makePlanEntry(best.mainId, best.portion, undefined, soloOpts);
-  if(best.extra) entry.extras = [best.extra];
+  if(best.extras) entry.extras = best.extras.slice();
+  else if(best.extra) entry.extras = [best.extra];
   return entry;
 }
 

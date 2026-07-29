@@ -1032,7 +1032,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'nuts']
   },
 
-  /* ================= TASK D2 — recipe options, mains, sauces ================= */
+  /* ================= TASK D2 — recipe options and mains ================= */
 
   'baked-fish': {
     title: 'Baked fish', emoji: '🐟', slot: 'dinner', role: 'main',
@@ -1189,25 +1189,39 @@ const RECIPES_DB = {
     avoid: []
   },
 
-  'tomato-basil-sauce': {
-    title: 'Tomato-basil sauce', emoji: '🍅', slot: 'side', role: 'sauce',
-    slots: ['side'],
-    styles: ['balanced', 'lowcarb'], time: 15,
-    ingredients: [['tomato-passata', 150], ['basil', 15], ['olive-oil', 10]],
-    toTaste: ['garlic', 'oregano', 'salt'],
-    steps: ['Warm the olive oil in a pan with garlic.', 'Add the tomato passata and simmer 8-10 min until thickened.', 'Stir in torn basil off the heat and season to taste.'],
-    tags: ['veggie'],
-    avoid: []
+  /* Complete plant-based lunch/dinner fallbacks: these keep the hard meal
+     composition contract satisfiable for vegetarian and gluten-free plans. */
+  'tofu-rice-broccoli-bowl': {
+    title: 'Tofu, rice & broccoli bowl', emoji: '🥦', slot: 'lunch', role: 'full',
+    slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
+    ingredients: [['tofu', 180], ['rice', 55], ['broccoli', 180], ['carrots', 80], ['olive-oil', 8]],
+    toTaste: ['ginger', 'garlic', 'lemon'],
+    steps: ['Cook the rice until tender.', 'Sear the tofu in olive oil until golden.', 'Steam the broccoli and carrots.', 'Serve the tofu and vegetables over rice with ginger and lemon.'],
+    tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
-  'yogurt-herb-sauce': {
-    title: 'Yogurt-herb sauce', emoji: '🥣', slot: 'side', role: 'sauce',
-    slots: ['side'],
-    styles: ['balanced', 'lowcarb'], time: 5,
-    ingredients: [['greek-yogurt', 150], ['lemon-juice', 15], ['olive-oil', 8]],
-    toTaste: ['dill or mint', 'garlic', 'black pepper', 'salt'],
-    steps: ['Stir the yogurt with lemon juice and olive oil until smooth.', 'Season with herbs, salt and pepper.', 'Chill briefly before serving.'],
-    tags: ['veggie', 'lowGI'],
-    avoid: ['lactose']
+  'chickpea-potato-veg-tray': {
+    title: 'Chickpea, potato & vegetable traybake', emoji: '🥔', slot: 'dinner', role: 'full',
+    slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 35,
+    ingredients: [['chickpeas', 180], ['potatoes', 220], ['courgette', 160], ['bell-pepper', 120], ['olive-oil', 10]],
+    toTaste: ['paprika', 'oregano', 'black pepper'],
+    steps: ['Heat the oven to 210C.', 'Toss potatoes and vegetables with olive oil and spices.', 'Roast until tender and browned.', 'Add chickpeas for the final 10 minutes and serve hot.'],
+    tags: ['veggie', 'highFiber'], avoid: []
+  },
+  'lentil-rice-vegetable-bowl': {
+    title: 'Lentil, rice & vegetable bowl', emoji: '🫘', slot: 'lunch', role: 'full',
+    slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
+    ingredients: [['cooked-lentils', 220], ['rice', 45], ['spinach', 100], ['carrots', 100], ['olive-oil', 8]],
+    toTaste: ['cumin', 'lemon', 'parsley'],
+    steps: ['Warm the lentils with cumin and a splash of water.', 'Cook the rice until tender.', 'Sauté the spinach and carrots in olive oil.', 'Layer everything in a bowl and finish with lemon.'],
+    tags: ['veggie', 'highFiber', 'muscle'], avoid: []
+  },
+  'cannellini-potato-greens': {
+    title: 'Cannellini, potato & greens bowl', emoji: '🥬', slot: 'dinner', role: 'full',
+    slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
+    ingredients: [['cannellini-beans', 220], ['potatoes', 200], ['spinach', 140], ['cherry-tomatoes', 120], ['olive-oil', 8]],
+    toTaste: ['rosemary', 'garlic', 'lemon'],
+    steps: ['Roast the potatoes with rosemary until crisp.', 'Warm cannellini beans with garlic and olive oil.', 'Wilt the spinach and tomatoes in a pan.', 'Serve the beans and greens beside the potatoes with lemon.'],
+    tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
 
   /* ================= SNACK (6) ================= */
