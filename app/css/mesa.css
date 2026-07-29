@@ -75,12 +75,47 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 
 /* top bar with profile switch */
 .topbar{display:flex;align-items:center;justify-content:space-between;margin-top:6px;}
-.top-actions{display:flex;align-items:center;gap:8px;}
-.seg{display:flex;background:#e8dcc8;border-radius:999px;padding:3px;border:1px solid rgba(176,146,105,.32);}
-.seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:7px 13px;border-radius:999px;cursor:pointer;transition:.2s;}
+/* When the row runs out of room (a long display name in the person-switcher below), the
+   date+greeting block is what gives way — it wraps, the switcher and avatar can't. It
+   keeps the default min-width:auto so it still floors at its own min-content (the widest
+   word of the greeting), which is what stops this from clipping "morning" on a 320px
+   screen; past that floor flex hands the remaining squeeze back to .top-actions.
+   .top-actions gets min-width:0 instead, because a flex item that won't shrink below its
+   content is exactly what shoved the avatar button off the 375px screen. */
+.topbar > :first-child{flex-shrink:99;}
+.top-actions{display:flex;align-items:center;gap:8px;min-width:0;}
+/* The segmented control is used with BOTH fixed labels (Female/Male, Just me/Me + partner,
+   This week/Next week, Today/Yesterday) and — since the person-switcher was unified into
+   render.js:personSwitcherHtml() — user-typed display names up to state.js
+   DISPLAY_NAME_MAX_LEN (24 chars). Nothing here can assume the labels are short, so the
+   pill and its buttons both get min-width:0 — a flex item's default min-width:auto means
+   its text is an unbreakable floor it will widen the whole row to honour — and the
+   buttons ellipsize what no longer fits. No-op for the fixed-label uses, and the only
+   thing standing between a long name and a broken row for the person-switcher. */
+.seg{display:flex;background:#e8dcc8;border-radius:999px;padding:3px;border:1px solid rgba(176,146,105,.32);min-width:0;max-width:100%;}
+.seg button{border:0;background:transparent;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);padding:7px 13px;border-radius:999px;cursor:pointer;transition:.2s;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .seg button.on{background:var(--card);color:var(--ink);box-shadow:var(--shadow-soft);}
+/* Person-switcher mounts (render.js:renderPersonSwitchers) that share their row with
+   something else — Today's topbar, where the avatar button sits beside it, and the
+   .row.between heading rows on Week/Insights/Log. Shrinking alone isn't enough there:
+   flex would hand the pill whatever's left after two long names claim their share, so
+   give it a ceiling and let the ellipsis above do the rest. max-width, NOT flex-basis:
+   the pill has to keep sizing to its content so ordinary names ("Elena"/"Andrea") still
+   hug it — a 184px basis would make it claim the full budget on every screen, and on
+   Today that claim comes back as a shrink that ellipsizes names which fit fine. Profile's
+   #profWhoSeg is deliberately NOT matched — it's a full-width control on its own row
+   (inline width:100%), which is where a long name stays fully readable. */
+.topbar [data-person-switcher],
+.row.between > [data-person-switcher]{flex:0 1 auto;max-width:184px;}
+/* A floor on each half, because flex shrinks the two names in proportion to their own
+   widths: pair a short name with a long one ("Sofia"/"Bartholomew") on a 320px screen and
+   the SHORT one is the one that collapses — it has the least to give — leaving an active
+   pill reading "S…" next to a comfortable "Bartho…". 4.5em keeps roughly four characters
+   on both sides; once a half hits it, flex hands the rest of the squeeze to its sibling,
+   so the two degrade together instead of one being wiped out. */
+[data-person-switcher] button{min-width:4.5em;}
 .avatar{width:38px;height:38px;border-radius:50%;display:grid;place-items:center;font-weight:700;color:#fff;font-size:15px;background:linear-gradient(135deg,var(--sage),var(--sage-deep));}
-.profile-icon-btn{width:38px;height:38px;border:1px solid rgba(176,146,105,.36);border-radius:50%;display:grid;place-items:center;background:var(--card);box-shadow:var(--shadow-soft);color:var(--sage-deep);font:inherit;font-weight:800;cursor:pointer;padding:0;}
+.profile-icon-btn{width:38px;height:38px;flex:0 0 auto;border:1px solid rgba(176,146,105,.36);border-radius:50%;display:grid;place-items:center;background:var(--card);box-shadow:var(--shadow-soft);color:var(--sage-deep);font:inherit;font-weight:800;cursor:pointer;padding:0;}
 .profile-icon-btn span{width:28px;height:28px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(135deg,var(--sage),var(--sage-deep));color:#fff;font-size:13px;}
 
 /* calorie ring */
