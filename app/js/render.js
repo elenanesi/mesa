@@ -311,8 +311,15 @@ function personSwitcherHtml(){
   const nameP = escapeHtml(resolveDisplayName('partner'));
   const clsE = currentProf === 'elena' ? ' class="on"' : '';
   const clsP = currentProf === 'partner' ? ' class="on"' : '';
-  return '<button' + clsE + ' style="flex:1" data-prof="elena">' + nameE + '</button>'
-       + '<button' + clsP + ' style="flex:1" data-prof="partner">' + nameP + '</button>';
+  // 'flex:1 1 auto', not the bare 'flex:1' the fixed-label .seg controls use: 'flex:1' is
+  // basis 0, which leaves the pill's own content-based width a hair narrower than the two
+  // names actually need. That used to be invisible (the text simply spilled), but .seg
+  // button now ellipsizes overflow (mesa.css) to survive long names, so a basis of 0 turns
+  // into a clipped 'Andre…' on names that fit perfectly well. Basis auto sizes the pill to
+  // the real text, so the two halves now differ by the length of the names rather than
+  // being forced to identical widths — the trade for never truncating a name that fits.
+  return '<button' + clsE + ' style="flex:1 1 auto" data-prof="elena">' + nameE + '</button>'
+       + '<button' + clsP + ' style="flex:1 1 auto" data-prof="partner">' + nameP + '</button>';
 }
 
 // Paints personSwitcherHtml() into every mount marked data-person-switcher (index.html:
