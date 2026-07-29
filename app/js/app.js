@@ -114,7 +114,7 @@ let obPrePopulatedSlots = {};
    work on a network call; (b) a fresh-per-write check is strictly stronger than a one-time
    deferred check — it keeps correcting itself for as long as the wizard stays open, even if
    the slot resolves unusually late (slow network) or changes again for some other reason.
-   Every commit* wrapper below (obSetSex/obSetDob/obSetActivity/obSetDiet/obCommitName/
+   Every commit* wrapper below (obSetSex/obSetDob/obSetActivity/obToggleDiet/obCommitName/
    obCommitHeight/obCommitWeight) calls obTargetSlot() as its first step, and finishOnboarding()
    does the same for the final applyProf(). obEnsureWritable() is the defensive backstop for
    the one gap this can't structurally close (see its own doc). Every commitDisplayName/
@@ -354,16 +354,18 @@ function obPopulateBodyStats(){
   }
 }
 
+// Multi-select diet slide: obDiet is now a group of CHECKBOXES (index.html), one per
+// DIET_EDITOR_ORDER entry (state.js) — 'No restriction' checked means diets is empty,
+// every other box checked means that key is in PROF[obProfile].diets. Called on slide
+// entry (below) AND after every obToggleDiet() write, so a collapse inside
+// normalizeDietsArray (e.g. picking "Vegan" while "Vegetarian" was already checked) is
+// always reflected back into the checkboxes, not just the underlying array.
 function obPopulateDiet(){
-  // Task D4: populate diet radio buttons
-  if(typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].diet){
-    const radios = document.getElementsByName('obDiet');
-    radios.forEach(function(r){ r.checked = r.value === PROF[obProfile].diet; });
-  } else {
-    // Default to 'none' if not set
-    const radios = document.getElementsByName('obDiet');
-    radios.forEach(function(r){ r.checked = r.value === 'none'; });
-  }
+  const diets = (typeof PROF !== 'undefined' && PROF[obProfile] && PROF[obProfile].diets) || [];
+  const boxes = document.getElementsByName('obDiet');
+  boxes.forEach(function(b){
+    b.checked = (b.value === NONE_DIET_KEY) ? diets.length === 0 : diets.indexOf(b.value) !== -1;
+  });
 }
 
 // Every obSet*/obCommit* wrapper below follows the same shape: resolve the slot FRESH
@@ -402,10 +404,14 @@ function obSetActivity(){
   }
 }
 
-function obSetDiet(diet){
+// Checkbox onchange calls this per tap — toggleDiet() (render-profile.js) is the shared
+// funnel every diets-array write goes through (Profile screen editor included), so
+// onboarding and Profile can never disagree about how a diet combination normalizes.
+function obToggleDiet(key){
   const slot = obTargetSlot();
   if(!obEnsureWritable(slot)) return;
-  commitDiet(slot, diet);
+  toggleDiet(slot, key);
+  obPopulateDiet(); // reflect any DIET_EXCLUSIVE_GROUP collapse back into the checkboxes
 }
 
 // Onboarding-only wrappers around render-profile.js's commitDisplayName/commitHeight/
@@ -414,7 +420,7 @@ function obSetDiet(diet){
 // half of the original split-write bug: these three used to take no profile argument at
 // all and silently wrote through the global currentProf instead of obProfile. Passing the
 // freshly-resolved slot explicitly closes that gap the same way obSetSex/obSetDob/
-// obSetActivity/obSetDiet already do above.
+// obSetActivity/obToggleDiet already do above.
 function obCommitName(raw){
   const slot = obTargetSlot();
   if(!obEnsureWritable(slot)) return;

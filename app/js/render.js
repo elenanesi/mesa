@@ -268,6 +268,7 @@ function applyProf(key){
   renderSplitEditor();
   renderGoalsEditor();  // task B1: real per-profile "Health goals" checklist
   renderAvoidEditor();  // task C3: "Foods to avoid" pills for whichever profile is now active
+  if(typeof renderDietEditor === 'function') renderDietEditor(); // multi-select "Diet" section for whichever profile is now active
   if(typeof renderFoodLibraryCount === 'function') renderFoodLibraryCount(); // js/library.js: "N built-in · M yours"
   if(typeof renderAccountSection === 'function') renderAccountSection(); // js/auth.js (Phase 3A): "Account" section
   if(typeof renderCoupleSync === 'function') renderCoupleSync(); // js/sync.js (task S1): "Couple sync" section

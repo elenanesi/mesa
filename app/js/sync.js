@@ -167,12 +167,35 @@ function pantrySectionData(){ return {pantry: clone(pantry)}; }
 // user-editable.
 function profileSectionData(personKey){
   const p = PROF[personKey], out = {};
-  PERSIST_PROFILE_FIELDS.forEach(function(f){ out[f] = (f === 'avoid') ? (p.avoid || []).slice() : p[f]; });
+  PERSIST_PROFILE_FIELDS.forEach(function(f){
+    out[f] = (f === 'avoid' || f === 'diets') ? (p[f] || []).slice() : p[f];
+  });
   return out;
 }
 function applyProfileSectionData(personKey, data){
   const p = PROF[personKey];
   PERSIST_PROFILE_FIELDS.forEach(function(f){
+    // diets (multi-select migration): a peer running this build sends the new `diets`
+    // array; a peer still on the pre-multi-diet build sends only the OLD single-string
+    // `diet` field (never renamed on that side) and no `diets` key at all — handled below,
+    // mirroring state.js:loadState()'s own old/new-shape handling exactly, so a stale
+    // build on the other phone can degrade this section's ingest but never corrupt or
+    // crash it (hard ground rule for this batch).
+    if(f === 'diets'){
+      if(Array.isArray(data.diets)){
+        p.diets = normalizeDietsArray(data.diets);
+      } else if(typeof data.diet === 'string'){
+        p.diets = normalizeDietsArray(data.diet);
+        // Same one-shot stale-avoid cleanup as loadState()'s migration (see its doc) —
+        // `avoid` above may already have copied the old peer's own still-stale list this
+        // same pass, so re-clean it here rather than relying on ordering within this loop.
+        if(data.diet === 'lactose-intolerant' && Array.isArray(p.avoid)){
+          const idx = p.avoid.indexOf('lactose');
+          if(idx !== -1) p.avoid.splice(idx, 1);
+        }
+      }
+      return;
+    }
     if(!Object.prototype.hasOwnProperty.call(data, f)) return;
     p[f] = (f === 'avoid' && Array.isArray(data[f])) ? data[f].slice() : data[f];
   });

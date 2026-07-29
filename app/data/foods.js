@@ -457,6 +457,14 @@ const FOODS = {
     kcal: 13, protein: 0.4, carbs: 0.3, fat: 1.1, satFat: 0.1, fiber: 0.3, sugars: 0.0, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic unsweetened almond milk label average; kcal per 4/4/9'
   },
+  // Multi-select diets batch: sourced for the new vegan breakfast recipes below — same
+  // "Generic label average" convention as soy-milk/oat-milk/almond-milk right above (no
+  // confident single USDA FDC match for a plain unsweetened soy yogurt).
+  'soy-yogurt': {
+    name: 'Soy yogurt, plain, unsweetened', per: 100, unit: 'g',
+    kcal: 57, protein: 3.5, carbs: 4.0, fat: 3.0, satFat: 0.5, fiber: 0.8, sugars: 2.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['lowGI'], cat: 'Dairy', iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
+  },
   'espresso-unsweetened': {
     name: 'Coffee / espresso, no sugar', per: 1, unit: 'piece', avgG: 1,
     kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0,
@@ -637,6 +645,12 @@ const FOODS = {
     name: 'Mayonnaise', per: 100, unit: 'g',
     kcal: 684, protein: 1.0, carbs: 0.6, fat: 75.0, satFat: 11.0, fiber: 0, sugars: 0.6, freeSugars: 0.6, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'mayonnaise', src: 'USDA FDC-style regular mayonnaise; kcal per 4/4/9'
+  },
+  // Multi-select diets batch: sourced for the new vegan breakfast recipes below.
+  'peanut-butter': {
+    name: 'Peanut butter, smooth', per: 100, unit: 'g',
+    kcal: 628, protein: 25.0, carbs: 20.0, fat: 50.0, satFat: 10.0, fiber: 6.0, sugars: 9.0, freeSugars: 4.0, sugarQuality: 'mixed',
+    flags: ['highFiber'], cat: 'Pantry', src: 'USDA FDC 172470-style (peanut butter, smooth); kcal per 4/4/9'
   },
   'ginger': {
     name: 'Ginger, fresh', per: 100, unit: 'g',

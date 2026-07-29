@@ -1249,7 +1249,9 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
     freeSugars: nut ? nut.freeSugars : 0,
     portion: planned ? planned.portion : 1,
     shared: planned ? !!planned.shared : false,
-    logged: false
+    logged: false,
+    // Empty-pool guard (task 5) — see planner.js:planEntryView's doc for what this means.
+    reason: planned && planned.reason
   };
 }
 
@@ -1322,6 +1324,18 @@ function renderTogetherPills(){
 // preserveLoggedSlots/preservePinnedSlots, but this keeps one bad slot from blanking the
 // whole Today screen — renderWeek() already has the equivalent `if(!r) return ''` guard).
 const MISSING_RECIPE_FALLBACK = {emoji: '❓', title: 'Meal unavailable'};
+// Empty-pool guard (task 5): shown instead of MISSING_RECIPE_FALLBACK when the slot's
+// gap is specifically reason:'no-candidates' (the planner found zero legal recipes for
+// this person/slot/diet combination) rather than a dangling/deleted recipe reference —
+// a different problem with a different fix, so it gets a different, actionable message.
+const NO_CANDIDATES_FALLBACK = {emoji: '⚠️', title: 'No meal fits your filters'};
+function slotFallback(view){ return view.recipe || (view.reason === 'no-candidates' ? NO_CANDIDATES_FALLBACK : MISSING_RECIPE_FALLBACK); }
+function slotDescLine(view, label){
+  if(!view.recipe && view.reason === 'no-candidates'){
+    return 'Your diet/avoid filters left no ' + label.toLowerCase() + ' option — adjust them in Profile → Diet.';
+  }
+  return label + ' · ' + macroSummaryFromTotals(view);
+}
 
 function renderTodayMeals(){
   activeMenu = computeActiveMenu();
@@ -1333,32 +1347,32 @@ function renderTodayMeals(){
     return '<span class="pill together mini" id="'+pillId+'" style="display:'+(showTogetherPill?'inline-flex':'none')+'">👥 Together</span>';
   }
 
-  const bfv = todaySlotView('breakfast'), bf = bfv.recipe || MISSING_RECIPE_FALLBACK;
+  const bfv = todaySlotView('breakfast'), bf = slotFallback(bfv);
   document.getElementById('bfEmoji').textContent = bf.emoji;
   document.getElementById('bfTitle').textContent = bfv.recipe ? mealTitleWithExtras(bfv) : bf.title;
   document.getElementById('bfKcal').textContent = bfv.kcal;
-  document.getElementById('bfDesc').textContent = 'Breakfast · ' + macroSummaryFromTotals(bfv);
+  document.getElementById('bfDesc').textContent = slotDescLine(bfv, 'Breakfast');
   document.getElementById('bfTags').innerHTML = tagsHtml(bfv.recipeId, 'breakfast', 'pillBreakfast', bfv.shared);
 
-  const luv = todaySlotView('lunch'), lu = luv.recipe || MISSING_RECIPE_FALLBACK;
+  const luv = todaySlotView('lunch'), lu = slotFallback(luv);
   document.getElementById('lunchThumb').textContent = lu.emoji;
   document.getElementById('lunchTitle').textContent = luv.recipe ? mealTitleWithExtras(luv) : lu.title;
   document.getElementById('lunchKcal').textContent = luv.kcal;
-  document.getElementById('lunchDesc').textContent = 'Lunch · ' + macroSummaryFromTotals(luv);
+  document.getElementById('lunchDesc').textContent = slotDescLine(luv, 'Lunch');
   document.getElementById('lunchTags').innerHTML = tagsHtml(luv.recipeId, 'lunch', 'pillLunch', luv.shared);
 
-  const div_ = todaySlotView('dinner'), di = div_.recipe || MISSING_RECIPE_FALLBACK;
+  const div_ = todaySlotView('dinner'), di = slotFallback(div_);
   document.getElementById('dinnerThumb').textContent = di.emoji;
   document.getElementById('dinnerTitle').textContent = div_.recipe ? mealTitleWithExtras(div_) : di.title;
   document.getElementById('dinnerKcal').textContent = div_.kcal;
-  document.getElementById('dinnerDesc').textContent = 'Dinner · ' + macroSummaryFromTotals(div_);
+  document.getElementById('dinnerDesc').textContent = slotDescLine(div_, 'Dinner');
   document.getElementById('dinnerTags').innerHTML = tagsHtml(div_.recipeId, 'dinner', 'pillDinner', div_.shared);
 
-  const snv = todaySlotView('snack'), sn = snv.recipe || MISSING_RECIPE_FALLBACK;
+  const snv = todaySlotView('snack'), sn = slotFallback(snv);
   document.getElementById('snackThumbEl').textContent = sn.emoji;
   document.getElementById('snackTitleEl').textContent = snv.recipe ? mealTitleWithExtras(snv) : sn.title;
   document.getElementById('snackKcalEl').textContent = snv.kcal;
-  document.getElementById('snackDescEl').textContent = 'Snack · ' + macroSummaryFromTotals(snv);
+  document.getElementById('snackDescEl').textContent = slotDescLine(snv, 'Snack');
   document.getElementById('snackTags').innerHTML = tagsHtml(snv.recipeId, 'snack', 'pillSnack', snv.shared);
 
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row

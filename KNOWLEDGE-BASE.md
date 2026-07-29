@@ -162,7 +162,171 @@ From the `app/data/foods.js` header comment (`foods.js:1-42`):
 
 ---
 
-## 6. Limits / not medical advice
+## 6. Diet preferences (multi-select)
+
+`PROF[key].diets` is an **array** of zero or more of `DIET_KEYS` (`app/js/state.js:525`):
+`['vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'lactose-intolerant']` — a person can
+be, say, lactose-intolerant AND vegetarian at once. This replaced an earlier single-string
+`PROF[key].diet` mock (task D4) that only understood one "veggie" tag for both vegan and
+vegetarian, treated pescatarian as a complete no-op, and enforced lactose-intolerance by
+pushing `'lactose'` onto the person's own avoid list. **None of that is true anymore** — the
+paragraphs below are the current, real behavior; do not cite the D4 mock's rules.
+
+### 6.1 Per-diet semantics
+
+`recipeViolatesDiet(id, dietList)` (`app/js/planner.js:398-407`) — `dietList` is the union of
+every diet active among the person(s) a candidate pool is for (`unionDiets`,
+`planner.js:413-419`; a SHARED slot's pool must satisfy everyone, a SOLO slot's just the one
+person planning it). Each rule below is independent or-logic — a recipe is excluded the
+moment ANY active diet in the list rules it out:
+
+| Diet | Excludes | Permits |
+|---|---|---|
+| **Vegan** | Red meat, poultry, fish, dairy, eggs, honey (`recipeMayContainAnimalProtein` OR `recipeMayContainDairy`/`Eggs`/`Honey`, `planner.js:401,403`) | Everything plant-based, including plant milks/yogurt (§6.2) |
+| **Vegetarian** | Red meat, poultry, fish (`recipeMayContainAnimalProtein`, `planner.js:401`) | Eggs, dairy |
+| **Pescatarian** | Red meat, poultry (`recipeMayContainMeatOrPoultry`, `planner.js:402`) | Fish, eggs, dairy |
+| **Gluten-free** | Any recipe hand-tagged `avoid: ['gluten']` (`planner.js:404`) | Everything else — this reads the recipe's own authored avoid list, not ingredient content |
+| **Lactose-intolerant** | Real dairy (`recipeMayContainDairy`, `planner.js:405`) | Plant milks/yogurt (§6.2) |
+
+Vegan/vegetarian/pescatarian is a strict hierarchy (vegan's rules are a superset of
+vegetarian's, which are a superset of pescatarian's), which is why `DIET_EXCLUSIVE_GROUP`
+(`state.js:529`) treats the three as mutually exclusive — see §6.4. Gluten-free and
+lactose-intolerant are independent axes that combine freely with anything, including each
+other and any exclusive-group member.
+
+### 6.2 Food-id lists — and the deliberate plant-milk exclusion
+
+`app/js/library.js`: `RED_MEAT_FOOD_IDS` (`:193`, 5 ids), `POULTRY_FOOD_IDS` (`:194`, 3 ids),
+`FISH_FOOD_IDS` (`:195-198`, 9 ids) predate this feature (VARIETY-plan.md's weekly-cap work).
+Added for diet filtering: `DAIRY_FOOD_IDS` (`:211-219`, 18 ids — includes `pesto-elena` and
+`chocolate-hazelnut-spread`, both composite foods that genuinely contain dairy per their
+`src` field), `EGG_FOOD_IDS` (`:224`, 4 ids — `eggs` plus composite egg-based foods
+`egg-noodles`/`ravioli`/`mayonnaise`), `HONEY_FOOD_IDS` (`:225`, 1 id).
+
+**Deliberately NOT derived from `FOODS[id].cat === 'Dairy'`**: that shopping-list category
+(`data/foods.js`) also holds `oat-milk`, `soy-milk`, `almond-milk`, and `soy-yogurt` —
+plant-based dairy-*aisle* items, not animal-derived dairy. `cat` answers "which supermarket
+aisle", not "is this animal-derived", so a vegan/lactose-intolerant filter that checked `cat`
+directly would wrongly reject them. `DAIRY_FOOD_IDS` is a hand-picked list of real dairy ids
+instead, and those four plant-milk/yogurt ids are excluded from it on purpose. This is the
+single assertion the regression suite calls out as most likely to catch a future
+regression (`tools/check.js`, `testDietFilterSemantics`'s "PLANT-MILK TRAP" block) — a
+"simplify by checking `cat`" refactor would silently start rejecting oat/soy/almond milk for
+every vegan and lactose-intolerant household.
+
+### 6.3 Any-variant conservatism for `optionGroups` recipes
+
+`recipeAllPossibleIngredientIds(recipe)` (`planner.js:144-151`) collects the base
+`ingredients` **plus every choice of every `optionGroups` group** — not just the default
+combo. `recipeMayContainAnimalProtein`/`MeatOrPoultry`/`Dairy`/`Eggs`/`Honey`
+(`planner.js:163-190`) all judge a recipe through this, so `recipeViolatesDiet` excludes a
+recipe if **any** variant would violate the diet, even if the default (`choices[0]`) variant
+is compliant. This mirrors a pre-existing rule the meatless-day feature already used
+(`recipeMayContainAnimalProtein`'s original doc, same file) for the same reason: the
+candidate pool is filtered *before* `chosenOptsForRecipe()` rotates which variant is actually
+planned, so judging only the default combo could let an option-swap silently reintroduce
+meat/dairy/eggs/honey after the recipe already passed the filter. The trade-off is
+deliberate and conservative: a recipe that would have been fine under one variant still gets
+excluded entirely if any other variant wouldn't be.
+
+### 6.4 Multi-select editor + normalization
+
+`normalizeDietsArray(v)` (`state.js:538-549`) is the single funnel every diets-array write
+goes through — `state.js:loadState()`'s migration, `sync.js:applyProfileSectionData()`'s
+sync ingest, and `render-profile.js:toggleDiet()` (the Profile screen editor and, via
+`app.js:obToggleDiet()`, the onboarding wizard) all call it. It accepts the current array
+shape, a legacy single string (including the old `'none'` sentinel), or garbage, and always
+returns a clean, deduplicated array: unknown keys dropped, non-array/non-string coerced to
+`[]`, and — because vegan/vegetarian/pescatarian are mutually exclusive
+(`DIET_EXCLUSIVE_GROUP`, `state.js:529`) — collapses that trio down to whichever one comes
+first in `DIET_KEYS` (vegan, the strictest, wins). `toggleDiet(profKey, key)`
+(`render-profile.js:201-219`) behaves like a segmented control *within* the exclusive group
+(picking vegan while vegetarian was active replaces it, not stacks) while gluten-free/
+lactose-intolerant toggle independently; `key === NONE_DIET_KEY` clears every diet at once.
+Both the Profile screen (`renderDietEditor()`, `render-profile.js:226-238`, `#dietList` in
+`index.html`) and onboarding (`index.html`'s checkbox group, `obToggleDiet`) render off this
+same array and funnel through the same `toggleDiet()` — they cannot disagree.
+
+### 6.5 Empty-pool guard
+
+Some diet/avoid-list combinations can legitimately exhaust a slot's candidate pool —
+`emptyPoolPicks` (`planner.js:284`) counts every individual pick during one `generateWeek()`
+call that found zero legal candidates at all (`pickSharedMeal`/`pickSoloMeal`'s `if(!best)`
+branches, `planner.js:1903, 2003`), and the returned plan carries the same count as
+`emptyPoolCount` (`planner.js:1723`). Unlike the pre-existing weekly-cap/protein-balance
+relaxation rules (§ VARIETY-plan.md), an empty pool truly cannot be relaxed into — there is
+nothing left to relax to. The affected plan-entry gets `reason: 'no-candidates'`
+(`planner.js:1909, 2005`), read by `render-today.js`'s `slotFallback()`/`slotDescLine()` and
+`render-week.js`'s day-meal-row to show an honest "No meal fits your filters" card instead of
+a silent blank or a diet violation.
+
+**Measured pool sizes** (non-occasional built-ins, 113 total at the time of writing, counted
+per meal slot regardless of household style):
+
+| | breakfast | lunch | dinner | snack |
+|---|---|---|---|---|
+| Vegan | 7 | 13 | 10 | 7 |
+| Vegetarian | 26 | 22 | 17 | 14 |
+| Pescatarian | 26 | 31 | 28 | 15 |
+| Gluten-free | 12 | 29 | 35 | 15 |
+| Lactose-intolerant | 14 | 32 | 35 | 9 |
+| Vegetarian + gluten-free | 12 | 15 | 12 | 14 |
+
+Verified empirically via the regression suite (`tools/check.js`, `testDietGeneratedPlans`):
+generating a strict two-week, both-people-on-the-same-diet fortnight from a fixed Monday
+hits the empty-pool guard for **vegan alone** — the 'balanced'-style vegan dinner pool is
+only 8 recipes, thin enough that day-wide variety + weekly-cap rules exhaust it on the
+fortnight's final day (2 slots) even though the guard never once serves a violating recipe.
+Vegetarian, pescatarian, gluten-free, lactose-intolerant, and vegetarian+gluten-free all stay
+at zero empty slots across the same two weeks **when `avoid` is empty**. This is the guard
+working as designed for a genuinely thin catalog corner, not a planner bug — but it means
+"vegan" is the one diet where a real two-person household could occasionally see the honest
+empty-slot card during a long run even with a clean avoid list, and any future work that
+shrinks the vegan pool further should re-run that test before shipping.
+
+**`avoid` stacks on top of diet filtering and can shrink an otherwise-safe combination
+further** (`recipeHitsAvoid`, applied independently of `recipeViolatesDiet` in both
+`candidatesFor` and `sidePoolFor`) — confirmed via live browser verification (2026-07-29):
+Elena's real default avoid list (`lactose, raw-onion, spicy` — `state.js:618`) combined with
+vegetarian+gluten-free hits the guard once, on the LAST solo lunch of the current week
+(`day6 lunch elena`, `emptyPoolCount:1`), even though the same diet combination with `avoid:
+[]` stayed at zero empty slots in the regression suite. The app handled it correctly end to
+end — no console error beyond the intentional diagnostic log, no crash, and the Week screen
+rendered the honest "No meal fits your filters / Lunch · adjust Diet in Profile" card for
+exactly that one cell — but it means the pool-size table above is an upper bound on what a
+real household with a non-empty avoid list will actually see; a person combining a diet with
+several avoid-list entries is more likely to hit the guard than the clean-avoid numbers alone
+suggest.
+
+### 6.6 Migration + sync
+
+An install saved before this feature carries the old single-string `diet` field (never
+renamed) instead of `diets`; `state.js:loadState()` (`:1074-1098`) and
+`sync.js:applyProfileSectionData()` (`:174-200`) both detect the missing `diets` key and
+migrate the legacy string through `normalizeDietsArray()`. Both also perform a one-shot
+cleanup: the retired pre-multi-diet `commitDiet()` used to push `'lactose'` onto the person's
+own avoid list whenever their single diet was exactly `'lactose-intolerant'`, and never
+removed it even after the diet changed — lactose-intolerance is now enforced directly via
+`recipeMayContainDairy()`, not the avoid list, so that stranded avoid-list entry is stripped,
+but *only* when the just-migrated legacy diet was exactly `'lactose-intolerant'` (a person on
+a different diet who separately chose "lactose" from the real avoid editor is left alone,
+since nothing in a bare string field can otherwise tell the two cases apart).
+
+**Bug found and fixed while adding this feature's regression tests (2026-07-29)**: both
+migration paths' cleanup mutates `p.avoid` directly, and `PERSIST_PROFILE_FIELDS`
+(`state.js:891`) is the single field list both `loadState()`'s and
+`applyProfileSectionData()`'s `forEach` loops iterate in order. With `'diets'` listed before
+`'avoid'`, the cleanup spliced `'lactose'` out of whatever `p.avoid` held *before* the loop
+had applied the saved/incoming `avoid` value — which the loop then immediately overwrote
+when it reached `'avoid'`, silently undoing the cleanup and letting the stale `'lactose'`
+entry survive on every affected install and every affected sync payload. Fixed by moving
+`'avoid'` before `'diets'` in `PERSIST_PROFILE_FIELDS` so the cleanup runs against the final,
+already-merged avoid array. Regression-covered by `tools/check.js`'s
+`testDietLoadStateMigration` and `testDietSyncRobustness`.
+
+---
+
+## 7. Limits / not medical advice
 
 Mirrors the Profile screen's live disclaimer, `app/index.html:491`:
 

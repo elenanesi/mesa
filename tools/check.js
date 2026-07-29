@@ -2637,8 +2637,20 @@ function testMealShareOverride(ctx){
     assert(get(ctx, "mealShareOverrides['" + wsd + "|4|dinner']") === 'solo',
       'mealShareOverrides survive a localStorage round-trip');
   } finally {
-    ctx.weekPlans = savedWeekPlans; ctx.mealShareOverrides = savedOverrides;
-    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; mealShareOverrides = " + JSON.stringify(get(ctx, 'mealShareOverrides')) + ";");
+    // BUG (found and fixed while adding the diet-preferences regression tests): this used
+    // to assign ctx.weekPlans/ctx.mealShareOverrides directly, which is a no-op — top-level
+    // `let` bindings from the loaded app files (weekPlans, mealShareOverrides) are NOT
+    // exposed as properties on the sandbox object (this file's own header comment, "vm
+    // access helpers"), so that assignment never touched the real binding. The run() call
+    // right after it then re-serialized whatever get(ctx, 'mealShareOverrides') returned —
+    // the CURRENT, still-mutated value from step (4) above, not the ORIGINAL pre-test one —
+    // so this cleanup silently failed to restore anything, leaking a 'solo' override at
+    // FIXED_MONDAY + '|4|dinner' into every later test that shares this same vm context.
+    // Confirmed by testDietGeneratedPlans's shared-vs-solo assertion (2026-07-29): that leak
+    // forced day 4's "shared" dinner solo for a later diet test, which surfaced as a false
+    // diet-violation failure. Fix: serialize the LOCAL savedWeekPlans/savedOverrides
+    // (captured before this test touched anything) instead of re-reading the live sandbox.
+    run(ctx, "weekPlans = " + JSON.stringify(savedWeekPlans) + "; weekPlan = null; mealShareOverrides = " + JSON.stringify(savedOverrides) + ";");
   }
 }
 
@@ -7278,6 +7290,534 @@ function testRecipeOptionsBuilder(ctx){
 }
 
 /* ===================================================================
+   Multi-select diet preferences (finishing a previous agent's uncommitted batch):
+   PROF[key].diet (single string) -> PROF[key].diets (ARRAY), with real per-diet
+   semantics in planner.js:recipeViolatesDiet (replacing the old D4 mock that only
+   understood a single "veggie" tag), DAIRY_FOOD_IDS/EGG_FOOD_IDS/HONEY_FOOD_IDS in
+   library.js, migration + one-shot stale-avoid cleanup in state.js:loadState(), and
+   the sync-side mirror in sync.js:applyProfileSectionData(). See KNOWLEDGE-BASE.md's
+   "Diet preferences" section for the full semantics writeup with citations.
+
+   Every fixture recipe below is registered directly on the live RECIPES_DB (the same
+   temporary-fixture convention testRecipeOptions'/testEatenOutFlag's FIXTURE_ID use)
+   and removed again immediately after each block, so nothing here leaks into any
+   later test's view of the catalog.
+   =================================================================== */
+
+// -------- (a) per-diet exclude/permit matrix, incl. the plant-milk trap --------
+function testDietFilterSemantics(ctx){
+  const FIX = '__diet_fixture__';
+  function withRecipe(ingredients, avoid, fn){
+    const recipe = {
+      title: 'Diet fixture', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 10, ingredients: ingredients,
+      toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: avoid || []
+    };
+    run(ctx, "RECIPES_DB['" + FIX + "'] = " + JSON.stringify(recipe) + ';');
+    try{ fn(FIX); } finally { run(ctx, "delete RECIPES_DB['" + FIX + "'];"); }
+  }
+  function violates(id, diets){ return call(ctx, 'recipeViolatesDiet', [id, diets]); }
+
+  // plant-only: no meat/poultry/fish/dairy/eggs/honey at all — the "everyone's happy" baseline.
+  withRecipe([['tofu', 150], ['rice', 100]], [], function(id){
+    ['vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'lactose-intolerant'].forEach(function(d){
+      assert(violates(id, [d]) === false, 'diet semantics: a plant-only, untagged recipe never violates ' + d, '');
+    });
+  });
+
+  // red meat: excluded by vegan/vegetarian/pescatarian; irrelevant to the two independent axes.
+  withRecipe([['beef-mince-lean', 150], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === true, 'diet semantics: vegan excludes red meat', '');
+    assert(violates(id, ['vegetarian']) === true, 'diet semantics: vegetarian excludes red meat', '');
+    assert(violates(id, ['pescatarian']) === true, 'diet semantics: pescatarian excludes red meat', '');
+    assert(violates(id, ['gluten-free']) === false, 'diet semantics: gluten-free is independent of red meat (untagged recipe passes)', '');
+    assert(violates(id, ['lactose-intolerant']) === false, 'diet semantics: lactose-intolerant is independent of red meat', '');
+  });
+
+  // poultry: same trio exclusion as red meat.
+  withRecipe([['chicken-breast', 150], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === true, 'diet semantics: vegan excludes poultry', '');
+    assert(violates(id, ['vegetarian']) === true, 'diet semantics: vegetarian excludes poultry', '');
+    assert(violates(id, ['pescatarian']) === true, 'diet semantics: pescatarian excludes poultry', '');
+  });
+
+  // fish: vegan/vegetarian exclude it; pescatarian explicitly PERMITS it (its whole point).
+  withRecipe([['salmon-fillet', 150], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === true, 'diet semantics: vegan excludes fish', '');
+    assert(violates(id, ['vegetarian']) === true, 'diet semantics: vegetarian excludes fish', '');
+    assert(violates(id, ['pescatarian']) === false, 'diet semantics: pescatarian PERMITS fish', '');
+  });
+
+  // real dairy ("milk"): vegan and lactose-intolerant exclude it; vegetarian/pescatarian PERMIT it.
+  withRecipe([['milk', 150], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === true, 'diet semantics: vegan excludes dairy', '');
+    assert(violates(id, ['vegetarian']) === false, 'diet semantics: vegetarian PERMITS dairy', '');
+    assert(violates(id, ['pescatarian']) === false, 'diet semantics: pescatarian PERMITS dairy', '');
+    assert(violates(id, ['lactose-intolerant']) === true, 'diet semantics: lactose-intolerant excludes dairy', '');
+  });
+
+  // eggs: vegan excludes; vegetarian and pescatarian PERMIT.
+  withRecipe([['eggs', 100], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === true, 'diet semantics: vegan excludes eggs', '');
+    assert(violates(id, ['vegetarian']) === false, 'diet semantics: vegetarian PERMITS eggs', '');
+    assert(violates(id, ['pescatarian']) === false, 'diet semantics: pescatarian PERMITS eggs', '');
+  });
+
+  // honey: vegan-only exclusion (not even vegetarian cares).
+  withRecipe([['honey', 20], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === true, 'diet semantics: vegan excludes honey', '');
+    assert(violates(id, ['vegetarian']) === false, 'diet semantics: vegetarian PERMITS honey', '');
+    assert(violates(id, ['lactose-intolerant']) === false, 'diet semantics: lactose-intolerant is independent of honey', '');
+  });
+
+  // THE PLANT-MILK TRAP: oat/soy/almond milk + soy-yogurt carry cat:'Dairy' in foods.js but
+  // are plant-based and deliberately excluded from library.js's DAIRY_FOOD_IDS — vegan and
+  // lactose-intolerant must both PERMIT this recipe. This is the assertion most likely to
+  // catch a future regression (e.g. a "simplify by checking FOODS[id].cat==='Dairy'" refactor).
+  withRecipe([['oat-milk', 150], ['soy-milk', 150], ['almond-milk', 150], ['soy-yogurt', 150], ['rice', 100]], [], function(id){
+    assert(violates(id, ['vegan']) === false, 'diet semantics (PLANT-MILK TRAP): vegan permits oat/soy/almond milk + soy-yogurt (plant-based, not real dairy)', '');
+    assert(violates(id, ['lactose-intolerant']) === false, 'diet semantics (PLANT-MILK TRAP): lactose-intolerant permits oat/soy/almond milk + soy-yogurt', '');
+    assert(violates(id, ['vegetarian']) === false, 'diet semantics: vegetarian permits plant milks (trivially, but keeps the fixture honest)', '');
+  });
+
+  // gluten-free reads the recipe's OWN hand-authored avoid list, not ingredient content — a
+  // recipe with no gluten-bearing ingredient at all but avoid:['gluten'] still excludes, and
+  // is independent of the vegan/vegetarian/pescatarian axis.
+  withRecipe([['rice', 100]], ['gluten'], function(id){
+    assert(violates(id, ['gluten-free']) === true, "diet semantics: gluten-free excludes a recipe hand-tagged avoid:['gluten']", '');
+    assert(violates(id, ['vegan']) === false, 'diet semantics: a gluten-tagged, otherwise plant-only recipe does not trip vegan', '');
+  });
+
+  // dietList = [] / null (nobody has a diet) never excludes anything, regardless of content.
+  withRecipe([['beef-mince-lean', 150]], [], function(id){
+    assert(violates(id, []) === false, 'diet semantics: an empty dietList never excludes any recipe, however non-compliant its ingredients', '');
+    assert(violates(id, null) === false, 'diet semantics: recipeViolatesDiet(id, null) is a safe no-op (matches unionDiets() returning [] for a no-diet household)', '');
+  });
+}
+
+// -------- (b) optionGroups any-variant conservatism: a recipe whose DEFAULT variant is
+// compliant but SOME variant is not must be excluded entirely --------
+function testDietOptionGroupsConservatism(ctx){
+  const FIX = '__diet_optgroups_fixture__';
+  const CONTROL = '__diet_optgroups_control_fixture__';
+  // Default choice (tofu) is vegan-compliant; the second choice (chicken-breast) is not.
+  // The candidate pool is filtered BEFORE chosenOptsForRecipe() rotates which variant is
+  // actually planned (see planner.js:recipeAllPossibleIngredientIds' doc), so a vegan
+  // filter that only inspected the default combo would wrongly let this recipe through.
+  const recipe = {
+    title: 'Protein bowl (fixture)', emoji: '🧪', slot: 'dinner', role: 'full',
+    styles: ['balanced'], time: 10, ingredients: [['rice', 100]],
+    toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: [],
+    optionGroups: [{key: 'protein', label: 'Protein', choices: [
+      {id: 'tofu', label: 'Tofu', ingredients: [['tofu', 150]]},
+      {id: 'chicken', label: 'Chicken', ingredients: [['chicken-breast', 150]]}
+    ]}]
+  };
+  // Control: identical shape, but BOTH choices are vegan-safe — isolates the exclusion
+  // below to the non-compliant alt choice specifically, not "any optionGroups recipe".
+  const control = JSON.parse(JSON.stringify(recipe));
+  control.optionGroups[0].choices[1] = {id: 'tempeh', label: 'Tempeh', ingredients: [['tofu', 150]]};
+
+  run(ctx, "RECIPES_DB['" + FIX + "'] = " + JSON.stringify(recipe) + ';');
+  run(ctx, "RECIPES_DB['" + CONTROL + "'] = " + JSON.stringify(control) + ';');
+  try{
+    const defaultCombo = call(ctx, 'recipeEffectiveIngredients', [recipe, null]);
+    assert(defaultCombo.some(function(ing){ return ing[0] === 'tofu'; }) && !defaultCombo.some(function(ing){ return ing[0] === 'chicken-breast'; }),
+      'optionGroups conservatism setup: the DEFAULT combo (choices[0]) is the vegan-compliant tofu variant, not chicken', JSON.stringify(defaultCombo));
+
+    assert(call(ctx, 'recipeViolatesDiet', [FIX, ['vegan']]) === true,
+      'optionGroups conservatism: a recipe whose DEFAULT variant is vegan-compliant but SOME optionGroups variant is not (chicken) is excluded under vegan — the any-variant conservative rule', '');
+    assert(call(ctx, 'recipeViolatesDiet', [CONTROL, ['vegan']]) === false,
+      'optionGroups conservatism control: the identically-shaped recipe with BOTH choices vegan-compliant is NOT excluded — proves the exclusion above is specifically the non-compliant alt choice, not "any optionGroups recipe"', '');
+
+    // End-to-end: candidatesFor() must drop it from a vegan household's pool entirely.
+    run(ctx, "PROF.elena.diets = ['vegan'];");
+    const pool = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena']]);
+    assert(pool.indexOf(FIX) === -1,
+      'optionGroups conservatism: candidatesFor() excludes the fixture from a vegan pool entirely (not just flagged) despite its default variant being compliant', JSON.stringify(pool));
+    assert(pool.indexOf(CONTROL) !== -1,
+      'optionGroups conservatism control: candidatesFor() KEEPS the all-compliant-choices control recipe in the vegan pool', JSON.stringify(pool));
+    run(ctx, "PROF.elena.diets = [];");
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + FIX + "']; delete RECIPES_DB['" + CONTROL + "'];");
+  }
+}
+
+// -------- (c) multi-select combinations: independent axes combine with real or-logic --------
+function testDietMultiSelectCombinations(ctx){
+  const FIX = '__diet_multiselect_fixture__';
+  function withRecipe(ingredients, avoid, fn){
+    const recipe = {
+      title: 'Multi-diet fixture', emoji: '🧪', slot: 'dinner', role: 'full',
+      styles: ['balanced'], time: 10, ingredients: ingredients,
+      toTaste: [], steps: ['Combine and enjoy.'], tags: [], avoid: avoid || []
+    };
+    run(ctx, "RECIPES_DB['" + FIX + "'] = " + JSON.stringify(recipe) + ';');
+    try{ fn(FIX); } finally { run(ctx, "delete RECIPES_DB['" + FIX + "'];"); }
+  }
+
+  // A person with vegetarian + gluten-free + lactose-intolerant all active at once — three
+  // simultaneous, independently-triggerable exclusions, proving recipeViolatesDiet's
+  // independent or-logic really combines all three, not just whichever matches first.
+  const combo = ['vegetarian', 'gluten-free', 'lactose-intolerant'];
+
+  withRecipe([['eggs', 100], ['rice', 100]], [], function(id){
+    assert(call(ctx, 'recipeViolatesDiet', [id, combo]) === false,
+      'multi-select: eggs + plain rice (no gluten tag, no dairy) satisfies vegetarian+gluten-free+lactose-intolerant simultaneously', '');
+  });
+  withRecipe([['eggs', 100], ['rice', 100]], ['gluten'], function(id){
+    assert(call(ctx, 'recipeViolatesDiet', [id, combo]) === true,
+      'multi-select: an otherwise-fine (vegetarian, dairy-free) recipe still gets excluded on the gluten-free axis alone', '');
+  });
+  withRecipe([['eggs', 100], ['milk', 100]], [], function(id){
+    assert(call(ctx, 'recipeViolatesDiet', [id, combo]) === true,
+      'multi-select: an otherwise-fine (vegetarian, no gluten tag) recipe still gets excluded on the lactose-intolerant axis alone', '');
+  });
+  withRecipe([['salmon-fillet', 150]], [], function(id){
+    assert(call(ctx, 'recipeViolatesDiet', [id, combo]) === true,
+      'multi-select: fish excludes on the vegetarian axis even though pescatarian is not in this combo', '');
+  });
+  withRecipe([['chicken-breast', 150]], [], function(id){
+    assert(call(ctx, 'recipeViolatesDiet', [id, combo]) === true,
+      'multi-select: poultry excludes on the vegetarian axis', '');
+  });
+
+  // unionDiets() end-to-end: PROF.elena carries all three at once, partner none — a SOLO
+  // elena pool must reflect the full three-way combination.
+  run(ctx, "PROF.elena.diets = " + JSON.stringify(combo) + "; PROF.partner.diets = [];");
+  const unioned = call(ctx, 'unionDiets', [['elena']]);
+  assert(JSON.stringify(unioned.slice().sort()) === JSON.stringify(combo.slice().sort()),
+    'unionDiets: a single person carrying three simultaneous diets reports all three', JSON.stringify(unioned));
+  run(ctx, "PROF.elena.diets = []; PROF.partner.diets = [];");
+
+  // normalizeDietsArray: the three combine WITHOUT collapsing (only DIET_EXCLUSIVE_GROUP
+  // members collapse against each other; gluten-free/lactose-intolerant are independent axes).
+  const normalized = call(ctx, 'normalizeDietsArray', [combo]);
+  assert(JSON.stringify(normalized.slice().sort()) === JSON.stringify(combo.slice().sort()),
+    'normalizeDietsArray: vegetarian + gluten-free + lactose-intolerant survive together untouched (no exclusive-group collapse — only one exclusive-group member is present)', JSON.stringify(normalized));
+}
+
+// -------- toggleDiet()/DIET_EXCLUSIVE_GROUP: the segmented-control-within-itself behavior
+// (vegan/vegetarian/pescatarian replace each other; gluten-free/lactose-intolerant stack) --------
+function testDietToggleExclusiveGroupCollapse(ctx){
+  const pristine = cloneJSON(get(ctx, 'PROF.elena.diets'));
+  // applyProf() (called at the end of toggleDiet()) repaints several render*Editor()
+  // sections against this harness's bare document stub — stubbed out for this test's
+  // duration exactly like testRecipeOptionsBuilder does around its own commit* calls;
+  // this test only cares what lands in PROF.elena.diets, not about repainting a DOM this
+  // harness doesn't have.
+  run(ctx, "var __dietToggleStub = applyProf; applyProf = function(){};");
+  try{
+    run(ctx, "PROF.elena.diets = [];");
+    call(ctx, 'toggleDiet', ['elena', 'vegetarian']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['vegetarian']),
+      "toggleDiet: picking vegetarian sets diets to ['vegetarian']", JSON.stringify(get(ctx, 'PROF.elena.diets')));
+
+    call(ctx, 'toggleDiet', ['elena', 'vegan']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['vegan']),
+      'toggleDiet: picking vegan while vegetarian was active REPLACES it (DIET_EXCLUSIVE_GROUP behaves like a segmented control within itself), not stacks', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+
+    call(ctx, 'toggleDiet', ['elena', 'gluten-free']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets').slice().sort()) === JSON.stringify(['gluten-free', 'vegan']),
+      'toggleDiet: gluten-free stacks freely alongside vegan (independent axis)', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+
+    call(ctx, 'toggleDiet', ['elena', 'none']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === '[]',
+      'toggleDiet: "none" (NONE_DIET_KEY) clears every diet at once', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+
+    call(ctx, 'toggleDiet', ['elena', 'gluten-free']);
+    call(ctx, 'toggleDiet', ['elena', 'gluten-free']);
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === '[]',
+      'toggleDiet: tapping the same independent-axis diet twice toggles it back off', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+  } finally {
+    run(ctx, "applyProf = __dietToggleStub; delete __dietToggleStub;");
+    run(ctx, "PROF.elena.diets = " + JSON.stringify(pristine) + ';');
+  }
+}
+
+// -------- (d) migration from every old single-string `diet` value, incl. malformed/unknown
+// values, plus the stale 'lactose' avoid-list cleanup the old lactose-via-avoid-list hack
+// left behind --------
+function testDietLoadStateMigration(ctx){
+  const pristineElena = cloneJSON(get(ctx, 'PROF.elena'));
+  const pristinePartner = cloneJSON(get(ctx, 'PROF.partner'));
+
+  function snapshotWithLegacyDiet(dietValue, avoidList){
+    const snap = run(ctx, 'buildSnapshot()'); // real current-shape snapshot (partner untouched)
+    snap.profiles.elena.avoid = avoidList;
+    delete snap.profiles.elena.diets; // strip the new-shape key: THIS is what makes it legacy-shaped
+    snap.profiles.elena.diet = dietValue; // old single-string field, never renamed
+    return snap;
+  }
+
+  // Migration from every real old single-string value, including the 'none' sentinel.
+  ['none', 'vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'lactose-intolerant'].forEach(function(dietValue){
+    run(ctx, "PROF.elena.diets = ['pescatarian']; PROF.elena.avoid = [];"); // scramble first (testGoalToggles/testNextWeekTuning convention)
+    const snap = snapshotWithLegacyDiet(dietValue, []);
+    run(ctx, "localStorage.setItem(STORE_KEY, " + JSON.stringify(JSON.stringify(snap)) + ");");
+    run(ctx, 'loadState();');
+    const expected = dietValue === 'none' ? [] : [dietValue];
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(expected),
+      'loadState() migration: legacy diet:"' + dietValue + '" -> diets:' + JSON.stringify(expected), JSON.stringify(get(ctx, 'PROF.elena.diets')));
+  });
+
+  // Malformed/unknown legacy string value: dropped, not crashed on, not passed through raw.
+  run(ctx, "PROF.elena.diets = ['pescatarian'];");
+  run(ctx, "localStorage.setItem(STORE_KEY, " + JSON.stringify(JSON.stringify(snapshotWithLegacyDiet('keto-carnivore-atkins', []))) + ");");
+  run(ctx, 'loadState();');
+  assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === '[]',
+    'loadState() migration: an unknown legacy diet string normalizes to an empty array rather than crashing or passing through', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+
+  // Malformed NEW-shape value (garbage entries mixed with one real one): sanitized on load.
+  (function(){
+    const snap = run(ctx, 'buildSnapshot()');
+    snap.profiles.elena.diets = ['vegan', 'keto', 42, null, 'vegan'];
+    run(ctx, "localStorage.setItem(STORE_KEY, " + JSON.stringify(JSON.stringify(snap)) + ");");
+    run(ctx, "PROF.elena.diets = [];");
+    run(ctx, 'loadState();');
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['vegan']),
+      'loadState() migration: a garbage new-shape diets array (unknown strings, a number, null, a duplicate) normalizes down to just the valid, deduplicated entries', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+  })();
+
+  // Stale 'lactose' avoid-list cleanup: THE bug found and fixed in this batch
+  // (state.js:PERSIST_PROFILE_FIELDS field order — 'avoid' must be processed before
+  // 'diets' so the cleanup splices the FINAL avoid array, not one about to be overwritten
+  // by it; see that constant's doc comment). Only fires when the just-migrated legacy diet
+  // was exactly 'lactose-intolerant'.
+  (function(){
+    const snap = snapshotWithLegacyDiet('lactose-intolerant', ['lactose', 'spicy']);
+    run(ctx, "PROF.elena.avoid = [];"); // clean starting point so a no-op couldn't accidentally pass
+    run(ctx, "localStorage.setItem(STORE_KEY, " + JSON.stringify(JSON.stringify(snap)) + ");");
+    run(ctx, 'loadState();');
+    const avoidAfter = get(ctx, 'PROF.elena.avoid');
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['lactose-intolerant']),
+      'loadState() migration: legacy diet:"lactose-intolerant" migrates to diets:["lactose-intolerant"]', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+    assert(avoidAfter.indexOf('lactose') === -1,
+      'loadState() migration: the stale \'lactose\' avoid-list entry left by the retired commitDiet() hack is stripped', JSON.stringify(avoidAfter));
+    assert(avoidAfter.indexOf('spicy') !== -1,
+      'loadState() migration: an unrelated avoid entry ("spicy") survives the cleanup untouched', JSON.stringify(avoidAfter));
+  })();
+
+  // Precision check: a person on a DIFFERENT legacy diet who separately chose "lactose" via
+  // the real avoid editor (nothing to do with the retired hack) must NOT have it stripped —
+  // the cleanup can only fire when it can prove the entry came from the hack.
+  (function(){
+    const snap = snapshotWithLegacyDiet('vegan', ['lactose', 'nuts']);
+    run(ctx, "PROF.elena.avoid = [];");
+    run(ctx, "localStorage.setItem(STORE_KEY, " + JSON.stringify(JSON.stringify(snap)) + ");");
+    run(ctx, 'loadState();');
+    const avoidAfter = get(ctx, 'PROF.elena.avoid');
+    assert(avoidAfter.indexOf('lactose') !== -1,
+      'loadState() migration: a person on a DIFFERENT legacy diet ("vegan") who separately avoids lactose keeps it — the cleanup only fires when it can prove the entry came from the retired lactose-intolerant hack', JSON.stringify(avoidAfter));
+  })();
+
+  run(ctx, "localStorage.removeItem(STORE_KEY);");
+  run(ctx, "PROF.elena = " + JSON.stringify(pristineElena) + "; PROF.partner = " + JSON.stringify(pristinePartner) + ";");
+}
+
+// -------- (e) sync robustness: an old-shape `{diet:'vegan'}` payload from a phone on the
+// previous build must not corrupt the new `diets` array, in either direction (legacy
+// ingest / new-shape ingest), and the outgoing payload this build sends must itself be
+// well-shaped --------
+function testDietSyncRobustness(ctx){
+  const pristineElena = cloneJSON(get(ctx, 'PROF.elena'));
+
+  // Direction 1: an OLD-BUILD peer's payload — {diet:'vegan', avoid:[...]}, no `diets` key
+  // at all — arriving via couple-sync must migrate cleanly, mirroring loadState()'s own
+  // migration exactly (sync.js:applyProfileSectionData's doc says so explicitly).
+  (function(){
+    run(ctx, "PROF.elena.diets = ['pescatarian']; PROF.elena.avoid = [];");
+    const legacyPayload = {
+      displayName: 'Elena', sex: 'female', dobY: 1997, dobM: 5, heightCm: 168, weightKg: 64, activity: 1.55,
+      diet: 'vegan', // OLD single-string shape — no `diets` key
+      calCustom: null, calNote: '', kP: 26, kC: 41, kF: 33,
+      avoid: ['spicy'], goals: {fatLoss: false, muscleGain: false, muscle: false, heart: false, skin: false, hashi: false}
+    };
+    run(ctx, "applyProfileSectionData('elena', " + JSON.stringify(legacyPayload) + ");");
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['vegan']),
+      'sync (old-shape payload, direction 1): a legacy {diet:"vegan"} payload with no diets key migrates to diets:["vegan"]', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+  })();
+
+  // Direction 1b: same old-shape ingest, but the legacy diet is 'lactose-intolerant' and the
+  // incoming avoid list still carries the stale 'lactose' entry from the retired hack — THE
+  // bug found and fixed in this batch (see state.js:PERSIST_PROFILE_FIELDS's doc comment).
+  (function(){
+    run(ctx, "PROF.elena.diets = ['pescatarian']; PROF.elena.avoid = [];");
+    const legacyPayload = {
+      displayName: 'Elena', sex: 'female', dobY: 1997, dobM: 5, heightCm: 168, weightKg: 64, activity: 1.55,
+      diet: 'lactose-intolerant',
+      calCustom: null, calNote: '', kP: 26, kC: 41, kF: 33,
+      avoid: ['lactose', 'spicy'], // the stale peer's own uncleaned avoid list
+      goals: {fatLoss: false, muscleGain: false, muscle: false, heart: false, skin: false, hashi: false}
+    };
+    run(ctx, "applyProfileSectionData('elena', " + JSON.stringify(legacyPayload) + ");");
+    const avoidAfter = get(ctx, 'PROF.elena.avoid');
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['lactose-intolerant']),
+      'sync (old-shape payload, direction 1b): legacy diet:"lactose-intolerant" migrates correctly', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+    assert(avoidAfter.indexOf('lactose') === -1,
+      "sync (old-shape payload, direction 1b): the incoming stale 'lactose' avoid entry is stripped, not carried over (BUG found + fixed this batch: PERSIST_PROFILE_FIELDS field order)", JSON.stringify(avoidAfter));
+    assert(avoidAfter.indexOf('spicy') !== -1,
+      'sync (old-shape payload, direction 1b): an unrelated incoming avoid entry ("spicy") is preserved', JSON.stringify(avoidAfter));
+  })();
+
+  // Direction 2: a NEW-BUILD peer's payload (current shape: `diets` array, with a garbage
+  // entry) must sanitize on ingest exactly like loadState() does — the two code paths must
+  // never disagree.
+  (function(){
+    run(ctx, "PROF.elena.diets = [];");
+    const newPayload = {
+      displayName: 'Elena', sex: 'female', dobY: 1997, dobM: 5, heightCm: 168, weightKg: 64, activity: 1.55,
+      diets: ['vegetarian', 'gluten-free', 'not-a-real-diet'], // new shape, one garbage entry
+      calCustom: null, calNote: '', kP: 26, kC: 41, kF: 33,
+      avoid: [], goals: {fatLoss: false, muscleGain: false, muscle: false, heart: false, skin: false, hashi: false}
+    };
+    run(ctx, "applyProfileSectionData('elena', " + JSON.stringify(newPayload) + ");");
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets').slice().sort()) === JSON.stringify(['gluten-free', 'vegetarian']),
+      'sync (new-shape payload, direction 2): a diets array with a garbage entry sanitizes down to the valid ones', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+  })();
+
+  // Direction 3: a payload carrying NEITHER `diets` nor `diet` (a hypothetical corrupted
+  // section) must be a safe no-op — PROF.elena.diets keeps its current value, not wiped.
+  (function(){
+    run(ctx, "PROF.elena.diets = ['pescatarian'];");
+    const barePayload = {
+      displayName: 'Elena', sex: 'female', dobY: 1997, dobM: 5, heightCm: 168, weightKg: 64, activity: 1.55,
+      calCustom: null, calNote: '', kP: 26, kC: 41, kF: 33,
+      avoid: [], goals: {fatLoss: false, muscleGain: false, muscle: false, heart: false, skin: false, hashi: false}
+      // no `diets`, no `diet`
+    };
+    run(ctx, "applyProfileSectionData('elena', " + JSON.stringify(barePayload) + ");");
+    assert(JSON.stringify(get(ctx, 'PROF.elena.diets')) === JSON.stringify(['pescatarian']),
+      'sync (payload missing BOTH diets and diet keys, direction 3): a safe no-op — the receiving diets array is left exactly as it was, not wiped', JSON.stringify(get(ctx, 'PROF.elena.diets')));
+  })();
+
+  // Outgoing shape contract: profileSectionData() (what THIS build sends) always emits
+  // `diets` (array), never a stray `diet` key — the other half of "never corrupts, in
+  // both directions" is that what we SEND must itself be well-shaped.
+  (function(){
+    run(ctx, "PROF.elena.diets = ['vegan', 'gluten-free'];");
+    const out = run(ctx, "profileSectionData('elena')");
+    assert(Array.isArray(out.diets) && JSON.stringify(out.diets.slice().sort()) === JSON.stringify(['gluten-free', 'vegan']),
+      'sync outgoing shape: profileSectionData() emits diets as an array matching PROF.elena.diets', JSON.stringify(out.diets));
+    assert(!Object.prototype.hasOwnProperty.call(out, 'diet'),
+      'sync outgoing shape: profileSectionData() never emits a legacy `diet` key (PERSIST_PROFILE_FIELDS no longer lists it)', JSON.stringify(Object.keys(out)));
+  })();
+
+  run(ctx, "PROF.elena = " + JSON.stringify(pristineElena) + ';');
+}
+
+// -------- (f)+(g)+(h): generated two-week plans per diet (zero violations; zero empty
+// slots for the well-covered diets), determinism with diets active, and shared-vs-solo
+// scoping --------
+function testDietGeneratedPlans(ctx){
+  const pristineElena = cloneJSON(get(ctx, 'PROF.elena'));
+  const pristinePartner = cloneJSON(get(ctx, 'PROF.partner'));
+  const pristineStyle = get(ctx, 'householdStyle');
+
+  function fortnight(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const week1 = call(ctx, 'ensureWeekPlan', []);
+    const nextMonday = call(ctx, 'nextMondayISO', []);
+    const week2 = call(ctx, 'ensureWeekPlan', [nextMonday]);
+    return {week1: week1, week2: week2};
+  }
+  function forEachEntry(plans, fn){
+    [plans.week1, plans.week2].forEach(function(plan){
+      plan.days.forEach(function(day, di){
+        Object.keys(day.meals).forEach(function(slot){
+          const m = day.meals[slot];
+          ['elena', 'partner'].forEach(function(person){
+            const entry = m && m[person];
+            if(entry) fn(entry, slot, person, di, plan);
+          });
+        });
+      });
+    });
+  }
+
+  // -------- (f) each single diet + a combo: zero violations always; zero empty slots for
+  // the well-covered diets. Vegan is the sole exception, verified empirically: the measured
+  // catalog (KNOWLEDGE-BASE.md's Diet preferences section — 7 breakfast/13 lunch/10 dinner/
+  // 7 snack non-occasional built-ins) is thin enough that a strict two-week household-wide
+  // vegan plan can legitimately exhaust the pool on its final day and fall back to the
+  // empty-pool guard rather than ever serving a non-compliant meal. That is the guard doing
+  // exactly its documented job (planner.js:emptyPoolPicks' doc), not a bug — this test
+  // still locks in the promise that must never break regardless of the guard's fire rate:
+  // nothing generated for a vegan household ever violates vegan. --------
+  const DIET_KEYS = get(ctx, 'DIET_KEYS');
+  const zeroEmptyCases = DIET_KEYS.filter(function(d){ return d !== 'vegan'; }).map(function(d){ return [d]; })
+    .concat([['vegetarian', 'gluten-free']]);
+
+  zeroEmptyCases.forEach(function(diets){
+    run(ctx, "PROF.elena.diets = " + JSON.stringify(diets) + "; PROF.partner.diets = " + JSON.stringify(diets) + "; PROF.elena.avoid = []; PROF.partner.avoid = []; householdStyle = 'balanced';");
+    const plans = fortnight();
+    let violations = 0, emptySlots = 0;
+    forEachEntry(plans, function(entry){
+      if(!entry.recipeId || entry.reason === 'no-candidates'){ emptySlots++; return; }
+      if(call(ctx, 'recipeViolatesDiet', [entry.recipeId, diets])) violations++;
+    });
+    assert(violations === 0, 'generated fortnight (' + diets.join('+') + '): zero recipes violate the active diet(s) across both weeks, every slot', 'violations=' + violations);
+    assert(plans.week1.emptyPoolCount === 0 && plans.week2.emptyPoolCount === 0 && emptySlots === 0,
+      'generated fortnight (' + diets.join('+') + '): zero empty ("no-candidates") slots across both weeks',
+      'week1.emptyPoolCount=' + plans.week1.emptyPoolCount + ' week2.emptyPoolCount=' + plans.week2.emptyPoolCount + ' emptySlots=' + emptySlots);
+  });
+
+  (function(){
+    run(ctx, "PROF.elena.diets = ['vegan']; PROF.partner.diets = ['vegan']; PROF.elena.avoid = []; PROF.partner.avoid = []; householdStyle = 'balanced';");
+    const plans = fortnight();
+    let violations = 0, emptySlots = 0;
+    forEachEntry(plans, function(entry){
+      if(!entry.recipeId || entry.reason === 'no-candidates'){ emptySlots++; return; }
+      if(call(ctx, 'recipeViolatesDiet', [entry.recipeId, ['vegan']])) violations++;
+    });
+    assert(violations === 0, 'generated fortnight (vegan): zero recipes violate vegan across both weeks, every slot filled or honestly marked empty', 'violations=' + violations);
+    pass('generated fortnight (vegan): catalog-thinness note — emptySlots=' + emptySlots + ' this run (0 is fine; >0 is the guard correctly refusing to serve a violation rather than a bug — see KNOWLEDGE-BASE.md)');
+  })();
+
+  // -------- (g) planner determinism still holds with diets active --------
+  (function(){
+    run(ctx, "PROF.elena.diets = ['vegetarian', 'gluten-free']; PROF.partner.diets = []; PROF.elena.avoid = []; PROF.partner.avoid = []; householdStyle = 'balanced';");
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const planA = call(ctx, 'ensureWeekPlan', []);
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const planB = call(ctx, 'ensureWeekPlan', []);
+    assert(JSON.stringify(planA) === JSON.stringify(planB),
+      'planner determinism with diets active: two independent generations for the same inputs (incl. active diets) are byte-identical', 'lenA=' + JSON.stringify(planA).length + ' lenB=' + JSON.stringify(planB).length);
+  })();
+
+  // -------- (h) a SHARED slot satisfies BOTH people's diets; a SOLO slot only needs that
+  // person's. Elena vegan, partner unrestricted; default SHARED (dinner shared, everything
+  // else solo — state.js:SHARED). --------
+  (function(){
+    run(ctx, "PROF.elena.diets = ['vegan']; PROF.partner.diets = []; PROF.elena.avoid = []; PROF.partner.avoid = []; householdStyle = 'balanced';");
+    const plans = fortnight();
+    let elenaSoloViolations = 0, partnerSoloViolations = 0, sharedViolations = 0, sharedFilled = 0;
+    [plans.week1, plans.week2].forEach(function(plan){
+      plan.days.forEach(function(day){
+        ['breakfast', 'lunch', 'snack'].forEach(function(slot){ // solo by default (SHARED)
+          const m = day.meals[slot];
+          if(m && m.elena && m.elena.recipeId && call(ctx, 'recipeViolatesDiet', [m.elena.recipeId, ['vegan']])) elenaSoloViolations++;
+          if(m && m.partner && m.partner.recipeId && call(ctx, 'recipeViolatesDiet', [m.partner.recipeId, ['vegan']])) partnerSoloViolations++;
+        });
+        const dm = day.meals.dinner; // shared by default (SHARED.dinner === true, state.js)
+        ['elena', 'partner'].forEach(function(person){
+          const e = dm && dm[person];
+          if(e && e.recipeId){
+            sharedFilled++;
+            if(call(ctx, 'recipeViolatesDiet', [e.recipeId, ['vegan']])) sharedViolations++;
+          }
+        });
+      });
+    });
+    assert(elenaSoloViolations === 0, "shared-vs-solo: elena's own SOLO slots (breakfast/lunch/snack) never violate her vegan diet", 'violations=' + elenaSoloViolations);
+    assert(sharedViolations === 0, "shared-vs-solo: the SHARED dinner slot never violates elena's vegan diet even though partner has no diet (union includes hers)", 'violations=' + sharedViolations + ' filled=' + sharedFilled);
+    assert(partnerSoloViolations > 0, "shared-vs-solo: partner's own SOLO slots are NOT filtered by elena's vegan diet — at least one across the fortnight actually contains an animal product, proving this is a real absence of filtering, not coincidence", 'violations=' + partnerSoloViolations);
+  })();
+
+  run(ctx, "PROF.elena = " + JSON.stringify(pristineElena) + "; PROF.partner = " + JSON.stringify(pristinePartner) + "; householdStyle = " + JSON.stringify(pristineStyle) + "; weekPlans = {}; weekPlan = null;");
+}
+
+/* ===================================================================
    Onboarding slot-targeting fix (2026-07-28)
 
    Regression coverage for the bug fixed in app.js/render-profile.js/index.html: onboarding
@@ -7353,7 +7893,7 @@ function testOnboardingSlotTargeting(){
     call(ctx, 'obSetSex', ['prefer-not']);
     setDobAndActivityViaFakeSelects(1990, 6, 3);
     call(ctx, 'obShow', [3]);
-    call(ctx, 'obSetDiet', ['vegan']);
+    call(ctx, 'obToggleDiet', ['vegan']);
     call(ctx, 'obShow', [4]);
     call(ctx, 'finishOnboarding', []);
 
@@ -7365,7 +7905,7 @@ function testOnboardingSlotTargeting(){
     assert(PROF.elena.sex === 'prefer-not', 'no-auth onboarding: sex lands on PROF.elena', PROF.elena.sex);
     assert(PROF.elena.dobY === 1990 && PROF.elena.dobM === 6, 'no-auth onboarding: DOB lands on PROF.elena', PROF.elena.dobY + '/' + PROF.elena.dobM);
     assert(PROF.elena.activity === ACTIVITY_LEVELS[3].f, 'no-auth onboarding: activity lands on PROF.elena', String(PROF.elena.activity));
-    assert(PROF.elena.diet === 'vegan', 'no-auth onboarding: diet lands on PROF.elena', PROF.elena.diet);
+    assert(JSON.stringify(PROF.elena.diets) === JSON.stringify(['vegan']), 'no-auth onboarding: diet lands on PROF.elena', JSON.stringify(PROF.elena.diets));
     assert(JSON.stringify(PROF.partner) === JSON.stringify(pristineProf.partner), 'no-auth onboarding: PROF.partner is byte-identical (untouched)', '');
     assert(get(ctx, 'currentProf') === 'elena', 'finishOnboarding (no-auth/solo): leaves currentProf on "elena"', get(ctx, 'currentProf'));
     assert(get(ctx, 'onboarded') === true, 'finishOnboarding: sets onboarded = true', String(get(ctx, 'onboarded')));
@@ -7392,7 +7932,7 @@ function testOnboardingSlotTargeting(){
     call(ctx, 'obSetSex', ['prefer-not']); // NOT 'male' — PROF.partner's own baked-in default sex
     setDobAndActivityViaFakeSelects(1994, 9, 3); // activity index 3, NOT 2 — PROF.elena's own default activity is index 2 (1.55); a write that landed on elena by mistake would misread as correct here otherwise
     call(ctx, 'obShow', [3]);
-    call(ctx, 'obSetDiet', ['pescatarian']);
+    call(ctx, 'obToggleDiet', ['pescatarian']);
     call(ctx, 'obShow', [4]);
     call(ctx, 'finishOnboarding', []);
 
@@ -7404,7 +7944,7 @@ function testOnboardingSlotTargeting(){
     assert(PROF.partner.sex === 'prefer-not', 'slot-2 onboarding: SEX lands on PROF.partner', PROF.partner.sex);
     assert(PROF.partner.dobY === 1994 && PROF.partner.dobM === 9, 'slot-2 onboarding: DOB lands on PROF.partner', PROF.partner.dobY + '/' + PROF.partner.dobM);
     assert(PROF.partner.activity === ACTIVITY_LEVELS[3].f, 'slot-2 onboarding: ACTIVITY lands on PROF.partner', String(PROF.partner.activity));
-    assert(PROF.partner.diet === 'pescatarian', 'slot-2 onboarding: DIET lands on PROF.partner', PROF.partner.diet);
+    assert(JSON.stringify(PROF.partner.diets) === JSON.stringify(['pescatarian']), 'slot-2 onboarding: DIET lands on PROF.partner', JSON.stringify(PROF.partner.diets));
     assert(JSON.stringify(PROF.elena) === JSON.stringify(pristineProf.elena),
       'slot-2 onboarding: PROF.elena (the household owner\'s slot) is byte-identical — the corruption bug this batch fixes', JSON.stringify(PROF.elena));
 
@@ -7621,6 +8161,13 @@ function main(){
   runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today and Log', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });
   runTest('no toast-only fake features remain (Water/Apple Health/Notifications/Calendar/duplicate Meal search)', function(){ testNoToastOnlyFakeFeaturesRemain(); });
   runTest('escaping helpers', function(){ testEscapingHelpers(ctx); });
+  runTest('diet preferences: per-diet exclude/permit matrix + plant-milk trap', function(){ testDietFilterSemantics(ctx); });
+  runTest('diet preferences: optionGroups any-variant conservatism', function(){ testDietOptionGroupsConservatism(ctx); });
+  runTest('diet preferences: multi-select combinations (vegetarian+gluten-free+lactose-intolerant)', function(){ testDietMultiSelectCombinations(ctx); });
+  runTest('diet preferences: toggleDiet()/DIET_EXCLUSIVE_GROUP collapse behavior', function(){ testDietToggleExclusiveGroupCollapse(ctx); });
+  runTest('diet preferences: loadState() migration from every legacy diet value + stale avoid cleanup', function(){ testDietLoadStateMigration(ctx); });
+  runTest('diet preferences: sync robustness (legacy/new-shape payloads, both directions)', function(){ testDietSyncRobustness(ctx); });
+  runTest('diet preferences: generated fortnight per diet (zero violations/empty slots), determinism, shared-vs-solo scoping', function(){ testDietGeneratedPlans(ctx); });
   runTest('onboarding slot-targeting fix (2026-07-28)', function(){ testOnboardingSlotTargeting(); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch

@@ -505,14 +505,48 @@ const AVOID_KEYS = ['lactose', 'gluten', 'shellfish', 'nuts', 'raw-onion', 'spic
 const AVOID_LABELS = {lactose: 'Lactose', gluten: 'Gluten', shellfish: 'Shellfish', nuts: 'Nuts', 'raw-onion': 'Raw onion', spicy: 'Spicy'};
 function avoidLabel(key){ return AVOID_LABELS[key] || capitalizeFirst(key); }
 
-// Per-person diet preference (task D4): none / vegan / vegetarian / pescatarian / gluten-free / lactose-intolerant.
-// Vegan and vegetarian both filter to 'veggie' recipes only (the recipe DB doesn't yet
-// distinguish the two). Pescatarian is a mock — no fish/meat tag exists yet, so it allows
-// all recipes. Gluten-free filters out recipes with 'gluten' in their avoid list.
-// Lactose-intolerant adds 'lactose' to avoid.
-const DIET_KEYS = ['none', 'vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'lactose-intolerant'];
-const DIET_LABELS = {none: 'None', vegan: 'Vegan', vegetarian: 'Vegetarian', pescatarian: 'Pescatarian', 'gluten-free': 'Gluten-free', 'lactose-intolerant': 'Lactose-intolerant'};
+/* ===================================================================
+   Per-person diet preferences (multi-select, replacing task D4's single-string mock).
+
+   PROF[key].diets is an ARRAY of zero or more of DIET_KEYS — a person can be, say,
+   lactose-intolerant AND vegetarian at once. Empty array = "no restriction" (the old
+   'none' value never appears in the array itself; it's a UI-only pseudo-choice — see
+   NONE_DIET_KEY / render-profile.js:renderDietEditor()).
+
+   DIET_EXCLUSIVE_GROUP (vegan/vegetarian/pescatarian) is a strict hierarchy — vegan's
+   rules are a superset of vegetarian's, which are a superset of pescatarian's (see
+   planner.js:recipeViolatesDiet) — so storing more than one of the three is meaningless
+   redundancy, never a materially different filter. Normalization decision (see
+   normalizeDietsArray below): rather than leave the redundant combination in place,
+   collapse it down to the single STRICTEST member. gluten-free and lactose-intolerant
+   are independent axes (not part of the hierarchy) and combine freely with anything.
+   =================================================================== */
+const NONE_DIET_KEY = 'none';
+const DIET_KEYS = ['vegan', 'vegetarian', 'pescatarian', 'gluten-free', 'lactose-intolerant'];
+const DIET_LABELS = {none: 'No restriction', vegan: 'Vegan', vegetarian: 'Vegetarian', pescatarian: 'Pescatarian', 'gluten-free': 'Gluten-free', 'lactose-intolerant': 'Lactose-intolerant'};
 function dietLabel(key){ return DIET_LABELS[key] || capitalizeFirst(key); }
+// Strictest-first: vegan implies vegetarian implies pescatarian's allowances.
+const DIET_EXCLUSIVE_GROUP = ['vegan', 'vegetarian', 'pescatarian'];
+
+// Accepts the CURRENT array shape, a LEGACY single string (task D4's pre-multi-select
+// `diet` field — including its 'none' sentinel), or garbage, and always returns a clean,
+// deduplicated, normalized array: unknown keys dropped, non-array/non-string coerced to
+// [], and the vegan/vegetarian/pescatarian trio collapsed to its strictest member (see
+// the doc block above). Used by state.js:loadState(), js/sync.js:applyProfileSectionData
+// (old-build sync ingest) and render-profile.js/app.js's toggleDiet() — the one function
+// every diets-array write funnels through, so a bad value can never stick anywhere.
+function normalizeDietsArray(v){
+  const arr = Array.isArray(v) ? v : (typeof v === 'string' ? [v] : []);
+  const seen = {};
+  arr.forEach(function(d){
+    if(typeof d === 'string' && d !== NONE_DIET_KEY && DIET_KEYS.indexOf(d) !== -1) seen[d] = true;
+  });
+  const exclusiveHit = DIET_EXCLUSIVE_GROUP.filter(function(d){ return seen[d]; });
+  if(exclusiveHit.length > 1){
+    exclusiveHit.slice(1).forEach(function(d){ delete seen[d]; }); // keep only the strictest (first)
+  }
+  return DIET_KEYS.filter(function(d){ return seen[d]; }); // stable, deterministic order
+}
 
 // Per-profile goal checklist (task B1 — fixes the bug where unchecking "Gentle fat
 // loss" did nothing and Andrea saw Elena's fat-loss goal). Single copy source for
@@ -572,7 +606,7 @@ const PROF = {
   elena:   {seg:DISPLAY_NAME_DEFAULTS.elena, av:avatarInitial(DISPLAY_NAME_DEFAULTS.elena), displayName:DISPLAY_NAME_DEFAULTS.elena,
             sex:'female', dobY:1997, dobM:5, heightCm:168, weightKg:64,
             activity:1.55,
-            diet:'none',
+            diets:[],
             calCustom:null, calNote:'',
             coachT:'Today leans thyroid-friendly 🦋', hashi:false,
             // goals (task B1/B2): source of truth for goalAdj/goalName/goalTag, all derived
@@ -589,7 +623,7 @@ const PROF = {
   partner: {seg:DISPLAY_NAME_DEFAULTS.partner, av:avatarInitial(DISPLAY_NAME_DEFAULTS.partner), displayName:DISPLAY_NAME_DEFAULTS.partner,
             sex:'male', dobY:1995, dobM:3, heightCm:181, weightKg:78,
             activity:1.375,
-            diet:'none',
+            diets:[],
             calCustom:null, calNote:'',
             coachT:'Today is built for muscle 💪', hashi:false,
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
@@ -844,7 +878,17 @@ function todayISO(){
 // verbatim by js/sync.js's profileSectionData()/applyProfileSectionData(), so adding
 // `displayName` here is the ENTIRE change needed to make a rename persist AND sync
 // exactly like weightKg/calNote already do — no separate sync-side code.
-const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'diet', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'avoid', 'goals'];
+// ORDER MATTERS: 'avoid' must be listed (and therefore processed by the loadState()/
+// applyProfileSectionData() forEach loops below) BEFORE 'diets'. Both loops' 'diets'
+// branch does a one-shot cleanup that strips a stale 'lactose' entry left behind by the
+// retired pre-multi-diet avoid-list hack (see loadState()'s doc comment on that branch) by
+// splicing it out of `p.avoid` — if `avoid` hasn't been applied yet at that point, the
+// splice hits the WRONG array (the pre-merge/default one) and is immediately clobbered
+// when the loop later reaches 'avoid' and overwrites p.avoid from the saved/incoming data,
+// silently undoing the cleanup. Bug found and fixed while adding the multi-select diets
+// regression tests (tools/check.js testDietSyncLegacyPayloadAndLactoseCleanup /
+// testDietLoadStateMigration) — verify with those before ever reordering this again.
+const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'avoid', 'diets', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'goals'];
 
 function buildSnapshot(){
   const profiles = {};
@@ -852,6 +896,7 @@ function buildSnapshot(){
     const p = PROF[key], out = {};
     PERSIST_PROFILE_FIELDS.forEach(function(f){
       out[f] = (f === 'avoid') ? (p.avoid || []).slice()
+        : (f === 'diets') ? (p.diets || []).slice()
         : (f === 'goals') ? Object.assign({}, p.goals)
         : p[f];
     });
@@ -1014,8 +1059,11 @@ function loadState(){
   // rather than ever showing "" or `undefined`.
   const PROFILE_FIELD_TYPE = {
     displayName: 'string', sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
-    activity: 'number', diet: 'string', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
+    activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
     avoid: 'string[]', goals: 'object'
+    // 'diets' deliberately has no entry here — it needs BOTH the current array shape and
+    // a legacy single-string shape (task D4's old `diet` field), so it's special-cased
+    // below rather than fitting this table's one-type-per-field shape.
   };
   if(saved.profiles && typeof saved.profiles === 'object'){
     Object.keys(PROF).forEach(function(key){
@@ -1023,6 +1071,32 @@ function loadState(){
       if(!sp || typeof sp !== 'object') return;
       const p = PROF[key];
       PERSIST_PROFILE_FIELDS.forEach(function(f){
+        // diets (multi-select migration): a NEW-shape store carries `diets` (array,
+        // validated/normalized regardless of what garbage it contains — normalizeDietsArray
+        // drops unknown keys and coerces non-arrays to []). An install saved before this
+        // batch instead carries the OLD single-string `diet` field (still 'diet', never
+        // renamed) — migrated the same way (normalizeDietsArray accepts a bare string).
+        // One-shot cleanup: commitDiet() (pre-multi-diet render-profile.js) used to push
+        // 'lactose' onto this person's OWN avoid list whenever their single diet was
+        // exactly 'lactose-intolerant', and never removed it even after the diet changed.
+        // That mechanism is retired (lactose-intolerant is now enforced directly via
+        // planner.js:recipeMayContainDairy(), not the avoid list) — strip the stranded
+        // entry, but ONLY when this exact migration proves it came from the hack (the
+        // just-migrated legacy diet was 'lactose-intolerant'); a person who separately
+        // chose "lactose" from the real "Foods to avoid" editor while on a DIFFERENT diet
+        // is untouched, since nothing here can (or should) tell that apart.
+        if(f === 'diets'){
+          const hasNewShape = Array.isArray(sp.diets);
+          const legacyDietStr = (!hasNewShape && typeof sp.diet === 'string') ? sp.diet : null;
+          if(hasNewShape || legacyDietStr !== null){
+            p.diets = normalizeDietsArray(hasNewShape ? sp.diets : legacyDietStr);
+          }
+          if(legacyDietStr === 'lactose-intolerant' && Array.isArray(p.avoid)){
+            const idx = p.avoid.indexOf('lactose');
+            if(idx !== -1) p.avoid.splice(idx, 1);
+          }
+          return;
+        }
         if(!Object.prototype.hasOwnProperty.call(sp, f)) return;
         const v = sp[f], want = PROFILE_FIELD_TYPE[f];
         if(want === 'object'){
@@ -1050,7 +1124,6 @@ function loadState(){
           : want === 'string[]' ? (Array.isArray(v) && v.every(function(x){ return typeof x === 'string'; }))
           : (typeof v === want);
         if(ok){
-          if(f === 'diet' && DIET_KEYS.indexOf(v) === -1) return;
           p[f] = want === 'string[]' ? v.slice() : v;
         }
       });

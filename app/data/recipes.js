@@ -206,6 +206,73 @@ const RECIPES_DB = {
     avoid: []
   },
 
+  /* ================= VEGAN breakfasts (multi-select diets batch) =================
+     Measured gap: with the real vegan filter (planner.js:recipeViolatesDiet — no meat,
+     poultry, fish, dairy, eggs OR honey), only 'chiapudding' above qualified for
+     breakfast. These six bring the vegan breakfast pool to 7 (target: >=6), all
+     'evergreen' season so they count toward every season, Mediterranean-leaning
+     ingredients, kcal computed from data/foods.js ingredients per the ground rule. */
+  'soy-yogurt-berry-bowl': {
+    title: 'Soy yogurt & berry bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 5,
+    ingredients: [['soy-yogurt', 180], ['mixed-berries', 80], ['chia-seeds', 10], ['walnuts', 12], ['maple-syrup', 10]],
+    toTaste: [],
+    steps: ['Spoon soy yogurt into a bowl.', 'Top with berries, chia seeds and walnuts.', 'Finish with a drizzle of maple syrup.'],
+    tags: ['lowGI', 'veggie', 'omega3'],
+    avoid: ['nuts']
+  },
+  'tofu-scramble-spinach-tomato': {
+    title: 'Tofu scramble, spinach & tomatoes', emoji: '🍳', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 12,
+    ingredients: [['tofu', 150], ['spinach', 60], ['cherry-tomatoes', 80], ['olive-oil', 8], ['rye-bread', 40]],
+    toTaste: ['turmeric', 'black pepper'],
+    steps: ['Crumble the tofu into a hot pan with olive oil.', 'Add spinach and cherry tomatoes, cook 4-5 min until the spinach wilts.', 'Season and serve with the rye toast.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten']
+  },
+  'overnight-oats-banana-peanut-butter': {
+    title: 'Overnight oats, banana & peanut butter', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced'], time: 5,
+    ingredients: [['oats', 45], ['soy-milk', 150], ['bananas', 80], ['peanut-butter', 15], ['chia-seeds', 8]],
+    toTaste: ['cinnamon'],
+    steps: ['Stir oats, soy milk and chia seeds together and chill overnight (or at least 20 min).', 'Stir again before serving to loosen the texture.', 'Top with sliced banana and a spoon of peanut butter.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten']
+  },
+  'coconut-chia-pudding-peach': {
+    title: 'Coconut chia pudding, peach', emoji: '🍮', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['lowcarb'], time: 5,
+    ingredients: [['chia-seeds', 20], ['coconut-milk', 120], ['peaches', 100], ['maple-syrup', 8]],
+    toTaste: ['vanilla'],
+    steps: ['Stir chia seeds into coconut milk and chill overnight.', 'Stir again before serving to loosen the texture.', 'Top with sliced peach and a drizzle of maple syrup.'],
+    tags: ['lowGI', 'veggie', 'omega3'],
+    avoid: []
+  },
+  'quinoa-breakfast-bowl-apple-walnut': {
+    title: 'Quinoa breakfast bowl, apple & walnuts', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced'], time: 15,
+    ingredients: [['quinoa-dry', 45], ['soy-milk', 150], ['apples', 100], ['walnuts', 15], ['maple-syrup', 8]],
+    toTaste: ['cinnamon'],
+    steps: ['Simmer the quinoa in the soy milk until soft and creamy, about 12 min.', 'Dice the apple.', 'Top the quinoa with apple, walnuts and a drizzle of maple syrup.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['nuts']
+  },
+  'avocado-tomato-toast': {
+    title: 'Avocado & tomato toast', emoji: '🥑', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 8,
+    ingredients: [['white-bread', 70], ['avocado', 80], ['cherry-tomatoes', 60], ['lemon-juice', 5], ['olive-oil', 5]],
+    toTaste: ['black pepper', 'chilli flakes'],
+    steps: ['Toast the bread.', 'Mash the avocado with lemon juice and olive oil.', 'Spread over the toast and top with halved cherry tomatoes.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: ['gluten']
+  },
+
   /* ================= LUNCH (10) ================= */
 
   lentil: {
@@ -1262,6 +1329,42 @@ const RECIPES_DB = {
     steps: ['Cube the tofu.', 'Grate or stick-cut the carrots.', 'Toss together with a little soy sauce and ginger.'],
     tags: ['veggie', 'muscle'],
     avoid: []
+  },
+
+  /* ================= VEGAN snacks (multi-select diets batch) =================
+     Measured gap: 4 vegan-viable snacks (carrots-over-hummus, brazil-nuts-apple,
+     hummus-veg-sticks, this-file's tofu-carrot-snack above). These three bring the pool
+     to 7 (target: >=6). */
+  'roasted-chickpeas-snack': {
+    title: 'Snack: Roasted chickpeas', emoji: '🫘', slot: 'snack', role: 'side',
+    season: 'evergreen',
+    slots: ['snack', 'side'],
+    styles: ['balanced', 'lowcarb', 'highprotein'], time: 8,
+    ingredients: [['chickpeas', 90], ['olive-oil', 8]],
+    toTaste: ['paprika', 'black pepper'],
+    steps: ['Pat the chickpeas dry.', 'Toss with olive oil, paprika and black pepper.', 'Roast or pan-fry until golden, about 6 min.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+  'apple-almonds-snack': {
+    title: 'Snack: Apple & almonds', emoji: '🍎', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 2,
+    ingredients: [['apples', 150], ['almonds', 20]],
+    toTaste: [],
+    steps: ['Wash and slice the apple.', 'Portion the almonds.', 'Serve together.'],
+    tags: ['veggie', 'lowGI'],
+    avoid: ['nuts']
+  },
+  'dark-chocolate-walnuts-snack': {
+    title: 'Snack: Dark chocolate & walnuts', emoji: '🍫', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'lowcarb'], time: 1,
+    ingredients: [['dark-chocolate-85', 20], ['walnuts', 20]],
+    toTaste: [],
+    steps: ['Break the chocolate into a few squares.', 'Portion the walnuts.', 'Serve together.'],
+    tags: ['veggie', 'highFiber', 'omega3'],
+    avoid: ['nuts']
   },
 
   'gelato-cioccolato': {

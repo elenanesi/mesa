@@ -178,21 +178,63 @@ function commitActivity(prof, i){
   applyProf(prof);
 }
 
-function commitDiet(prof, diet){
-  if(!PROF[prof]) return;
-  if(DIET_KEYS.indexOf(diet) === -1) return;
-  PROF[prof].diet = diet;
-  // Lactose-intolerant: add lactose to avoid list if not already there
-  if(diet === 'lactose-intolerant'){
-    const avoid = PROF[prof].avoid || [];
-    if(avoid.indexOf('lactose') === -1){
-      avoid.push('lactose');
-      PROF[prof].avoid = avoid;
-    }
-  } else if(diet === 'vegan'){
-    // Vegan: no special avoid setup (filter happens in planner.js)
+/* ===================================================================
+   Multi-select diet editor (replaces task D4's single-string commitDiet — see
+   state.js's doc block above DIET_KEYS/DIET_EXCLUSIVE_GROUP/normalizeDietsArray for the
+   full data-model rationale).
+
+   toggleDiet() is the ONE function every diets-array write funnels through — the Profile
+   screen's real editor (renderDietEditor below) and the onboarding wizard
+   (app.js:obToggleDiet, which resolves its own target slot first via obTargetSlot()) both
+   call it directly. DIET_EXCLUSIVE_GROUP (vegan/vegetarian/pescatarian) behaves like a
+   segmented control within itself — picking one replaces whichever other member of the
+   trio was active, since storing more than one is pure redundancy (vegan's rules already
+   subsume vegetarian's and pescatarian's — see planner.js:recipeViolatesDiet). gluten-free
+   and lactose-intolerant are independent toggles that combine with anything.
+   key === NONE_DIET_KEY ('No restriction') clears every diet at once; it's a UI-only
+   convenience, never itself a stored diets[] entry.
+
+   applyProf() re-runs ensureWeekPlan() — diets are part of computePlanSignature()
+   (planner.js) — so a diet change re-filters future, non-logged/non-pinned plan days
+   immediately, exactly like an avoid-list edit already does.
+   =================================================================== */
+function toggleDiet(profKey, key){
+  const p = PROF[profKey];
+  if(!p) return;
+  let diets = (p.diets || []).slice();
+  if(key === NONE_DIET_KEY){
+    diets = [];
+  } else if(DIET_EXCLUSIVE_GROUP.indexOf(key) !== -1){
+    const has = diets.indexOf(key) !== -1;
+    diets = diets.filter(function(d){ return DIET_EXCLUSIVE_GROUP.indexOf(d) === -1; });
+    if(!has) diets.push(key);
+  } else if(DIET_KEYS.indexOf(key) !== -1){
+    const idx = diets.indexOf(key);
+    if(idx === -1) diets.push(key); else diets.splice(idx, 1);
+  } else {
+    return; // unknown key — no-op
   }
-  persist();
+  p.diets = normalizeDietsArray(diets);
+  applyProf(profKey);
+}
+
+// Profile → "Diet" section: same .opt/.ck option-row convention as renderGoalsEditor()/
+// renderAvoidEditor() elsewhere in this file — tap a row to toggle it. Re-rendered by
+// applyProf() (like renderGoalsEditor/renderAvoidEditor) so switching "Whose plan" or
+// toggling a diet always repaints whichever profile is now active.
+const DIET_EDITOR_ORDER = [NONE_DIET_KEY].concat(DIET_KEYS);
+function renderDietEditor(){
+  const key = currentProf;
+  const p = PROF[key];
+  const el = document.getElementById('dietList');
+  if(!el) return; // Profile screen markup not present (shouldn't happen, but don't crash)
+  const diets = p.diets || [];
+  el.innerHTML = DIET_EDITOR_ORDER.map(function(dk){
+    const on = dk === NONE_DIET_KEY ? diets.length === 0 : diets.indexOf(dk) !== -1;
+    return '<div class="opt' + (on ? ' sel' : '') + '" onclick="toggleDiet(\'' + key + '\',\'' + dk + '\')">'
+      + '<div class="ck">' + (on ? '✓' : '') + '</div>'
+      + '<div><div class="ot">' + dietLabel(dk) + '</div></div></div>';
+  }).join('');
 }
 
 // Manual calorie override, ±50 per tap, clamped to a sane band with a friendly note.

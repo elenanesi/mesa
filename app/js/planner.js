@@ -133,23 +133,60 @@ function recipeProteinKind(recipeId, opts){
   return proteinKindForIngredientIds(recipeEffectiveIngredients(r, opts).map(function(ing){ return ing[0]; }));
 }
 
-// Could this recipe carry animal protein under ANY of its optionGroups variants? A meatless
-// day has to ask this rather than recipeProteinKind(), because the variant is rotated
-// (chosenOptsForRecipe) only AFTER the candidate pool has been filtered — so judging by the
-// default choice let a meatless day pick 'pasta', whose default condiment is tomato & basil
-// but whose rotation landed on tuna & olives. Deliberately conservative: it also excludes a
-// pasta that would have been fine with the tomato variant, which is the right trade when the
-// alternative is silently breaking the day's one hard nutritional promise.
-function recipeMayContainAnimalProtein(id){
-  const r = RECIPES_DB[id];
-  if(!r) return false;
-  const ids = (r.ingredients || []).map(function(ing){ return ing[0]; });
-  (r.optionGroups || []).forEach(function(g){
+// Every food id this recipe could possibly contain, across the base ingredients AND every
+// optionGroups choice of every group — used whenever a filter has to be conservative about
+// a recipe whose variant hasn't been rotated/chosen yet (see the doc above
+// recipeMayContainAnimalProtein, which this factors out of). Diet filtering (multi-select
+// diets batch, recipeMayContainDairy/Eggs/Honey/MeatOrPoultry below) needs the exact same
+// "could this contain X under ANY variant" conservatism, for the exact same reason: the
+// candidate pool is filtered BEFORE chosenOptsForRecipe() rotates which choice actually
+// gets planned.
+function recipeAllPossibleIngredientIds(recipe){
+  const ids = (recipe.ingredients || []).map(function(ing){ return ing[0]; });
+  (recipe.optionGroups || []).forEach(function(g){
     (g.choices || []).forEach(function(c){
       (c.ingredients || []).forEach(function(ing){ ids.push(ing[0]); });
     });
   });
-  return proteinKindForIngredientIds(ids) !== null;
+  return ids;
+}
+
+// Could this recipe carry animal protein (red meat, poultry OR fish) under ANY of its
+// optionGroups variants? A meatless day has to ask this rather than recipeProteinKind(),
+// because the variant is rotated (chosenOptsForRecipe) only AFTER the candidate pool has
+// been filtered — so judging by the default choice let a meatless day pick 'pasta', whose
+// default condiment is tomato & basil but whose rotation landed on tuna & olives.
+// Deliberately conservative: it also excludes a pasta that would have been fine with the
+// tomato variant, which is the right trade when the alternative is silently breaking the
+// day's one hard nutritional promise (and, since the multi-select diets batch, the same
+// trade recipeViolatesDiet's vegan/vegetarian check below makes for the same reason).
+function recipeMayContainAnimalProtein(id){
+  const r = RECIPES_DB[id];
+  if(!r) return false;
+  return proteinKindForIngredientIds(recipeAllPossibleIngredientIds(r)) !== null;
+}
+// Pescatarian-specific: red meat or poultry (fish is fine for a pescatarian), same
+// any-variant conservatism as recipeMayContainAnimalProtein above.
+function recipeMayContainMeatOrPoultry(id){
+  const r = RECIPES_DB[id];
+  if(!r || typeof RED_MEAT_FOOD_IDS === 'undefined') return false;
+  const ids = recipeAllPossibleIngredientIds(r);
+  return ids.some(function(i){ return RED_MEAT_FOOD_IDS.indexOf(i) !== -1 || POULTRY_FOOD_IDS.indexOf(i) !== -1; });
+}
+function recipeMayContainDairy(id){
+  const r = RECIPES_DB[id];
+  if(!r || typeof DAIRY_FOOD_IDS === 'undefined') return false;
+  return recipeAllPossibleIngredientIds(r).some(function(i){ return DAIRY_FOOD_IDS.indexOf(i) !== -1; });
+}
+function recipeMayContainEggs(id){
+  const r = RECIPES_DB[id];
+  if(!r || typeof EGG_FOOD_IDS === 'undefined') return false;
+  return recipeAllPossibleIngredientIds(r).some(function(i){ return EGG_FOOD_IDS.indexOf(i) !== -1; });
+}
+function recipeMayContainHoney(id){
+  const r = RECIPES_DB[id];
+  if(!r || typeof HONEY_FOOD_IDS === 'undefined') return false;
+  return recipeAllPossibleIngredientIds(r).some(function(i){ return HONEY_FOOD_IDS.indexOf(i) !== -1; });
 }
 // "Fish/meat dinners that are not salads or pasta" (user, 2026-07-22): a fish- or meat-based,
 // PROTEIN-FORWARD dish (more kcal from protein than carbs) belongs at DINNER, not lunch —
@@ -233,6 +270,18 @@ let proteinRuleRelaxations = 0;
 // rather than per pick, so it stays quiet while remaining actionable: it is the signal for
 // which pools VARIETY-plan.md P3 needs to widen.
 let weeklyCapRelaxations = 0;
+
+// Empty-pool guard (task 5, multi-select diets batch): counts how many individual picks
+// during one generateWeek() came up with NO candidate at all (pickSharedMeal/pickSoloMeal's
+// `if(!best)` branches) — an exotic filter combination (e.g. vegan + gluten-free in a thin
+// season) can still starve a slot even with a widened catalog. Unlike every relaxation rule
+// above, an empty pool truly cannot be filled — there is nothing to relax to. Reset per
+// generateWeek() call and copied onto the returned plan as `emptyPoolCount` so callers (and
+// tests) can detect a degraded plan without re-deriving it; the render layer shows an honest
+// "no meal fits your filters" card for any slot marked reason:'no-candidates' rather than a
+// silent blank, so the user learns their filters are too tight instead of getting a plan
+// that looks broken for no visible reason.
+let emptyPoolPicks = 0;
 
 function applyWeeklyCapFilter(pool, history, persons){
   const under = pool.filter(function(id){
@@ -330,22 +379,43 @@ function recipeHitsAvoid(recipe, avoidList){
   return recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; });
 }
 
-// Task D4: diet preference filter. Returns true if recipe violates the diet.
-// vegan / vegetarian: only recipes with 'veggie' tag are allowed (the recipe DB doesn't
-// distinguish vegan from vegetarian yet, so both use the same 'veggie' filter).
-// pescatarian: mock — there's no 'fish'/'meat' tag system yet, so this doesn't filter
-// anything. TODO: once recipes carry a fish/meat tag, exclude meat (non-fish) recipes.
-// gluten-free: recipe must NOT have 'gluten' in its avoid list.
-// lactose-intolerant: lactose already added to avoid list in commitDiet, so avoid check handles it.
-function recipeViolatesDiet(recipe, dietList){
-  if(!dietList || !dietList.length) return false;
-  // If ANY person has a vegan or vegetarian preference, recipe must have 'veggie' tag
-  const hasVegan = dietList.indexOf('vegan') !== -1 || dietList.indexOf('vegetarian') !== -1;
-  if(hasVegan && !hasTag(recipe, 'veggie')) return true;
-  // If ANY person is gluten-free, recipe must not contain gluten
-  const hasGlutenFree = dietList.indexOf('gluten-free') !== -1;
-  if(hasGlutenFree && recipe.avoid && recipe.avoid.indexOf('gluten') !== -1) return true;
+// Real diet-filter semantics (multi-select diets batch, replacing the D4 mock — see
+// KNOWLEDGE-BASE.md for the full rationale). `id` (not the recipe object) so this can
+// reach the id-based recipeMayContain*() helpers above, which all judge a recipe by its
+// EFFECTIVE ingredients across EVERY optionGroups variant (recipeAllPossibleIngredientIds)
+// — the same conservative "could violate under ANY variant" approach
+// recipeMayContainAnimalProtein already used pre-this-batch, for the same reason: the
+// variant is only rotated (chosenOptsForRecipe) AFTER the candidate pool is filtered.
+// `dietList` is the UNION of every diet active among the person(s) this pool is for
+// (unionDiets below) — a SHARED slot must satisfy everyone, so each check below is
+// independent or-logic: the recipe violates if ANY diet in the list rules it out.
+//   vegan:              no meat, poultry, fish, dairy, eggs or honey
+//   vegetarian:         no meat, poultry or fish (eggs and dairy allowed)
+//   pescatarian:        no meat or poultry (fish allowed)
+//   gluten-free:        recipe must not carry 'gluten' in its own (hand-authored) avoid list
+//   lactose-intolerant: no dairy (recipeMayContainDairy — NOT the old avoid-list hack,
+//                       which is retired; see state.js:loadState()'s migration doc)
+function recipeViolatesDiet(id, dietList){
+  const recipe = RECIPES_DB[id];
+  if(!recipe || !dietList || !dietList.length) return false;
+  if((dietList.indexOf('vegan') !== -1 || dietList.indexOf('vegetarian') !== -1) && recipeMayContainAnimalProtein(id)) return true;
+  if(dietList.indexOf('pescatarian') !== -1 && recipeMayContainMeatOrPoultry(id)) return true;
+  if(dietList.indexOf('vegan') !== -1 && (recipeMayContainDairy(id) || recipeMayContainEggs(id) || recipeMayContainHoney(id))) return true;
+  if(dietList.indexOf('gluten-free') !== -1 && recipe.avoid && recipe.avoid.indexOf('gluten') !== -1) return true;
+  if(dietList.indexOf('lactose-intolerant') !== -1 && recipeMayContainDairy(id)) return true;
   return false;
+}
+// The union of every diet active among `persons` — a SHARED slot's candidate pool must
+// satisfy BOTH people at once (unlike avoid-lists, which unionAvoid() already combines the
+// same way), a SOLO slot's pool just the one. Every candidatesFor()/sidePoolFor() call site
+// already passes the right `persons` for its slot (see planner.js callers of both) — this
+// is the one place that turns "which people" into "which diets to enforce".
+function unionDiets(persons){
+  const set = {};
+  (persons || []).forEach(function(p){
+    ((PROF[p] && PROF[p].diets) || []).forEach(function(d){ set[d] = true; });
+  });
+  return Object.keys(set);
 }
 // PERSONAL-PREFS: recipePrefs (state.js) is now {elena:{},partner:{}} — reads always go
 // through one specific person. recipeFavoritedByAny/recipeDownedByAny are the "either
@@ -363,12 +433,11 @@ function recipeDownedByAny(id, persons){
 // who this candidate pool is FOR — a shared slot passes both, a solo slot passes just the
 // one person — used only for the down-vote filter below (opts.includeThumbsDown bypasses
 // it regardless of persons, same as before this batch).
-// Task D4: also filters by diet preferences — if any person has a vegan diet, only 'veggie'
-// recipes are included. Lactose-intolerant is already handled by avoid list (added in commitDiet).
+// Also filters by diet preferences — see recipeViolatesDiet()'s doc above for the exact
+// per-diet semantics and unionDiets() for how multiple people's diets combine.
 function candidatesFor(slot, styleKey, avoidList, persons, opts){
   opts = opts || {};
-  // Task D4: build diet list from persons' preferences
-  const dietList = (persons || []).map(function(p){ return (PROF[p] && PROF[p].diet) || 'none'; }).filter(function(d){ return d !== 'none'; });
+  const dietList = unionDiets(persons);
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return !r.occasional
@@ -380,7 +449,7 @@ function candidatesFor(slot, styleKey, avoidList, persons, opts){
       && !(slot === 'lunch' && recipeSlotList(r).indexOf('dinner') !== -1 && isDinnerOnlyProteinMain(id))
       && r.styles.indexOf(styleKey) !== -1
       && !recipeHitsAvoid(r, avoidList)
-      && !recipeViolatesDiet(r, dietList)
+      && !recipeViolatesDiet(id, dietList)
       && recipeOptionsViable(r, avoidList);
   }).sort();
 }
@@ -400,10 +469,9 @@ function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the re
 // B2 tagging handoff). Sides need not carry the current slot in `slots` — a side is a side
 // at lunch or dinner regardless of its own slot metadata (e.g. a side tagged only for
 // 'side'/'snack' can still compose into a lunch or dinner meal). Sorted id order.
-// Task D4: also filters by diet preferences.
+// Also filters by diet preferences — same unionDiets()/recipeViolatesDiet() as candidatesFor().
 function sidePoolFor(avoidList, persons){
-  // Task D4: build diet list from persons' preferences
-  const dietList = (persons || []).map(function(p){ return (PROF[p] && PROF[p].diet) || 'none'; }).filter(function(d){ return d !== 'none'; });
+  const dietList = unionDiets(persons);
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return r.role === 'side'
@@ -411,7 +479,7 @@ function sidePoolFor(avoidList, persons){
       && !recipeDownedByAny(id, persons)
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && !recipeHitsAvoid(r, avoidList)
-      && !recipeViolatesDiet(r, dietList);
+      && !recipeViolatesDiet(id, dietList);
   }).sort();
 }
 
@@ -643,7 +711,13 @@ function planEntryView(entry, shared){
     fiber: nut.fiber,
     sugars: nut.sugars,
     freeSugars: nut.freeSugars,
-    shared: !!shared
+    shared: !!shared,
+    // Empty-pool guard (task 5): 'no-candidates' when this cell is a genuinely-starved
+    // pick (pickSharedMeal/pickSoloMeal found zero legal candidates), undefined otherwise
+    // — including for a solo household's intentionally-unused partner cell
+    // (emptyPlanEntry()), which never sets this field. Read by render-today.js/
+    // render-week.js to show an honest message instead of a blank/broken-looking slot.
+    reason: entry && entry.reason
   };
 }
 
@@ -1515,7 +1589,7 @@ function generateWeek(seed){
     partner: (PROF.partner.avoid || []).slice()
   };
 
-  weeklyCapRelaxations = 0; proteinRuleRelaxations = 0; // VARIETY-plan.md P2 observability, reported at the end of this function
+  weeklyCapRelaxations = 0; proteinRuleRelaxations = 0; emptyPoolPicks = 0; // observability, reported at the end of this function
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
   // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
@@ -1638,7 +1712,15 @@ function generateWeek(seed){
       weeklyCapRelaxations + 'x and the protein-balance rule ' + proteinRuleRelaxations +
       'x — a candidate pool is too thin to fill every slot within target.');
   }
-  return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days};
+  // Empty-pool guard (task 5): a non-zero count means at least one slot had NO legal
+  // candidate at all (typically an exotic diet/avoid combination in a thin season) —
+  // exposed on the plan itself so callers/tests can detect a degraded plan without
+  // re-scanning every day/slot for reason:'no-candidates' cells.
+  if(emptyPoolPicks > 0){
+    console.warn('Mesa planner: generating ' + weekStartDate + ' left ' + emptyPoolPicks +
+      ' slot(s) with NO candidate at all — likely diet/avoid filters too strict for this catalog/season.');
+  }
+  return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days, emptyPoolCount: emptyPoolPicks};
 }
 
 // task B2: builds every composed breakfast candidate for ONE role:'main' recipe — the
@@ -1817,8 +1899,14 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     if(better) best = Object.assign({total: total}, c);
   });
   if(!best){
-    console.error('pickSharedMeal: empty candidate pool for slot="' + slot + '" style="' + householdStyle + '" — check RECIPES_DB coverage for this avoid-list combination.');
-    return {shared: true, recipeId: null, elena: {recipeId: null, portion: 1, kcal: 0, protein: 0}, partner: {recipeId: null, portion: 1, kcal: 0, protein: 0}};
+    console.error('pickSharedMeal: empty candidate pool for slot="' + slot + '" style="' + householdStyle + '" — check RECIPES_DB coverage for this avoid-list/diet combination.');
+    emptyPoolPicks++;
+    // reason:'no-candidates' (empty-pool guard, distinct from the intentional
+    // emptyPlanEntry() a solo household uses for its unused partner cell) lets the render
+    // layer show an honest "no meal fits your filters" card instead of silently producing
+    // a blank/broken-looking slot — see render-today.js's MISSING_RECIPE_FALLBACK branch
+    // and render-week.js's day-meal-row for where this is read.
+    return {shared: true, recipeId: null, elena: {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'}, partner: {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'}};
   }
   // task D1: the SAME variant for both people (one shared dish) — rotated deterministically
   // off (weekSeed, dayIndex, slotIndex) over the choices allowed under avoidBoth (both
@@ -1912,7 +2000,9 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   });
   if(!best){
     console.error('pickSoloMeal: empty candidate pool for person="' + person + '" slot="' + slot + '" style="' + householdStyle + '"');
-    return {recipeId: null, portion: 1, kcal: 0, protein: 0};
+    emptyPoolPicks++;
+    // See pickSharedMeal's matching branch above for why `reason` is set.
+    return {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'};
   }
   // task D1: rotated deterministically off (weekSeed, dayIndex, slotIndex) over the
   // choices allowed under THIS person's own avoid-list (avoidP) — a solo slot can pick a
@@ -1936,6 +2026,13 @@ function computePlanSignature(){
     householdStyle,
     (e.avoid || []).slice().sort().join(','),
     (a.avoid || []).slice().sort().join(','),
+    // Multi-select diets batch: changing either person's diets must regenerate future
+    // (non-logged, non-pinned) plan days exactly like an avoid-list edit does — diets are
+    // a hard candidatesFor()/sidePoolFor() filter (recipeViolatesDiet), so a stale plan
+    // could otherwise keep serving a now-disallowed recipe until something else happened
+    // to trigger a regen.
+    (e.diets || []).slice().sort().join(','),
+    (a.diets || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
     SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
     nextWeekTuning, // task C2 (2026-07-18): changing the tuning goal must regenerate future

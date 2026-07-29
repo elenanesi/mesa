@@ -427,6 +427,7 @@
       <div class="profile-nav" id="profileNav">
         <button class="on" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
         <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
+        <button onclick="jumpToProfileSection('sec-diet',this)">Diet</button>
         <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
         <button onclick="jumpToProfileSection('sec-goals',this)">Health goals</button>
         <button id="navChipMeals" onclick="jumpToProfileSection('sec-meals',this)">Meals we share</button>
@@ -535,6 +536,14 @@
         <div class="cap-note" id="calNote" style="color:#b25e35"></div>
         <button class="pill gold chip-preset" id="calRestoreBtn" style="display:none;margin-top:8px;padding:11px 14px;font-size:12px" onclick="restoreCal()">↺ Restore recommended (1,820)</button>
       </div>
+
+      <!-- Diet section (task 4): multi-select, real editor — replaces onboarding-only
+           `diet` (task D4's single-string mock). renderDietEditor() (render-profile.js)
+           paints #dietList from PROF[currentProf].diets; onboarding's copy ("Profile →
+           Diet") points HERE, matching this section's actual location. -->
+      <h2 id="sec-diet" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a7 7 0 0 0-7 7c0 5 7 13 7 13s7-8 7-13a7 7 0 0 0-7-7z"/><circle cx="12" cy="9" r="2.5"/></svg>Diet</h2>
+      <p class="sub">Pick any that apply — Mesa will never plan a recipe that breaks one of these. Combining is fine (e.g. vegetarian + gluten-free).</p>
+      <div id="dietList"></div>
 
       <h2 id="sec-macro" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 3v9l7 4"/></svg>Macro split <span class="pill gold" id="splitStatePill" style="display:none;vertical-align:middle">custom</span></h2>
       <p class="sub">Choose where your calories come from — Mesa keeps it adding up to 100% and rebuilds your menu to match.</p>
@@ -694,18 +703,22 @@
           <select id="obActivity" style="width:100%;margin-top:6px" onchange="obSetActivity()"><option value="">Choose activity level</option></select>
         </div>
       </div>
-      <!-- Task D4: dietary preference -->
+      <!-- Multi-select dietary preference (task 4). Checkboxes, not radios — vegan/
+           vegetarian/pescatarian behave like a segmented control WITHIN themselves
+           (obToggleDiet -> render-profile.js:toggleDiet collapses the trio to the
+           strictest pick and calls obPopulateDiet() to reflect that back here), while
+           gluten-free/lactose-intolerant toggle independently. -->
       <div class="ob-slide">
         <h1 style="text-align:center">Dietary preference</h1>
-        <p class="sub" style="text-align:center">Shapes what meals the planner suggests. You can change this anytime in Profile → Basics.</p>
-        <div class="field" style="margin-top:14px"><label>Your preference</label>
+        <p class="sub" style="text-align:center">Shapes what meals the planner suggests. You can change this anytime in Profile → Diet.</p>
+        <div class="field" style="margin-top:14px"><label>Your preference (pick any that apply)</label>
           <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="none" onchange="obSetDiet('none')"> No restriction</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="vegan" onchange="obSetDiet('vegan')"> Vegan</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="vegetarian" onchange="obSetDiet('vegetarian')"> Vegetarian</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="pescatarian" onchange="obSetDiet('pescatarian')"> Pescatarian</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="gluten-free" onchange="obSetDiet('gluten-free')"> Gluten-free</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="radio" name="obDiet" value="lactose-intolerant" onchange="obSetDiet('lactose-intolerant')"> Lactose-intolerant</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="none" onchange="obToggleDiet('none')"> No restriction</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="vegan" onchange="obToggleDiet('vegan')"> Vegan</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="vegetarian" onchange="obToggleDiet('vegetarian')"> Vegetarian</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="pescatarian" onchange="obToggleDiet('pescatarian')"> Pescatarian</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="gluten-free" onchange="obToggleDiet('gluten-free')"> Gluten-free</label>
+            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="lactose-intolerant" onchange="obToggleDiet('lactose-intolerant')"> Lactose-intolerant</label>
           </div>
         </div>
       </div>

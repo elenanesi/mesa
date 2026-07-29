@@ -200,6 +200,29 @@ const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_F
 // Per the task brief's exact list.
 const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'oats'];
 const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds'];
+// Diet-filtering food-id lists (multi-select diets batch) — same hand-picked-by-real-
+// ingredient-content pattern as RED_MEAT_FOOD_IDS/POULTRY_FOOD_IDS/FISH_FOOD_IDS above,
+// each food defined in exactly one place here. Deliberately NOT derived from
+// FOODS[id].cat === 'Dairy': that shopping-list category also holds oat/soy/almond milk
+// (plant-based — cat is "which aisle", not "is this animal-derived"), which would make
+// the vegan/lactose-intolerant filters wrongly reject plant milks. DAIRY_FOOD_IDS also
+// includes 'pesto-elena' (Pantry category, but its containsAvoid already documents real
+// parmesan+pecorino inside it — see data/foods.js).
+const DAIRY_FOOD_IDS = [
+  'greek-yogurt', 'skyr', 'feta-cheese', 'parmesan', 'pecorino', 'mozzarella', 'robiola',
+  'cream-cheese', 'provola', 'scamorza', 'ricotta', 'butter', 'gorgonzola', 'milk',
+  'semi-skimmed-milk', 'cappuccino-unsweetened', 'pesto-elena',
+  // 'Nutella' (real-world chocolate-hazelnut spread) contains skimmed milk powder, unlike
+  // the plain dark-chocolate-85 entry — a correctness fix noticed while building this list,
+  // not something the pre-existing lactose avoid-key check ever covered either.
+  'chocolate-hazelnut-spread'
+];
+// soy-yogurt is deliberately NOT here despite cat:'Dairy' — see foods.js's entry: it's a
+// plant-based dairy-AISLE item, same reasoning as oat-milk/soy-milk/almond-milk above.
+// 'egg-noodles'/'ravioli'/'mayonnaise' are composite foods.js entries that are genuinely
+// egg-based (see each entry's `name`/`src`), not just the bare 'eggs' ingredient.
+const EGG_FOOD_IDS = ['eggs', 'egg-noodles', 'ravioli', 'mayonnaise'];
+const HONEY_FOOD_IDS = ['honey'];
 
 // ingredients: [{foodId, grams}, ...] (the recipe as authored = exactly 1 serving, same
 // convention as RECIPES_DB). totals: the SAME shape recipeNutrition()/computeBuilderTotals()

@@ -147,7 +147,21 @@ function renderWeek(){
       const m = day.meals[slot];
       const view = dayViews[di].views[slot];
       const r = view.recipe;
-      if(!r) return '';
+      if(!r){
+        // Empty-pool guard (task 5): a genuinely-starved slot (view.reason ===
+        // 'no-candidates', from planner.js:pickSharedMeal/pickSoloMeal finding zero legal
+        // candidates) gets a visible row instead of silently vanishing — the same
+        // "blank row" this branch already produces for every OTHER unresolved-recipe
+        // case (a dangling/deleted reference, or a solo household's unused partner cell)
+        // stays exactly as before; those aren't this batch's concern.
+        if(view.reason === 'no-candidates'){
+          return '<div class="day-meal-row" data-di="'+di+'" data-slot="'+htmlAttr(slot)+'" data-recipe-id="">'
+            + '<div class="dm-e">⚠️</div>'
+            + '<div class="dm-t">No meal fits your filters<small>'+SLOT_LABEL[slot]+' · adjust Diet in Profile</small></div>'
+            + '<div class="dm-k">0</div></div>';
+        }
+        return '';
+      }
       titles.push(escapeHtml(mealTitleWithExtras(view)));
       const together = view.shared ? ' <span class="pill together mini">👥 Together</span>' : '';
       // WEEK-EATENOUT-plan.md: a "🍴 out" pill, same chip-computed styling the daily
