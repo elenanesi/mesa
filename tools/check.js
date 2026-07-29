@@ -4782,15 +4782,22 @@ function testNoToastOnlyFakeFeaturesRemain(){
   // (not the whole "More ways to log" section, which now also contains an explanatory HTML
   // comment that legitimately mentions openFoodSearch() by name) so this can't false-pass on
   // prose the way a wider match would.
-  const gridMatch = indexHtml.match(/<div class="quick">\s*<button onclick="openBarcodeScanner\(\)"[\s\S]*?<\/div>/);
-  assert(!!gridMatch, 'setup: Log screen "More ways to log" quick grid found', '');
+  const gridMatch = indexHtml.match(/<div class="quick log-ways">\s*<button onclick="openBarcodeScanner\(\)"[\s\S]*?<\/div>/);
+  assert(!!gridMatch, 'setup: Log screen "Ways to log" quick grid found', '');
   const grid = gridMatch ? gridMatch[0] : '';
   assert(grid.indexOf('openFoodSearch()') === -1,
-    'Log screen "More ways to log" grid: no button still opens the deleted openFoodSearch() sheet',
+    'Log screen "Ways to log" grid: no button still opens the deleted openFoodSearch() sheet',
     grid);
   ['openBarcodeScanner()', 'openFoodLibrary()', 'openMyRecipes()'].forEach(function(needle){
-    assert(grid.indexOf(needle) !== -1, 'Log screen "More ways to log" grid: ' + needle + ' shortcut kept', grid);
+    assert(grid.indexOf(needle) !== -1, 'Log screen "Ways to log" grid: ' + needle + ' shortcut kept', grid);
   });
+  const waysIdx = indexHtml.indexOf('class="eyebrow log-ways-label"');
+  const searchIdx = indexHtml.indexOf('id="logSearchInput"');
+  const soFarIdx = indexHtml.indexOf('id="logSoFarTitle"');
+  assert(waysIdx !== -1 && searchIdx !== -1 && soFarIdx !== -1 && waysIdx < searchIdx && searchIdx < soFarIdx,
+    'Log screen: Ways to log leads, Today so far follows the logging controls', 'ways@' + waysIdx + ' search@' + searchIdx + ' soFar@' + soFarIdx);
+  assert(indexHtml.indexOf('Deterministic engine') === -1,
+    'Log screen: the orange deterministic-engine tile is removed', '');
 
   const renderProfileSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-profile.js'), 'utf8');
   assert(renderProfileSrc.indexOf('sec-connections') === -1,
@@ -4810,6 +4817,9 @@ function testNoToastOnlyFakeFeaturesRemain(){
 function testLogScreenIsSearchAndAddPicker(ctx){
   const RECIPES_DB = get(ctx, 'RECIPES_DB');
   const FOODS = get(ctx, 'FOODS');
+  const pickerSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-today.js'), 'utf8');
+  assert(pickerSrc.indexOf('function applyUnassignedLogPickerAdd(') !== -1 && pickerSrc.indexOf('data-log-picker-unassigned') !== -1,
+    'Log picker: supports logging without attaching an item to a meal', '');
 
   function freshPlan(){
     run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");

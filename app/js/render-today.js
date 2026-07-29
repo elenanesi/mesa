@@ -674,21 +674,22 @@ function renderBeverageCounts(){
 
 function foodAmountLabel(food, grams){
   if(!food) return grams + 'g';
-  if(food.unit === 'piece' && food.avgG){
-    const count = Math.max(1, Math.round(grams / food.avgG));
+  const safeGrams = Number.isFinite(Number(grams)) ? Number(grams) : (food.unit === 'piece' ? (Number(food.avgG) || 1) : 0);
+  if(food.unit === 'piece' && Number(food.avgG) > 0){
+    const count = Math.max(1, Math.round(safeGrams / Number(food.avgG)));
     return count + 'x';
   }
-  return Math.round(grams) + (food.unit || 'g');
+  return Math.round(safeGrams) + (food.unit || 'g');
 }
 
 function foodGroupTitle(food, grams){
   if(!food) return 'Food';
   if(food === FOODS['espresso-unsweetened']){
-    const count = Math.max(1, Math.round(grams / food.avgG));
+    const count = Math.max(1, Math.round((Number(grams) || Number(food.avgG) || 1) / (Number(food.avgG) || 1)));
     return count + (count === 1 ? ' coffee' : ' coffees');
   }
   if(food === FOODS['cappuccino-unsweetened']){
-    const count = Math.max(1, Math.round(grams / food.avgG));
+    const count = Math.max(1, Math.round((Number(grams) || Number(food.avgG) || 1) / (Number(food.avgG) || 1)));
     return count + (count === 1 ? ' cappuccino' : ' cappuccinos');
   }
   if(food.unit === 'piece' && food.avgG){
@@ -760,11 +761,7 @@ function renderTodaySoFar(){
     }
     const food = FOODS[e.ref];
     const name = escapeHtml(food ? food.name : 'Food');
-    let amount = e.grams + 'g';
-    if(food && food.unit === 'piece'){
-      const count = Math.max(1, Math.round(e.grams / food.avgG));
-      amount = count + 'x';
-    }
+    const amount = foodAmountLabel(food, e.grams);
     const label = (e.ref === 'espresso-unsweetened' || e.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + amount + (e.t ? ' · ' + e.t : '');
     return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+name+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+toggleBtn+removeBtn+'</div>';
   }).join('');
@@ -874,9 +871,10 @@ function buildEditTodayFoodSheet(){
   const food = FOODS[editTodayFoodCtx.ref];
   if(!food) return '<p class="sub">Food not found.</p>';
   const nut = foodMacros(editTodayFoodCtx.ref, editTodayFoodCtx.grams);
-  const isPiece = food.unit === 'piece' && food.avgG;
-  const amountText = isPiece ? Math.max(1, Math.round(editTodayFoodCtx.grams / food.avgG)) + 'x' : editTodayFoodCtx.grams + 'g';
-  const step = isPiece ? food.avgG : 10;
+  const isPiece = food.unit === 'piece' && Number(food.avgG) > 0;
+  const safeGrams = Number.isFinite(Number(editTodayFoodCtx.grams)) ? Number(editTodayFoodCtx.grams) : defaultMealFoodGrams(editTodayFoodCtx.foodId);
+  const amountText = foodAmountLabel(food, safeGrams);
+  const step = isPiece ? Number(food.avgG) : 10;
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Edit ' + escapeHtml(food.name) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">Amount</div>'
@@ -1150,7 +1148,7 @@ function triggerMealLogReward(payload, accountedBefore, isSkip){
 // the app refreshing state never wipes what the user is mid-typing here; a successful add
 // explicitly clears it so the box is ready for the next search.
 let logSearchQuery = '';
-let logPickerCtx = null; // {kind:'recipe'|'food', id, slot, portion, grams} while the "which meal + how much" sheet is open
+let logPickerCtx = null; // {kind:'recipe'|'food', id, slot, unassigned, portion, grams} while the picker sheet is open
 
 // Same favorite-first, then-alphabetical order as mealTitleSort (used by the add-meal
 // sheet's Sides/Sauces/Full recipes lists) — recipe search results sort the same way
@@ -1229,7 +1227,7 @@ function attachLogSearchHandler(){
 function openLogPickerSheet(kind, id){
   if(kind === 'recipe' && !RECIPES_DB[id]) return;
   if(kind === 'food' && !FOODS[id]) return;
-  logPickerCtx = {kind: kind, id: id, slot: null, portion: 1, grams: kind === 'food' ? defaultMealFoodGrams(id) : null};
+  logPickerCtx = {kind: kind, id: id, slot: null, unassigned: false, portion: 1, grams: kind === 'food' ? defaultMealFoodGrams(id) : null};
   document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
   attachLogPickerSheetHandler();
   document.getElementById('sheet').classList.remove('tall');
@@ -1252,7 +1250,7 @@ function buildLogPickerSheet(){
   const nut = logPickerNutrition();
   const slotButtons = SLOT_ORDER.map(function(slot){
     return '<button class="' + (logPickerCtx.slot === slot ? 'on' : '') + '" data-log-picker-slot="' + slot + '">' + (SLOT_LABEL[slot] || slot) + '</button>';
-  }).join('');
+  }).join('') + '<button class="' + (logPickerCtx.unassigned ? 'on' : '') + '" data-log-picker-unassigned="true">No meal</button>';
   const amountRow = isRecipe
     ? ('<div class="sv-stepper"><button data-log-picker-step="-0.5" aria-label="Fewer servings">-</button>'
        + '<span class="sv-val">' + logPickerCtx.portion + 'x</span>'
@@ -1261,7 +1259,7 @@ function buildLogPickerSheet(){
        + '<span class="sv-val">' + logPickerCtx.grams + 'g</span>'
        + '<button data-log-picker-step="10" aria-label="Increase grams">+</button></div>');
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(title) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub" style="margin-top:6px">Pick the meal and amount, then add it to ' + logDateLabel().toLowerCase() + '’s plan.</p>'
+    + '<p class="sub" style="margin-top:6px">Choose a meal, or log it without a meal, then set the amount.</p>'
     + '<div class="shop-cat">Meal</div>'
     + '<div class="quick">' + slotButtons + '</div>'
     + '<div class="shop-cat">Amount</div>'
@@ -1272,7 +1270,7 @@ function buildLogPickerSheet(){
     + '<div class="n"><div class="nt"><span>Calories</span><b>' + nut.kcal + ' kcal</b></div></div>'
     + '<div class="n"><div class="nt"><span>Protein</span><b>' + nut.protein + ' g</b></div></div>'
     + '</div>'
-    + '<button class="cta" style="margin-top:14px" onclick="commitLogPickerAdd()">＋ Add' + (logPickerCtx.slot ? ' to ' + (SLOT_LABEL[logPickerCtx.slot] || '').toLowerCase() : '') + '</button>'
+    + '<button class="cta" style="margin-top:14px" onclick="commitLogPickerAdd()">＋ Add' + (logPickerCtx.unassigned ? ' without a meal' : (logPickerCtx.slot ? ' to ' + (SLOT_LABEL[logPickerCtx.slot] || '').toLowerCase() : '')) + '</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
 }
 
@@ -1280,6 +1278,8 @@ function attachLogPickerSheetHandler(){
   const el = document.getElementById('sheetBody');
   if(!el) return;
   el.onclick = function(e){
+    const unassignedBtn = e.target.closest('button[data-log-picker-unassigned]');
+    if(unassignedBtn && el.contains(unassignedBtn)){ selectLogPickerUnassigned(); return; }
     const slotBtn = e.target.closest('button[data-log-picker-slot]');
     if(slotBtn && el.contains(slotBtn)){ selectLogPickerSlot(slotBtn.getAttribute('data-log-picker-slot')); return; }
     const stepBtn = e.target.closest('button[data-log-picker-step]');
@@ -1290,6 +1290,15 @@ function attachLogPickerSheetHandler(){
 function selectLogPickerSlot(slot){
   if(!logPickerCtx || SLOT_ORDER.indexOf(slot) === -1) return;
   logPickerCtx.slot = slot;
+  logPickerCtx.unassigned = false;
+  document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
+  attachLogPickerSheetHandler();
+}
+
+function selectLogPickerUnassigned(){
+  if(!logPickerCtx) return;
+  logPickerCtx.slot = null;
+  logPickerCtx.unassigned = true;
   document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
   attachLogPickerSheetHandler();
 }
@@ -1349,13 +1358,34 @@ function applyLogPickerAdd(dateISO, slot, kind, id, amount, person){
   return null;
 }
 
+// A standalone log entry intentionally bypasses the meal-plan extras funnel. This is
+// the same model used by the Coffee/Cappuccino quick actions: it contributes to the
+// day's nutrition log without changing any planned meal.
+function applyUnassignedLogPickerAdd(dateISO, kind, id, amount, person){
+  person = person || currentProf;
+  if(kind === 'food'){
+    if(!FOODS[id]) return null;
+    const entry = logFoodEntry(dateISO, person, id, amount);
+    return {title: FOODS[id].name, logged: true, entry: entry};
+  }
+  if(kind === 'recipe'){
+    if(!RECIPES_DB[id]) return null;
+    const portion = amount;
+    const entry = logPlanEntry(dateISO, person, null, id, portion, [{recipeId: id, portion: portion}]);
+    return {title: RECIPES_DB[id].title, logged: true, entry: entry};
+  }
+  return null;
+}
+
 function commitLogPickerAdd(){
   if(!logPickerCtx) return;
-  if(!logPickerCtx.slot){ toast('Pick a meal first'); return; }
   const ctx = logPickerCtx;
   const dateISO = currentLogDateISO();
   const amount = ctx.kind === 'recipe' ? ctx.portion : ctx.grams;
-  const result = applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
+  if(!ctx.slot && !ctx.unassigned){ toast('Pick a meal, or choose No meal'); return; }
+  const result = ctx.unassigned
+    ? applyUnassignedLogPickerAdd(dateISO, ctx.kind, ctx.id, amount, currentProf)
+    : applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
   if(!result){ toast('Could not add — try again'); return; }
   const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
   recomputeConsumed(currentProf);
