@@ -5014,6 +5014,171 @@ function testEscapingHelpers(ctx){
   })();
 }
 
+/* ===================================================================
+   Shared person-switcher component (render.js:personSwitcherHtml()/
+   renderPersonSwitchers()) — coverage for the "whose plan" control unification: one
+   render helper feeding every mount (Today #profSeg, Profile #profWhoSeg, and the new
+   Week/Insights/Log #weekProfSeg/#insightsProfSeg/#logProfSeg), one delegated click
+   listener (app.js) instead of per-screen wiring, solo households seeing no switcher at
+   all, and a hostile display name rendering inert.
+   =================================================================== */
+
+// Source-grep guard, same style as testMealActionButtonHelperSharedByBothScreens above:
+// the shared helper must be the ONLY place that builds data-prof="..." markup, every
+// mount in index.html must be an empty JS-painted container (not hand-authored buttons),
+// and the old per-screen wiring (setProf(), the per-button addEventListener loop) must be
+// gone in favour of one delegated listener.
+function testPersonSwitcherSharedComponent(ctx){
+  const renderSrc = readAllRenderSrc();
+  assert(renderSrc.indexOf('function personSwitcherHtml(') !== -1,
+    'setup: personSwitcherHtml() is defined in render.js (the one shared "whose plan" component)', '');
+  assert(renderSrc.indexOf('function renderPersonSwitchers(') !== -1,
+    'setup: renderPersonSwitchers() is defined in render.js', '');
+
+  // personSwitcherHtml() itself contains exactly the 2 data-prof="..." button templates
+  // (elena + partner) — any more than that anywhere in render*.js means a second,
+  // hand-rolled copy of the control has crept back in.
+  const dataProfMatches = renderSrc.match(/data-prof=/g) || [];
+  assert(dataProfMatches.length === 2,
+    'render*.js: data-prof="..." markup is built in exactly one place (personSwitcherHtml()), never duplicated per screen',
+    'found ' + dataProfMatches.length + ' occurrence(s)');
+
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  ['profSeg', 'profWhoSeg', 'weekProfSeg', 'insightsProfSeg', 'logProfSeg'].forEach(function(id){
+    const re = new RegExp('id="' + id + '"[^>]*data-person-switcher');
+    assert(re.test(indexHtml), 'index.html: #' + id + ' is a data-person-switcher mount', '');
+  });
+  assert(indexHtml.indexOf('data-prof=') === -1,
+    'index.html: no hand-authored data-prof button markup remains — every mount is painted by personSwitcherHtml() at runtime', '');
+  assert(indexHtml.indexOf('setProf(') === -1,
+    'index.html: no leftover onclick="setProf(...)" wiring (replaced by app.js\'s delegated listener)', '');
+
+  const renderProfileSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-profile.js'), 'utf8');
+  assert(renderProfileSrc.indexOf('function setProf(') === -1,
+    'render-profile.js: the old per-screen setProf() handler is gone', '');
+  assert(renderSrc.indexOf('function syncProfileToggle(') === -1,
+    'render.js: the old syncProfileToggle() (superseded by renderPersonSwitchers()) is gone', '');
+
+  const appSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'app.js'), 'utf8');
+  const delegatedMatch = appSrc.match(/document\.addEventListener\('click',\s*function\(e\)\{[\s\S]*?\n\}\);/);
+  const delegatedBody = delegatedMatch ? delegatedMatch[0] : '';
+  assert(delegatedBody.length > 0, 'setup: a single delegated click listener is registered in app.js', appSrc.length ? '' : 'app.js empty');
+  assert(delegatedBody.indexOf('[data-person-switcher]') !== -1 && delegatedBody.indexOf('[data-prof]') !== -1,
+    'app.js: the delegated listener matches every [data-person-switcher] mount generically, not a specific screen id', delegatedBody);
+  assert(delegatedBody.indexOf('applyProf(') !== -1,
+    'app.js: the delegated listener routes every switch through applyProf() — the single funnel', delegatedBody);
+  assert(delegatedBody.indexOf('profileSwitchedByUser = true') !== -1,
+    'app.js: any switch (Today, Profile, or the new Week/Insights/Log mounts) marks profileSwitchedByUser, not just the old Profile-only setProf() path', delegatedBody);
+  assert(delegatedBody.indexOf("go(") === -1,
+    'app.js: the person-switcher delegated click handler never calls go() — switching person must never navigate away from the current screen', delegatedBody);
+
+  // applyProf() itself (what the handler above calls) must also never navigate.
+  const applyProfFn = (renderSrc.match(/function applyProf\(key\)\{[\s\S]*?\n\}\n/) || [''])[0];
+  assert(applyProfFn.length > 0, 'setup: applyProf() function body found in render.js', '');
+  assert(applyProfFn.indexOf('go(') === -1,
+    'applyProf(): never calls go() — switching person must leave whichever screen is active unchanged', applyProfFn);
+}
+
+// personSwitcherHtml() as a pure function: active state, real (escaped) display names,
+// and the solo-household "no switcher at all" rule, all driven from one place so they can
+// never disagree between the five mounts that share it.
+function testPersonSwitcherHtml(ctx){
+  const savedHouseholdSize = get(ctx, 'householdSize');
+  const savedCurrentProf = get(ctx, 'currentProf');
+  const savedElenaName = get(ctx, 'PROF.elena.displayName');
+  const savedPartnerName = get(ctx, 'PROF.partner.displayName');
+
+  try{
+    run(ctx, 'householdSize = 2; currentProf = "elena";');
+    let html = call(ctx, 'personSwitcherHtml', []);
+    assert(html.indexOf('data-prof="elena"') !== -1 && html.indexOf('data-prof="partner"') !== -1,
+      'personSwitcherHtml(): a two-person household renders both the elena and partner buttons', html);
+    assert(/class="on"[^>]*data-prof="elena"/.test(html),
+      'personSwitcherHtml(): currentProf "elena" -> the elena button carries class="on"', html);
+    assert(!/class="on"[^>]*data-prof="partner"/.test(html),
+      'personSwitcherHtml(): currentProf "elena" -> the partner button is NOT active', html);
+
+    run(ctx, 'currentProf = "partner";');
+    html = call(ctx, 'personSwitcherHtml', []);
+    assert(/class="on"[^>]*data-prof="partner"/.test(html),
+      'personSwitcherHtml(): currentProf "partner" -> the partner button carries class="on"', html);
+    assert(!/class="on"[^>]*data-prof="elena"/.test(html),
+      'personSwitcherHtml(): currentProf "partner" -> the elena button is NOT active', html);
+
+    // Solo household: no switcher AT ALL (not just the partner button hidden) — a control
+    // with one option is noise (task requirement). renderPersonSwitchers() hides the mount
+    // itself on top of this returning ''.
+    run(ctx, 'householdSize = 1;');
+    html = call(ctx, 'personSwitcherHtml', []);
+    assert(html === '', 'personSwitcherHtml(): a solo household renders nothing at all', JSON.stringify(html));
+
+    // Hostile display name renders inert. personSwitcherHtml() builds an innerHTML string
+    // (unlike the old .textContent-based label paint it replaces), so it must escape the
+    // name itself rather than relying on the DOM API to keep it safe.
+    run(ctx, 'householdSize = 2; currentProf = "elena"; PROF.elena.displayName = ' + JSON.stringify('"><img src=x onerror=alert(1)>') + ';');
+    html = call(ctx, 'personSwitcherHtml', []);
+    assert(html.indexOf('<img') === -1 && html.indexOf('<script') === -1,
+      'personSwitcherHtml(): a hostile display name renders inert — no live <img>/<script> in the output', html);
+    assert(/&lt;|&gt;|&quot;|&amp;/.test(html),
+      'personSwitcherHtml(): the hostile display name is HTML-escaped, not silently dropped', html);
+  } finally {
+    run(ctx, 'householdSize = ' + JSON.stringify(savedHouseholdSize) + '; currentProf = ' + JSON.stringify(savedCurrentProf)
+      + '; PROF.elena.displayName = ' + JSON.stringify(savedElenaName) + '; PROF.partner.displayName = ' + JSON.stringify(savedPartnerName) + ';');
+  }
+}
+
+// Behavioural coverage for "switching person from a non-Today screen updates currentProf
+// and leaves the active screen unchanged" + item 4's per-screen view state (Week's
+// This/Next toggle, Log's Today/Yesterday toggle + in-progress search query). Uses
+// makeObFakeDocument (built for the onboarding suite) so the REAL applyProf() — what the
+// app.js delegated listener actually calls — can run end to end without a real DOM;
+// weekScreenShowsNext/selectedLogDateISO/logSearchQuery are plain module-level variables
+// that renderWeek()/renderLogScreen() read but never reset, so a switch that leaves them
+// untouched is exactly "the toggle survived".
+function testPersonSwitchPreservesScreenAndViewState(ctx){
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try{
+    run(ctx, 'currentProf = "elena"; householdSize = 2;');
+    run(ctx, 'weekScreenShowsNext = true; selectedLogDateISO = addDaysISO(todayISO(), -1); logSearchQuery = "cauliflow";');
+
+    call(ctx, 'applyProf', ['partner']);
+
+    assert(get(ctx, 'currentProf') === 'partner', 'applyProf(\'partner\') from a non-Today screen actually updates currentProf', get(ctx, 'currentProf'));
+    assert(get(ctx, 'weekScreenShowsNext') === true,
+      'Week screen: the This/Next toggle (weekScreenShowsNext) survives a person switch', get(ctx, 'weekScreenShowsNext'));
+    assert(get(ctx, 'selectedLogDateISO') === run(ctx, 'addDaysISO(todayISO(), -1)'),
+      'Log screen: the Today/Yesterday toggle (selectedLogDateISO) survives a person switch', get(ctx, 'selectedLogDateISO'));
+    assert(get(ctx, 'logSearchQuery') === 'cauliflow',
+      'Log screen: the in-progress search query (logSearchQuery) survives a person switch', get(ctx, 'logSearchQuery'));
+  } finally {
+    ctx.document = savedDocument;
+    run(ctx, 'currentProf = "elena"; weekScreenShowsNext = false; selectedLogDateISO = todayISO(); logSearchQuery = ""; recomputeProf("elena");');
+  }
+}
+
+/* ---------------- build-stamp guard (tools/build-sw.js stamps CACHE + AUTH_BUILD together) ----------------
+   Regression coverage for a real slip: tools/build-sw.js stamps app/sw.js's CACHE and
+   app/js/auth.js's AUTH_BUILD from the SAME content hash (build-sw.js's own doc), but two
+   recent commits shipped only sw.js — leaving AUTH_BUILD stale and defeating "which build
+   is actually running", the first question README's handoff lessons say to ask when
+   sign-in breaks. This can't catch a future partial commit before it happens, but it
+   catches the state a partial commit leaves behind: the two stamps disagreeing right now
+   in the working tree. */
+function testBuildStampMatch(){
+  const swSrc = fs.readFileSync(path.join(APP_DIR, 'sw.js'), 'utf8');
+  const authSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'auth.js'), 'utf8');
+  const cacheMatch = swSrc.match(/const CACHE = '([^']*)';/);
+  const authMatch = authSrc.match(/const AUTH_BUILD = '([^']*)';/);
+  assert(!!cacheMatch, 'setup: app/sw.js has a "const CACHE = \'...\';" stamp', swSrc.slice(0, 200));
+  assert(!!authMatch, 'setup: app/js/auth.js has a "const AUTH_BUILD = \'...\';" stamp', authSrc.slice(0, 200));
+  const cache = cacheMatch ? cacheMatch[1] : null;
+  const authBuild = authMatch ? authMatch[1] : null;
+  assert(!!cache && cache === authBuild,
+    'build-stamp guard: app/sw.js CACHE and app/js/auth.js AUTH_BUILD must be the identical content hash — re-run `node tools/build-sw.js` and commit BOTH app/sw.js and app/js/auth.js together (a partial commit ships a stale build marker and defeats the "which build is running" sign-in diagnostic)',
+    'CACHE=' + JSON.stringify(cache) + ' AUTH_BUILD=' + JSON.stringify(authBuild));
+}
+
 /* ---------------- app/sw.js SHELL_FILES drift ---------------- */
 
 function testSwShellDrift(){
@@ -8405,6 +8570,10 @@ function main(){
   runTest('diet preferences: sync robustness (legacy/new-shape payloads, both directions)', function(){ testDietSyncRobustness(ctx); });
   runTest('diet preferences: generated fortnight per diet (zero violations/empty slots), determinism, shared-vs-solo scoping', function(){ testDietGeneratedPlans(ctx); });
   runTest('onboarding slot-targeting fix (2026-07-28)', function(){ testOnboardingSlotTargeting(); });
+  runTest('person-switcher: shared component wiring guard', function(){ testPersonSwitcherSharedComponent(ctx); });
+  runTest('person-switcher: personSwitcherHtml() active-state/names/solo-hiding/escaping', function(){ testPersonSwitcherHtml(ctx); });
+  runTest('person-switcher: a switch preserves the active screen + Week/Log view state', function(){ testPersonSwitchPreservesScreenAndViewState(ctx); });
+  runTest('build-stamp guard: sw.js CACHE === auth.js AUTH_BUILD', function(){ testBuildStampMatch(); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch
 

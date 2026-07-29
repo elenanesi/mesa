@@ -498,14 +498,18 @@ function removeAvoid(key){
 function applyHouseholdSizeVisibility(){
   const solo = typeof isSoloHousehold === 'function' && isSoloHousehold();
 
-  // Top tabbar + Profile screen "whose plan" segmented toggles: hide the partner button
-  // entirely rather than disable it — there's nothing to switch to.
-  document.querySelectorAll('#profSeg button[data-prof="partner"]').forEach(function(b){ b.style.display = solo ? 'none' : ''; });
+  // Every "whose plan" person-switcher mount (Today topbar, Profile, Week, Insights, Log)
+  // is fully hidden rather than just having its partner button disabled — render.js:
+  // renderPersonSwitchers() (called from syncPersonLabels(), part of every applyProf())
+  // already does this from the one shared path, so there is nothing left to do here.
+  // Profile's own "Whose plan" heading + jump-nav chip go with it, same treatment as
+  // "Meals we share" below — a heading over a switcher with nothing to switch is noise too.
+  const whoseHeading = document.getElementById('sec-whose');
+  if(whoseHeading) whoseHeading.style.display = solo ? 'none' : '';
   const whoSeg = document.getElementById('profWhoSeg');
-  if(whoSeg){
-    const btns = whoSeg.querySelectorAll('button');
-    if(btns[1]) btns[1].style.display = solo ? 'none' : '';
-  }
+  if(whoSeg && solo) whoSeg.style.display = 'none'; // belt-and-suspenders: renderPersonSwitchers() already hides it, but the heading above only makes sense paired with it
+  const whoseNavChip = document.getElementById('navChipWhose');
+  if(whoseNavChip) whoseNavChip.style.display = solo ? 'none' : '';
 
   // Recipe-screen second serve card: driven per-recipe by updateServings() (which itself
   // forces `shared=false` whenever solo — see that function) every time the recipe screen
@@ -541,18 +545,6 @@ function setHouseholdSize(size){
   householdSizeManual = true;
   applyProf(currentProf); // recompute plan/UI for the new size (forces currentProf back to 'elena' when solo) + persist()
   toast(size === 1 ? '✓ Planning for one' : '✓ Planning for two');
-}
-
-// profile screen switch
-function setProf(key, el){
-  // Records that the person deliberately chose a profile this session, so auth.js's
-  // applyOwnMemberSlot() (which opens the device on its own owner's profile once
-  // /auth/me resolves) won't yank them back out of a switch they just made.
-  profileSwitchedByUser = true;
-  el.parentNode.querySelectorAll('button').forEach(x=>x.classList.remove('on'));
-  el.classList.add('on'); applyProf(key);
-  // sync top control
-  document.querySelectorAll('#profSeg button').forEach(x=>x.classList.toggle('on', x.dataset.prof===key));
 }
 
 // T1: Profile jump-to-section chip bar (index.html #profileNav) — scrolls the target

@@ -56,12 +56,31 @@ function openDinnerRecipe(){
   openRecipe(displayedTodayRecipeId('dinner') || activeMenu.dinner.recipeId, 'today', todayRecipeCtx('dinner'));
 }
 
-// top segmented control (Today screen profile switch)
-document.querySelectorAll('#profSeg button').forEach(b=>{
-  b.addEventListener('click',()=>{
-    document.querySelectorAll('#profSeg button').forEach(x=>x.classList.remove('on'));
-    b.classList.add('on'); applyProf(b.dataset.prof);
-  });
+/* ---------------- shared person-switcher click handling ----------------
+   ONE delegated listener for every "whose plan" mount (render.js:personSwitcherHtml()/
+   renderPersonSwitchers() — Today topbar #profSeg, Profile #profWhoSeg, and the
+   Week/Insights/Log per-person screens #weekProfSeg/#insightsProfSeg/#logProfSeg).
+   Delegation means a NEW mount needs zero JS wiring — just the markup plus the
+   data-person-switcher/data-prof attributes render.js already stamps on it — and it's
+   attached once here at parse time rather than needing DOMContentLoaded, since delegated
+   listeners don't care whether the matched descendants exist yet.
+
+   Replaces two things that had quietly drifted apart: this file used to wire #profSeg
+   alone via a per-button addEventListener loop, while render-profile.js's now-deleted
+   setProf() handled #profWhoSeg alone via onclick="setProf(...)" — only THAT path used to
+   set profileSwitchedByUser, so switching person from the Today topbar (but not Profile)
+   could get silently overridden a moment later by auth.js:applyOwnMemberSlot() opening the
+   device back on its own owner's slot. One handler for every mount means every switch
+   behaves identically. Routes through applyProf() (render.js) — the single funnel that
+   updates currentProf, recomputes, and repaints every screen — and deliberately never
+   calls go(): switching person must never navigate away from whatever screen the user is
+   currently on (Week/Insights/Log each keep their own view state — This/Next week,
+   Today/Yesterday, in-progress search — untouched by applyProf()'s repaint). */
+document.addEventListener('click', function(e){
+  var btn = e.target.closest('[data-person-switcher] [data-prof]');
+  if(!btn) return;
+  profileSwitchedByUser = true;
+  applyProf(btn.dataset.prof);
 });
 
 /* ---------------- onboarding ---------------- */
@@ -272,8 +291,8 @@ function finishOnboarding(){
   const slot = obTargetSlot();
   // A device whose own resolved identity is 'partner' is definitionally not a one-person
   // household (state.js:isSoloHousehold/householdSize) — bump it defensively so the
-  // applyProf() call below doesn't get silently forced back to 'elena' by render.js:238's
-  // solo guard. auth.js:maybeSetHouseholdSizeFromServer() normally already does this well
+  // applyProf() call below doesn't get silently forced back to 'elena' by render.js's
+  // applyProf() solo guard. auth.js:maybeSetHouseholdSizeFromServer() normally already does this well
   // before onboarding finishes (it runs in the same /auth/me response that resolves the
   // member slot in the first place), but landing on your own profile shouldn't depend on
   // that timing. Never sets householdSizeManual — a real user choice (Profile -> Basics) or
@@ -284,8 +303,7 @@ function finishOnboarding(){
   }
   document.getElementById('onboard').classList.add('hidden');
   onboarded = true;               // persisted by applyProf()'s persist() call below
-  applyProf(slot);
-  document.querySelectorAll('#profSeg button').forEach(function(x){ x.classList.toggle('on', x.dataset.prof === slot); });
+  applyProf(slot); // -> syncPersonLabels() -> renderPersonSwitchers(): every switcher mount (including #profSeg) already repaints its active state from currentProf, no separate sync needed here
   go('today');
 }
 

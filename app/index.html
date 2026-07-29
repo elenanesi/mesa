@@ -30,10 +30,11 @@
           <h1 style="margin-top:2px" id="todayGreeting"></h1>
         </div>
         <div class="top-actions">
-          <div class="seg" id="profSeg">
-            <button class="on" data-prof="elena">You</button>
-            <button data-prof="partner">Partner</button>
-          </div>
+          <!-- Shared person-switcher mount (render.js:personSwitcherHtml()/
+               renderPersonSwitchers()) — painted on boot/every applyProf(), hidden
+               entirely in a solo household. Buttons + names + active state are never
+               hand-authored here; see render.js's doc for why. -->
+          <div class="seg" id="profSeg" data-person-switcher></div>
           <button class="profile-icon-btn" aria-label="Open profile" onclick="go('profile')"><span id="topProfAv">Y</span></button>
         </div>
       </div>
@@ -171,7 +172,15 @@
          cards moved to the top of the Insights screen (same markup/ids, live wiring
          intact — renderNutrientChips() targets them by id wherever they live). -->
     <section class="screen" id="week">
-      <h1>This week</h1>
+      <!-- Person-switcher mount (render.js:renderPersonSwitchers()) beside the heading —
+           "these numbers belong to X" reads right at the top, before the day list, and
+           costs no extra vertical row on a 375px screen since it shares the h1's line via
+           .row.between (same flex pattern Today's topbar already uses). Hidden entirely in
+           a solo household. -->
+      <div class="row between">
+        <h1 style="margin:0">This week</h1>
+        <div class="seg" id="weekProfSeg" data-person-switcher></div>
+      </div>
       <p class="sub">A balanced 7-day rhythm. Nutrient coverage evens out across days, not just within one.</p>
 
       <!-- Two-week horizon (owner feedback: "I need to see both this and next week's menu
@@ -284,7 +293,14 @@
 
     <!-- ============ LOG / ADD ============ -->
     <section class="screen" id="log">
-      <h1>Log food</h1>
+      <!-- Person-switcher mount (render.js:renderPersonSwitchers()) — "Today so far"/
+           "Coffee today" below are per-person, so whose log this is needs to be visible
+           right at the top, same .row.between pattern as Week/Today. Hidden entirely in a
+           solo household. -->
+      <div class="row between">
+        <h1 style="margin:0">Log food</h1>
+        <div class="seg" id="logProfSeg" data-person-switcher></div>
+      </div>
       <p class="sub">Search a recipe or ingredient, pick the meal, add it to the plan.</p>
 
       <div class="seg" id="logDateSeg" style="width:max-content;margin-top:14px">
@@ -365,7 +381,13 @@
 
     <!-- ============ INSIGHTS ============ -->
     <section class="screen" id="insights">
-      <h1>Insights</h1>
+      <!-- Person-switcher mount (render.js:renderPersonSwitchers()) — every stat/chip below
+           is per-person (renderInsights()), same .row.between pattern as Week/Log/Today.
+           Hidden entirely in a solo household. -->
+      <div class="row between">
+        <h1 style="margin:0">Insights</h1>
+        <div class="seg" id="insightsProfSeg" data-person-switcher></div>
+      </div>
       <p class="sub">How your eating is trending this week.</p>
 
       <!-- FIX 3 (feedback): both cards below moved here from the Week screen — coverage
@@ -431,7 +453,7 @@
            duplicate; jumpToProfileSection() (render.js) scrollIntoView()s the target,
            whose scroll-margin-top (mesa.css .jump-target) keeps it clear of this bar. -->
       <div class="profile-nav" id="profileNav">
-        <button class="on" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
+        <button class="on" id="navChipWhose" onclick="jumpToProfileSection('sec-whose',this)">Whose plan</button>
         <button onclick="jumpToProfileSection('sec-basics',this)">Basics</button>
         <button onclick="jumpToProfileSection('sec-diet',this)">Diet</button>
         <button onclick="jumpToProfileSection('sec-macro',this)">Macro split</button>
@@ -446,10 +468,7 @@
       </div>
 
       <h2 id="sec-whose" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M2 20c0-3 3-5 6-5s6 2 6 5"/><path d="M10 20c0-3 3-5 6-5s6 2 6 5"/></svg>Whose plan</h2>
-      <div class="seg" id="profWhoSeg" style="width:100%">
-        <button class="on" style="flex:1" onclick="setProf('elena',this)">You</button>
-        <button style="flex:1" onclick="setProf('partner',this)">Partner</button>
-      </div>
+      <div class="seg" id="profWhoSeg" style="width:100%" data-person-switcher></div>
 
       <h2 id="sec-basics" class="jump-target"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="12" r="2"/><path d="M14 10h4M14 14h4"/></svg>Basics</h2>
       <p class="sub">Edit anything here — Mesa recomputes your recommended calories and rebuilds your targets. Every number below is formula, not guesswork.</p>

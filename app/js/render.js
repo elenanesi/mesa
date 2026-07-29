@@ -1,7 +1,7 @@
 /* ===================================================================
    render.js — shared rendering helpers and core profile rendering
    Toast, parseDecimalInput, closeSheet, avatarSlotHtml, applyProf,
-   refreshRingAndBars, syncProfileToggle, syncPersonLabels.
+   refreshRingAndBars, personSwitcherHtml/renderPersonSwitchers, syncPersonLabels.
    Screen-specific renderers live in render-recipe.js, render-week.js,
    render-today.js, render-profile.js, render-sheets.js.
    =================================================================== */
@@ -228,8 +228,9 @@ function applyProf(key){
   // Task B3 (solo households): the partner slot is hidden everywhere user-visible, so a
   // one-person household can never be VIEWING it — force back to 'elena' regardless of what
   // was asked for (a stale currentProf from before "Just me" was set, a synced value from a
-  // two-person household, etc.). Every caller of applyProf/setProf goes through here, so
-  // this is the single funnel — no other call site needs its own guard.
+  // two-person household, etc.). Every caller (the person-switcher delegated click listener
+  // in app.js, auth.js, onboarding, ...) goes through here, so this is the single funnel —
+  // no other call site needs its own guard.
   if(typeof isSoloHousehold === 'function' && isSoloHousehold() && key === 'partner') key = 'elena';
   currentProf = key;
   const p=PROF[key];
@@ -275,38 +276,70 @@ function applyProf(key){
   renderRecipeEatenState(); // eaten/skipped is per-person (slotLogStatus keyed by currentProf) — re-derive on profile switch too
   renderRecipeMealStrip();
   syncServeHighlight();
-  syncProfileToggle(key);
-  syncPersonLabels(); // task B2: profSeg/profWhoSeg/serve-card NAMES — see its doc below
+  syncPersonLabels(); // task B2 (+ person-switcher unification): repaints every "shows a name" spot, including every person-switcher mount via renderPersonSwitchers() — see its doc below
   applyHouseholdSizeVisibility(); // task B3: hide/show every partner-facing surface for the current household size
   persist();
 }
 
-// Keeps both "whose plan" segmented controls (top tabbar and Profile screen) in sync
-// with currentProf — needed on top of the click handlers' own toggling because
-// loadState() can restore a non-default currentProf before any click ever happens.
-function syncProfileToggle(key){
-  document.querySelectorAll('#profSeg button').forEach(function(b){ b.classList.toggle('on', b.dataset.prof === key); });
-  const whoSeg = document.getElementById('profWhoSeg');
-  if(whoSeg){
-    const btns = whoSeg.querySelectorAll('button');
-    if(btns[0]) btns[0].classList.toggle('on', key === 'elena');
-    if(btns[1]) btns[1].classList.toggle('on', key === 'partner');
-  }
+/* ===================================================================
+   Shared "whose plan" person-switcher component
+
+   Every per-person screen needs a visible control saying whose numbers are on
+   screen and letting the user change it: Today's topbar (#profSeg), Profile
+   (#profWhoSeg), and — as of this batch — Week/Insights/Log (#weekProfSeg/
+   #insightsProfSeg/#logProfSeg). Before this, #profSeg and #profWhoSeg were
+   two hand-authored, independently-wired copies (a static markup pair in
+   index.html each, one driven by an addEventListener loop in app.js, the
+   other by onclick="setProf(...)"), and Week/Insights/Log had no switcher at
+   all. That's exactly the copy-paste drift mealActionButtonHtml() (above)
+   already fixed once for meal-action buttons — same fix, same shape, applied
+   here: ONE render helper feeds every mount, and ONE delegated click listener
+   (app.js) handles every mount, so active-state/names/solo-hiding can never
+   disagree between screens.
+
+   personSwitcherHtml() returns the two <button> elements (data-prof keyed
+   "elena"/"partner") for whichever slot is currently active (currentProf), or '' for a
+   solo household — a control with one option is noise (Task B3's existing
+   rule, now applied to the switcher itself rather than just its partner
+   button). Names go through escapeHtml() because — unlike the old
+   .textContent-based label paint below — this builds an innerHTML string
+   that a caller assigns wholesale, so a hostile displayName must be
+   neutralized here, not just left to the DOM API to keep safe. */
+function personSwitcherHtml(){
+  if(typeof isSoloHousehold === 'function' && isSoloHousehold()) return '';
+  const nameE = escapeHtml(resolveDisplayName('elena'));
+  const nameP = escapeHtml(resolveDisplayName('partner'));
+  const clsE = currentProf === 'elena' ? ' class="on"' : '';
+  const clsP = currentProf === 'partner' ? ' class="on"' : '';
+  return '<button' + clsE + ' style="flex:1" data-prof="elena">' + nameE + '</button>'
+       + '<button' + clsP + ' style="flex:1" data-prof="partner">' + nameP + '</button>';
+}
+
+// Paints personSwitcherHtml() into every mount marked data-person-switcher (index.html:
+// #profSeg, #profWhoSeg, #weekProfSeg, #insightsProfSeg, #logProfSeg — new mounts need
+// nothing beyond that attribute + the app.js delegated listener already handling
+// [data-person-switcher] generically). Hides the mount itself in a solo household (rather
+// than leaving an empty '.seg' bar) since personSwitcherHtml() returns '' in that case.
+// Called from syncPersonLabels() (i.e. every applyProf()), so it's always current.
+function renderPersonSwitchers(){
+  const solo = typeof isSoloHousehold === 'function' && isSoloHousehold();
+  const html = personSwitcherHtml();
+  document.querySelectorAll('[data-person-switcher]').forEach(function(mount){
+    mount.style.display = solo ? 'none' : '';
+    mount.innerHTML = html;
+  });
 }
 
 // Task B2 (generic identity): the ONLY spots left that show a person's NAME rather than
 // just their avatar initial (which applyProf() above already repaints via the derived
-// p.av) — the "whose plan" segmented controls (top tabbar #profSeg, Profile screen
-// #profWhoSeg) and the shared-dinner serve cards, all of which show BOTH people's names
-// at once, not just the currently-active one. That's why this reads PROF.elena/partner.
-// displayName directly rather than relying on p.seg (recomputeProf only derives seg/av
-// for whichever slot applyProf(key) is currently rendering, i.e. the INACTIVE profile's
-// derived p.seg can be stale) — the raw displayName field itself is always a valid,
-// already-trimmed/capped string (state.js: PROF defaults + loadState()'s guard,
-// render.js:commitDisplayName()'s own trim/cap), so no derivation is needed to read it
-// safely here. Every assignment below is .textContent/.setAttribute, never innerHTML, so
-// no separate escapeHtml() call is needed (DOM text/attribute assignment can't be
-// interpreted as markup the way an innerHTML string built by hand would). Called from
+// p.av) — every person-switcher mount (renderPersonSwitchers() above) and the
+// shared-dinner serve cards, all of which show BOTH people's names at once, not just the
+// currently-active one. That's why this reads PROF.elena/partner.displayName directly
+// rather than relying on p.seg (recomputeProf only derives seg/av for whichever slot
+// applyProf(key) is currently rendering, i.e. the INACTIVE profile's derived p.seg can be
+// stale) — the raw displayName field itself is always a valid, already-trimmed/capped
+// string (state.js: PROF defaults + loadState()'s guard, render.js:commitDisplayName()'s
+// own trim/cap), so no derivation is needed to read it safely here. Called from
 // applyProf() (covers boot, profile switch, every Basics edit) and directly from
 // commitDisplayName()'s cascade and auth.js's Google-name seed.
 // 'You' -> 'your', 'Partner' -> 'your partner’s', a real name -> "Sofia’s". Used for the
@@ -319,18 +352,10 @@ function possessiveName(name){
 }
 
 function syncPersonLabels(){
+  renderPersonSwitchers(); // every "whose plan" mount — names + active state + solo-hiding, all from one place now
+
   const nameE = resolveDisplayName('elena');
   const nameP = resolveDisplayName('partner');
-
-  document.querySelectorAll('#profSeg button[data-prof="elena"]').forEach(function(b){ b.textContent = nameE; });
-  document.querySelectorAll('#profSeg button[data-prof="partner"]').forEach(function(b){ b.textContent = nameP; });
-
-  const whoSeg = document.getElementById('profWhoSeg');
-  if(whoSeg){
-    const btns = whoSeg.querySelectorAll('button');
-    if(btns[0]) btns[0].textContent = nameE;
-    if(btns[1]) btns[1].textContent = nameP;
-  }
 
   const svNameE = document.querySelector('#serveElena .sv-name');
   if(svNameE) svNameE.textContent = nameE;
@@ -341,8 +366,7 @@ function syncPersonLabels(){
   // saying "Decrease You's portion" is nonsense — the default names are pronouns, so they
   // need the pronoun possessive rather than the apostrophe-s a real name takes.
   // Decrease/Increase portion aria-labels on the same two serve cards — positional (index
-  // 0/1 within each card's .sv-stepper), same convention syncProfileToggle() above uses
-  // for profWhoSeg's two buttons, since these were never given stable per-button ids.
+  // 0/1 within each card's .sv-stepper), since these were never given stable per-button ids.
   const serveEBtns = document.querySelectorAll('#serveElena .sv-stepper button');
   if(serveEBtns[0]) serveEBtns[0].setAttribute('aria-label', 'Decrease ' + possessiveName(nameE) + ' portion');
   if(serveEBtns[1]) serveEBtns[1].setAttribute('aria-label', 'Increase ' + possessiveName(nameE) + ' portion');

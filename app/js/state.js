@@ -485,9 +485,11 @@ const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack
 // avoid" editor (task C3) — see AVOID_KEYS/avoidLabel() + render.js:renderAvoidEditor().
 // Elena's defaults match the pills already in the Profile screen mockup; Andrea has none.
 let currentProf = 'elena';
-// Session-only (never persisted): set by render.js:setProf() when the PERSON picks a
-// profile, so auth.js:applyOwnMemberSlot() knows not to override a deliberate choice with
-// "open on your own slot" once /auth/me resolves a moment later.
+// Session-only (never persisted): set by app.js's delegated person-switcher click listener
+// when the PERSON picks a profile (any "whose plan" mount — Today, Profile, Week, Insights,
+// Log all funnel through the same handler), so auth.js:applyOwnMemberSlot() knows not to
+// override a deliberate choice with "open on your own slot" once /auth/me resolves a moment
+// later.
 let profileSwitchedByUser = false;
 
 // The supported avoid keys (task C3): free-text isn't in MVP scope, so the editor is a
