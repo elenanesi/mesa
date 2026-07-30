@@ -225,7 +225,7 @@ function renderWeek(){
         + '<div class="dm-e">'+r.emoji+'</div>'
         + '<div class="dm-t">'+escapeHtml(mealTitleWithExtras(view))+'<small>'+SLOT_LABEL[slot]+together+eatenOutPill+'</small></div>'
         + '<div class="dm-k">'+Math.round(view.kcal)+'</div>'
-        + actionBtns + '</div>';
+        + '<div class="dm-actions">'+actionBtns+'</div></div>';
     }).join('');
     // B4 day-level macro line: current-profile totals for the day (dayViews[di].totals —
     // already computed above, not re-derived), matching Insights' sugar-tracking convention
