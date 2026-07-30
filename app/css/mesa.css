@@ -286,6 +286,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .week-tool{border:1.5px solid var(--sage);border-radius:11px;min-height:44px;padding:0 7px;font:inherit;font-size:11.5px;font-weight:800;cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
 .week-tool:has(.week-tool-icon){display:flex;align-items:center;justify-content:center;gap:4px;}
 .week-tool-icon{font-size:14px;line-height:1;flex:0 0 auto;}
+.week-standalone-link{border:0;background:transparent;color:var(--sage-deep);font:inherit;font-weight:800;font-size:inherit;padding:0 0 0 4px;text-decoration:underline;cursor:pointer;}
 .week-tool.primary{background:var(--sage);color:#fff;box-shadow:var(--shadow-soft);}
 .week-tool.ghost{background:rgba(255,250,240,.78);color:var(--sage-deep);box-shadow:none;}
 .week-tool:active{transform:scale(.98);}

@@ -104,7 +104,7 @@ function weekDayNutriViews(plan, person){
   });
 }
 
-function weekStandaloneLogLine(entries){
+function weekStandaloneLogLine(entries, dateISO){
   if(!entries || !entries.length) return '';
   const shown = entries.slice(0, 3).map(function(entry){ return escapeHtml(entry.title); });
   if(entries.length > shown.length) shown.push('+' + (entries.length - shown.length) + ' more');
@@ -112,7 +112,8 @@ function weekStandaloneLogLine(entries){
   const freeSugars = entries.reduce(function(sum, entry){ return sum + (entry.freeSugars || 0); }, 0);
   return '<div class="sub week-standalone-log" style="margin:6px 0 0">Additional: ' + shown.join(' · ')
     + ' · +' + Math.round(kcal) + ' kcal'
-    + (freeSugars > 0 ? ' · ' + Math.round(freeSugars) + 'g free sugars' : '') + '</div>';
+    + (freeSugars > 0 ? ' · ' + Math.round(freeSugars) + 'g free sugars' : '')
+    + ' <button class="week-standalone-link" data-act="standalone-log" data-date="' + htmlAttr(dateISO || '') + '">View / edit</button></div>';
 }
 
 // B4: pure week-level summary consumed by renderWeekNutriCard — per-day averages (kcal/P/
@@ -233,7 +234,7 @@ function renderWeek(){
     // total sugars, which would be a second, disagreeing figure).
     // Standalone entries need one compact line: their nutrition is included above but
     // otherwise has no corresponding meal row to explain a calorie/sugar increase.
-    const standaloneLine = weekStandaloneLogLine(dayViews[di].standaloneEntries);
+    const standaloneLine = weekStandaloneLogLine(dayViews[di].standaloneEntries, day.date);
     const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
       +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
@@ -250,11 +251,15 @@ function renderWeek(){
   el.onclick = function(e){
     const btn = e.target.closest('button[data-act]');
     if(btn && el.contains(btn)){
+      const act = btn.getAttribute('data-act');
+      if(act === 'standalone-log'){
+        openWeekStandaloneLogSheet(btn.getAttribute('data-date'), person);
+        return;
+      }
       const mrow = btn.closest('.day-meal-row');
       if(!mrow) return;
       const di2 = +mrow.getAttribute('data-di');
       const slot2 = mrow.getAttribute('data-slot');
-      const act = btn.getAttribute('data-act');
       if(act === 'pin') toggleMealPin(plan.weekStartDate, di2, slot2, btn.getAttribute('data-pin-person'));
       else if(act === 'routine') openMealRoutineSheet(plan.weekStartDate, di2, slot2, person, mrow.getAttribute('data-recipe-id'));
       else if(act === 'swap') openWeekSwap(plan.weekStartDate, di2, slot2, person);
@@ -592,6 +597,62 @@ function clearMealRoutine(){
    here, same as openMealRoutineSheet's setMealRoutine('daily') pattern — weekLogCtx carries
    the real arguments, and the only user string on the sheet (the meal title) is escaped. */
 let weekLogCtx = null;
+let weekStandaloneLogCtx = null;
+
+function weekStandaloneEntriesForDate(dateISO, person){
+  const day = getDayLog(dateISO);
+  return ((day && day[person]) || []).map(function(entry, index){ return {entry: entry, index: index}; }).filter(function(row){
+    const entry = row.entry;
+    return entry && (entry.kind === 'food' || (entry.kind === 'plan' && !entry.slot));
+  });
+}
+
+function openWeekStandaloneLogSheet(dateISO, person){
+  weekStandaloneLogCtx = {dateISO: dateISO, person: person};
+  renderWeekStandaloneLogSheet();
+}
+
+function renderWeekStandaloneLogSheet(){
+  const ctx = weekStandaloneLogCtx;
+  if(!ctx) return;
+  const rows = weekStandaloneEntriesForDate(ctx.dateISO, ctx.person);
+  const html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Additional items</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub">' + escapeHtml(dayDateLabel(ctx.dateISO)) + ' · these are logged outside a planned meal.</p>'
+    + (rows.length ? rows.map(function(row){
+      const entry = row.entry;
+      const nut = logEntryNutrition(entry);
+      const isFood = entry.kind === 'food';
+      const food = isFood && FOODS[entry.ref];
+      const recipe = !isFood && RECIPES_DB[entry.ref];
+      const title = isFood ? (food ? food.name : 'Ingredient') : logEntryTitleWithComponents(entry);
+      const amount = isFood ? foodAmountLabel(food, entry.grams) : ((entry.portion || 1) + ' serving');
+      const icon = isFood ? '🥄' : (recipe ? recipe.emoji : '🍽️');
+      const edit = isFood ? '<button class="li-x" aria-label="Edit ' + htmlAttr(title) + '" onclick="openEditWeekStandaloneFood(' + row.index + ')">✎</button>' : '';
+      return '<div class="logitem"><div class="li-i">' + icon + '</div><div class="li-t">' + escapeHtml(title)
+        + '<small>' + escapeHtml(amount) + ' · ' + escapeHtml(macroSummaryFromTotals(nut)) + '</small></div><div class="li-k">' + Math.round(nut.kcal) + '</div>'
+        + edit + '<button class="li-x" aria-label="Remove ' + htmlAttr(title) + '" onclick="removeWeekStandaloneEntry(' + row.index + ')">✕</button></div>';
+    }).join('') : '<p class="sub">No additional items are logged for this day.</p>');
+  document.getElementById('sheetBody').innerHTML = html;
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function openEditWeekStandaloneFood(index){
+  const ctx = weekStandaloneLogCtx;
+  const entry = ctx && getDayLog(ctx.dateISO)[ctx.person][index];
+  if(!entry || entry.kind !== 'food') return;
+  editTodayFoodCtx = {indices: [index], ref: entry.ref, grams: Math.max(1, Math.round(entry.grams || 0)), eatenOut: !!entry.eatenOut, dateISO: ctx.dateISO, person: ctx.person};
+  document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
+}
+
+function removeWeekStandaloneEntry(index){
+  const ctx = weekStandaloneLogCtx;
+  if(!ctx || !removeLogEntryAt(ctx.dateISO, ctx.person, index)) return;
+  refreshAfterLogChange();
+  renderWeekStandaloneLogSheet();
+  toast('✕ Removed item');
+}
 
 function weekLogStatusLabel(status){
   if(status === 'confirmed') return '✓ Logged';

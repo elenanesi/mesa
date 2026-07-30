@@ -4501,8 +4501,11 @@ function testWeekQuickAddNutrition(ctx){
   assert(withStandaloneRecipe.quickAddCount === 3 && withStandaloneRecipe.standaloneEntries.length === 3,
     'Week additional line: includes a recipe logged with No meal as well as quick-added foods', JSON.stringify(withStandaloneRecipe.standaloneEntries));
   const line = call(ctx, 'weekStandaloneLogLine', [withStandaloneRecipe.standaloneEntries]);
-  assert(line.indexOf('Additional:') !== -1 && line.indexOf('Fruit jam') !== -1 && /salmon/i.test(line) && /kcal/.test(line),
+  assert(line.indexOf('Additional:') !== -1 && line.indexOf('Fruit jam') !== -1 && /salmon/i.test(line) && /kcal/.test(line) && line.indexOf('View / edit') !== -1,
     'Week additional line: names the standalone items and their combined calories without rendering a second meal detail', line);
+  const standaloneRows = call(ctx, 'weekStandaloneEntriesForDate', [pastDate, person]);
+  assert(standaloneRows.length === 3 && standaloneRows.every(function(row){ return typeof row.index === 'number'; }),
+    'Week additional editor: resolves each standalone log entry back to its exact source index for editing/removal', JSON.stringify(standaloneRows));
 }
 
 /* ---------------- task B3: sides/extras from the Week screen (next-week context) ----------------

@@ -876,7 +876,7 @@ function openEditTodayRecord(groupIndex){
     deleteTodayRecordGroup(groupIndex);
     return;
   }
-  editTodayFoodCtx = {indices: group.indices.slice(), ref: group.ref, grams: Math.max(1, Math.round(group.grams)), eatenOut: groupEatenOut(group)};
+  editTodayFoodCtx = {indices: group.indices.slice(), ref: group.ref, grams: Math.max(1, Math.round(group.grams)), eatenOut: groupEatenOut(group), dateISO: todayISO(), person: currentProf};
   document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -926,7 +926,9 @@ function stepEditTodayFood(delta){
 
 function saveEditTodayFood(){
   if(!editTodayFoodCtx) return;
-  const arr = getDayLog(todayISO())[currentProf];
+  const dateISO = editTodayFoodCtx.dateISO || todayISO();
+  const person = editTodayFoodCtx.person || currentProf;
+  const arr = getDayLog(dateISO)[person];
   const keepIndex = editTodayFoodCtx.indices[0];
   const base = arr[keepIndex];
   if(!base) return;
@@ -936,7 +938,7 @@ function saveEditTodayFood(){
   // Apply the eaten-out choice from the sheet. The merged group collapses to this one kept
   // entry (the others are removed just below), so only `base` needs the flag; setLogEntryEatenOut
   // re-stamps u exactly as the field-writes above already did.
-  setLogEntryEatenOut(todayISO(), currentProf, keepIndex, editTodayFoodCtx.eatenOut);
+  setLogEntryEatenOut(dateISO, person, keepIndex, editTodayFoodCtx.eatenOut);
   editTodayFoodCtx.indices.slice(1).sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
   editTodayFoodCtx = null;
   refreshAfterLogChange();
@@ -946,7 +948,9 @@ function saveEditTodayFood(){
 
 function deleteEditingTodayFood(){
   if(!editTodayFoodCtx) return;
-  editTodayFoodCtx.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
+  const dateISO = editTodayFoodCtx.dateISO || todayISO();
+  const person = editTodayFoodCtx.person || currentProf;
+  editTodayFoodCtx.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(dateISO, person, i); });
   editTodayFoodCtx = null;
   refreshAfterLogChange();
   closeSheet();
