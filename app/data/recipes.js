@@ -849,6 +849,7 @@ const RECIPES_DB = {
   },
   'steamed-rice': {
     title: 'Steamed rice', emoji: '🍚', slot: 'side', role: 'side',
+    imageKey: 'onigiri',
     slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['rice', 60], ['olive-oil', 3]],
     toTaste: ['salt'],
@@ -857,6 +858,7 @@ const RECIPES_DB = {
   },
   nachos: {
     title: 'Nachos', emoji: '🌽', slot: 'side', role: 'side', occasional: true,
+    imageKey: 'nachos',
     slots: ['side', 'lunch', 'dinner'], styles: ['balanced'], time: 8,
     ingredients: [['tortilla-chips', 45], ['mozzarella', 35]],
     toTaste: ['paprika'],

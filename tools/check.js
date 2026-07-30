@@ -943,7 +943,7 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board']),
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos']),
     'availableRecipeImageKeys: returns curated recipe image set plus approved ad hoc recipe images', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
   assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
     'safeRecipeImageKey: accepts an available recipe image key', '');

@@ -626,7 +626,7 @@ const FOODS = {
   'tortilla-chips': {
     name: 'Tortilla chips, plain', per: 100, unit: 'g',
     kcal: 472, protein: 7.1, carbs: 67.8, fat: 20.7, satFat: 2.8, fiber: 4.5, sugars: 0.6, freeSugars: 0, sugarQuality: 'unknown',
-    flags: ['glutenFree'], cat: 'Pantry', src: 'USDA FoodData Central 167558 (tortilla chips, plain white corn, salted; kcal via 4/4/9 policy)'
+    flags: ['glutenFree'], cat: 'Pantry', iconKey: 'nachos', src: 'USDA FoodData Central 167558 (tortilla chips, plain white corn, salted; kcal via 4/4/9 policy)'
   },
   'couscous': {
     name: 'Couscous, dry', per: 100, unit: 'g',

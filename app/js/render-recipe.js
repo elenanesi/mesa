@@ -112,7 +112,7 @@ const RECIPE_IMAGE_KEYS = [
   'citrus-roast-turkey', 'club-sandwich', 'shakshuka',
   'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure',
   'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast',
-  'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board'
+  'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos'
 ];
 
 function recipeImageLabel(key){
