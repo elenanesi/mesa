@@ -57,11 +57,11 @@ function dayDateLabel(dateISO){
 // overlay" totals — a skipped meal wasn't eaten, matching how recomputeConsumed/Insights
 // already zero it via the raw logHistory entries. Without this guard the day macro line
 // and week nutrient card silently disagreed with the row's own ∅ state.
-// C3 fix: quick-add kind:'food' log entries (Log screen's quick-add foods/beverages —
-// cappuccinos, gelato, anything logged outside a meal slot) are NEVER slot views —
-// displayedSlotViewForDate only ever resolves a slot's kind:'plan' entry or the planned
-// recipe — so computeInsights/recomputeConsumed (which iterate the whole day log,
-// kind-agnostic) already counted them while this function didn't. Folded in here, once,
+// C3 fix: standalone log entries (quick-added foods/beverages, plus a recipe logged with
+// "No meal") are NEVER slot views — displayedSlotViewForDate only ever resolves a slot's
+// kind:'plan' entry or the planned recipe — so computeInsights/recomputeConsumed (which
+// iterate the whole day log, kind-agnostic) already counted them while this function
+// didn't. Folded in here, once,
 // so both renderWeek's day-header kcal and its macro line (which both read THIS totals
 // object — see renderWeek below) can never disagree. Only for days that already have a
 // real log, i.e. day.date <= todayISO(): a next-week plan's days (and any future date
@@ -82,20 +82,37 @@ function weekDayNutriViews(plan, person){
       totals.kcal += view.kcal; totals.protein += view.protein; totals.carbs += view.carbs;
       totals.fat += view.fat; totals.fiber += view.fiber; totals.sugars += view.sugars; totals.freeSugars += view.freeSugars;
     });
-    let quickAddCount = 0;
+    const standaloneEntries = [];
     if(day.date <= todayISO()){
       const dayLog = getDayLog(day.date);
       const entries = (dayLog && dayLog[person]) || [];
       entries.forEach(function(e){
-        if(!e || e.kind !== 'food') return;
-        quickAddCount++;
+        // Food entries are always unassigned. Recipe entries are unassigned only when
+        // their slot is empty (the Log picker's "No meal" route); slot-bound plan entries
+        // already have a meal row above and must not be counted twice.
+        if(!e || (e.kind !== 'food' && !(e.kind === 'plan' && !e.slot))) return;
         const nut = logEntryNutrition(e);
         totals.kcal += nut.kcal; totals.protein += nut.protein; totals.carbs += nut.carbs;
         totals.fat += nut.fat; totals.fiber += nut.fiber; totals.sugars += nut.sugars; totals.freeSugars += nut.freeSugars;
+        const title = e.kind === 'food'
+          ? ((FOODS[e.ref] && FOODS[e.ref].name) || 'Ingredient')
+          : recipeDisplayTitle(e.ref, e.opts);
+        standaloneEntries.push({title: title, kcal: nut.kcal, freeSugars: nut.freeSugars});
       });
     }
-    return {views: views, totals: totals, quickAddCount: quickAddCount};
+    return {views: views, totals: totals, quickAddCount: standaloneEntries.length, standaloneEntries: standaloneEntries};
   });
+}
+
+function weekStandaloneLogLine(entries){
+  if(!entries || !entries.length) return '';
+  const shown = entries.slice(0, 3).map(function(entry){ return escapeHtml(entry.title); });
+  if(entries.length > shown.length) shown.push('+' + (entries.length - shown.length) + ' more');
+  const kcal = entries.reduce(function(sum, entry){ return sum + (entry.kcal || 0); }, 0);
+  const freeSugars = entries.reduce(function(sum, entry){ return sum + (entry.freeSugars || 0); }, 0);
+  return '<div class="sub week-standalone-log" style="margin:6px 0 0">Additional: ' + shown.join(' · ')
+    + ' · +' + Math.round(kcal) + ' kcal'
+    + (freeSugars > 0 ? ' · ' + Math.round(freeSugars) + 'g free sugars' : '') + '</div>';
 }
 
 // B4: pure week-level summary consumed by renderWeekNutriCard — per-day averages (kcal/P/
@@ -214,18 +231,16 @@ function renderWeek(){
     // (FREE sugars is the headline metric there — planner.js coverageGaps' 'freeSugars'
     // entry, label "Free sugars" — so it's labeled the same way here rather than showing
     // total sugars, which would be a second, disagreeing figure).
-    // C3: honestly surface the quick-add entries folded into `totals` above (count only,
-    // no list — keeps the row compact per the plan) so the macro line doesn't silently
-    // read higher than the meal titles above it would suggest.
-    const extrasNote = dayViews[di].quickAddCount > 0
-      ? ' · <b>+ ' + dayViews[di].quickAddCount + ' logged extras</b>' : '';
+    // Standalone entries need one compact line: their nutrition is included above but
+    // otherwise has no corresponding meal row to explain a calorie/sugar increase.
+    const standaloneLine = weekStandaloneLogLine(dayViews[di].standaloneEntries);
     const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
-      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g'+extrasNote+'</div>';
+      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" data-di="'+di+'">'
       + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
-      + '<div class="day-meals">'+dayMacroLine+rows+'</div></div>';
+      + '<div class="day-meals">'+dayMacroLine+standaloneLine+rows+'</div></div>';
   }).join('');
   // Delegated click handler for the whole week list (see the data-* note above): most
   // specific target first — action button, then meal row (open recipe), then day header

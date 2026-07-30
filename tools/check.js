@@ -4492,6 +4492,17 @@ function testWeekQuickAddNutrition(ctx){
   assert(Math.abs(insightsDayAfter.kcal - expectedInsightsKcal) <= 1,
     'C3 regression-document: computeInsights day kcal for pastDate INCLUDES the quick-adds (already-correct Insights behavior, pinned so it can never regress silently)',
     'got ' + insightsDayAfter.kcal + ', expected ~' + expectedInsightsKcal);
+
+  // A recipe logged with "No meal" is standalone too. It must appear in the Week's
+  // compact explanatory line and be added exactly once, rather than being mistaken for a
+  // slot-bound meal (which would either disappear or double-count).
+  call(ctx, 'logPlanEntry', [pastDate, person, null, 'salmon', 1, [{recipeId: 'salmon', portion: 1}]]);
+  const withStandaloneRecipe = call(ctx, 'weekDayNutriViews', [plan, person])[1];
+  assert(withStandaloneRecipe.quickAddCount === 3 && withStandaloneRecipe.standaloneEntries.length === 3,
+    'Week additional line: includes a recipe logged with No meal as well as quick-added foods', JSON.stringify(withStandaloneRecipe.standaloneEntries));
+  const line = call(ctx, 'weekStandaloneLogLine', [withStandaloneRecipe.standaloneEntries]);
+  assert(line.indexOf('Additional:') !== -1 && line.indexOf('Fruit jam') !== -1 && /salmon/i.test(line) && /kcal/.test(line),
+    'Week additional line: names the standalone items and their combined calories without rendering a second meal detail', line);
 }
 
 /* ---------------- task B3: sides/extras from the Week screen (next-week context) ----------------
