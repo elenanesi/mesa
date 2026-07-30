@@ -473,23 +473,31 @@ function renderLibraryHub(){
     + '</div>';
 }
 
-function setLibraryScreenHtml(screenId, bodyId, html){
+function setLibraryScreenHtml(screenId, bodyId, html, preserveScroll){
   const body = document.getElementById(bodyId);
   if(body){
+    const screen = document.getElementById(screenId);
+    const scroll = preserveScroll && screen && screen.classList.contains('active') ? captureLibraryScroll() : null;
     body.innerHTML = html;
     const sheet = document.getElementById('sheet');
     const backdrop = document.getElementById('sheetBackdrop');
     if(sheet){ sheet.classList.remove('show'); sheet.classList.remove('tall'); }
     if(backdrop) backdrop.classList.remove('show');
-    const screen = document.getElementById(screenId);
     if(!screen || !screen.classList.contains('active')) go(screenId);
+    else if(scroll) restoreLibraryScroll(scroll);
     return true;
   }
   return false;
 }
 
-function setIngredientsScreenHtml(html){ return setLibraryScreenHtml('libraryIngredients', 'libraryIngredientsBody', html); }
-function setRecipesScreenHtml(html){ return setLibraryScreenHtml('libraryRecipes', 'libraryRecipesBody', html); }
+// library.js is also loaded in the data-only validation harness, where app.js's DOM
+// navigation helpers are intentionally absent.  The wrappers keep Library rendering
+// independently testable while using the real app-level scroll preservation in-browser.
+function captureLibraryScroll(){ return typeof captureAppScroll === 'function' ? captureAppScroll() : {app: 0, screen: 0}; }
+function restoreLibraryScroll(position){ if(typeof restoreAppScroll === 'function') restoreAppScroll(position); }
+
+function setIngredientsScreenHtml(html, preserveScroll){ return setLibraryScreenHtml('libraryIngredients', 'libraryIngredientsBody', html, preserveScroll); }
+function setRecipesScreenHtml(html, preserveScroll){ return setLibraryScreenHtml('libraryRecipes', 'libraryRecipesBody', html, preserveScroll); }
 function setScannerScreenHtml(html){ return setLibraryScreenHtml('libraryScanner', 'libraryScannerBody', html); }
 function setPantryScreenHtml(html){ return setLibraryScreenHtml('libraryPantry', 'libraryPantryBody', html); }
 
@@ -504,9 +512,12 @@ function openFoodLibrary(){
 // libFoodFilters — used by the detail page's back button so returning to the list
 // preserves whatever search/filter state was active before the row tap. openFoodLibrary()
 // above (fresh open) still resets that state first, then calls this.
-function renderFoodLibraryList(){
+let libFoodListReturnScroll = null;
+function renderFoodLibraryList(returnScroll){
   setIngredientsScreenHtml(buildFoodLibrarySheet());
   attachLibFoodListHandler();
+  restoreLibraryScroll(returnScroll || libFoodListReturnScroll);
+  libFoodListReturnScroll = null;
 }
 
 // Delegated click handler for the Ingredients list's per-row action buttons
@@ -1310,7 +1321,7 @@ function openEditFoodForm(id){
 // grid element is gone) — same per-render re-attach pattern as renderFoodLibraryList's
 // attachLibFoodListHandler call.
 function renderNewFoodFormSheet(){
-  setIngredientsScreenHtml(buildNewFoodFormSheet());
+  setIngredientsScreenHtml(buildNewFoodFormSheet(), true);
   attachNewFoodIconGridHandler();
   attachNewFoodComponentHandlers();
 }
@@ -1991,6 +2002,7 @@ function buildFoodDetailMarkup(id){
 
 function openFoodDetail(id){
   if(!FOODS[id]){ toast('Ingredient not found'); renderFoodLibraryList(); return; }
+  libFoodListReturnScroll = captureLibraryScroll();
   libFoodDetailId = id;
   setIngredientsScreenHtml(buildFoodDetailMarkup(id));
   attachFoodDetailHandler();
@@ -2451,6 +2463,29 @@ function confirmPantryAdd(){
    narrow the candidate list. These are view-only controls and reset when Recipes opens. */
 let libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
 let libRecipeFiltersOpen = false;
+let libRecipeListReturn = null;
+
+function cloneLibRecipeFilters(filters){
+  return {query: filters.query || '', diets: new Set(filters.diets), slots: new Set(filters.slots), tags: new Set(filters.tags), seasons: new Set(filters.seasons)};
+}
+
+function rememberRecipeListReturn(){
+  const screen = document.getElementById('libraryRecipes');
+  if(screen && screen.classList.contains('active')){
+    libRecipeListReturn = {filters: cloneLibRecipeFilters(libRecipeFilters), filtersOpen: libRecipeFiltersOpen, scroll: captureLibraryScroll()};
+  }
+}
+
+function returnToMyRecipes(){
+  if(!libRecipeListReturn){ openMyRecipes(); return; }
+  const saved = libRecipeListReturn;
+  libRecipeListReturn = null;
+  libRecipeFilters = saved.filters;
+  libRecipeFiltersOpen = saved.filtersOpen;
+  setRecipesScreenHtml(buildMyRecipesSheet());
+  attachLibRecipeListHandler();
+  restoreLibraryScroll(saved.scroll);
+}
 
 function openMyRecipes(){
   libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
@@ -2802,15 +2837,17 @@ function recipeToBuilder(id){
 }
 
 function openNewRecipeForm(){
+  rememberRecipeListReturn();
   recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: ''};
-  renderRecipeBuilderSheet();
+  renderRecipeBuilderSheet(false);
 }
 
 function openEditRecipeForm(id){
   const draft = recipeToBuilder(id);
   if(!draft){ toast('Recipe not found'); return; }
+  rememberRecipeListReturn();
   recipeBuilder = draft;
-  renderRecipeBuilderSheet();
+  renderRecipeBuilderSheet(false);
 }
 
 function openRecipeImageForm(id){
@@ -2821,8 +2858,8 @@ function openRecipeImageForm(id){
   renderRecipeBuilderSheet();
 }
 
-function renderRecipeBuilderSheet(){
-  setRecipesScreenHtml(buildRecipeBuilderSheet());
+function renderRecipeBuilderSheet(preserveScroll){
+  setRecipesScreenHtml(buildRecipeBuilderSheet(), preserveScroll !== false);
   attachRecipeImageGridHandler();
 }
 
@@ -2891,7 +2928,7 @@ function buildRecipeBuilderSheet(){
   const meta = deriveRecipeMeta(perServingIngredients, perServing, rb.time);
 
   const editing = !!rb.editingId;
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit recipe' : 'New recipe') + '</h2><button class="backbtn" style="margin:0" onclick="openMyRecipes()">‹ Back</button></div>';
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit recipe' : 'New recipe') + '</h2><button class="backbtn" style="margin:0" onclick="returnToMyRecipes()">‹ Back</button></div>';
 
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(rb.name) + '" oninput="recipeBuilder.name=this.value" placeholder="e.g. Tempeh bowl" autocomplete="off"></div>';
@@ -2984,7 +3021,7 @@ function buildRecipeBuilderSheet(){
   }
 
   html += '<button class="cta" style="margin-top:16px" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
-    + '<button class="cta ghostbtn" onclick="openMyRecipes()">Cancel</button>';
+    + '<button class="cta ghostbtn" onclick="returnToMyRecipes()">Cancel</button>';
   // task D3: a built-in recipe with a saved household override (recipeOverrides[id] —
   // "edited" badge in the Recipes list) can be reset back to its shipped defaults,
   // optionGroups included, mirroring the ingredient library's existing resetFoodOverride
@@ -3237,11 +3274,20 @@ function removeRecipeIngredient(i){
 // base ingredients (recipeOptionPickerTarget stays null), exactly like every pre-D3 call
 // site (openAddIngredientToRecipe() with no args, from the base Ingredients section).
 let recipeOptionPickerTarget = null;
+let recipeBuilderReturnScroll = null;
+function returnToRecipeBuilder(){
+  const returnScroll = recipeBuilderReturnScroll;
+  recipeBuilderReturnScroll = null;
+  renderRecipeBuilderSheet(false);
+  restoreLibraryScroll(returnScroll);
+}
 function openAddIngredientToRecipe(target){
+  recipeBuilderReturnScroll = captureLibraryScroll();
   recipeBuilder.pickerQuery = '';
   recipeOptionPickerTarget = (target && typeof target.groupIndex === 'number' && typeof target.choiceIndex === 'number')
     ? {groupIndex: target.groupIndex, choiceIndex: target.choiceIndex} : null;
   setRecipesScreenHtml(buildRecipeIngredientPickerSheet());
+  restoreLibraryScroll({app: 0, screen: 0});
   // Delegated click for the result rows (data-food-id — ids can be user-authored 'cf-'
   // slugs, so no inline-onclick interpolation). #recIngResults keeps only its children
   // replaced on each keystroke (onRecipeIngredientSearch), so one assignment survives.
@@ -3255,7 +3301,7 @@ function openAddIngredientToRecipe(target){
   if(input) input.focus();
 }
 function buildRecipeIngredientPickerSheet(){
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add ingredient</h2><button class="backbtn" style="margin:0" onclick="renderRecipeBuilderSheet()">‹ Back</button></div>'
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add ingredient</h2><button class="backbtn" style="margin:0" onclick="returnToRecipeBuilder()">‹ Back</button></div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="recIngSearchInput" placeholder="Search foods…" value="' + htmlAttr(recipeBuilder.pickerQuery) + '" oninput="onRecipeIngredientSearch(this.value)" autocomplete="off">'
     + '<div id="recIngResults" style="margin-top:4px">' + renderRecipeIngredientResults(recipeBuilder.pickerQuery) + '</div>';
 }
@@ -3293,7 +3339,7 @@ function addIngredientToRecipe(foodId){
   } else {
     recipeBuilder.ingredients.push({foodId: foodId, grams: defaultGrams});
   }
-  renderRecipeBuilderSheet();
+  returnToRecipeBuilder();
 }
 
 /* ===================================================================

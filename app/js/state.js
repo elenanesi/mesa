@@ -393,6 +393,9 @@ function isValidWeekPlanShape(p){
 }
 
 let recipeOrigin = 'today';
+// Scroll position of the originating screen while a recipe detail is open.  Keeping it
+// alongside recipeOrigin makes Back return to the same searched/filter list row.
+let recipeReturnScroll = null;
 // Day context for a recipe opened from a Week row ({weekStartDate, dayIndex, slot,
 // person}), so the recipe screen's swap button targets THAT day, not today. null for
 // every other origin (Today/Log/library) — those really do mean today.

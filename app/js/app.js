@@ -7,7 +7,28 @@
    =================================================================== */
 
 /* ---------------- navigation ---------------- */
-function go(id, el){
+// A number of Library flows replace a screen's markup in place (for example a recipe
+// builder re-render after changing an ingredient).  Keeping scroll capture here gives
+// those flows one reliable way to restore the exact reading position after the DOM work.
+function captureAppScroll(){
+  if(!document || typeof document.querySelector !== 'function') return {app: 0, screen: 0};
+  var app = document.querySelector('.app');
+  var active = document.querySelector('.screen.active');
+  return {app: app ? app.scrollTop : 0, screen: active ? active.scrollTop : 0};
+}
+function restoreAppScroll(position){
+  if(!position) return;
+  var later = typeof requestAnimationFrame === 'function' ? requestAnimationFrame : function(fn){ setTimeout(fn, 0); };
+  later(function(){
+    if(!document || typeof document.querySelector !== 'function') return;
+    var app = document.querySelector('.app');
+    var active = document.querySelector('.screen.active');
+    if(app) app.scrollTop = position.app || 0;
+    if(active) active.scrollTop = position.screen || 0;
+  });
+}
+
+function go(id, el, opts){
   // Resolve the target screen BEFORE touching any classList. Bug fix: this used to
   // blindly remove .active from every screen and then do document.getElementById(id)
   // .classList.add('active') in the same breath — if `id` didn't resolve to an element
@@ -20,8 +41,11 @@ function go(id, el){
   if(id !== 'libraryScanner' && typeof stopBarcodeScanner === 'function') stopBarcodeScanner();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   target.classList.add('active');
-  document.querySelector('.app').scrollTop = 0;
-  var scr = target; if(scr) scr.scrollTop = 0;
+  if(opts && opts.preserveScroll) restoreAppScroll(opts.preserveScroll);
+  else {
+    document.querySelector('.app').scrollTop = 0;
+    var scr = target; if(scr) scr.scrollTop = 0;
+  }
   // sync tabbar highlight. Screens that aren't themselves a tab map onto the tab that OWNS
   // them, otherwise every tab clears and nothing lights up — the user is somewhere with no
   // "you are here" at all. The four library sub-screens map to the Library tab; #log maps to
@@ -51,8 +75,13 @@ function openHowMesaPlans(sectionId){
 function openRecipe(key, origin, dayCtx){
   recipeOrigin = origin || 'today';
   recipeDayCtx = dayCtx || null;
+  recipeReturnScroll = captureAppScroll();
   renderRecipe(key);
   go('recipe');
+}
+
+function backFromRecipe(){
+  go(recipeOrigin || 'today', null, {preserveScroll: recipeReturnScroll});
 }
 
 function todayRecipeCtx(slot){
