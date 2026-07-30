@@ -4788,6 +4788,10 @@ function testOpenAddMenuRoutesToLogScreen(){
   assert(rowHtml.indexOf('openFoodSearch()') === -1,
     'openAddMenu(): the "Log food" row no longer opens the old openFoodSearch() bottom sheet',
     rowHtml);
+  const logFoodAt = fnBody.indexOf('Log food');
+  const scannerAt = fnBody.indexOf('Scan barcode');
+  assert(logFoodAt !== -1 && scannerAt !== -1 && logFoodAt < scannerAt,
+    'openAddMenu(): Log food is the first action in the centre + menu', 'Log food@' + logFoodAt + ' scanner@' + scannerAt);
 }
 
 function testMealActionButtonHelperSharedByBothScreens(ctx){
@@ -9401,6 +9405,8 @@ function testWeekCompactPlanningWorkspace(){
     'Week compact workspace: the balance tile and plan list are available', 'seg@' + segIdx + ' toolbar@' + toolbarIdx + ' quality@' + qualityIdx + ' list@' + listIdx);
   assert(weekHtml.indexOf('onclick="openShopping()"') !== -1 && weekHtml.indexOf('onclick="openRebalanceSheet()"') !== -1 && weekHtml.indexOf('onclick="openRegenerateSheet()"') !== -1,
     'Week toolbar: Shopping, Re-balance, and Regenerate are all top-level compact actions', weekHtml);
+  assert(/onclick="openShopping\(\)"[^>]*>[\s\S]*?week-tool-icon[\s\S]*?🛒/.test(weekHtml),
+    'Week toolbar: Shopping uses the same cart emoji as the Today shopping shortcut', weekHtml);
 
   const afterList = weekHtml.slice(listIdx);
   assert(afterList.indexOf('Generate shopping list') === -1 && afterList.indexOf('Regenerate week (keep pinned') === -1,
@@ -9430,6 +9436,8 @@ function testWeekCompactPlanningWorkspace(){
 
   assert(css.indexOf('.week-toolbar') !== -1 && css.indexOf('min-height:44px') !== -1 && css.indexOf('.week-quality') !== -1,
     'Week CSS: compact toolbar and drawer styles exist with 44px tap targets', '');
+  assert(css.indexOf('.week-tool-icon') !== -1 && css.indexOf('justify-content:center') !== -1,
+    'Week CSS: cart icon is centered inside the existing fixed-size toolbar button', '');
   assert(css.indexOf('.week-summary') === -1,
     'Week CSS: old standalone week-summary block styling is removed', '');
 }
