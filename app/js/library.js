@@ -1371,9 +1371,29 @@ function openEditFoodForm(id){
 // grid element is gone) — same per-render re-attach pattern as renderFoodLibraryList's
 // attachLibFoodListHandler call.
 function renderNewFoodFormSheet(preserveScroll){
+  rememberNewFoodFormPanels();
   setIngredientsScreenHtml(buildNewFoodFormSheet(), preserveScroll !== false);
   attachNewFoodIconGridHandler();
   attachNewFoodComponentHandlers();
+}
+
+// A tag tap redraws this form so selected chips and computed nutrition update immediately.
+// Native <details> state is otherwise lost with innerHTML, which shortens the page before
+// scroll restoration runs and makes the viewport jump. Keep each panel's state on the
+// draft itself so every editor control (not just flags) stays anchored in place.
+function rememberNewFoodFormPanels(){
+  if(!newFoodForm || typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
+  if(!newFoodForm.panelOpen) newFoodForm.panelOpen = {};
+  document.querySelectorAll('[data-food-panel]').forEach(function(panel){
+    const key = panel.getAttribute('data-food-panel');
+    if(key) newFoodForm.panelOpen[key] = !!panel.open;
+  });
+}
+function foodFormPanelAttrs(key, defaultOpen){
+  const saved = newFoodForm && newFoodForm.panelOpen && newFoodForm.panelOpen[key];
+  const isOpen = newFoodForm && newFoodForm.panelOpen && Object.prototype.hasOwnProperty.call(newFoodForm.panelOpen, key)
+    ? saved : defaultOpen;
+  return ' data-food-panel="' + key + '"' + (isOpen ? ' open' : '');
 }
 
 function computeNewFoodKcal(f){ return Math.round(4 * f.protein + 4 * f.carbs + 9 * f.fat); }
@@ -1397,7 +1417,7 @@ function buildNewFoodFormSheet(){
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(f.name) + '" oninput="newFoodForm.name=this.value" placeholder="e.g. Tempeh" autocomplete="off"></div>';
 
-  html += '<details class="food-builder-panel" open><summary>Ingredient settings <span>type · category · season</span></summary><div class="food-builder-panel-body">';
+  html += '<details class="food-builder-panel"' + foodFormPanelAttrs('settings', true) + '><summary>Ingredient settings <span>type · category · season</span></summary><div class="food-builder-panel-body">';
   html += '<div class="field"><label>Type</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + '<button class="pill ghost chip-preset' + (!f.isComposite ? ' chipsel' : '') + '" onclick="setNewFoodCompositeMode(false)">Single ingredient</button>'
     + '<button class="pill ghost chip-preset' + (f.isComposite ? ' chipsel' : '') + '" onclick="setNewFoodCompositeMode(true)">Composite</button>'
@@ -1414,10 +1434,10 @@ function buildNewFoodFormSheet(){
   html += '</div></details>';
 
   if(f.isComposite){
-    html += '<details class="food-builder-panel" open><summary>Composite formula <span>components · variants</span></summary><div class="food-builder-panel-body">'
+    html += '<details class="food-builder-panel"' + foodFormPanelAttrs('composite', true) + '><summary>Composite formula <span>components · variants</span></summary><div class="food-builder-panel-body">'
       + buildNewFoodCompositeSection() + '</div></details>';
   } else {
-    html += '<details class="food-builder-panel" open><summary>Nutrition <span>per 100g · sugars included</span></summary><div class="food-builder-panel-body">';
+    html += '<details class="food-builder-panel"' + foodFormPanelAttrs('nutrition', true) + '><summary>Nutrition <span>per 100g · sugars included</span></summary><div class="food-builder-panel-body">';
     html += '<div class="field"><label>Sugar quality</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
       + [['intrinsic','Intrinsic'], ['added/free','Added/free'], ['mixed','Mixed'], ['unknown','Unknown']].map(function(pair){
         return '<button class="pill ghost chip-preset' + (f.sugarQuality === pair[0] ? ' chipsel' : '') + '" onclick="setNewFoodSugarQuality(\'' + pair[0] + '\')">' + pair[1] + '</button>';
@@ -1447,7 +1467,7 @@ function buildNewFoodFormSheet(){
     if(notes.length) html += '<div class="cap-note" style="color:#b25e35;margin-top:2px">' + notes.join(' ') + '</div>';
     html += '</div></details>';
 
-    html += '<details class="food-builder-panel"><summary>Planning tags <span>optional</span></summary><div class="food-builder-panel-body">';
+    html += '<details class="food-builder-panel"' + foodFormPanelAttrs('planning', false) + '><summary>Planning tags <span>optional</span></summary><div class="food-builder-panel-body">';
     html += '<div class="field"><label>Flags (optional)</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
       + FOOD_FORM_FLAGS.map(function(fl){ return '<button class="pill ghost chip-preset' + (f.flags.indexOf(fl) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodFlag(\'' + fl + '\')">' + flagLabel(fl) + '</button>'; }).join('')
       + '</div></div>';
@@ -1471,7 +1491,7 @@ function buildNewFoodFormSheet(){
   // picking a tile doesn't collapse the grid.
   const currentIconKey = safeIngredientIconKey(f.iconKey || '');
   const previewSrc = currentIconKey ? 'assets/ingredients/' + currentIconKey + '.png' : '';
-  html += '<details class="food-builder-panel"' + (f.iconPickerOpen ? ' open' : '') + '><summary>Icon <span>' + (currentIconKey ? 'custom icon' : 'automatic') + '</span></summary><div class="food-builder-panel-body">'
+  html += '<details class="food-builder-panel"' + foodFormPanelAttrs('icon', f.iconPickerOpen) + '><summary>Icon <span>' + (currentIconKey ? 'custom icon' : 'automatic') + '</span></summary><div class="food-builder-panel-body">'
     + '<div class="field" style="margin-top:0"><label>Icon</label><div class="row" style="gap:12px;align-items:center;margin-top:6px">'
     + ingredientIconHtml(previewSrc)
     + '<button class="pill ghost chip-preset" onclick="toggleNewFoodIconPicker()">' + (f.iconPickerOpen ? 'Hide icons' : 'Choose icon') + '</button>'
