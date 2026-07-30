@@ -585,7 +585,7 @@ const FOODS = {
   },
   'ravioli': {
     name: 'Ravioli, egg pasta with filling, fresh', per: 100, unit: 'g',
-    kcal: 263, protein: 11.0, carbs: 36.0, fat: 8.0, satFat: 3.0, fiber: 2.0, sugars: 2.0, freeSugars: 0.5, sugarQuality: 'mixed',
+    kcal: 263, protein: 11.0, carbs: 36.0, fat: 8.0, satFat: 3.0, fiber: 2.0, sugars: 2.0, freeSugars: 0, sugarQuality: 'unknown',
     flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'USDA FDC-style (ravioli, cheese-filled, fresh); representative filled-pasta average'
   },
   'tomato-passata': {
@@ -837,7 +837,7 @@ const FOODS = {
   },
   'vanilla': {
     name: 'Vanilla (to taste)', per: 100, unit: 'g',
-    kcal: 52, protein: 0.1, carbs: 12.7, fat: 0.1, satFat: 0.0, fiber: 0, sugars: 12.7, freeSugars: 12.7, sugarQuality: 'added/free',
+    kcal: 52, protein: 0.1, carbs: 12.7, fat: 0.1, satFat: 0.0, fiber: 0, sugars: 12.7, freeSugars: 0, sugarQuality: 'unknown',
     flags: [], cat: 'Pantry', iconKey: 'vanilla',
     src: 'USDA FDC-style vanilla extract macro-only entry; kcal per 4/4/9 (used in tiny to-taste amounts)'
   },

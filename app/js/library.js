@@ -895,14 +895,41 @@ function inferOffFlags(product, food){
   return flags;
 }
 
-function inferSugarQuality(product){
-  const hay = [
+function offIngredientText(product){
+  return [
     product.ingredients_text || '',
     product.ingredients_text_it || '',
     product.labels_tags || []
   ].join(' ').toLowerCase();
+}
+
+// Nutrition labels normally publish total sugars, not WHO/EFSA "free sugars".  Open
+// Food Facts sometimes supplies `added-sugars`; when it does not, an ingredient list can
+// still establish that the product contains a free-sugar source.  In that latter case we
+// deliberately use total sugars as a conservative upper-bound estimate rather than
+// silently recording zero.  The `freeSugarsEstimated` flag stays with the imported food
+// so the estimate is never mistaken for a lab/label measurement.
+function offHasFreeSugarSource(product){
+  const hay = offIngredientText(product);
+  const juice = /\b(fruit juice|succo di frutta|juice concentrate|concentrato di succo)\b/.test(hay);
+  if(/\b(no added sugar|without added sugar|senza zuccheri aggiunti|sans sucres ajoutés)\b/.test(hay) && !juice) return false;
+  return /\b(sugar|zuccher[oi]|sucrose|glucose|fructose|dextrose|honey|miele|syrup|sciroppo|agave|molasses|melassa|fruit juice|succo di frutta|juice concentrate|concentrato di succo)\b/.test(hay);
+}
+
+function offFreeSugars(product, nutriments, sugars){
+  if(sugars === null || sugars <= 0) return {value: 0, estimated: false};
+  const addedSugars = offNum(nutriments, 'added-sugars');
+  if(addedSugars !== null) return {value: Math.min(addedSugars, sugars), estimated: false};
+  if(offHasFreeSugarSource(product)) return {value: sugars, estimated: true};
+  return {value: 0, estimated: false};
+}
+
+function inferSugarQuality(product){
+  const hay = offIngredientText(product);
+  // Juices/concentrates are free sugars even when their label says "no added sugar".
+  if(/\b(fruit juice|succo di frutta|juice concentrate|concentrato di succo)\b/.test(hay)) return 'added/free';
   if(/\b(no added sugar|without added sugar|senza zuccheri aggiunti|sans sucres ajoutés)\b/.test(hay)) return 'intrinsic';
-  if(/\b(sugar|zuccheri|zucchero|glucose|fructose|syrup|sciroppo|dextrose|maltodextrin|maltodestrina)\b/.test(hay)) return 'mixed';
+  if(offHasFreeSugarSource(product)) return 'mixed';
   return 'unknown';
 }
 
@@ -915,8 +942,8 @@ function openFoodFactsProductToFood(product, barcode){
   const satFat = offNum(nutriments, 'saturated-fat') || 0;
   const fiber = offNum(nutriments, 'fiber') || 0;
   const sugars = offNum(nutriments, 'sugars');
-  const addedSugars = offNum(nutriments, 'added-sugars');
-  const freeSugars = addedSugars !== null ? addedSugars : null;
+  const totalSugars = sugars === null ? 0 : Math.min(sugars, carbs);
+  const freeSugarInfo = offFreeSugars(product, nutriments, totalSugars);
   const labelKcal = offNum(nutriments, 'energy-kcal');
   const name = firstText(product.product_name_it, product.product_name, product.generic_name_it, product.generic_name, 'Product ' + barcode);
   const food = {
@@ -928,13 +955,14 @@ function openFoodFactsProductToFood(product, barcode){
     fat: +fat.toFixed(1),
     satFat: +Math.min(satFat, fat).toFixed(1),
     fiber: +Math.min(fiber, carbs).toFixed(1),
-    sugars: sugars === null ? 0 : +Math.min(sugars, carbs).toFixed(1),
-    freeSugars: freeSugars === null ? 0 : +Math.min(freeSugars, sugars === null ? carbs : sugars).toFixed(1),
+    sugars: +totalSugars.toFixed(1),
+    freeSugars: +freeSugarInfo.value.toFixed(1),
+    freeSugarsEstimated: freeSugarInfo.estimated === true,
     sugarQuality: inferSugarQuality(product),
     flags: [],
     cat: inferOffCategory(product),
     season: 'evergreen',
-    src: 'Open Food Facts barcode ' + barcode + '; kcal computed by Mesa from label macros; sugars are informational',
+    src: 'Open Food Facts barcode ' + barcode + '; kcal computed by Mesa from label macros; free sugars use the label added-sugars value when available, otherwise a conservative ingredient-list estimate',
     barcode: barcode,
     offBarcode: barcode,
     offUrl: product.url || ('https://world.openfoodfacts.org/product/' + barcode),
@@ -974,9 +1002,10 @@ function renderBarcodeProductPreview(){
     + '<div class="n"><div class="nt"><span>Protein</span><b>' + f.protein + ' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Carbs</span><b>' + f.carbs + ' g</b></div></div>'
     + '<div class="n"><div class="nt"><span>Sugars</span><b>' + Math.round(f.sugars || 0) + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Free sugars</span><b>' + Math.round(f.freeSugars || 0) + ' g' + (f.freeSugarsEstimated ? ' ≈' : '') + '</b></div></div>'
     + '<div class="n"><div class="nt"><span>Fat</span><b>' + f.fat + ' g</b></div></div>'
     + '</div>'
-    + '<div class="sub" style="margin-top:8px">Per 100g · ' + escapeHtml(f.cat) + ' · ' + seasonLabel(foodSeason(f)) + ' · ' + sugarQualityLabel(f.sugarQuality) + (f.flags.length ? ' · ' + f.flags.map(flagLabel).join(', ') : '') + '</div>'
+    + '<div class="sub" style="margin-top:8px">Per 100g · ' + escapeHtml(f.cat) + ' · ' + seasonLabel(foodSeason(f)) + ' · ' + sugarQualityLabel(f.sugarQuality) + (f.freeSugarsEstimated ? ' · free sugars estimated from ingredients' : '') + (f.flags.length ? ' · ' + f.flags.map(flagLabel).join(', ') : '') + '</div>'
     + labelDiff
     + (f.ingredientsText ? '<div class="field"><label>Ingredients from label</label><div class="why" style="margin-top:6px">' + escapeHtml(f.ingredientsText) + '</div></div>' : '<p class="sub" style="margin-top:10px">No ingredient text was available for this product.</p>')
     + '<button class="cta" onclick="saveBarcodeProductAsFood()">Save ingredient</button>'

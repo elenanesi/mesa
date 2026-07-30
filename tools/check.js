@@ -229,6 +229,35 @@ function testValidateData(ctx){
     'errors=' + JSON.stringify(r && r.errors) + ' warnings=' + JSON.stringify(r && r.warnings));
 }
 
+function testBarcodeSugarImport(ctx){
+  const sweetened = call(ctx, 'openFoodFactsProductToFood', [{
+    product_name: 'Sweetened cereal', ingredients_text: 'oats, sugar, cocoa',
+    nutriments: {proteins_100g: 8, carbohydrates_100g: 70, fat_100g: 8, sugars_100g: 18}
+  }, '8012345678901']);
+  assert(sweetened.sugars === 18 && sweetened.freeSugars === 18 && sweetened.freeSugarsEstimated === true,
+    'barcode sugars: sugar-containing product keeps total sugars and a disclosed conservative free-sugars estimate', JSON.stringify(sweetened));
+  assert(sweetened.sugarQuality === 'mixed',
+    'barcode sugars: ingredient-list estimate keeps the mixed-sugars classification', sweetened.sugarQuality);
+
+  const exact = call(ctx, 'openFoodFactsProductToFood', [{
+    product_name: 'Labelled product', ingredients_text: 'milk, sugar',
+    nutriments: {proteins_100g: 5, carbohydrates_100g: 12, fat_100g: 3, sugars_100g: 10, 'added-sugars_100g': 4}
+  }, '8012345678902']);
+  assert(exact.sugars === 10 && exact.freeSugars === 4 && exact.freeSugarsEstimated === false,
+    'barcode sugars: Open Food Facts added-sugars value wins over the estimate when present', JSON.stringify(exact));
+
+  const unsweetened = call(ctx, 'openFoodFactsProductToFood', [{
+    product_name: 'Plain yogurt', ingredients_text: 'milk, cultures, no added sugar',
+    nutriments: {proteins_100g: 4, carbohydrates_100g: 5, fat_100g: 3, sugars_100g: 5}
+  }, '8012345678903']);
+  assert(unsweetened.sugars === 5 && unsweetened.freeSugars === 0 && unsweetened.sugarQuality === 'intrinsic',
+    'barcode sugars: unsweetened milk sugars do not become free sugars', JSON.stringify(unsweetened));
+
+  const FOODS = get(ctx, 'FOODS');
+  assert(FOODS.ravioli.freeSugars === 0 && FOODS.vanilla.freeSugars === 0,
+    'food sugar audit: unsourced free-sugar guesses were removed from ravioli and vanilla', JSON.stringify({ravioli: FOODS.ravioli, vanilla: FOODS.vanilla}));
+}
+
 /* ---------------- task B2: recipe `role` tagging pass + breakfastPair whitelist ----------------
    role is orthogonal to slots (data/recipes.js's file-header doc, FEATURES-2026-07-plan.md
    B2): every RECIPES_DB entry must carry a valid role (data/validate.js:VALID_ROLES already
@@ -9634,6 +9663,7 @@ function main(){
   loadAppInto(ctx);
 
   runTest('data: validateData()', function(){ testValidateData(ctx); });
+  runTest('barcode sugar import + food free-sugar audit', function(){ testBarcodeSugarImport(ctx); });
   runTest('recipe roles + breakfastPair whitelist (task B2)', function(){ testRecipeRolesAndBreakfastPair(ctx); });
   runTest('goal toggles (task B1)', function(){ testGoalToggles(ctx); });
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
