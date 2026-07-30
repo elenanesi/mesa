@@ -748,6 +748,22 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
    large pill CTAs in a dense editing form. */
 .recipe-builder-panel .pill.chip-preset{min-height:44px;border:1px solid rgba(176,146,105,.35);border-radius:10px;padding:0 11px;background:rgba(255,250,240,.78);color:var(--ink-soft);font-size:12px;font-weight:700;}
 .recipe-builder-panel .pill.chip-preset.chipsel{border-color:var(--sage);background:var(--sage);color:#fff;}
+.food-builder-panel{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.58);overflow:hidden;}
+.food-builder-panel summary{min-height:46px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;cursor:pointer;color:var(--ink-soft);font-size:13px;font-weight:800;list-style:none;}
+.food-builder-panel summary::-webkit-details-marker{display:none;}
+.food-builder-panel summary::after{content:'⌄';font-size:13px;color:var(--muted);transition:transform .16s ease;order:3;}
+.food-builder-panel[open] summary{border-bottom:1px solid var(--line);}
+.food-builder-panel[open] summary::after{transform:rotate(180deg);}
+.food-builder-panel summary span{margin-left:auto;font-size:11px;font-weight:600;color:var(--muted);text-align:right;}
+.food-builder-panel-body{padding:12px 13px 14px;}
+.food-builder-panel .pill.chip-preset{min-height:44px;border:1px solid rgba(176,146,105,.35);border-radius:10px;padding:0 11px;background:rgba(255,250,240,.78);color:var(--ink-soft);font-size:12px;font-weight:700;}
+.food-builder-panel .pill.chip-preset.chipsel{border-color:var(--sage);background:var(--sage);color:#fff;}
+.ingredient-detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.ingredient-detail-action{min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--sage-deep);font:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.ingredient-detail-action:active{transform:scale(.97);}
+.ingredient-detail-action-primary{background:var(--sage);border-color:var(--sage);color:#fff;}
+.ingredient-detail-action-quiet{color:var(--ink-soft);font-weight:600;}
+.ingredient-detail-action-danger{color:#b25e35;background:#fff8f4;border-color:#efd4c7;}
 .recipe-image-tile{width:44px;height:44px;display:block;object-fit:contain;border-radius:10px;background:#fbf5e8;padding:2px;}
 .recipe-image-tile-auto{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:var(--paper);color:var(--sage-deep);font-size:11px;font-weight:700;border:1px dashed rgba(127,147,100,.42);}
 .icon-tile.sel{border-color:var(--sage);background:var(--sage-tint);}

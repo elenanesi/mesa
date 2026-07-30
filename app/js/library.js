@@ -1397,6 +1397,7 @@ function buildNewFoodFormSheet(){
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(f.name) + '" oninput="newFoodForm.name=this.value" placeholder="e.g. Tempeh" autocomplete="off"></div>';
 
+  html += '<details class="food-builder-panel" open><summary>Ingredient settings <span>type · category · season</span></summary><div class="food-builder-panel-body">';
   html += '<div class="field"><label>Type</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + '<button class="pill ghost chip-preset' + (!f.isComposite ? ' chipsel' : '') + '" onclick="setNewFoodCompositeMode(false)">Single ingredient</button>'
     + '<button class="pill ghost chip-preset' + (f.isComposite ? ' chipsel' : '') + '" onclick="setNewFoodCompositeMode(true)">Composite</button>'
@@ -1410,10 +1411,13 @@ function buildNewFoodFormSheet(){
   html += '<div class="field"><label>Season</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(f.season) === s ? ' chipsel' : '') + '" onclick="setNewFoodSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
     + '</div></div>';
+  html += '</div></details>';
 
   if(f.isComposite){
-    html += buildNewFoodCompositeSection();
+    html += '<details class="food-builder-panel" open><summary>Composite formula <span>components · variants</span></summary><div class="food-builder-panel-body">'
+      + buildNewFoodCompositeSection() + '</div></details>';
   } else {
+    html += '<details class="food-builder-panel" open><summary>Nutrition <span>per 100g · sugars included</span></summary><div class="food-builder-panel-body">';
     html += '<div class="field"><label>Sugar quality</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
       + [['intrinsic','Intrinsic'], ['added/free','Added/free'], ['mixed','Mixed'], ['unknown','Unknown']].map(function(pair){
         return '<button class="pill ghost chip-preset' + (f.sugarQuality === pair[0] ? ' chipsel' : '') + '" onclick="setNewFoodSugarQuality(\'' + pair[0] + '\')">' + pair[1] + '</button>';
@@ -1441,7 +1445,9 @@ function buildNewFoodFormSheet(){
 
     const notes = newFoodCapNotes(f);
     if(notes.length) html += '<div class="cap-note" style="color:#b25e35;margin-top:2px">' + notes.join(' ') + '</div>';
+    html += '</div></details>';
 
+    html += '<details class="food-builder-panel"><summary>Planning tags <span>optional</span></summary><div class="food-builder-panel-body">';
     html += '<div class="field"><label>Flags (optional)</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
       + FOOD_FORM_FLAGS.map(function(fl){ return '<button class="pill ghost chip-preset' + (f.flags.indexOf(fl) !== -1 ? ' chipsel' : '') + '" onclick="toggleNewFoodFlag(\'' + fl + '\')">' + flagLabel(fl) + '</button>'; }).join('')
       + '</div></div>';
@@ -1455,6 +1461,7 @@ function buildNewFoodFormSheet(){
       + '<div class="opt' + (f.breakfastPair ? ' sel' : '') + '" onclick="toggleNewFoodBreakfastPair()">'
       + '<div class="ck">' + (f.breakfastPair ? '✓' : '') + '</div>'
       + '<div><div class="ot">Can pair with a light breakfast</div><div class="od">Lets the planner combine this food (bread or fruit) with a plain protein breakfast main.</div></div></div></div>';
+    html += '</div></details>';
   }
 
   // task C5: icon picker — current selection preview (default watercolor until chosen) +
@@ -1464,12 +1471,13 @@ function buildNewFoodFormSheet(){
   // picking a tile doesn't collapse the grid.
   const currentIconKey = safeIngredientIconKey(f.iconKey || '');
   const previewSrc = currentIconKey ? 'assets/ingredients/' + currentIconKey + '.png' : '';
-  html += '<div class="field"><label>Icon</label><div class="row" style="gap:12px;align-items:center;margin-top:6px">'
+  html += '<details class="food-builder-panel"' + (f.iconPickerOpen ? ' open' : '') + '><summary>Icon <span>' + (currentIconKey ? 'custom icon' : 'automatic') + '</span></summary><div class="food-builder-panel-body">'
+    + '<div class="field" style="margin-top:0"><label>Icon</label><div class="row" style="gap:12px;align-items:center;margin-top:6px">'
     + ingredientIconHtml(previewSrc)
     + '<button class="pill ghost chip-preset" onclick="toggleNewFoodIconPicker()">' + (f.iconPickerOpen ? 'Hide icons' : 'Choose icon') + '</button>'
     + '</div>'
     + (f.iconPickerOpen ? buildNewFoodIconGrid(currentIconKey) : '')
-    + '</div>';
+    + '</div></div></details>';
 
   html += '<button class="cta" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
     + '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>';
@@ -2037,6 +2045,12 @@ function buildFoodDetailMarkup(id){
     + '</div>';
 
   const srcLine = f.src ? '<p class="sub" style="margin-top:10px">' + escapeHtml(f.src) + '</p>' : '';
+  const actions = '<div class="ingredient-detail-actions">'
+    + (foodCanBePantryBaselined(id) ? '<button class="ingredient-detail-action ingredient-detail-action-primary" data-act="pantry">🥫 Add to pantry</button>' : '')
+    + '<button class="ingredient-detail-action" data-act="edit">✎ Edit</button>'
+    + (isEdited ? '<button class="ingredient-detail-action ingredient-detail-action-quiet" data-act="reset">↺ Reset</button>' : '')
+    + (isCustom ? '<button class="ingredient-detail-action ingredient-detail-action-danger" data-act="delete">Delete</button>' : '')
+    + '</div>';
 
   return '<div id="libFoodDetail">'
     + '<div class="row between detail-title-row" style="margin-top:6px"><h2 style="margin:0">Ingredient</h2><button class="backbtn" style="margin:0" onclick="returnToFoodLibrary()">‹ Back</button></div>'
@@ -2049,14 +2063,11 @@ function buildFoodDetailMarkup(id){
     + '</div>'
     + nutri
     + '</div>'
+    + actions
     + flagsHtml
     + foodDetailCompositeSection(f)
     + foodDetailBarcodeSection(f)
     + srcLine
-    + (foodCanBePantryBaselined(id) ? '<button class="cta" style="margin-top:14px" data-act="pantry">🥫 Add to pantry</button>' : '')
-    + '<button class="cta ghostbtn" data-act="edit">✎ Edit</button>'
-    + (isEdited ? '<button class="cta ghostbtn" data-act="reset">↺ Reset to default</button>' : '')
-    + (isCustom ? '<button class="cta ghostbtn" data-act="delete">✕ Delete</button>' : '')
     + '</div>';
 }
 
