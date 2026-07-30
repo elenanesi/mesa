@@ -743,6 +743,11 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .recipe-builder-panel summary span{margin-left:auto;font-size:11px;font-weight:600;color:var(--muted);text-align:right;}
 .recipe-builder-panel-body{padding:12px 13px 14px;}
 .recipe-builder-panel-body > h2:first-child{margin-top:0!important;}
+/* Recipe editor choices use the same compact, outlined language as Library filters.
+   The selected state remains unmistakable, while unselected choices stop reading as
+   large pill CTAs in a dense editing form. */
+.recipe-builder-panel .pill.chip-preset{min-height:44px;border:1px solid rgba(176,146,105,.35);border-radius:10px;padding:0 11px;background:rgba(255,250,240,.78);color:var(--ink-soft);font-size:12px;font-weight:700;}
+.recipe-builder-panel .pill.chip-preset.chipsel{border-color:var(--sage);background:var(--sage);color:#fff;}
 .recipe-image-tile{width:44px;height:44px;display:block;object-fit:contain;border-radius:10px;background:#fbf5e8;padding:2px;}
 .recipe-image-tile-auto{width:44px;height:44px;display:grid;place-items:center;border-radius:10px;background:var(--paper);color:var(--sage-deep);font-size:11px;font-weight:700;border:1px dashed rgba(127,147,100,.42);}
 .icon-tile.sel{border-color:var(--sage);background:var(--sage-tint);}

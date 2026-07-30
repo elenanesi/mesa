@@ -378,7 +378,12 @@ function chooseRecipeOption(groupKey, choiceId){
 // already open) so the copy always matches whoever's currently selected.
 function updateRecipeWhy(){
   const el = document.getElementById('recipeWhy');
-  if(!el || !RECIPES_DB[currentRecipeKey]) return;
+  const recipe = RECIPES_DB[currentRecipeKey];
+  if(!el || !recipe) return;
+  if(recipe.occasional){
+    el.innerHTML = '<b>A little enjoyment matters</b><br>Sometimes it’s important to break the rules and enjoy yourself. This occasional recipe is here when you choose it — Mesa never selects it in an automatic plan.';
+    return;
+  }
   el.innerHTML = '<b>Why this fits you</b><br>' + whyText(currentRecipeKey, currentProf);
 }
 
