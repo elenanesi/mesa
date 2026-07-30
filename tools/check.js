@@ -7890,7 +7890,39 @@ function testRecipeOptionsBuilder(ctx){
     run(ctx, "recipeBuilder = null;");
   })();
 
-  // -------- (13) final consistency: the whole D3 test suite leaves validateData() green
+  // -------- (13) Occasional is an editor-owned planning flag, not a display-only tag:
+  // saving it on a built-in creates an override, the planner excludes that recipe, and
+  // clearing it removes the optional field again. --------
+  (function(){
+    const id = 'baked-fish';
+    call(ctx, 'openEditRecipeForm', [id]);
+    let rb = get(ctx, 'recipeBuilder');
+    assert(rb.occasional === false, 'Occasional editor: ordinary recipes open as eligible for automatic planning', String(rb.occasional));
+    let html = call(ctx, 'buildRecipeBuilderSheet', []);
+    assert(html.indexOf('Planning availability') !== -1 && html.indexOf('Occasional') !== -1,
+      'Occasional editor: recipe builder exposes the planning-availability control', '');
+
+    call(ctx, 'setRecipeBuilderOccasional', [true]);
+    call(ctx, 'saveRecipeBuilder', []);
+    const saved = get(ctx, 'RECIPES_DB')[id];
+    assert(saved.occasional === true && get(ctx, 'recipeOverrides')[id].occasional === true,
+      'Occasional editor: saving marks the recipe occasional in its override', JSON.stringify(saved));
+    const candidates = call(ctx, 'candidatesFor', [saved.slot, saved.styles[0], [], ['elena']]);
+    assert(candidates.indexOf(id) === -1,
+      'Occasional editor: an occasional recipe is excluded from automatic planner candidates', JSON.stringify(candidates));
+
+    call(ctx, 'openEditRecipeForm', [id]);
+    rb = get(ctx, 'recipeBuilder');
+    assert(rb.occasional === true, 'Occasional editor: reopening restores the occasional selection', String(rb.occasional));
+    call(ctx, 'setRecipeBuilderOccasional', [false]);
+    call(ctx, 'saveRecipeBuilder', []);
+    assert(!Object.prototype.hasOwnProperty.call(get(ctx, 'recipeOverrides')[id], 'occasional'),
+      'Occasional editor: clearing selection omits the optional occasional field', JSON.stringify(get(ctx, 'recipeOverrides')[id]));
+    call(ctx, 'resetRecipeOverride', [id]);
+    run(ctx, 'recipeBuilder = null;');
+  })();
+
+  // -------- (14) final consistency: the whole D3 test suite leaves validateData() green
   // and every touched built-in recipe byte-identical to its pristine BUILTIN_RECIPES_DB
   // snapshot — proving every subsection above actually cleaned up after itself. --------
   (function(){

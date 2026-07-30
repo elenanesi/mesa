@@ -2858,6 +2858,7 @@ function recipeToBuilder(id){
     slots: recipeSlotList(r).length ? recipeSlotList(r) : [r.slot || 'dinner'],
     season: recipeSeason(r),
     role: normalizeRecipeRole(r.role),
+    occasional: r.occasional === true,
     time: r.time || 20,
     servings: r.servings || 1,
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
@@ -2869,7 +2870,7 @@ function recipeToBuilder(id){
 
 function openNewRecipeForm(){
   rememberRecipeListReturn();
-  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: ''};
+  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: ''};
   renderRecipeBuilderSheet(false);
 }
 
@@ -3000,6 +3001,11 @@ function buildRecipeBuilderSheet(){
   html += '<div class="field"><label>Role</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + VALID_ROLES.map(function(role){ return '<button class="pill ghost chip-preset' + (normalizeRecipeRole(rb.role) === role ? ' chipsel' : '') + '" onclick="setRecipeBuilderRole(\'' + role + '\')">' + recipeRoleLabel(role) + '</button>'; }).join('')
     + '</div><div class="sub" style="margin-top:4px">Full meal stands alone; Main pairs with a side; Side accompanies a main. How this recipe composes into a plan — separate from which meal slots it can serve.</div></div>';
+
+  html += '<div class="field"><label>Planning availability</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + '<button class="pill ghost chip-preset' + (!rb.occasional ? ' chipsel' : '') + '" onclick="setRecipeBuilderOccasional(false)">Automatic planning</button>'
+    + '<button class="pill ghost chip-preset' + (rb.occasional ? ' chipsel' : '') + '" onclick="setRecipeBuilderOccasional(true)">Occasional</button>'
+    + '</div><div class="sub" style="margin-top:4px">Occasional recipes stay in your library for manual planning and logging, but are never picked by the automatic planner.</div></div>';
 
   html += '<div class="field"><label>Prep time</label><div class="inp"><span>Minutes</span>'
     + '<span class="sv-stepper" style="margin:0">'
@@ -3241,6 +3247,11 @@ function buildRecipeImageGrid(currentImageKey){
 
 function toggleRecipeImagePicker(){
   recipeBuilder.imagePickerOpen = !recipeBuilder.imagePickerOpen;
+  renderRecipeBuilderSheet();
+}
+
+function setRecipeBuilderOccasional(occasional){
+  recipeBuilder.occasional = occasional === true;
   renderRecipeBuilderSheet();
 }
 
@@ -3711,6 +3722,7 @@ function saveRecipeBuilder(){
     tags: meta.tags, avoid: meta.avoid,
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
+  if(rb.occasional) recipe.occasional = true;
   const optionGroupsForSave = buildRecipeOptionGroupsForSave(rb);
   if(optionGroupsForSave) recipe.optionGroups = optionGroupsForSave;
   const chosenImageKey = safeRecipeImageKey(rb.imageKey || '');
