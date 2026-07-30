@@ -2991,11 +2991,13 @@ function buildRecipeBuilderSheet(){
   const editing = !!rb.editingId;
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit recipe' : 'New recipe') + '</h2><button class="backbtn" style="margin:0" onclick="returnToMyRecipes()">‹ Back</button></div>';
 
+  html += '<div class="recipe-builder-identity">';
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(rb.name) + '" oninput="recipeBuilder.name=this.value" placeholder="e.g. Tempeh bowl" autocomplete="off"></div>';
 
   html += '<div class="field"><label>Emoji</label>'
     + '<input class="inp" style="width:64px;box-sizing:border-box;border:1px solid var(--line);margin-top:6px;text-align:center;font-size:19px" type="text" maxlength="4" value="' + htmlAttr(rb.emoji) + '" oninput="recipeBuilder.emoji=this.value"></div>';
+  html += '</div>';
 
   const currentImageKey = safeRecipeImageKey(rb.imageKey || '');
   const previewRecipe = {
@@ -3019,6 +3021,7 @@ function buildRecipeBuilderSheet(){
     + (rb.imagePickerOpen ? buildRecipeImageGrid(currentImageKey) : '')
     + '</div>';
 
+  html += '<details class="recipe-builder-panel"><summary>Planning settings <span>slot · season · role · availability</span></summary><div class="recipe-builder-panel-body">';
   html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
     + '</div><div class="sub" style="margin-top:4px">Pick every meal this recipe can work for. The first selected slot stays primary for old plans.</div></div>';
@@ -3046,6 +3049,7 @@ function buildRecipeBuilderSheet(){
     + '<button onclick="stepRecipeServings(-1)" aria-label="Decrease servings">–</button><span class="sv-val">' + rb.servings + '</span>'
     + '<button onclick="stepRecipeServings(1)" aria-label="Increase servings">+</button></span></div>'
     + '<div class="sub" style="margin-top:4px">Enter ingredients for the whole batch — nutrition below is per serving.</div></div>';
+  html += '</div></details>';
 
   html += '<h2 style="margin-top:18px">Ingredients <span class="sub" style="font-weight:400;font-size:12px">(' + rb.ingredients.length + ', need at least 2)</span></h2>';
   rb.ingredients.forEach(function(row, i){
@@ -3063,12 +3067,16 @@ function buildRecipeBuilderSheet(){
   });
   html += '<button class="cta ghostbtn" style="margin-top:2px" onclick="openAddIngredientToRecipe()">＋ Add ingredient</button>';
 
-  html += buildRecipeOptionsSection(rb);
+  html += '<details class="recipe-builder-panel"' + ((rb.optionGroups || []).length ? ' open' : '') + '><summary>Options <span>' + ((rb.optionGroups || []).length ? rb.optionGroups.length + ' variant group' + (rb.optionGroups.length === 1 ? '' : 's') : 'optional variants') + '</span></summary><div class="recipe-builder-panel-body">'
+    + buildRecipeOptionsSection(rb) + '</div></details>';
 
-  html += '<div class="field" style="margin-top:16px"><label>Steps (one per line, optional)</label>'
+  html += '<details class="recipe-builder-panel"><summary>Method <span>' + ((rb.stepsText || '').trim() ? 'instructions added' : 'optional') + '</span></summary><div class="recipe-builder-panel-body">'
+    + '<div class="field" style="margin-top:0"><label>Steps (one per line, optional)</label>'
     + '<textarea class="inp" style="width:100%;box-sizing:border-box;min-height:90px;border:1px solid var(--line);margin-top:6px;display:block;resize:vertical;font:inherit" oninput="recipeBuilder.stepsText=this.value" placeholder="Combine and enjoy.">' + escapeHtml(rb.stepsText) + '</textarea></div>';
+  html += '</div></details>';
 
-  html += '<div class="card" style="padding:14px;margin-top:14px">'
+  html += '<details class="recipe-builder-panel"><summary>Nutrition preview <span>computed per serving</span></summary><div class="recipe-builder-panel-body">'
+    + '<div class="card" style="padding:14px;margin-top:0">'
     + '<div class="row between"><b style="font-size:13px">Per serving' + (rb.servings > 1 ? ' <span class="sub" style="font-weight:400">(makes ' + rb.servings + ')</span>' : '') + '</b><span class="chip-computed">✓ computed</span></div>'
     + '<div class="nutri" style="margin-top:8px">'
     + '<div class="n"><div class="nt"><span>Calories</span><b>' + Math.round(perServing.kcal) + ' kcal</b></div></div>'
@@ -3079,7 +3087,7 @@ function buildRecipeBuilderSheet(){
     + '<div class="sub" style="margin-top:8px">Auto tags: ' + (meta.tags.length ? meta.tags.map(tagLabelForPreview).join(', ') : '—') + '</div>'
     + '<div class="sub" style="margin-top:2px">Styles: ' + meta.styles.join(', ') + '</div>'
     + (meta.avoid.length ? '<div class="sub" style="margin-top:2px">Contains: ' + meta.avoid.map(avoidLabel).join(', ') + '</div>' : '')
-    + '</div>';
+    + '</div></div></details>';
 
   if(rb.ingredients.length){
     const warn = kcalBandWarning(rb.slots[0] || 'dinner', perServing.kcal);
