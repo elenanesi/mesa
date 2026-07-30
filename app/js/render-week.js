@@ -136,7 +136,7 @@ function weekNutriSummary(plan, person, dayViews){
   const fiberTarget = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay; // single-sourced, never re-typed 25
   const cov = computeWeeklyCoverage(plan);
   const gaps = coverageGaps(cov);
-  const sugarTargetPct = gaps.freeSugars.target; // single-sourced, never re-typed 6
+  const sugarTargetPct = gaps.freeSugars.target; // single-sourced, never re-typed 10
   const calGoal = (PROF[person] && PROF[person].calGoalNum) || 0;
   // Same grams conversion coverageTargetText already applies for this person's calorie goal
   // — kept in sync by construction since both read gaps.freeSugars.target, never a literal.
@@ -308,7 +308,7 @@ function renderWeekNutriCard(plan, person, dayViews){
   };
 
   // Free sugars: same headline metric/label Insights already uses (planner.js coverageGaps
-  // 'freeSugars' — never total sugars), against the SAME 6%-of-kcal target (gaps.freeSugars
+  // 'freeSugars' — never total sugars), against the SAME 10%-of-kcal target (gaps.freeSugars
   // .target, never re-typed as a literal 6, via weekNutriSummary's sugarTargetG) — the
   // cap-note reuses coverageTargetText(gaps.freeSugars) verbatim so the target text never
   // disagrees with Insights' own.

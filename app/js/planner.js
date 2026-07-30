@@ -2328,7 +2328,7 @@ function classifyWindowBand(value, target){
 function classifyMinBand(value, min){
   return (min > 0 && value < min) ? 'under' : 'in';
 }
-// Free sugars only has a ceiling (coverageGaps' 6%-of-kcal target, converted to grams for
+// Free sugars only has a ceiling (coverageGaps' 10%-of-kcal target, converted to grams for
 // the person's calorie goal) — the only out-of-band state is 'over'.
 function classifyMaxBand(value, max){
   return (max > 0 && value > max) ? 'over' : 'in';
@@ -2344,7 +2344,7 @@ function computeInsights(personKey){
   // task C1: per-day nutrient bands — protein/carbs/fat vs the person's own targets (±10%,
   // same window as kcal), fiber vs the single-sourced WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay
   // (never re-typed 25), free sugars vs the coverageGaps-derived %-of-kcal target (never
-  // re-typed 6) converted to grams for this person's calorie goal — the SAME derivation
+  // re-typed 10) converted to grams for this person's calorie goal — the SAME derivation
   // render.js:weekNutriSummary already uses for sugarTargetG, so Insights and Week can never
   // disagree on what "too much sugar" means.
   const sugarTargetPct = coverageGaps(computeWeeklyCoverage()).freeSugars.target;
@@ -2376,7 +2376,7 @@ function computeInsights(personKey){
 
   // task C1: single-sourced band targets for render.js's nutrient-bands card (bar tooltips/
   // labels) — computed once here so the renderer never re-derives the sugar-gram conversion
-  // itself (would risk re-typing 6).
+  // itself (would risk re-typing 10).
   const bandTargets = {protein: prof.targetP, carbs: prof.targetC, fat: prof.targetF,
     fiber: WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay, freeSugars: Math.round(sugarTargetG)};
 
@@ -2428,11 +2428,11 @@ function buildInsightCallouts(avgProtein, targetProtein, avgFiber, satFatEnergyP
     },
     {
       key: 'satFat', magnitude: Math.abs(satFatEnergyPct - NUTRITION_GUIDANCE.satFat.target) / NUTRITION_GUIDANCE.satFat.target,
-      good: satFatEnergyPct <= NUTRITION_GUIDANCE.satFat.target,
+      good: satFatEnergyPct < NUTRITION_GUIDANCE.satFat.target,
       icon: function(good){ return good ? '❤️' : '📌'; },
       text: function(good){ return good
         ? 'Saturated fat is ' + Math.round(satFatEnergyPct) + '% of energy, within the WHO <10% guidance.'
-        : 'Saturated fat is ' + Math.round(satFatEnergyPct) + '% of energy, above the WHO <10% guidance.'; }
+        : 'Saturated fat is ' + Math.round(satFatEnergyPct) + '% of energy, at or above the WHO <10% guidance.'; }
     },
     {
       key: 'adherence', magnitude: Math.abs(inBandCount / 7 - 0.7),
@@ -3182,12 +3182,16 @@ function coverageGaps(cov){
     : (cov.fiberAvgPerDay.elena <= cov.fiberAvgPerDay.partner ? 'elena' : 'partner');
   const worstFiberVal = cov.fiberAvgPerDay[worstFiberPerson];
   const satPct = cov.satFatShareOfKcal * 100;
+  // The displayed guidance is strictly "under 10%". At exactly 10% the bar is at
+  // the limit but should still flag as not under it; a tiny positive gap preserves that
+  // state in the common rendering path which treats gap > 1e-9 as an alert.
+  const satAtOrOverCap = satPct >= NUTRITION_GUIDANCE.satFat.target;
   const sugarPct = cov.freeSugarShareOfKcal * 100;
   return {
     fiber: {key: 'fiber', label: 'Fibre', value: Math.round(worstFiberVal), target: NUTRITION_GUIDANCE.fiber.target, unit: 'g/day', person: worstFiberPerson,
       gap: Math.max(0, (NUTRITION_GUIDANCE.fiber.target - worstFiberVal) / NUTRITION_GUIDANCE.fiber.target), pct: Math.min(100, Math.round(worstFiberVal / NUTRITION_GUIDANCE.fiber.target * 100))},
     satFat: {key: 'satFat', label: 'Saturated fat', value: Math.round(satPct), target: NUTRITION_GUIDANCE.satFat.target, unit: '% of energy', cap: true,
-      gap: Math.max(0, (satPct - NUTRITION_GUIDANCE.satFat.target) / NUTRITION_GUIDANCE.satFat.target), pct: Math.min(100, Math.round(satPct / NUTRITION_GUIDANCE.satFat.target * 100))},
+      gap: satAtOrOverCap ? Math.max(0.000001, (satPct - NUTRITION_GUIDANCE.satFat.target) / NUTRITION_GUIDANCE.satFat.target) : 0, pct: Math.min(100, Math.round(satPct / NUTRITION_GUIDANCE.satFat.target * 100))},
     freeSugars: {key: 'freeSugars', label: 'Free sugars', value: Math.round(sugarPct), target: NUTRITION_GUIDANCE.freeSugars.target, unit: '% of energy',
       gap: Math.max(0, (sugarPct - NUTRITION_GUIDANCE.freeSugars.target) / NUTRITION_GUIDANCE.freeSugars.target), pct: Math.min(100, Math.round(sugarPct / NUTRITION_GUIDANCE.freeSugars.target * 100)), cap: true}
   };
@@ -3199,7 +3203,7 @@ function coverageGaps(cov){
 // uses), tallying (a) recipe tag frequency for the "what this week leans toward" chips and
 // (b) the SAME headline metrics/thresholds as Insights (planner.js:buildInsightCallouts /
 // coverageGaps) so the wording never disagrees with the Insights screen:
-//   fiber >= 25 g/day · sat fat <= 33% of fat · protein >= personal goal · omega-3 >= 3 meals/wk
+//   fiber >= 25 g/day · sat fat <10% of energy · protein >= personal goal
 // Nothing here is typed in — every number comes from recipeNutrition()/PROF[personKey].targetP.
 const WEEK_SUMMARY_THRESHOLDS = {fiberMinPerDay: NUTRITION_GUIDANCE.fiber.target, satFatMaxEnergyShare: NUTRITION_GUIDANCE.satFat.target / 100};
 
@@ -3252,7 +3256,7 @@ function summarizeWeekPlan(plan, personKey){
       text: '≈' + Math.round(avgFiberPerDay) + 'g fiber/day'
     },
     {
-      good: satFatEnergyShare <= T.satFatMaxEnergyShare,
+      good: satFatEnergyShare < T.satFatMaxEnergyShare,
       text: 'sat. fat ≈' + Math.round(satFatEnergyShare * 100) + '% of energy'
     },
     {

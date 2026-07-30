@@ -670,7 +670,7 @@ function renderInsights(){
   const tiles = [
     {sv: Math.round(data.avgProtein) + 'g', sl: 'Avg protein/day (7d)', good: data.avgProtein >= data.targetProtein, goodNote: '▲ on target', badNote: '▼ below target'},
     {sv: Math.round(data.avgFiber) + 'g', sl: 'Avg fibre/day (7d)', good: data.avgFiber >= NUTRITION_GUIDANCE.fiber.target, goodNote: '▲ at WHO guide', badNote: '▼ below 25g guide'},
-    {sv: Math.round(data.satFatEnergyPct) + '%', sl: 'Saturated fat (7d energy)', good: data.satFatEnergyPct <= NUTRITION_GUIDANCE.satFat.target, goodNote: '▲ within WHO <10%', badNote: '▼ above WHO <10%'},
+    {sv: Math.round(data.satFatEnergyPct) + '%', sl: 'Saturated fat (7d energy)', good: data.satFatEnergyPct < NUTRITION_GUIDANCE.satFat.target, goodNote: '▲ within WHO <10%', badNote: '▼ at or above WHO 10%'},
     {sv: data.daysLoggedCount + '/7', sl: 'Days logged this week', good: data.daysLoggedCount >= 5, goodNote: '▲ steady', badNote: '▼ log a few more days'}
   ];
   statWrap.innerHTML = tiles.map(function(t){

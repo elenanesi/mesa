@@ -9167,6 +9167,8 @@ function testNutritionClaimsAudit(ctx){
   const gaps = call(ctx, 'coverageGaps', [{fiberAvgPerDay:{elena:25, partner:25}, satFatShareOfKcal:0.10, freeSugarShareOfKcal:0.10}]);
   assert(JSON.stringify(Object.keys(gaps)) === JSON.stringify(['fiber', 'satFat', 'freeSugars']) && gaps.satFat.unit === '% of energy',
     'nutrition-claims audit: coverage uses fibre plus saturated fat/free sugars as energy shares only', JSON.stringify(gaps));
+  assert(gaps.satFat.gap > 0,
+    'nutrition-claims audit: saturated fat at exactly 10% of energy is flagged because the cap is strictly under 10%', JSON.stringify(gaps.satFat));
   const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
   assert(indexHtml.indexOf('id="howMesaPlans"') !== -1 && indexHtml.indexOf('Guideline') !== -1 && indexHtml.indexOf('Mesa rule') !== -1,
     'nutrition-claims audit: How Mesa plans page distinguishes guideline, estimate and Mesa rule');
