@@ -251,12 +251,6 @@ const FOODS = {
     flags: [], cat: 'Produce',
     iconKey: 'bell-pepper', src: 'Composite: 60% red bell pepper + 40% spinach, weighted avg of USDA raw values'
   },
-  'broccoli-courgette': {
-    name: 'Broccoli & courgette (blend)', per: 100, unit: 'g',
-    kcal: 31, protein: 2.0, carbs: 4.9, fat: 0.4, satFat: 0.1, fiber: 1.8,
-    flags: ['highFiber'], cat: 'Produce',
-    iconKey: 'broccoli-courgette', src: 'Composite: 50/50 broccoli + courgette, USDA raw values'
-  },
   'cherry-tomatoes-cucumber': {
     name: 'Cherry tomatoes & cucumber (blend)', per: 100, unit: 'g',
     kcal: 20, protein: 0.8, carbs: 3.8, fat: 0.2, satFat: 0.0, fiber: 0.9,
@@ -960,8 +954,7 @@ const FOOD_ALIASES = {
   'Coconut milk': 'coconut-milk',
   'Tuna in olive oil, drained': 'tuna-in-olive-oil',
   'Avocado': 'avocado',
-  'Cherry tomatoes & cucumber': 'cherry-tomatoes-cucumber',
-  'Broccoli & courgette': 'broccoli-courgette'
+  'Cherry tomatoes & cucumber': 'cherry-tomatoes-cucumber'
 };
 
 /* ===================================================================
@@ -989,8 +982,7 @@ const RECIPE_INGREDIENT_NAMES = [
   'Cooked lentils', 'Feta cheese', 'Rocket / arugula', 'Olive oil & lemon dressing',
   'Salmon fillet', 'Quinoa, dry', 'Baby spinach', 'Broccoli', 'Olive oil, lemon, garlic',
   'Skyr, plain', 'Pumpkin & chia seeds', 'Sliced turkey breast', 'Grilled chicken breast', 'Cooked farro',
-  'Coconut milk', 'Tuna in olive oil, drained', 'Avocado', 'Cherry tomatoes & cucumber',
-  'Broccoli & courgette'
+  'Coconut milk', 'Tuna in olive oil, drained', 'Avocado', 'Cherry tomatoes & cucumber'
 ];
 
 function validateFoods(){
