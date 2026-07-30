@@ -8043,16 +8043,25 @@ function testDietOptionGroupsConservatism(ctx){
     assert(defaultCombo.some(function(ing){ return ing[0] === 'tofu'; }) && !defaultCombo.some(function(ing){ return ing[0] === 'chicken-breast'; }),
       'optionGroups conservatism setup: the DEFAULT combo (choices[0]) is the vegan-compliant tofu variant, not chicken', JSON.stringify(defaultCombo));
 
-    assert(call(ctx, 'recipeViolatesDiet', [FIX, ['vegan']]) === true,
-      'optionGroups conservatism: a recipe whose DEFAULT variant is vegan-compliant but SOME optionGroups variant is not (chicken) is excluded under vegan — the any-variant conservative rule', '');
+    assert(call(ctx, 'recipeViolatesDiet', [FIX, ['vegan']]) === false,
+      'diet-aware options: a recipe remains eligible when at least one choice is vegan-compatible', '');
     assert(call(ctx, 'recipeViolatesDiet', [CONTROL, ['vegan']]) === false,
       'optionGroups conservatism control: the identically-shaped recipe with BOTH choices vegan-compliant is NOT excluded — proves the exclusion above is specifically the non-compliant alt choice, not "any optionGroups recipe"', '');
 
-    // End-to-end: candidatesFor() must drop it from a vegan household's pool entirely.
+    // End-to-end: candidatesFor keeps it, and option resolution may only choose tofu.
     run(ctx, "PROF.elena.diets = ['vegan'];");
     const pool = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena']]);
-    assert(pool.indexOf(FIX) === -1,
-      'optionGroups conservatism: candidatesFor() excludes the fixture from a vegan pool entirely (not just flagged) despite its default variant being compliant', JSON.stringify(pool));
+    assert(pool.indexOf(FIX) !== -1,
+      'diet-aware options: candidatesFor() keeps a recipe with a safe vegan choice', JSON.stringify(pool));
+    const picked = call(ctx, 'chosenOptsForRecipe', [recipe, 0, 0, 0, [], ['vegan']]);
+    assert(picked.protein === 'tofu',
+      'diet-aware options: planner option resolution excludes the chicken choice and selects tofu', JSON.stringify(picked));
+    run(ctx, "PROF.elena.diets = ['lactose-intolerant'];");
+    const pasta = get(ctx, 'RECIPES_DB.pasta');
+    const pastaGroup = pasta.optionGroups[0];
+    const lactoseChoices = call(ctx, 'allowedChoicesForGroup', [pastaGroup, [], ['lactose-intolerant']]).map(function(c){ return c.id; });
+    assert(call(ctx, 'recipeViolatesDiet', ['pasta', ['lactose-intolerant']]) === false && lactoseChoices.indexOf('courgette-ricotta') === -1 && lactoseChoices.indexOf('pesto-vegan') !== -1,
+      'diet-aware options: lactose-intolerant Pasta stays plannable, excludes ricotta, and includes its tagged vegan pesto choice', JSON.stringify(lactoseChoices));
     assert(pool.indexOf(CONTROL) !== -1,
       'optionGroups conservatism control: candidatesFor() KEEPS the all-compliant-choices control recipe in the vegan pool', JSON.stringify(pool));
     run(ctx, "PROF.elena.diets = [];");

@@ -1072,6 +1072,7 @@ const RECIPES_DB = {
         choices: [
           {id: 'tomato-basil', label: 'Tomato & basil', ingredients: [['tomato-passata', 150], ['basil', 8]]},
           {id: 'pesto', label: 'Pesto Elena', ingredients: [['pesto-elena', 60]]},
+          {id: 'pesto-vegan', label: 'Pesto Elena (vegan)', dietKeys: ['vegan', 'lactose-intolerant'], ingredients: [['pesto-elena', 60]]},
           {id: 'tuna-olives', label: 'Tuna & olives', ingredients: [['tuna-in-olive-oil', 90], ['olives', 30]]},
           {id: 'courgette-ricotta', label: 'Courgette & ricotta', ingredients: [['courgette', 150], ['ricotta', 100]]}
         ]

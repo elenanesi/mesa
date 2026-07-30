@@ -218,6 +218,29 @@ function recipeMayContainDairy(id){
   if(!r || typeof DAIRY_FOOD_IDS === 'undefined') return false;
   return recipeAllPossibleIngredientIds(r).some(function(i){ return foodOrComponentsMatch(i, DAIRY_FOOD_IDS); });
 }
+
+// Unlike the conservative catalog scan above, this follows the composite formula that is
+// active for this household. It is used only when testing a concrete recipe option: a
+// lactose-free pesto formula must be allowed to make its parent recipe eligible.
+function foodOrActiveComponentsMatch(foodId, idList, seen){
+  if(idList.indexOf(foodId) !== -1) return true;
+  const food = FOODS[foodId];
+  if(!food || !Array.isArray(food.components)) return false;
+  seen = seen || {};
+  if(seen[foodId]) return false;
+  const next = Object.assign({}, seen); next[foodId] = true;
+  const active = typeof activeCompositeVariant === 'function' ? activeCompositeVariant(food) : food;
+  return (active.components || []).some(function(c){ return foodOrActiveComponentsMatch(c[0], idList, next); });
+}
+function ingredientIdsViolateDiet(ids, dietList){
+  if(!dietList || !dietList.length) return false;
+  const has = function(list){ return (ids || []).some(function(id){ return foodOrActiveComponentsMatch(id, list); }); };
+  if((dietList.indexOf('vegan') !== -1 || dietList.indexOf('vegetarian') !== -1) && (has(RED_MEAT_FOOD_IDS) || has(POULTRY_FOOD_IDS) || has(FISH_FOOD_IDS))) return true;
+  if(dietList.indexOf('pescatarian') !== -1 && (has(RED_MEAT_FOOD_IDS) || has(POULTRY_FOOD_IDS))) return true;
+  if(dietList.indexOf('vegan') !== -1 && (has(DAIRY_FOOD_IDS) || has(EGG_FOOD_IDS) || has(HONEY_FOOD_IDS))) return true;
+  if(dietList.indexOf('lactose-intolerant') !== -1 && has(DAIRY_FOOD_IDS)) return true;
+  return false;
+}
 // Same composite-aware derivation as recipeMayContainDairy above — this is what lets
 // 'mayonnaise' be removed from the hardcoded EGG_FOOD_IDS list and still get excluded from
 // vegan menus, purely because 'eggs' is one of its real components.
@@ -414,11 +437,11 @@ function recipeHitsAvoid(recipe, avoidList){
 function recipeViolatesDiet(id, dietList){
   const recipe = RECIPES_DB[id];
   if(!recipe || !dietList || !dietList.length) return false;
-  if((dietList.indexOf('vegan') !== -1 || dietList.indexOf('vegetarian') !== -1) && recipeMayContainAnimalProtein(id)) return true;
-  if(dietList.indexOf('pescatarian') !== -1 && recipeMayContainMeatOrPoultry(id)) return true;
-  if(dietList.indexOf('vegan') !== -1 && (recipeMayContainDairy(id) || recipeMayContainEggs(id) || recipeMayContainHoney(id))) return true;
+  if(ingredientIdsViolateDiet((recipe.ingredients || []).map(function(ing){ return ing[0]; }), dietList)) return true;
   if(dietList.indexOf('gluten-free') !== -1 && recipe.avoid && recipe.avoid.indexOf('gluten') !== -1) return true;
-  if(dietList.indexOf('lactose-intolerant') !== -1 && recipeMayContainDairy(id)) return true;
+  if(Array.isArray(recipe.optionGroups) && recipe.optionGroups.some(function(group){
+    return !allowedChoicesForGroup(group, [], dietList).length;
+  })) return true;
   return false;
 }
 // The union of every diet active among `persons` — a SHARED slot's candidate pool must
@@ -466,7 +489,7 @@ function candidatesFor(slot, styleKey, avoidList, persons, opts){
       && r.styles.indexOf(styleKey) !== -1
       && !recipeHitsAvoid(r, avoidList)
       && !recipeViolatesDiet(id, dietList)
-      && recipeOptionsViable(r, avoidList);
+      && recipeOptionsViable(r, avoidList, dietList);
   }).sort();
 }
 function dbBaseNutrition(id){ return recipeNutrition(id, 1).totals; } // "the recipe as written" (1x)
@@ -576,9 +599,16 @@ function choiceHitsAvoid(choice, avoidList){
 // The choices of ONE group that survive `avoidList`, sorted by choice id — the "sorted by
 // choice id" order the rotation formula below indexes into (FEATURES-2026-07-plan.md D1:
 // "rotated ... modulo the ALLOWED choices, sorted by choice id").
-function allowedChoicesForGroup(group, avoidList){
+function choiceMatchesDietKeys(choice, dietList){
+  // An untagged choice is generally available; a tagged one is a diet-specific variant.
+  return !Array.isArray(choice.dietKeys) || !choice.dietKeys.length || (dietList || []).some(function(k){ return choice.dietKeys.indexOf(k) !== -1; });
+}
+function choiceViolatesDiet(choice, dietList){
+  return ingredientIdsViolateDiet((choice && choice.ingredients || []).map(function(ing){ return ing[0]; }), dietList);
+}
+function allowedChoicesForGroup(group, avoidList, dietList){
   return (group && Array.isArray(group.choices) ? group.choices : [])
-    .filter(function(c){ return c && typeof c.id === 'string' && !choiceHitsAvoid(c, avoidList); })
+    .filter(function(c){ return c && typeof c.id === 'string' && choiceMatchesDietKeys(c, dietList) && !choiceHitsAvoid(c, avoidList) && !choiceViolatesDiet(c, dietList); })
     .slice()
     .sort(function(a, b){ return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0); });
 }
@@ -588,9 +618,9 @@ function allowedChoicesForGroup(group, avoidList){
 // avoid-list, so the recipe drops from the candidate pool entirely (candidatesFor()
 // above calls this for every recipe, options or not — recipes without optionGroups are
 // always viable, unaffected). Recipes without optionGroups are always viable (true).
-function recipeOptionsViable(recipe, avoidList){
+function recipeOptionsViable(recipe, avoidList, dietList){
   if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return true;
-  return recipe.optionGroups.every(function(group){ return allowedChoicesForGroup(group, avoidList).length > 0; });
+  return recipe.optionGroups.every(function(group){ return allowedChoicesForGroup(group, avoidList, dietList).length > 0; });
 }
 
 // task D1 rotation formula: for each optionGroups group, index into that group's ALLOWED
@@ -602,13 +632,13 @@ function recipeOptionsViable(recipe, avoidList){
 // for this pick, i.e. after recipeOptionsViable(recipe, avoidList) gated the pool the
 // recipe came from — every group is expected to have >=1 allowed choice; returns null
 // (defensive, shouldn't happen given that gate) if one doesn't.
-function chosenOptsForRecipe(recipe, weekSeed, dayIndex, slotIndex, avoidList){
+function chosenOptsForRecipe(recipe, weekSeed, dayIndex, slotIndex, avoidList, dietList){
   if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return null;
   const opts = {};
   for(let i = 0; i < recipe.optionGroups.length; i++){
     const group = recipe.optionGroups[i];
     if(!group || typeof group.key !== 'string') continue;
-    const allowed = allowedChoicesForGroup(group, avoidList);
+    const allowed = allowedChoicesForGroup(group, avoidList, dietList);
     if(!allowed.length) return null;
     const idx = ((weekSeed || 0) + dayIndex * 7 + slotIndex) % allowed.length;
     opts[group.key] = allowed[idx].id;
@@ -1966,7 +1996,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   // off (weekSeed, dayIndex, slotIndex) over the choices allowed under avoidBoth (both
   // people's avoid-lists, per the plan's "both people for shared slots"). null for a
   // recipe without optionGroups; makePlanEntry's own normalizeRecipeOpts no-ops on null.
-  const sharedOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidBoth);
+  const sharedOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidBoth, unionDiets(['elena', 'partner']));
   const elenaEntry = makePlanEntry(best.mainId, best.portionE, undefined, sharedOpts);
   const partnerEntry = makePlanEntry(best.mainId, best.portionA, undefined, sharedOpts);
   if(best.extras){
@@ -2066,7 +2096,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   // choices allowed under THIS person's own avoid-list (avoidP) — a solo slot can pick a
   // different variant per person even on the same day/slot, since each person's avoid-
   // list can allow a different set of choices. null for a recipe without optionGroups.
-  const soloOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidP);
+  const soloOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidP, unionDiets([person]));
   const entry = makePlanEntry(best.mainId, best.portion, undefined, soloOpts);
   if(best.extras) entry.extras = best.extras.slice();
   else if(best.extra) entry.extras = [best.extra];

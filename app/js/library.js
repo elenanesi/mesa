@@ -2770,6 +2770,7 @@ function recipeOptionGroupsToBuilder(r){
       choices: (g && Array.isArray(g.choices) ? g.choices : []).map(function(c){
         return {
           label: (c && c.label) || '',
+          dietKeys: (c && Array.isArray(c.dietKeys) ? c.dietKeys.slice() : []),
           ingredients: (c && Array.isArray(c.ingredients) ? c.ingredients : []).map(function(ing){
             return {foodId: ing[0], grams: ing[1]};
           })
@@ -3034,6 +3035,8 @@ function buildRecipeOptionsSection(rb){
 
       html += '<div class="field" style="margin-top:8px"><label>Choice label</label>'
         + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(choice.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].choices[' + ci + '].label=this.value" placeholder="e.g. Salmon" autocomplete="off"></div>';
+      html += '<div class="field" style="margin-top:8px"><label>Diet variant <span class="sub">(optional)</span></label><div class="chiprow">'
+        + DIET_KEYS.map(function(k){ return '<button class="pill ghost chip-preset' + ((choice.dietKeys || []).indexOf(k) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeOptionChoiceDiet(' + gi + ',' + ci + ',\'' + k + '\')">' + escapeHtml(dietLabel(k)) + '</button>'; }).join('') + '</div></div>';
 
       (choice.ingredients || []).forEach(function(row, ii){
         const food = FOODS[row.foodId];
@@ -3065,7 +3068,7 @@ function addRecipeOptionGroup(){
   if(!recipeBuilder.optionGroups) recipeBuilder.optionGroups = [];
   // Starts with 2 blank choices — the minimum the save-time validation requires — so the
   // very next thing to do is label them, not remember to add a second one.
-  recipeBuilder.optionGroups.push({label: '', choices: [{label: '', ingredients: []}, {label: '', ingredients: []}]});
+  recipeBuilder.optionGroups.push({label: '', choices: [{label: '', dietKeys: [], ingredients: []}, {label: '', dietKeys: [], ingredients: []}]});
   renderRecipeBuilderSheet();
 }
 function removeRecipeOptionGroup(gi){
@@ -3076,7 +3079,16 @@ function removeRecipeOptionGroup(gi){
 function addRecipeOptionChoice(gi){
   const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
   if(!group) return;
-  group.choices.push({label: '', ingredients: []});
+  group.choices.push({label: '', dietKeys: [], ingredients: []});
+  renderRecipeBuilderSheet();
+}
+function toggleRecipeOptionChoiceDiet(gi, ci, key){
+  const choice = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi] && recipeBuilder.optionGroups[gi].choices[ci];
+  if(!choice || DIET_KEYS.indexOf(key) === -1) return;
+  if(!Array.isArray(choice.dietKeys)) choice.dietKeys = [];
+  const at = choice.dietKeys.indexOf(key);
+  if(at === -1) choice.dietKeys.push(key); else choice.dietKeys.splice(at, 1);
+  choice.dietKeys = normalizeDietsArray(choice.dietKeys);
   renderRecipeBuilderSheet();
 }
 function removeRecipeOptionChoice(gi, ci){
@@ -3542,6 +3554,7 @@ function validateRecipeBuilderOptionGroups(rb){
       const cLabel = (choice.label || '').trim();
       const cName = cLabel || ('choice ' + (ci + 1));
       if(!cLabel) return 'Give every choice in “' + gLabel + '” a label';
+      if((choice.dietKeys || []).some(function(k){ return DIET_KEYS.indexOf(k) === -1; })) return '“' + cName + '” has an invalid diet variant';
       const ingredients = choice.ingredients || [];
       if(!ingredients.length) return '“' + cName + '” in “' + gLabel + '” needs at least 1 ingredient';
       for(let ii = 0; ii < ingredients.length; ii++){
@@ -3577,6 +3590,7 @@ function buildRecipeOptionGroupsForSave(rb){
       return {
         id: id,
         label: choice.label.trim(),
+        dietKeys: normalizeDietsArray(choice.dietKeys || []),
         ingredients: (choice.ingredients || []).map(function(r){ return [r.foodId, r.grams]; })
       };
     });

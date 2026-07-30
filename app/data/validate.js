@@ -271,6 +271,11 @@ function validateData() {
             if (choiceIdsSeen[choice.id]) errors.push(gPrefix + 'duplicate choice id "' + choice.id + '"');
             choiceIdsSeen[choice.id] = true;
             if (typeof choice.label !== 'string' || !choice.label) errors.push(cPrefix + 'missing a "label"');
+            if ('dietKeys' in choice) {
+              if(!Array.isArray(choice.dietKeys) || choice.dietKeys.some(function(k){ return typeof DIET_KEYS === 'undefined' || DIET_KEYS.indexOf(k) === -1; })) {
+                errors.push(cPrefix + 'dietKeys must be an array of valid diet keys');
+              }
+            }
             if (!Array.isArray(choice.ingredients) || !choice.ingredients.length) {
               errors.push(cPrefix + 'needs a non-empty ingredients array');
             } else {
