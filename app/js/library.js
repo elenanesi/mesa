@@ -43,6 +43,10 @@ const BUILTIN_RECIPE_COUNT = Object.keys(RECIPES_DB).length;
 const BUILTIN_FOODS_DB = deepClone(FOODS);
 const BUILTIN_RECIPES_DB = deepClone(RECIPES_DB);
 const BUILTIN_RECIPE_SLOT_DB = deepClone(RECIPE_SLOT_DB);
+// Removed bundled recipes may still exist in an older device's saved override or a
+// stale remote catalog. Keep them out of the live library rather than resurrecting a
+// default the household explicitly removed; custom recipes use their own `cr-` ids.
+const RETIRED_DEFAULT_RECIPE_IDS = ['salmon', 'salmongreens', 'asparagi-fagiolini-broccoli'];
 
 /* ---------------- merge custom content into the live DBs ----------------
    Both functions are full "sync to customFoods/customRecipes" passes (not
@@ -136,13 +140,13 @@ function applyCustomRecipes(){
   Object.keys(RECIPE_SLOT_DB).forEach(function(id){ delete RECIPE_SLOT_DB[id]; });
 
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
-    if(deletedRecipes[id]) return;
+    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
     RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(src));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
   });
   Object.keys(recipeOverrides).forEach(function(id){
-    if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id]) return;
+    if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(recipeOverrides[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });

@@ -228,8 +228,8 @@ function recipeHeroHtml(recipe, recipeId){
 }
 
 function renderRecipe(key){
-  const r = RECIPES_DB[key] || RECIPES_DB.salmon;
-  currentRecipeKey = RECIPES_DB[key] ? key : 'salmon';
+  const r = RECIPES_DB[key] || RECIPES_DB.omelette;
+  currentRecipeKey = RECIPES_DB[key] ? key : 'omelette';
   svE = 1; svM = 1.5; svS = 1;
   recipeServingCtx = recipeServingContextFor(currentRecipeKey);
   if(recipeServingCtx){

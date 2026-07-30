@@ -607,7 +607,7 @@ function bootMesaApp(){
   const profOk = bootStage('prof', function(){ applyProf(currentProf); });
   if(profOk){
     bootStage('recipe', function(){
-      renderRecipe('salmon');
+      renderRecipe('omelette');
       recipeOrigin = 'today';
     });
   } else {

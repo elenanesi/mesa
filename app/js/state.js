@@ -89,7 +89,7 @@ function deepClone(obj){
    the old compat view either — see whyText(recipeId, profKey) below,
    called fresh by render.js wherever the why-box paints.
    =================================================================== */
-const LEGACY_RECIPE_IDS = ['yogurt', 'omelette', 'lentil', 'salmon', 'skyrbowl', 'eggsturkey', 'chickenfarro', 'chiapudding', 'tunasalad', 'salmongreens'];
+const LEGACY_RECIPE_IDS = ['yogurt', 'omelette', 'lentil', 'skyrbowl', 'eggsturkey', 'chickenfarro', 'chiapudding', 'tunasalad'];
 // Task C2: the planner picks from the FULL RECIPES_DB, not just these original mockups.
 // All recipes use the same factual, goal-aware explanation below. The former handwritten
 // copy made thyroid, skin, iodine, selenium and low-GI suitability claims Mesa cannot
@@ -400,7 +400,7 @@ let recipeReturnScroll = null;
 // person}), so the recipe screen's swap button targets THAT day, not today. null for
 // every other origin (Today/Log/library) — those really do mean today.
 let recipeDayCtx = null;
-let currentRecipeKey = 'salmon';
+let currentRecipeKey = 'omelette';
 let svE = 1, svM = 1.5, svS = 1;
 
 /* ---------------- shared-meals model ---------------- */

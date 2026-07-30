@@ -867,29 +867,6 @@ function testIconPicker(ctx){
    'chicken-couscous-salad' (a non-legacy RECIPES_DB entry with toTaste but no piece-unit
    ingredient, exercising the "every RECIPES_DB id" path task C2 added). */
 const EXPECTED_RECIPE_DISPLAY = {
-  salmon: {
-    emoji: '🐟',
-    title: 'Baked salmon, quinoa & greens',
-    time: '25 min',
-    kcal: 602,
-    protein: 41,
-    tags: [['berry', 'Thyroid-friendly'], ['', 'Omega-3'], ['', 'Low-GI'], ['terra', 'High protein']],
-    ingredients: [
-      ['Salmon fillet, raw (Atlantic)', 140, 'g'],
-      ['Quinoa, dry (uncooked)', 60, 'g'],
-      ['Spinach, baby leaf, raw', 40, 'g'],
-      ['Broccoli, raw', 100, 'g'],
-      ['Olive oil, extra virgin', 5, 'ml'],
-      ['Lemon', null, 'to taste'],
-      ['Garlic', null, 'to taste']
-    ],
-    method: [
-      'Rinse quinoa, simmer in 2x water for 15 min until fluffy.',
-      'Rub salmon with olive oil, lemon, garlic. Bake at 200C for 12-14 min.',
-      'Steam broccoli; wilt spinach in the warm pan.',
-      'Plate quinoa, greens, salmon. Finish with lemon and olive oil.'
-    ]
-  },
   omelette: {
     emoji: '🍳',
     title: 'Veggie omelette & rye toast',
@@ -1276,7 +1253,7 @@ function testRecipeImagePicker(ctx){
   assert(get(ctx, 'customRecipes')[savedId].imageKey === 'fish-main',
     'saveRecipeBuilder: custom recipes persist the chosen imageKey', JSON.stringify(get(ctx, 'customRecipes')[savedId]));
 
-  call(ctx, 'openEditRecipeForm', ['salmon']);
+  call(ctx, 'openEditRecipeForm', ['omelette']);
   assert(get(ctx, 'recipeBuilder').imageKey === null,
     'openEditRecipeForm: built-in recipes without explicit imageKey start in Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
   assert(get(ctx, 'recipeBuilder').imagePickerOpen === false,
@@ -1284,16 +1261,16 @@ function testRecipeImagePicker(ctx){
   html = call(ctx, 'buildRecipeBuilderSheet', []);
   assert(html.indexOf('Lead image') !== -1 && html.indexOf('Choose lead image') !== -1,
     'buildRecipeBuilderSheet: normal recipe edit exposes the Choose lead image action', html);
-  call(ctx, 'openRecipeImageForm', ['salmon']);
+  call(ctx, 'openRecipeImageForm', ['omelette']);
   html = call(ctx, 'buildRecipeBuilderSheet', []);
   assert(get(ctx, 'recipeBuilder').imagePickerOpen === true && html.indexOf('data-role="recipe-image-grid"') !== -1,
     'openRecipeImageForm: opens edit recipe with the lead image picker expanded', html);
   call(ctx, 'setRecipeImageKey', ['salad']);
   call(ctx, 'saveRecipeBuilder', []);
-  assert(get(ctx, 'recipeOverrides').salmon && get(ctx, 'recipeOverrides').salmon.imageKey === 'salad',
-    'saveRecipeBuilder: built-in recipe overrides persist a chosen imageKey', JSON.stringify(get(ctx, 'recipeOverrides').salmon));
+  assert(get(ctx, 'recipeOverrides').omelette && get(ctx, 'recipeOverrides').omelette.imageKey === 'salad',
+    'saveRecipeBuilder: built-in recipe overrides persist a chosen imageKey', JSON.stringify(get(ctx, 'recipeOverrides').omelette));
 
-  call(ctx, 'openEditRecipeForm', ['salmon']);
+  call(ctx, 'openEditRecipeForm', ['omelette']);
   assert(get(ctx, 'recipeBuilder').imageKey === 'salad',
     'openEditRecipeForm: existing recipe imageKey seeds back into the builder draft', get(ctx, 'recipeBuilder').imageKey);
   run(ctx, "recipeBuilder.imagePickerOpen = true;");
@@ -1304,7 +1281,7 @@ function testRecipeImagePicker(ctx){
   assert(get(ctx, 'recipeBuilder').imageKey === null,
     'setRecipeImageKey: empty key returns the recipe image picker to Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
 
-  run(ctx, "delete customRecipes['" + savedId + "']; delete recipeOverrides.salmon; applyCustomRecipes(); toast = __recipePickerStub.toast; openMyRecipes = __recipePickerStub.openMyRecipes; applyProf = __recipePickerStub.applyProf; renderFoodLibraryCount = __recipePickerStub.renderFoodLibraryCount; delete __recipePickerStub;");
+  run(ctx, "delete customRecipes['" + savedId + "']; delete recipeOverrides.omelette; applyCustomRecipes(); toast = __recipePickerStub.toast; openMyRecipes = __recipePickerStub.openMyRecipes; applyProf = __recipePickerStub.applyProf; renderFoodLibraryCount = __recipePickerStub.renderFoodLibraryCount; delete __recipePickerStub;");
 }
 
 function testLibraryRecipeRowsOpenDetail(){
@@ -4496,12 +4473,12 @@ function testWeekQuickAddNutrition(ctx){
   // A recipe logged with "No meal" is standalone too. It must appear in the Week's
   // compact explanatory line and be added exactly once, rather than being mistaken for a
   // slot-bound meal (which would either disappear or double-count).
-  call(ctx, 'logPlanEntry', [pastDate, person, null, 'salmon', 1, [{recipeId: 'salmon', portion: 1}]]);
+  call(ctx, 'logPlanEntry', [pastDate, person, null, 'omelette', 1, [{recipeId: 'omelette', portion: 1}]]);
   const withStandaloneRecipe = call(ctx, 'weekDayNutriViews', [plan, person])[1];
   assert(withStandaloneRecipe.quickAddCount === 3 && withStandaloneRecipe.standaloneEntries.length === 3,
     'Week additional line: includes a recipe logged with No meal as well as quick-added foods', JSON.stringify(withStandaloneRecipe.standaloneEntries));
   const line = call(ctx, 'weekStandaloneLogLine', [withStandaloneRecipe.standaloneEntries]);
-  assert(line.indexOf('Additional:') !== -1 && line.indexOf('Fruit jam') !== -1 && /salmon/i.test(line) && /kcal/.test(line) && line.indexOf('View / edit') !== -1,
+  assert(line.indexOf('Additional:') !== -1 && line.indexOf('Fruit jam') !== -1 && /omelette/i.test(line) && /kcal/.test(line) && line.indexOf('View / edit') !== -1,
     'Week additional line: names the standalone items and their combined calories without rendering a second meal detail', line);
   const standaloneRows = call(ctx, 'weekStandaloneEntriesForDate', [pastDate, person]);
   assert(standaloneRows.length === 3 && standaloneRows.every(function(row){ return typeof row.index === 'number'; }),

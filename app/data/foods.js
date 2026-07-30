@@ -623,6 +623,11 @@ const FOODS = {
     kcal: 355, protein: 7.1, carbs: 80.0, fat: 0.7, satFat: 0.2, fiber: 1.3,
     flags: ['glutenFree'], cat: 'Pantry', iconKey: 'rice', src: 'USDA FDC 169756 (rice, white, long-grain, dry)'
   },
+  'tortilla-chips': {
+    name: 'Tortilla chips, plain', per: 100, unit: 'g',
+    kcal: 472, protein: 7.1, carbs: 67.8, fat: 20.7, satFat: 2.8, fiber: 4.5, sugars: 0.6, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['glutenFree'], cat: 'Pantry', src: 'USDA FoodData Central 167558 (tortilla chips, plain white corn, salted; kcal via 4/4/9 policy)'
+  },
   'couscous': {
     name: 'Couscous, dry', per: 100, unit: 'g',
     kcal: 346, protein: 12.8, carbs: 72.4, fat: 0.6, satFat: 0.1, fiber: 5.0,

@@ -369,26 +369,6 @@ const RECIPES_DB = {
 
   /* ================= DINNER (9) ================= */
 
-  salmon: {
-    title: 'Baked salmon, quinoa & greens', emoji: '🐟', slot: 'dinner', role: 'full',
-    slots: ['dinner', 'lunch'],
-    styles: ['balanced', 'highprotein'], time: 25,
-    ingredients: [['salmon-fillet', 140], ['quinoa-dry', 60], ['spinach', 40], ['broccoli', 100], ['olive-oil', 5]],
-    toTaste: ['lemon', 'garlic'],
-    steps: ['Rinse quinoa, simmer in 2x water for 15 min until fluffy.', 'Rub salmon with olive oil, lemon, garlic. Bake at 200C for 12-14 min.', 'Steam broccoli; wilt spinach in the warm pan.', 'Plate quinoa, greens, salmon. Finish with lemon and olive oil.'],
-    tags: ['thyroid', 'omega3', 'lowGI', 'muscle'],
-    avoid: []
-  },
-  salmongreens: {
-    title: 'Salmon & greens, no quinoa', emoji: '🐟', slot: 'dinner', role: 'main',
-    slots: ['dinner', 'lunch'],
-    styles: ['lowcarb', 'highprotein'], time: 20,
-    ingredients: [['salmon-fillet', 150], ['spinach', 60], ['broccoli', 75], ['courgette', 75], ['olive-oil', 5]],
-    toTaste: ['lemon', 'garlic'],
-    steps: ['Rub salmon with olive oil, lemon and garlic; bake at 200C for 12-14 min.', 'Steam broccoli and courgette; wilt spinach in the warm pan.', 'Plate the greens with salmon on top, finished with lemon and olive oil.'],
-    tags: ['thyroid', 'omega3', 'lowGI', 'muscle'],
-    avoid: []
-  },
   'chicken-sweet-potato-broccoli': {
     title: 'Roast chicken, sweet potato & broccoli', emoji: '🍗', slot: 'dinner', role: 'full',
     slots: ['dinner'],
@@ -851,15 +831,53 @@ const RECIPES_DB = {
     tags: ['veggie', 'lowGI'],
     avoid: ['lactose']
   },
-  'asparagi-fagiolini-broccoli': {
-    title: 'Asparagus, green beans or broccoli', emoji: '🥦', slot: 'side', role: 'side',
-    season: 'spring/summer',
-    styles: ['lowcarb', 'balanced'], time: 15,
-    ingredients: [['asparagus', 100], ['green-beans', 100], ['broccoli', 100], ['olive-oil', 10]],
-    toTaste: ['lemon', 'black pepper'],
-    steps: ['Steam or roast the green vegetables.', 'Dress with olive oil and lemon.', 'Serve warm.'],
-    tags: ['veggie', 'highFiber', 'quick'],
-    avoid: []
+  'roasted-potatoes': {
+    title: 'Roasted potatoes', emoji: '🥔', slot: 'side', role: 'side',
+    slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 35,
+    ingredients: [['potatoes', 220], ['olive-oil', 10]],
+    toTaste: ['rosemary', 'salt', 'black pepper'],
+    steps: ['Cut the potatoes into bite-sized pieces.', 'Toss with olive oil, rosemary and seasoning.', 'Roast at 210C until crisp outside and tender inside.'],
+    tags: ['veggie'], avoid: []
+  },
+  'mashed-potatoes': {
+    title: 'Mashed potatoes', emoji: '🥔', slot: 'side', role: 'side',
+    slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['potatoes', 220], ['olive-oil', 8]],
+    toTaste: ['salt', 'black pepper', 'nutmeg'],
+    steps: ['Boil the potatoes until very tender.', 'Drain well and mash with olive oil and seasoning.', 'Loosen with a splash of cooking water if needed.'],
+    tags: ['veggie'], avoid: []
+  },
+  'steamed-rice': {
+    title: 'Steamed rice', emoji: '🍚', slot: 'side', role: 'side',
+    slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 18,
+    ingredients: [['rice', 60], ['olive-oil', 3]],
+    toTaste: ['salt'],
+    steps: ['Rinse the rice until the water runs mostly clear.', 'Simmer covered in water until tender.', 'Rest for 5 minutes, fluff and finish with olive oil.'],
+    tags: [], avoid: []
+  },
+  nachos: {
+    title: 'Nachos', emoji: '🌽', slot: 'side', role: 'side', occasional: true,
+    slots: ['side', 'lunch', 'dinner'], styles: ['balanced'], time: 8,
+    ingredients: [['tortilla-chips', 45], ['mozzarella', 35]],
+    toTaste: ['paprika'],
+    steps: ['Spread the tortilla chips on a small oven-safe plate.', 'Scatter mozzarella over the top.', 'Bake or grill briefly until the cheese melts.'],
+    tags: [], avoid: ['lactose']
+  },
+  'steamed-green-beans': {
+    title: 'Steamed green beans', emoji: '🫛', slot: 'side', role: 'side',
+    slots: ['side', 'lunch', 'dinner'], season: 'spring/summer', styles: ['lowcarb', 'balanced'], time: 12,
+    ingredients: [['green-beans', 200], ['olive-oil', 8]],
+    toTaste: ['lemon', 'salt', 'black pepper'],
+    steps: ['Steam the green beans until bright and just tender.', 'Dress with olive oil, lemon and seasoning.', 'Serve warm.'],
+    tags: ['veggie', 'highFiber', 'quick'], avoid: []
+  },
+  'steamed-broccoli-pumpkin-seeds': {
+    title: 'Steamed broccoli with pumpkin seeds', emoji: '🥦', slot: 'side', role: 'side',
+    slots: ['side', 'lunch', 'dinner'], season: 'winter/autumn', styles: ['lowcarb', 'balanced'], time: 12,
+    ingredients: [['broccoli', 220], ['pumpkin-seeds', 15], ['olive-oil', 6]],
+    toTaste: ['lemon', 'salt', 'black pepper'],
+    steps: ['Steam the broccoli until tender with a little bite.', 'Dress with olive oil and lemon.', 'Finish with pumpkin seeds and seasoning.'],
+    tags: ['veggie', 'highFiber', 'quick'], avoid: []
   },
   'cole-slaw': {
     title: 'Cole slaw', emoji: '🥬', slot: 'side', role: 'side',
