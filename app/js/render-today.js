@@ -1039,9 +1039,9 @@ function renderTodayCardActions(){
       // must write to today even when the Log screen is still set to Yesterday. See the doc
       // on logConfirm below.
       wrap.innerHTML = '<div class="meal-actions-row">'
-        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"',todayISO(),this)", ariaLabel: 'Skip '+label, title: 'Skip'})
-        + mealActionButtonHtml('swap', {onclick: "event.stopPropagation();openSwap('"+slot+"',null)", ariaLabel: 'Swap '+label, title: 'Swap'})
         + mealActionButtonHtml('log', {onclick: "event.stopPropagation();logConfirm('"+slot+"',todayISO(),this)", ariaLabel: 'Log '+label, title: 'Mark as eaten'})
+        + mealActionButtonHtml('swap', {onclick: "event.stopPropagation();openSwap('"+slot+"',null)", ariaLabel: 'Swap '+label, title: 'Swap'})
+        + mealActionButtonHtml('skip', {onclick: "event.stopPropagation();logSkip('"+slot+"',todayISO(),this)", ariaLabel: 'Skip '+label, title: 'Skip'})
         + '</div>';
     }
   });

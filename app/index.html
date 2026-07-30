@@ -58,9 +58,9 @@
         <div class="thumb" id="bfEmoji">🥣</div>
         <div class="info">
           <div class="row between"><span class="t" id="bfTitle"></span><span class="kcal" id="bfKcal"></span></div>
+          <div class="today-actions" id="taBreakfast"></div>
           <div class="d" id="bfDesc"></div>
           <div class="tags" id="bfTags"></div>
-          <div class="today-actions" id="taBreakfast"></div>
         </div>
       </div>
 
@@ -68,9 +68,9 @@
         <div class="thumb" id="lunchThumb">🥗</div>
         <div class="info">
           <div class="row between"><span class="t" id="lunchTitle"></span><span class="kcal" id="lunchKcal"></span></div>
+          <div class="today-actions" id="taLunch"></div>
           <div class="d" id="lunchDesc"></div>
           <div class="tags" id="lunchTags"></div>
-          <div class="today-actions" id="taLunch"></div>
         </div>
       </div>
 
@@ -78,9 +78,9 @@
         <div class="thumb" id="dinnerThumb">🐟</div>
         <div class="info">
           <div class="row between"><span class="t" id="dinnerTitle"></span><span class="kcal" id="dinnerKcal"></span></div>
+          <div class="today-actions" id="taDinner"></div>
           <div class="d" id="dinnerDesc"></div>
           <div class="tags" id="dinnerTags"></div>
-          <div class="today-actions" id="taDinner"></div>
         </div>
       </div>
 
@@ -88,9 +88,9 @@
         <div class="thumb" id="snackThumbEl" style="background:var(--terra-tint)">🌰</div>
         <div class="info">
           <div class="row between"><span class="t" id="snackTitleEl"></span><span class="kcal" id="snackKcalEl"></span></div>
+          <div class="today-actions" id="taSnack"></div>
           <div class="d" id="snackDescEl"></div>
           <div class="tags" id="snackTags"></div>
-          <div class="today-actions" id="taSnack"></div>
         </div>
       </div>
 
@@ -230,17 +230,23 @@
             <span id="rsTime">⏱️ 25 min</span><span id="rsKcal">🔥 520 kcal</span><span id="rsProt">💪 38g protein</span><span id="rsServesMeta">👥 2.5 servings</span>
           </div>
           <div class="tags detail-hero-badges" id="recipeTags"></div>
-          <button class="pill ghost chip-preset detail-hero-action" onclick="openRecipeImageForm(currentRecipeKey)">Change image</button>
         </div>
       </div>
+
+      <!-- Contextual actions live together, immediately after the recipe identity.  Logging
+           deliberately does not appear here: meals are logged from their Today card. -->
+      <div class="recipe-detail-actions" id="recipeDetailActions"></div>
+
+      <div class="card recipe-meal-card" id="recipeMealStrip" style="display:none"></div>
 
       <!-- D1: renderRecipeOptionsChips() (render.js) owns everything inside this wrap —
            one chip row per optionGroups group, hidden (display:none) for a recipe without
            optionGroups. -->
-      <div id="recipeOptionsWrap" style="display:none"></div>
+      <div class="recipe-section recipe-options-section" id="recipeOptionsWrap" style="display:none"></div>
 
-      <h2>Servings</h2>
-      <div class="serve-row" id="serveRowShared">
+      <section class="recipe-section recipe-servings-section">
+        <div class="row between recipe-section-heading"><h2>Servings</h2><span class="sub">Adjust this meal</span></div>
+        <div class="serve-row" id="serveRowShared">
         <div class="serve-card" id="serveElena">
           <div class="sv-name">You</div>
           <div class="sv-stepper">
@@ -257,10 +263,10 @@
             <button onclick="adjServe('andrea',0.5)" aria-label="Increase your partner’s portion">+</button>
           </div>
         </div>
-      </div>
-      <p class="sub" id="sharedCaption" style="margin-top:8px">Shared dinner — cooked once, plated per target</p>
+        </div>
+        <p class="sub" id="sharedCaption" style="margin-top:8px">Shared dinner — cooked once, plated per target</p>
 
-      <div class="serve-row" id="serveRowSolo" style="display:none">
+        <div class="serve-row" id="serveRowSolo" style="display:none">
         <div class="serve-card me" style="flex:1">
           <div class="sv-name">Servings</div>
           <div class="sv-stepper">
@@ -269,32 +275,29 @@
             <button onclick="adjServe('solo',0.5)" aria-label="Increase servings">+</button>
           </div>
         </div>
-      </div>
+        </div>
+      </section>
 
-      <div class="row between" style="margin-top:16px"><b>Why Mesa picked this</b><button class="why-link" onclick="openHowMesaPlans('rules')">Why?</button></div>
-      <div class="why" style="margin-top:8px" id="recipeWhy"></div>
+      <section class="recipe-section">
+        <h2 id="ingHeader">Ingredients · scaled for 2.5 servings</h2>
+        <ul class="ing" id="ingList"></ul>
+      </section>
 
-      <h2><span id="nutriHeader">Nutrition (per serving)</span> <span class="chip-computed">✓ computed</span></h2>
-      <div class="nutri" id="recipeNutri"></div>
-      <p class="sub" id="recipeKcalSplit" style="margin-top:8px"></p>
+      <section class="recipe-section">
+        <h2>Method</h2>
+        <ol class="steps" id="recipeMethod"></ol>
+      </section>
 
-      <h2 id="ingHeader">Ingredients · scaled for 2.5 servings</h2>
-      <ul class="ing" id="ingList"></ul>
+      <section class="recipe-section">
+        <h2><span id="nutriHeader">Nutrition (per serving)</span> <span class="chip-computed">✓ computed</span></h2>
+        <div class="nutri" id="recipeNutri"></div>
+        <p class="sub" id="recipeKcalSplit" style="margin-top:8px"></p>
+      </section>
 
-      <h2>Method</h2>
-      <ol class="steps" id="recipeMethod"></ol>
-
-      <!-- Eaten-state CTA: renderRecipeEatenState() (render.js) owns everything inside this
-           wrap and swaps the plain button for a "✓ Eaten today"/"Skipped for today" tag-row
-           once today's plan for this slot is confirmed/skipped — see render.js for the states. -->
-      <div id="recipeEatenWrap"><button class="cta" id="recipeEatenBtn" onclick="markEatenFromRecipe(this)">✓ Mark as eaten</button></div>
-
-      <!-- USER FEEDBACK item 2: renderRecipeMealStrip() (render.js) owns everything inside
-           this card — shown only when this recipe is today's planned slot AND that slot has
-           extras, so the recipe's per-serving numbers don't sit contradicting the meal-card
-           total. Hidden (display:none) the rest of the time. -->
-      <div class="card" id="recipeMealStrip" style="display:none;margin-top:14px;padding:14px"></div>
-      <button class="cta ghostbtn" onclick="openSwap(currentRecipeKey, null)">🔁 Swap for something similar</button>
+      <section class="recipe-section recipe-why-section">
+        <div class="row between"><b>Why Mesa picked this</b><button class="why-link" onclick="openHowMesaPlans('rules')">Why?</button></div>
+        <div class="why" style="margin-top:8px" id="recipeWhy"></div>
+      </section>
     </section>
 
     <!-- ============ LOG / ADD ============ -->

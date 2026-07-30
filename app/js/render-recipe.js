@@ -252,12 +252,46 @@ function renderRecipe(key){
   document.getElementById('rsKcal').textContent = '🔥 ' + Math.round(base.kcal) + ' kcal';
   document.getElementById('rsProt').textContent = '💪 ' + Math.round(base.protein) + 'g protein';
   document.getElementById('recipeTags').innerHTML = recipeDisplayPills(currentRecipeKey).map(function(t){ return '<span class="pill'+(t[0]?' '+t[0]:'')+'">'+t[1]+'</span>'; }).join('');
+  renderRecipeDetailActions();
   renderRecipeOptionsChips();
   updateRecipeWhy();
   document.getElementById('recipeMethod').innerHTML = r.steps.map(function(s){ return '<li>'+escapeHtml(s)+'</li>'; }).join('');
   updateServings();
-  renderRecipeEatenState(); // fresh eaten/skipped read every time the recipe screen paints (open, re-render on plan change, swap)
   renderRecipeMealStrip();
+}
+
+// Keep recipe management adjacent to the identity of the recipe, not mixed into the
+// cooking flow. Logging is intentionally absent: a meal is confirmed only from Today.
+function renderRecipeDetailActions(){
+  const wrap = document.getElementById('recipeDetailActions');
+  const r = RECIPES_DB[currentRecipeKey];
+  if(!wrap || !r) return;
+  const hasMeal = !!(recipeServingCtx && recipeServingCtx.slot);
+  let html = '<button class="recipe-action recipe-action-primary" onclick="openRecipeEditorFromDetail()">✎ Edit recipe</button>';
+  if(hasMeal){
+    html += '<button class="recipe-action" onclick="manageRecipeMealFromDetail()">☷ Manage meal</button>';
+    html += '<button class="recipe-action recipe-action-quiet" onclick="openSwap(recipeServingCtx.slot,null)">↔ Swap</button>';
+  }
+  if(recipeOverrides[currentRecipeKey]) html += '<button class="recipe-action recipe-action-quiet" onclick="resetRecipeFromDetail()">↺ Reset</button>';
+  if(customRecipes[currentRecipeKey]) html += '<button class="recipe-action recipe-action-danger" onclick="deleteRecipeFromDetail()">Delete</button>';
+  wrap.innerHTML = html;
+}
+
+function openRecipeEditorFromDetail(){ openEditRecipeForm(currentRecipeKey); }
+function manageRecipeMealFromDetail(){
+  if(!recipeServingCtx || !recipeServingCtx.slot) return;
+  openAddMealSheetForContext({weekStartDate: recipeServingCtx.weekStartDate || mondayOfWeek(recipeServingCtx.dateISO || todayISO()), dayIndex: recipeServingCtx.dayIndex, slot: recipeServingCtx.slot, person: recipeServingCtx.person || currentProf});
+}
+function resetRecipeFromDetail(){
+  resetRecipeOverride(currentRecipeKey);
+  persist();
+  renderRecipe(currentRecipeKey);
+}
+function deleteRecipeFromDetail(){
+  const id = currentRecipeKey;
+  deleteRecipe(id);
+  persist();
+  backFromRecipe();
 }
 
 /* ---------------- task D1: recipe options/variants — recipe-screen chips ----------------
@@ -648,8 +682,8 @@ function renderRecipeMealStrip(){
     wrap.innerHTML = '';
     return;
   }
-  let rows = '<div class="row between"><b style="font-size:14px">In this meal</b>'
-    + '<button class="tag-undo" onclick="openAddMealRecipeSheet(\'' + slot + '\')">Manage</button></div>';
+  let rows = '<div class="row between"><b style="font-size:14px">This meal</b>'
+    + '<button class="tag-undo" onclick="manageRecipeMealFromDetail()">Manage</button></div>';
   if(view.extras && view.extras.length){
     const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion, view.opts).totals);
     rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(view.recipeId, view.opts)) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';

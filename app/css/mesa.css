@@ -689,6 +689,20 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .recipe-detail-hero{max-width:560px;}
 .recipe-hero-media{width:124px;min-height:124px;border-radius:20px;background:#fbf5e8;overflow:hidden;font-size:54px;}
 .recipe-image{width:100%;height:100%;display:block;object-fit:contain;border-radius:inherit;background:#fbf5e8;padding:4px;}
+.recipe-detail-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;}
+.recipe-action{min-height:42px;padding:0 13px;border:1px solid var(--line);border-radius:12px;background:#fff;color:var(--sage-deep);font:inherit;font-size:13px;font-weight:700;cursor:pointer;}
+.recipe-action:active{transform:scale(.97);}
+.recipe-action-primary{background:var(--sage);border-color:var(--sage);color:#fff;}
+.recipe-action-quiet{color:var(--ink-soft);font-weight:600;}
+.recipe-action-danger{color:#b25e35;background:#fff8f4;border-color:#efd4c7;}
+.recipe-section{margin-top:22px;}
+.recipe-section-heading h2,.recipe-section h2{margin:0;}
+.recipe-section-heading .sub{margin:0;}
+.recipe-options-section{padding:13px 14px;border:1px solid var(--line);border-radius:16px;background:#fffaf3;}
+.recipe-options-section:before{content:'Make it your way';display:block;font-size:13px;font-weight:700;color:var(--ink-soft);margin-bottom:2px;}
+.recipe-options-section .row{margin-top:7px!important;}
+.recipe-meal-card{margin-top:14px;padding:14px;}
+.recipe-why-section{padding-bottom:8px;}
 
 @media (max-width:420px){
   .detail-hero{grid-template-columns:auto minmax(0,1fr);gap:10px;padding:10px 12px;}

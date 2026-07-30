@@ -9371,8 +9371,8 @@ function testTodayGoalSummaryRemoved(){
   const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
   const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
   const breakfastCard = indexHtml.slice(firstMeal, indexHtml.indexOf('id="todayLunchCard"', firstMeal));
-  assert(breakfastCard.indexOf('id="bfTags"></div>\n          <div class="today-actions" id="taBreakfast"></div>') !== -1,
-    'Today meal card: action controls return below the full meal details, preserving reading room on mobile', breakfastCard);
+  assert(breakfastCard.indexOf('id="taBreakfast"></div>\n          <div class="d" id="bfDesc"></div>') !== -1,
+    'Today meal card: logging controls sit immediately below title and image, before recipe details', breakfastCard);
   assert(css.indexOf('#today .meal{padding:14px;gap:11px;}') !== -1 && css.indexOf('#today .meal{align-items:center;flex-wrap:nowrap') === -1,
     'Today meal card: keeps the established roomy layout with only a small reduction to surrounding padding', '');
   assert(todayTop.indexOf('id="todayGlance"') === -1 && todayTop.indexOf('id="todayGlanceKcal"') === -1,
@@ -9647,8 +9647,8 @@ function testBotanicalStampReward(ctx){
     'Botanical reward: Week action buttons pass themselves as the stamp anchor');
   assert(/logBeverage\('[^']+',this\)/.test(indexSrc) && /function logBeverage\(foodId, anchorEl\)/.test(sheetsSrc),
     'Botanical reward: beverage quick-add passes its tapped control as the stamp anchor');
-  assert(/logConfirm\(slot,\s*todayISO\(\),/.test(recipeSrc),
-    'Botanical reward: Recipe “Mark as eaten” forwards its CTA through logConfirm exactly once');
+  assert(!/recipeEatenWrap/.test(indexSrc) && !/recipeEatenBtn/.test(indexSrc),
+    'Recipe detail: logging is not offered here; Today cards remain the sole logging surface');
   assert(orderAfter(todayConfirm, 'logPlanEntry(', 'refreshRingAndBars(') && orderAfter(todayConfirm, 'refreshRingAndBars(', 'triggerMealLogReward('),
     'Botanical reward: Today stamp runs after a successful mutation and visible refresh', todayConfirm);
   assert(orderAfter(weekConfirm, 'logPlanEntry(', 'refreshAfterLogChange(') && orderAfter(weekConfirm, 'refreshAfterLogChange(', 'triggerMealLogReward('),
