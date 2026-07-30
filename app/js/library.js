@@ -502,6 +502,7 @@ function setScannerScreenHtml(html){ return setLibraryScreenHtml('libraryScanner
 function setPantryScreenHtml(html){ return setLibraryScreenHtml('libraryPantry', 'libraryPantryBody', html); }
 
 function openFoodLibrary(){
+  libFoodListReturn = null;
   libFoodQuery = '';
   libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
   libFoodFiltersOpen = false;
@@ -512,12 +513,29 @@ function openFoodLibrary(){
 // libFoodFilters — used by the detail page's back button so returning to the list
 // preserves whatever search/filter state was active before the row tap. openFoodLibrary()
 // above (fresh open) still resets that state first, then calls this.
-let libFoodListReturnScroll = null;
+let libFoodListReturn = null;
+function cloneLibFoodFilters(filters){
+  return {cats: new Set(filters.cats), flags: new Set(filters.flags), seasons: new Set(filters.seasons)};
+}
+function rememberFoodListReturn(){
+  const screen = document.getElementById('libraryIngredients');
+  if(!libFoodListReturn && screen && screen.classList.contains('active')){
+    libFoodListReturn = {query: libFoodQuery, filters: cloneLibFoodFilters(libFoodFilters), filtersOpen: libFoodFiltersOpen, scroll: captureLibraryScroll()};
+  }
+}
+function returnToFoodLibrary(){
+  if(!libFoodListReturn){ openFoodLibrary(); return; }
+  const saved = libFoodListReturn;
+  libFoodListReturn = null;
+  libFoodQuery = saved.query;
+  libFoodFilters = saved.filters;
+  libFoodFiltersOpen = saved.filtersOpen;
+  renderFoodLibraryList(saved.scroll);
+}
 function renderFoodLibraryList(returnScroll){
   setIngredientsScreenHtml(buildFoodLibrarySheet());
   attachLibFoodListHandler();
-  restoreLibraryScroll(returnScroll || libFoodListReturnScroll);
-  libFoodListReturnScroll = null;
+  restoreLibraryScroll(returnScroll);
 }
 
 // Delegated click handler for the Ingredients list's per-row action buttons
@@ -1271,10 +1289,12 @@ function compositeRowListMarkup(rows, emptyText){
 
 let newFoodForm = null;
 let newFoodComponentPickerTarget = null;
+let newFoodComponentPickerReturnScroll = null;
 
 function openNewFoodForm(){
+  rememberFoodListReturn();
   newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: []};
-  renderNewFoodFormSheet();
+  renderNewFoodFormSheet(false);
 }
 
 function openEditFoodForm(id){
@@ -1283,6 +1303,7 @@ function openEditFoodForm(id){
   const composite = isCompositeFood(f);
   const factor = composite ? 1 : (f.unit === 'piece' && f.avgG ? (100 / f.avgG) : (100 / (f.per || 100)));
   const dm = composite ? (foodDisplayMacros(id) || {}) : f;
+  rememberFoodListReturn();
   newFoodForm = {
     editingId: id,
     name: f.name || '',
@@ -1314,14 +1335,14 @@ function openEditFoodForm(id){
       };
     })
   };
-  renderNewFoodFormSheet();
+  renderNewFoodFormSheet(false);
 }
 // Re-attaches the icon grid's delegated click handler every time (setIngredientsScreenHtml
 // replaces #libraryIngredientsBody's innerHTML wholesale, so any prior listener on the old
 // grid element is gone) — same per-render re-attach pattern as renderFoodLibraryList's
 // attachLibFoodListHandler call.
-function renderNewFoodFormSheet(){
-  setIngredientsScreenHtml(buildNewFoodFormSheet(), true);
+function renderNewFoodFormSheet(preserveScroll){
+  setIngredientsScreenHtml(buildNewFoodFormSheet(), preserveScroll !== false);
   attachNewFoodIconGridHandler();
   attachNewFoodComponentHandlers();
 }
@@ -1342,7 +1363,7 @@ function buildNewFoodFormSheet(){
   const f = newFoodForm;
   const kcal = computeNewFoodKcal(f);
   const editing = !!f.editingId;
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit ingredient' : 'New ingredient') + '</h2><button class="backbtn" style="margin:0" onclick="openFoodLibrary()">‹ Back</button></div>';
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + (editing ? 'Edit ingredient' : 'New ingredient') + '</h2><button class="backbtn" style="margin:0" onclick="returnToFoodLibrary()">‹ Back</button></div>';
 
   html += '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(f.name) + '" oninput="newFoodForm.name=this.value" placeholder="e.g. Tempeh" autocomplete="off"></div>';
@@ -1422,7 +1443,7 @@ function buildNewFoodFormSheet(){
     + '</div>';
 
   html += '<button class="cta" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
-    + '<button class="cta ghostbtn" onclick="openFoodLibrary()">Cancel</button>';
+    + '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>';
   return html;
 }
 
@@ -1621,7 +1642,9 @@ function attachNewFoodComponentHandlers(){
 function openAddComponentToFood(target){
   newFoodComponentPickerTarget = target && typeof target.variantIndex === 'number' ? {variantIndex: target.variantIndex} : null;
   newFoodForm.pickerQuery = '';
+  newFoodComponentPickerReturnScroll = captureLibraryScroll();
   setIngredientsScreenHtml(buildFoodComponentPickerSheet());
+  restoreLibraryScroll({app: 0, screen: 0});
   const results = document.getElementById('foodCompResults');
   if(results) results.onclick = function(e){
     const row = e.target.closest('.altrow[data-food-id]');
@@ -1632,8 +1655,15 @@ function openAddComponentToFood(target){
   if(input) input.focus();
 }
 
+function returnToNewFoodForm(){
+  const returnScroll = newFoodComponentPickerReturnScroll;
+  newFoodComponentPickerReturnScroll = null;
+  renderNewFoodFormSheet(false);
+  restoreLibraryScroll(returnScroll);
+}
+
 function buildFoodComponentPickerSheet(){
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add component</h2><button class="backbtn" style="margin:0" onclick="renderNewFoodFormSheet()">‹ Back</button></div>'
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add component</h2><button class="backbtn" style="margin:0" onclick="returnToNewFoodForm()">‹ Back</button></div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="foodCompSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(newFoodForm.pickerQuery || '') + '" oninput="onFoodComponentSearch(this.value)" autocomplete="off">'
     + '<div id="foodCompResults" style="margin-top:4px">' + renderFoodComponentResults(newFoodForm.pickerQuery || '') + '</div>';
 }
@@ -1668,7 +1698,7 @@ function addComponentToFood(foodId){
   if(!rows) return;
   rows.push({foodId: foodId, grams: food.unit === 'piece' ? (food.avgG || 50) : 100});
   newFoodComponentPickerTarget = null;
-  renderNewFoodFormSheet();
+  returnToNewFoodForm();
 }
 
 function addNewFoodVariant(){
@@ -1772,7 +1802,7 @@ function saveNewFood(){
     applyProf(currentProf);
     toast('✓ ' + name + (f.editingId ? ' updated' : ' added') + ' — computed from ' + components.length + ' ingredient' + (components.length === 1 ? '' : 's'));
     newFoodForm = null;
-    openFoodLibrary();
+    returnToFoodLibrary();
     renderFoodLibraryCount();
     return;
   }
@@ -1807,7 +1837,7 @@ function saveNewFood(){
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
   toast('✓ ' + name + (f.editingId ? ' updated' : ' added') + ' — ' + kcal + ' kcal / 100g');
   newFoodForm = null;
-  openFoodLibrary();
+  returnToFoodLibrary();
   renderFoodLibraryCount();
 }
 
@@ -1820,7 +1850,7 @@ function resetFoodOverride(id){
   applyProf(currentProf);
   toast('✓ Reset ' + name);
   renderFoodLibraryCount();
-  if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) openFoodLibrary();
+  if(document.getElementById('libFoodList')) renderFoodLibraryList(captureLibraryScroll());
 }
 
 function deleteCustomFood(id){
@@ -1841,7 +1871,8 @@ function deleteCustomFood(id){
   applyProf(currentProf);
   toast('✓ Deleted ' + name);
   renderFoodLibraryCount();
-  if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) openFoodLibrary();
+  if(document.getElementById('libFoodList')) renderFoodLibraryList(captureLibraryScroll());
+  else if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) returnToFoodLibrary();
 }
 
 /* ===================================================================
@@ -1979,7 +2010,7 @@ function buildFoodDetailMarkup(id){
   const srcLine = f.src ? '<p class="sub" style="margin-top:10px">' + escapeHtml(f.src) + '</p>' : '';
 
   return '<div id="libFoodDetail">'
-    + '<div class="row between detail-title-row" style="margin-top:6px"><h2 style="margin:0">Ingredient</h2><button class="backbtn" style="margin:0" onclick="renderFoodLibraryList()">‹ Back</button></div>'
+    + '<div class="row between detail-title-row" style="margin-top:6px"><h2 style="margin:0">Ingredient</h2><button class="backbtn" style="margin:0" onclick="returnToFoodLibrary()">‹ Back</button></div>'
     + '<div class="card ingredient-detail-intro">'
     + '<div class="ingredient-detail-top">'
     + '<div class="ingredient-detail-image">' + ingredientIconHtml(ingredientIconAssetForFood(f)).replace('class="ingredient-icon"', 'class="ingredient-icon-lg"') + '</div>'
@@ -2002,7 +2033,7 @@ function buildFoodDetailMarkup(id){
 
 function openFoodDetail(id){
   if(!FOODS[id]){ toast('Ingredient not found'); renderFoodLibraryList(); return; }
-  libFoodListReturnScroll = captureLibraryScroll();
+  rememberFoodListReturn();
   libFoodDetailId = id;
   setIngredientsScreenHtml(buildFoodDetailMarkup(id));
   attachFoodDetailHandler();
