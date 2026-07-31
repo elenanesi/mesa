@@ -14,6 +14,15 @@ function toast(msg){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
 }
 
+// Use the same clear confirmation for every user-triggered destructive action. Non-browser
+// render/test contexts have no native dialog, so their underlying mutation helpers remain
+// usable while the app itself always asks first.
+function confirmDeletion(){
+  return (typeof window === 'undefined' || typeof window.confirm !== 'function')
+    ? true
+    : window.confirm('Are you SURE you want to delete?');
+}
+
 /* ---------------- Botanical log rewards ----------------
    These are deliberately presentation-only: call sites mutate and refresh first, then
    hand the successful action to this controller. Keeping completion reads directly on

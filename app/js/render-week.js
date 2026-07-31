@@ -602,6 +602,7 @@ function setMealRoutine(cadence){
 
 function clearMealRoutine(){
   if(!routineCtx) return;
+  if(!confirmDeletion()) return;
   mealRules = mealRules.filter(function(r){ return !(r.slot === routineCtx.slot && r.person === routineCtx.person); });
   closeSheet();
   refreshAfterMealRules();
@@ -670,6 +671,7 @@ function openEditWeekStandaloneFood(index){
 
 function removeWeekStandaloneEntry(index){
   const ctx = weekStandaloneLogCtx;
+  if(!confirmDeletion()) return;
   if(!ctx || !removeLogEntryAt(ctx.dateISO, ctx.person, index)) return;
   refreshAfterLogChange();
   renderWeekStandaloneLogSheet();

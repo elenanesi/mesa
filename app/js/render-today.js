@@ -400,6 +400,7 @@ function chooseMealExtraFood(foodId){
 // removed back-to-back without reopening.
 function removeMealExtraRecipe(recipeId){
   if(!addMealCtx) return;
+  if(!confirmDeletion()) return;
   const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = RECIPES_DB[recipeId] ? RECIPES_DB[recipeId].title : 'item';
@@ -422,6 +423,7 @@ function removeMealExtraRecipe(recipeId){
 
 function removeMealExtraFood(foodId){
   if(!addMealCtx) return;
+  if(!confirmDeletion()) return;
   const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = FOODS[foodId] ? FOODS[foodId].name : 'item';
@@ -776,6 +778,7 @@ function renderTodaySoFar(){
 
 function removeTodayEntryGroup(indices){
   if(!Array.isArray(indices) || !indices.length) return;
+  if(!confirmDeletion()) return;
   let removed = 0;
   indices.slice().sort(function(a,b){ return b-a; }).forEach(function(index){ if(removeLogEntryAt(currentLogDateISO(), currentProf, index)) removed++; });
   if(!removed) return;
@@ -864,6 +867,7 @@ function toggleTodayRecordGroupEatenOut(groupIndex){
 function deleteTodayRecordGroup(groupIndex){
   const group = todayRecordGroups[groupIndex];
   if(!group) return;
+  if(!confirmDeletion()) return;
   group.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
   refreshAfterLogChange();
   toast('✕ Removed item');
@@ -948,6 +952,7 @@ function saveEditTodayFood(){
 
 function deleteEditingTodayFood(){
   if(!editTodayFoodCtx) return;
+  if(!confirmDeletion()) return;
   const dateISO = editTodayFoodCtx.dateISO || todayISO();
   const person = editTodayFoodCtx.person || currentProf;
   editTodayFoodCtx.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(dateISO, person, i); });
@@ -1066,6 +1071,7 @@ function undoLogSlot(slot){
 // state is re-derived from slotLogStatus on the renderTodayCardActions() rebuild, same
 // path as undoLogSlot — the two stay consistent by construction).
 function removeTodayEntry(index){
+  if(!confirmDeletion()) return;
   const removed = removeLogEntryAt(currentLogDateISO(), currentProf, index);
   if(!removed) return;
   let name = 'entry';

@@ -743,6 +743,19 @@ function testFoodDetailMarkup(ctx){
 }
 
 /* ---------------- ingredient icon picker (task C5) ---------------- */
+function testDeletionConfirmation(ctx){
+  let asked = '';
+  ctx.confirm = function(message){ asked = message; return false; };
+  assert(call(ctx, 'confirmDeletion', []) === false,
+    'deletion confirmation: cancelling native prompt blocks the destructive action', '');
+  assert(asked === 'Are you SURE you want to delete?',
+    'deletion confirmation: every destructive action uses the requested clear wording', asked);
+  ctx.confirm = function(){ return true; };
+  assert(call(ctx, 'confirmDeletion', []) === true,
+    'deletion confirmation: accepting native prompt permits the action', '');
+  delete ctx.confirm;
+}
+
 function testIconPicker(ctx){
   const FOODS = get(ctx, 'FOODS');
   const BUILTIN_FOODS_DB = get(ctx, 'BUILTIN_FOODS_DB');
@@ -9742,6 +9755,7 @@ function main(){
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
+  runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('composite ingredient UI: save/detail/pantry/persist/D1 guards', function(){ testCompositeIngredientUi(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
