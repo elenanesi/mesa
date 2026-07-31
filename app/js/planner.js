@@ -98,9 +98,14 @@ function weeklyCapForRecipe(id, persons){
 // catalog must still produce a complete week (see applyLightConsecutiveFilter's doc).
 // `persons` mirrors applyVarietyFilter's dayUsePersons: a shared slot must count against
 // both people's weeks, since a shared dish lands on both plates.
-// Variety is a Mesa planning rule. Fixed weekly red-meat/poultry/fish/meatless quotas
-// were retired: they were product preferences presented as nutrition guidance, not a
-// rule Mesa can claim as a personalised or authoritative requirement.
+/* ---------------- lunch/dinner main variety + meat balance ----------------
+   User planning preferences, applied only to the 14 lunch/dinner MAIN courses in a
+   person-week. Breakfasts, snacks and sides remain deliberately reusable.
+
+   A main course never repeats across lunch and dinner in the same week. Red meat is
+   limited to one meal and poultry to three: at most four meat meals total. Fish and
+   plant-forward meals remain available. */
+const MEAT_WEEK_LIMITS = {red: 1, poultry: 3, total: 4};
 
 /* ---------------- composite ingredients: seeing through a composite's components ----------------
    A composite FOODS entry (data/foods.js — `components` present, e.g. 'pesto-elena')
@@ -289,18 +294,35 @@ function entryProteinKind(entry){
   return proteinKindForIngredientIds(ids);
 }
 
-// Which days of THIS week carry the two floors. Deterministic from the week seed and spread
-// three days apart, so the meatless days never bunch together and never land on day 0 (the
-// week's first day, which is often already half-logged when a plan is regenerated). Fish
-// days are offset from the meatless days so the two never collide.
-function proteinScheduleForWeek(){ return {}; }
-
-// Applies the ceilings and the designated-day floors to a candidate pool. Like every other
-// rule here it RELAXES rather than emptying the pool — a day whose only legal candidates are
-// meaty still gets a meal, it just misses the target, and that is strictly better than a
-// blank slot.
-function applyProteinBalanceFilter(pool){ return pool; }
-let proteinRuleRelaxations = 0; // retained for old plan diagnostics; always zero.
+function applyLunchDinnerMainRules(pool, history, persons, slot){
+  if(slot !== 'lunch' && slot !== 'dinner') return pool;
+  // candidatesFor() also exposes sides (which the picker discards for a main position),
+  // so apply these constraints only to ids that can truly become the meal's base dish.
+  const mainPool = pool.filter(isAutoLunchDinnerMain);
+  const unusedMain = mainPool.filter(function(id){
+    return persons.every(function(p){ return !history[p].lunchDinnerMainUse[id]; });
+  });
+  let out = unusedMain.length
+    ? pool.filter(function(id){ return !isAutoLunchDinnerMain(id) || unusedMain.indexOf(id) !== -1; })
+    : pool;
+  if(!unusedMain.length && mainPool.length) mainRepeatRelaxations++;
+  const underMeatLimit = out.filter(function(id){
+    if(!isAutoLunchDinnerMain(id)) return false;
+    const kind = recipeProteinKind(id);
+    if(kind !== 'red' && kind !== 'poultry') return true;
+    return persons.every(function(p){
+      const use = history[p].meatUse;
+      return use.total < MEAT_WEEK_LIMITS.total && use[kind] < MEAT_WEEK_LIMITS[kind];
+    });
+  });
+  if(underMeatLimit.length){
+    return out.filter(function(id){ return !isAutoLunchDinnerMain(id) || underMeatLimit.indexOf(id) !== -1; });
+  }
+  if(mainPool.length) meatRuleRelaxations++;
+  return out;
+}
+let mainRepeatRelaxations = 0;
+let meatRuleRelaxations = 0;
 
 // Counts how often a weekly cap had to be relaxed during one generateWeek(). A relaxation
 // is not a bug — every rule here degrades rather than returning an empty pool — but it does
@@ -343,11 +365,6 @@ function applyWeeklyCapFilter(pool, history, persons){
 // back exactly one relaxation, and the first non-empty rung wins — so the pool can never
 // come back empty, and a constraint is only ever dropped after every softer one already has.
 function sidePoolLadder(rawPool, history, persons, dayIndex){
-  // A side can carry animal protein too (a tuna or bresaola side would break a meatless
-  // day), so the same protein rule narrows the raw pool before the variety ladder runs.
-  if(history.proteinSchedule){
-    rawPool = applyProteinBalanceFilter(rawPool, history, persons, dayIndex, history.proteinSchedule);
-  }
   const today = {}, yesterday = {};
   persons.forEach(function(p){
     (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ today[id] = true; });
@@ -549,6 +566,10 @@ function isCompleteLunchDinnerRecipe(id){
   return p.protein && p.carbs && p.veg;
 }
 function isProteinMain(id){ return mealStructureForRecipe(RECIPES_DB[id]).protein; }
+function isAutoLunchDinnerMain(id){
+  const r = RECIPES_DB[id];
+  return !!r && (r.role === 'full' ? isCompleteLunchDinnerRecipe(id) : (r.role === 'main' && isProteinMain(id)));
+}
 function isCarbSide(id){ return mealStructureForRecipe(RECIPES_DB[id]).carbs; }
 function isVegSide(id){ return mealStructureForRecipe(RECIPES_DB[id]).veg; }
 
@@ -737,11 +758,17 @@ function recordCompositionUsage(history, entry, person, slot, dayIndex){
 // — rather than one combined set. This mirrors the sideUse (recipes) / bfPairUse (foods)
 // split already used above, and means a food id can never accidentally shadow-exclude an
 // unrelated recipe of the same id (or vice versa).
-function recordDayUsage(history, entry, person, dayIndex){
+function recordDayUsage(history, entry, person, dayIndex, slot){
   // VARIETY-plan.md P2: one increment per MEAL unit (not per component) — a chicken main
   // with a veg side is one poultry meal, not one poultry plus one meatless.
   const kind = entryProteinKind(entry);
-  if(kind && history[person].proteinUse) history[person].proteinUse[kind] = (history[person].proteinUse[kind] || 0) + 1;
+  if((slot === 'lunch' || slot === 'dinner') && entry.recipeId){
+    history[person].lunchDinnerMainUse[entry.recipeId] = true;
+    if(kind === 'red' || kind === 'poultry'){
+      history[person].meatUse[kind]++;
+      history[person].meatUse.total++;
+    }
+  }
   planEntryComponents(entry).forEach(function(c){
     if(c.recipeId){
       if(!history[person].dayUseRecipe[dayIndex]) history[person].dayUseRecipe[dayIndex] = [];
@@ -1380,13 +1407,8 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons
   (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]).forEach(function(p){
     (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ usedToday[id] = true; });
   });
-  // VARIETY-plan.md P2: the protein rule runs FIRST — it is a health constraint, not a
-  // variety preference, so a meatless day outranks even the same-day-repeat rule. It has
-  // its own relax-rather-than-empty step, so it can only ever narrow the pool.
   const persons = (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]);
-  const proteinBase = history.proteinSchedule
-    ? applyProteinBalanceFilter(pool, history, persons, dayIndex, history.proteinSchedule)
-    : pool;
+  const proteinBase = applyLunchDinnerMainRules(pool, history, persons, slot);
 
   const notUsedToday = proteinBase.filter(function(id){ return !usedToday[id]; });
   const dayBase = notUsedToday.length ? notUsedToday : proteinBase;
@@ -1674,7 +1696,7 @@ function generateWeek(seed){
     partner: (PROF.partner.avoid || []).slice()
   };
 
-  weeklyCapRelaxations = 0; proteinRuleRelaxations = 0; emptyPoolPicks = 0; // observability, reported at the end of this function
+  weeklyCapRelaxations = 0; mainRepeatRelaxations = 0; meatRuleRelaxations = 0; emptyPoolPicks = 0;
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
   // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
@@ -1692,18 +1714,14 @@ function generateWeek(seed){
   // VARIETY-plan.md P2: per-person WEEK totals per recipe id (main dish + every composed
   // extra), read by applyWeeklyCapFilter. Not keyed by day — this is the whole-week count.
   history.elena.weekUse = {}; history.partner.weekUse = {};
-  // VARIETY-plan.md P2: per-person tally of meals by animal-protein kind, for the
-  // Mediterranean ceilings (red/poultry). Counted per MEAL unit, not per component.
-  history.elena.proteinUse = {red: 0, poultry: 0, fish: 0};
-  history.partner.proteinUse = {red: 0, poultry: 0, fish: 0};
+  // Per-person tracking for the lunch/dinner main-course rules only.
+  history.elena.lunchDinnerMainUse = {}; history.partner.lunchDinnerMainUse = {};
+  history.elena.meatUse = {red: 0, poultry: 0, total: 0};
+  history.partner.meatUse = {red: 0, poultry: 0, total: 0};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
   const weekSeed = stableHash(weekStartDate);
-  // Rides on `history` — already the generation-scoped state bag every pick function
-  // receives — rather than threading another argument through two long signatures.
-  history.proteinSchedule = proteinScheduleForWeek(weekSeed);
-
   // Cross-week variety filter input: the PREVIOUS week's stored plan, if any (see
   // applyCrossWeekFilter doc). prevRecipeId(d, slot, person) is what that person ate at
   // the same (day, slot) last week — null when there's no stored previous week, which
@@ -1745,7 +1763,7 @@ function generateWeek(seed){
         remainingProtein.elena -= soloNutE.protein;
         history.elena[slot][d] = chE.recipeId;
         recordCompositionUsage(history, chE, 'elena', slot, d);
-        recordDayUsage(history, chE, 'elena', d);
+        recordDayUsage(history, chE, 'elena', d, slot);
       } else if(shared){
         const avoidBoth = unionAvoid(avoidList.elena, avoidList.partner);
         const pool = candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner']);
@@ -1767,8 +1785,8 @@ function generateWeek(seed){
         // VARIETY-plan.md P1: a shared dish records into BOTH people's day-wide log — one
         // dish, both ate it (chosen.elena/chosen.partner carry the same recipeId/extra ids,
         // just per-person portions/grams, so this naturally covers both).
-        recordDayUsage(history, chosen.elena, 'elena', d);
-        recordDayUsage(history, chosen.partner, 'partner', d);
+        recordDayUsage(history, chosen.elena, 'elena', d, slot);
+        recordDayUsage(history, chosen.partner, 'partner', d, slot);
       } else {
         const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
         const poolA = candidatesFor(slot, styleKey, avoidList.partner, ['partner']);
@@ -1781,8 +1799,8 @@ function generateWeek(seed){
         history.elena[slot][d] = chE.recipeId; history.partner[slot][d] = chA.recipeId;
         recordCompositionUsage(history, chE, 'elena', slot, d);
         recordCompositionUsage(history, chA, 'partner', slot, d);
-        recordDayUsage(history, chE, 'elena', d);
-        recordDayUsage(history, chA, 'partner', d);
+        recordDayUsage(history, chE, 'elena', d, slot);
+        recordDayUsage(history, chA, 'partner', d, slot);
       }
       remainingWeight -= w;
     });
@@ -1792,9 +1810,10 @@ function generateWeek(seed){
   // some pool could not fill a slot within its weekly quota and the cap was relaxed — the
   // plan is still complete and deterministic, but that pool is too thin and is exactly what
   // P3 should widen. Silent truncation would be indistinguishable from the cap not working.
-  if(weeklyCapRelaxations > 0 || proteinRuleRelaxations > 0){
+  if(weeklyCapRelaxations > 0 || mainRepeatRelaxations > 0 || meatRuleRelaxations > 0){
     console.warn('Mesa planner: generating ' + weekStartDate + ' relaxed the weekly recipe cap ' +
-      weeklyCapRelaxations + 'x and the protein-balance rule ' + proteinRuleRelaxations +
+      weeklyCapRelaxations + 'x, the lunch/dinner main-repeat rule ' + mainRepeatRelaxations +
+      'x, and the meat-balance rule ' + meatRuleRelaxations +
       'x — a candidate pool is too thin to fill every slot within target.');
   }
   // Empty-pool guard (task 5): a non-zero count means at least one slot had NO legal

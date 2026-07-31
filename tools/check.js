@@ -3040,6 +3040,46 @@ function testWeeklyRecipeCaps(ctx){
   }
 }
 
+function testLunchDinnerMainRules(ctx){
+  const savedWeekPlans = get(ctx, 'weekPlans');
+  const savedWeekPlan = get(ctx, 'weekPlan');
+  try{
+    const limits = get(ctx, 'MEAT_WEEK_LIMITS');
+    assert(JSON.stringify(limits) === JSON.stringify({red: 1, poultry: 3, total: 4}),
+      'lunch/dinner meat balance: limits red meat to one, poultry to three, and meat total to four', JSON.stringify(limits));
+
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const plan = call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+    ['elena', 'partner'].forEach(function(person){
+      const mainIds = [];
+      const meat = {red: 0, poultry: 0, total: 0};
+      plan.days.forEach(function(day){
+        ['lunch', 'dinner'].forEach(function(slot){
+          const meal = day.meals[slot];
+          const entry = meal.shared ? meal[person] : meal[person];
+          if(!entry || !entry.recipeId) return;
+          mainIds.push(entry.recipeId);
+          const kind = call(ctx, 'entryProteinKind', [entry]);
+          if(kind === 'red' || kind === 'poultry'){
+            meat[kind]++;
+            meat.total++;
+          }
+        });
+      });
+      assert(new Set(mainIds).size === mainIds.length,
+        'lunch/dinner main variety (' + person + '): no main recipe repeats within the week', mainIds.join(', '));
+      assert(meat.red <= limits.red && meat.poultry <= limits.poultry && meat.total <= limits.total,
+        'lunch/dinner meat balance (' + person + '): red, poultry and total meat stay within the weekly limits', JSON.stringify(meat));
+    });
+    assert(get(ctx, 'mainRepeatRelaxations') === 0 && get(ctx, 'meatRuleRelaxations') === 0,
+      'lunch/dinner rules: the default catalogue satisfies both rules without relaxation',
+      JSON.stringify({main:get(ctx, 'mainRepeatRelaxations'), meat:get(ctx, 'meatRuleRelaxations')}));
+  } finally {
+    ctx.weekPlans = savedWeekPlans; ctx.weekPlan = savedWeekPlan;
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+  }
+}
+
 /* ---------------- FAVORITES-EATENOUT-plan.md item 2: stronger favorites ----------------
    Covers the two changes made to make a favorite ('recipePrefs[id] === "favorite"')
    noticeably more likely to appear: (1) weeklyCapForRecipe's +1 for a favorite (full/main
@@ -9719,6 +9759,7 @@ function main(){
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
+  runTest('lunch/dinner main variety and meat balance', function(){ testLunchDinnerMainRules(ctx); });
   runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });
   runTest('PERSONAL-PREFS: normalizeRecipePrefsShape (flat migration + nested pass-through)', function(){ testNormalizeRecipePrefsShape(ctx); });
   runTest('PERSONAL-PREFS: loadState() migration (flat -> both persons, nested round-trip, reset path)', function(){ testRecipePrefsLoadStateMigration(ctx); });

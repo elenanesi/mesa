@@ -1220,6 +1220,30 @@ const RECIPES_DB = {
     steps: ['Cook the rice until tender.', 'Sear the tofu in olive oil until golden.', 'Steam the broccoli and carrots.', 'Serve the tofu and vegetables over rice with ginger and lemon.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
+  'tofu-quinoa-greens-bowl': {
+    title: 'Tofu, quinoa & greens bowl', emoji: '🥗', slot: 'dinner', role: 'full',
+    season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 28,
+    ingredients: [['tofu', 180], ['quinoa-dry', 65], ['broccoli', 160], ['spinach', 100], ['olive-oil', 8]],
+    toTaste: ['lemon', 'garlic', 'black pepper'],
+    steps: ['Cook the quinoa until fluffy.', 'Pan-sear the tofu in olive oil until golden.', 'Steam the broccoli and wilt the spinach with garlic.', 'Serve the tofu and greens over quinoa with lemon.'],
+    tags: ['veggie', 'highFiber', 'muscle'], avoid: []
+  },
+  'chickpea-quinoa-broccoli-bowl': {
+    title: 'Chickpea, quinoa & broccoli bowl', emoji: '🥦', slot: 'lunch', role: 'full',
+    season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
+    ingredients: [['chickpeas', 190], ['quinoa-dry', 60], ['broccoli', 180], ['spinach', 80], ['olive-oil', 8]],
+    toTaste: ['lemon', 'cumin', 'black pepper'],
+    steps: ['Cook the quinoa until tender.', 'Warm the chickpeas with cumin and a splash of water.', 'Steam the broccoli and wilt the spinach.', 'Assemble the bowl and finish with olive oil and lemon.'],
+    tags: ['veggie', 'highFiber', 'muscle'], avoid: []
+  },
+  'lentil-quinoa-greens-bowl': {
+    title: 'Lentil, quinoa & greens bowl', emoji: '🫘', slot: 'dinner', role: 'full',
+    season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 28,
+    ingredients: [['cooked-lentils', 220], ['quinoa-dry', 55], ['broccoli', 160], ['spinach', 100], ['olive-oil', 8]],
+    toTaste: ['lemon', 'cumin', 'parsley'],
+    steps: ['Cook the quinoa until tender.', 'Warm the lentils with cumin and a splash of water.', 'Steam the broccoli and wilt the spinach.', 'Layer in a bowl and finish with olive oil, lemon and parsley.'],
+    tags: ['veggie', 'highFiber', 'muscle'], avoid: []
+  },
   'chickpea-potato-veg-tray': {
     title: 'Chickpea, potato & vegetable traybake', emoji: '🥔', slot: 'dinner', role: 'full',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 35,
