@@ -9466,6 +9466,8 @@ function testWeekCompactPlanningWorkspace(){
     'Week toolbar: Regenerate is direct but keeps week-specific aria text', '');
   assert(weekSrc.indexOf('function openWeekMoreSheet()') === -1,
     'Week toolbar: no More sheet indirection remains for only three actions', '');
+  assert(weekSrc.indexOf('let weekExpandedDays = {};') !== -1 && weekSrc.indexOf('data-date="') !== -1,
+    'Planner day disclosure: expansion state is kept outside the rebuilt DOM and keyed by date', '');
 
   assert(css.indexOf('.week-toolbar') !== -1 && css.indexOf('min-height:44px') !== -1 && css.indexOf('.week-quality') !== -1,
     'Week CSS: compact toolbar and drawer styles exist with 44px tap targets', '');
@@ -9473,6 +9475,20 @@ function testWeekCompactPlanningWorkspace(){
     'Week CSS: cart icon is centered inside the existing fixed-size toolbar button', '');
   assert(css.indexOf('.week-summary') === -1,
     'Week CSS: old standalone week-summary block styling is removed', '');
+}
+
+function testPlannerDayDisclosureState(ctx){
+  run(ctx, 'weekExpandedDays = {};');
+  assert(call(ctx, 'isWeekDayExpanded', ['2026-07-27', 'elena']) === false,
+    'Planner day disclosure: a new day starts collapsed', '');
+  assert(call(ctx, 'toggleWeekDayExpanded', ['2026-07-27', 'elena']) === true,
+    'Planner day disclosure: opening a day records its state', '');
+  assert(call(ctx, 'isWeekDayExpanded', ['2026-07-27', 'elena']) === true,
+    'Planner day disclosure: an open day survives an independent render check', '');
+  assert(call(ctx, 'isWeekDayExpanded', ['2026-07-27', 'partner']) === false,
+    'Planner day disclosure: expansion is isolated per person', '');
+  assert(call(ctx, 'toggleWeekDayExpanded', ['2026-07-27', 'elena']) === false,
+    'Planner day disclosure: tapping again closes the same day', '');
 }
 
 /* ===================================================================
@@ -9818,6 +9834,7 @@ function main(){
   runTest('UX-REVIEW-plan.md item 5: Today screen Shopping/Pantry quick links call the existing openers, placed below the meal cards', function(){ testTodayShoppingPantryQuickLinks(); });
   runTest('Today summary: compact goal chip removed instead of showing a subset of goals', function(){ testTodayGoalSummaryRemoved(); });
   runTest('Week compact planning workspace: top actions, collapsed quality drawer, no bottom CTA stack', function(){ testWeekCompactPlanningWorkspace(); });
+  runTest('Planner day disclosure state survives refreshes', function(){ testPlannerDayDisclosureState(ctx); });
   runTest('UX-REVIEW-plan.md item 6: WHY_RULES muscle/heart clauses gate on the goal, with a sensible fallback when off', function(){ testWhyRulesGoalGating(ctx); });
   runTest('UX-REVIEW-plan.md item 7: goals editor renders two labelled groups (calorie-target vs. meal-nudge) with the right members', function(){ testGoalsEditorGrouping(ctx); });
   runTest('UX-REVIEW-plan.md item 8: diet editor renders eating-style vs. intolerances groups + normalizeDietsArray converges a legacy multi-style array', function(){ testDietEditorGroupingAndLegacyConvergence(ctx); });

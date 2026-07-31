@@ -12,6 +12,24 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // across tab switches within a session).
 let weekScreenShowsNext = false;
 let weekQualityExpanded = false;
+// A Planner repaint can happen while this screen is open (for example after a sync or a
+// nutrition refresh). Keep per-day disclosure state outside the rebuilt #weekList DOM so
+// an open day never snaps shut mid-read.
+let weekExpandedDays = {};
+
+function weekDayExpansionKey(dateISO, person){
+  return String(dateISO || '') + '|' + String(person || currentProf || '');
+}
+
+function isWeekDayExpanded(dateISO, person){
+  return !!weekExpandedDays[weekDayExpansionKey(dateISO, person)];
+}
+
+function toggleWeekDayExpanded(dateISO, person){
+  const key = weekDayExpansionKey(dateISO, person);
+  weekExpandedDays[key] = !weekExpandedDays[key];
+  return weekExpandedDays[key];
+}
 
 function setWeekScreenMode(mode, el){
   weekScreenShowsNext = (mode === 'next');
@@ -238,7 +256,8 @@ function renderWeek(){
     const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
       +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
-    return '<div class="day'+(di === todayIdx ? ' today' : '')+'" id="wd'+di+'" data-di="'+di+'">'
+    const expanded = isWeekDayExpanded(day.date, person);
+    return '<div class="day'+(di === todayIdx ? ' today' : '')+(expanded ? ' expanded' : '')+'" id="wd'+di+'" data-di="'+di+'" data-date="'+htmlAttr(day.date)+'">'
       + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+dayMacroLine+standaloneLine+rows+'</div></div>';
@@ -274,7 +293,10 @@ function renderWeek(){
       // toggleDay too (only the action buttons stopped propagation) — keep that.
     }
     const day = e.target.closest('.day[data-di]');
-    if(day && el.contains(day)) toggleDay(+day.getAttribute('data-di'));
+    if(day && el.contains(day)){
+      const expanded = toggleWeekDayExpanded(day.getAttribute('data-date'), person);
+      day.classList.toggle('expanded', expanded);
+    }
   };
   renderWeekQuality(plan, person, dayViews);
   renderWeekNutriCard(plan, person, dayViews);
@@ -792,10 +814,6 @@ function renderNutrientChips(){
       ? '📌 <b>' + worst.label + ' is the biggest gap</b> — at ' + coverageValueText(worst) + ' vs ' + coverageTargetText(worst) + '. Re-balance proposes the fewest swaps Mesa found.'
       : '✅ <b>These computed measures are within the displayed WHO guidance.</b> <button class="why-link" onclick="openHowMesaPlans(\'guidance\')">Why?</button>';
   }
-}
-
-function toggleDay(i){
-  document.getElementById('wd'+i).classList.toggle('expanded');
 }
 
 /* ---------------- bottom sheet: generic open/close ---------------- */
