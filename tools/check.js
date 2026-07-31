@@ -763,6 +763,7 @@ function testIconPicker(ctx){
   const groupedKeys = iconGroups.reduce(function(all, group){ return all.concat(group.keys); }, []);
   assert(JSON.stringify(groupedKeys.slice().sort()) === JSON.stringify(keys), 'ingredientIconPickerGroups: includes every curated icon exactly once', JSON.stringify(iconGroups));
   assert(iconGroups.some(function(group){ return group.label === 'Bakery' && group.keys.indexOf('cookies') !== -1; }), 'ingredientIconPickerGroups: puts the cookie artwork in Bakery', JSON.stringify(iconGroups));
+  assert(iconGroups.some(function(group){ return group.label === 'Pantry' && group.keys.indexOf('sugar') !== -1; }), 'ingredientIconPickerGroups: puts the sugar artwork in Pantry', JSON.stringify(iconGroups));
   // customFoods contributions must NOT extend the vocabulary.
   run(ctx, "customFoods['cf-icon-vocab-test'] = {name: 'Icon vocab test', per: 100, unit: 'g', kcal: 10, protein: 1, carbs: 1, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], cat: 'Pantry', season: 'evergreen', iconKey: 'zzz-not-a-builtin-key', u: 1};");
   call(ctx, 'applyCustomFoods', []);
