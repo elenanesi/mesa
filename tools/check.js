@@ -9189,6 +9189,9 @@ function testNutritionClaimsAudit(ctx){
   const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
   assert(indexHtml.indexOf('id="howMesaPlans"') !== -1 && indexHtml.indexOf('Guideline') !== -1 && indexHtml.indexOf('Mesa rule') !== -1,
     'nutrition-claims audit: How Mesa plans page distinguishes guideline, estimate and Mesa rule');
+  assert(indexHtml.indexOf('Lunch and dinner mains do not repeat within a week') !== -1
+      && indexHtml.indexOf('one red-meat meal and three poultry meals') !== -1,
+    'How Mesa plans: documents the weekly main-variety and meat-balance rules');
 }
 
 /* ===================================================================
