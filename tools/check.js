@@ -759,6 +759,10 @@ function testIconPicker(ctx){
     'availableIngredientIconKeys: every key resolves to a valid asset path via safeIngredientIconAsset', JSON.stringify(keys));
   const expectedKeys = Array.from(new Set(Object.keys(BUILTIN_FOODS_DB).map(function(id){ return BUILTIN_FOODS_DB[id].iconKey; }).filter(Boolean))).sort();
   assert(JSON.stringify(keys) === JSON.stringify(expectedKeys), 'availableIngredientIconKeys: matches the unique iconKey set on BUILTIN_FOODS_DB', JSON.stringify(keys));
+  const iconGroups = call(ctx, 'ingredientIconPickerGroups', []);
+  const groupedKeys = iconGroups.reduce(function(all, group){ return all.concat(group.keys); }, []);
+  assert(JSON.stringify(groupedKeys.slice().sort()) === JSON.stringify(keys), 'ingredientIconPickerGroups: includes every curated icon exactly once', JSON.stringify(iconGroups));
+  assert(iconGroups.some(function(group){ return group.label === 'Bakery' && group.keys.indexOf('cookies') !== -1; }), 'ingredientIconPickerGroups: puts the cookie artwork in Bakery', JSON.stringify(iconGroups));
   // customFoods contributions must NOT extend the vocabulary.
   run(ctx, "customFoods['cf-icon-vocab-test'] = {name: 'Icon vocab test', per: 100, unit: 'g', kcal: 10, protein: 1, carbs: 1, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], cat: 'Pantry', season: 'evergreen', iconKey: 'zzz-not-a-builtin-key', u: 1};");
   call(ctx, 'applyCustomFoods', []);
@@ -803,6 +807,7 @@ function testIconPicker(ctx){
   run(ctx, 'newFoodForm.iconPickerOpen = true;');
   const editSheetHtml = call(ctx, 'buildNewFoodFormSheet', []);
   assert(editSheetHtml.indexOf('src="' + expectedAsset + '"') !== -1, 'buildNewFoodFormSheet: edit form preview shows the existing icon asset', editSheetHtml);
+  assert(editSheetHtml.indexOf('image-picker-group-title">Bakery') !== -1, 'buildNewFoodFormSheet: groups image choices by ingredient type', editSheetHtml);
   assert(editSheetHtml.indexOf('class="icon-tile sel" data-icon-key="' + pickedKey + '"') !== -1,
     'buildNewFoodFormSheet: the matching tile is marked selected (class="icon-tile sel")', editSheetHtml);
 
@@ -1243,6 +1248,8 @@ function testRecipeImagePicker(ctx){
     'buildRecipeBuilderSheet: recipe image picker grid renders when open', html);
   assert(html.indexOf('data-image-key="fish-main"') !== -1 && html.indexOf('assets/recipes/fish-main.png') !== -1,
     'buildRecipeBuilderSheet: recipe image picker offers the available recipe images', html);
+  assert(html.indexOf('image-picker-group-title">Everyday meals') !== -1 && html.indexOf('image-picker-group-title">Named dishes') !== -1,
+    'buildRecipeBuilderSheet: groups recipe images by meal type', html);
 
   call(ctx, 'setRecipeImageKey', ['fish-main']);
   assert(get(ctx, 'recipeBuilder').imageKey === 'fish-main',
@@ -8573,19 +8580,19 @@ function testCompositeIngredients(ctx){
   try{
     resetHousehold();
 
-    // -------- (1) model: pesto-elena/olive-oil-lemon-dressing/pumpkin-chia-seeds/
-    // mayonnaise carry `components`+`yieldG` instead of frozen macros; guacamole is new. --------
+    // -------- (1) model: composites carry `components`+`yieldG` instead of frozen macros. --------
     (function(){
-      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'mayonnaise', 'guacamole'].forEach(function(id){
+      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'mayonnaise', 'guacamole', 'chocolate-chip-cookies'].forEach(function(id){
         const f = FOODS[id];
         assert(!!f && Array.isArray(f.components) && f.components.length > 0, 'composite model: ' + id + ' has a non-empty components array', JSON.stringify(f));
         assert(typeof f.yieldG === 'number' && f.yieldG > 0, 'composite model: ' + id + ' has a positive yieldG', JSON.stringify(f && f.yieldG));
         assert(!('kcal' in f) && !('protein' in f), 'composite model: ' + id + ' stores NO static kcal/protein — computed only', JSON.stringify({kcal: f.kcal, protein: f.protein}));
       });
       assert(FOODS['mayonnaise'].bought === true, 'model: mayonnaise declares bought:true (buys itself, never decomposed)');
-      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'guacamole'].forEach(function(id){
+      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'guacamole', 'chocolate-chip-cookies'].forEach(function(id){
         assert(FOODS[id].bought === false, 'model: ' + id + ' declares bought:false (made at home, decomposes)');
       });
+      assert(FOODS['chocolate-chip-cookies'].iconKey === 'cookies', 'model: chocolate chip cookies reuse the curated cookie watercolor icon');
     })();
 
     // -------- (2) a composite's macros equal the 4/4/9 sum of its components scaled to
@@ -8608,7 +8615,7 @@ function testCompositeIngredients(ctx){
         const protein = totals.protein * scale, carbs = totals.carbs * scale, fat = totals.fat * scale;
         return {kcal: 4 * protein + 4 * carbs + 9 * fat, protein: protein, carbs: carbs, fat: fat, satFat: totals.satFat * scale, fiber: totals.fiber * scale};
       }
-      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'mayonnaise', 'guacamole'].forEach(function(id){
+      ['pesto-elena', 'olive-oil-lemon-dressing', 'pumpkin-chia-seeds', 'mayonnaise', 'guacamole', 'chocolate-chip-cookies'].forEach(function(id){
         const expected = expectedPer100(id);
         const got = call(ctx, 'foodMacros', [id, 100]);
         ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'].forEach(function(k){

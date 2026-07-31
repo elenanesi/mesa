@@ -638,6 +638,7 @@ const RECIPES_DB = {
   },
   'pollo-al-forno': {
     title: 'Roast chicken', emoji: '🍗', slot: 'dinner', role: 'full',
+    imageKey: 'meat-main',
     styles: ['balanced', 'highprotein'], time: 40,
     ingredients: [['chicken-thigh', 180], ['potatoes', 220], ['carrots', 120], ['olive-oil', 12]],
     toTaste: ['rosemary', 'garlic', 'lemon'],

@@ -597,6 +597,11 @@ const FOODS = {
     kcal: 353, protein: 10.0, carbs: 74.5, fat: 1.2, satFat: 0.2, fiber: 2.2, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 168911-style (wheat flour, white, all-purpose)'
   },
+  'granulated-sugar': {
+    name: 'Sugar, granulated', per: 100, unit: 'g',
+    kcal: 400, protein: 0, carbs: 100, fat: 0, satFat: 0, fiber: 0, sugars: 100, freeSugars: 100, sugarQuality: 'free',
+    flags: [], cat: 'Pantry', src: 'USDA FDC 169655 (sugars, granulated)'
+  },
   '0-flour': {
     name: 'Flour, type 0 (soft wheat)', per: 100, unit: 'g',
     kcal: 348, protein: 11.0, carbs: 72.0, fat: 1.4, satFat: 0.2, fiber: 2.8, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
@@ -827,6 +832,17 @@ const FOODS = {
     bought: false,
     cat: 'Pantry', season: 'evergreen',
     iconKey: 'guacamole', src: 'Composite: 200g avocado + 20g lime juice + 30g red onion + 80g tomato + 10g coriander + a 2g pinch of salt; macros computed from these grams, never hand-frozen.'
+  },
+  // COMPOSITE, made at home — uses the existing watercolor cookie artwork.
+  // The baked yield allows the nutrition to stay derived from the actual dough rather than
+  // pretending a homemade cookie has a universal fixed macro profile.
+  'chocolate-chip-cookies': {
+    name: 'Chocolate chip cookies (homemade)', per: 100, unit: 'g',
+    components: [['00-flour', 220], ['butter', 100], ['granulated-sugar', 100], ['eggs', 50], ['dark-chocolate-85', 100], ['vanilla', 5]],
+    yieldG: 520,
+    bought: false,
+    cat: 'Bakery', season: 'evergreen',
+    iconKey: 'cookies', src: 'Composite: homemade chocolate chip cookies from flour, butter, sugar, egg, dark chocolate and vanilla; macros computed from these grams, never hand-frozen.'
   },
   'herbs-black-pepper': {
     name: 'Herbs & black pepper (mixed, to taste)', per: 100, unit: 'g',

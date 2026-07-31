@@ -723,6 +723,10 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 
 /* task C5: icon picker grid on the new/edit ingredient form */
 .icon-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(56px,1fr));gap:8px;max-height:260px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px;}
+.image-picker-groups{max-height:300px;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:2px 4px 2px 2px;}
+.image-picker-group + .image-picker-group{margin-top:12px;padding-top:11px;border-top:1px solid rgba(176,146,105,.22);}
+.image-picker-group .icon-grid{max-height:none;overflow:visible;}
+.image-picker-group-title{margin:0 0 7px 2px;color:var(--muted);font-size:10px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;}
 .icon-tile{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-width:44px;min-height:44px;padding:5px;border:2px solid transparent;border-radius:12px;background:rgba(255,250,240,.9);cursor:pointer;font:inherit;-webkit-appearance:none;appearance:none;}
 .icon-tile:active{transform:scale(.95);}
 .icon-tile .ingredient-icon{width:36px;height:36px;margin:0 auto;}

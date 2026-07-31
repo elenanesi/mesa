@@ -115,6 +115,12 @@ const RECIPE_IMAGE_KEYS = [
   'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos'
 ];
 
+const RECIPE_IMAGE_GROUPS = [
+  {label: 'Everyday meals', keys: ['default-recipe', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main']},
+  {label: 'Breakfast, snacks & sweets', keys: ['breakfast-bowl', 'french-toast', 'pancakes', 'onigiri', 'snack-board', 'dessert-sweets', 'ice-cream']},
+  {label: 'Named dishes', keys: ['ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'nachos']}
+];
+
 function recipeImageLabel(key){
   if(typeof RECIPES_DB !== 'undefined' && RECIPES_DB[key] && RECIPES_DB[key].title) return RECIPES_DB[key].title;
   const labels = {
@@ -147,6 +153,21 @@ function recipeImageLabel(key){
 
 function availableRecipeImageKeys(){
   return RECIPE_IMAGE_KEYS.slice();
+}
+
+function recipeImagePickerGroups(){
+  const seen = {};
+  const groups = RECIPE_IMAGE_GROUPS.map(function(group){
+    const keys = group.keys.filter(function(key){
+      if(seen[key] || RECIPE_IMAGE_KEYS.indexOf(key) === -1) return false;
+      seen[key] = true;
+      return true;
+    });
+    return {label: group.label, keys: keys};
+  }).filter(function(group){ return group.keys.length; });
+  const remaining = RECIPE_IMAGE_KEYS.filter(function(key){ return !seen[key]; });
+  if(remaining.length) groups.push({label: 'Other', keys: remaining});
+  return groups;
 }
 
 function safeRecipeImageKey(v){

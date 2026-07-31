@@ -463,6 +463,26 @@ function availableIngredientIconKeys(){
   return Object.keys(seen).sort();
 }
 
+// Keep the curated watercolor picker discoverable as it grows: an icon appears once under
+// the category of its first built-in food, with predictable category and alphabetic order.
+function ingredientIconPickerGroups(){
+  const order = ['Produce', 'Protein', 'Dairy', 'Bakery', 'Pantry', 'Frozen', 'Other'];
+  const groups = {};
+  const seen = {};
+  order.forEach(function(category){ groups[category] = []; });
+  Object.keys(BUILTIN_FOODS_DB).sort().forEach(function(id){
+    const food = BUILTIN_FOODS_DB[id] || {};
+    const key = safeIngredientIconKey(food.iconKey);
+    if(!key || seen[key] || !safeIngredientIconAsset('assets/ingredients/' + key + '.png')) return;
+    const category = order.indexOf(food.cat) !== -1 ? food.cat : 'Other';
+    seen[key] = true;
+    groups[category].push(key);
+  });
+  return order.map(function(category){
+    return {label: category, keys: groups[category].sort()};
+  }).filter(function(group){ return group.keys.length; });
+}
+
 function renderLibraryHub(){
   const el = document.getElementById('libraryHubBody');
   if(!el) return;
@@ -1594,14 +1614,18 @@ function toggleNewFoodBreakfastPair(){
 // from availableIngredientIconKeys()/FOODS, not user input). A leading "Default" tile
 // carries an empty data-icon-key, which clears the field.
 function buildNewFoodIconGrid(currentIconKey){
-  const keys = availableIngredientIconKeys();
-  let html = '<div class="icon-grid" data-role="new-food-icon-grid" style="margin-top:10px">'
+  let html = '<div class="image-picker-groups" data-role="new-food-icon-grid" style="margin-top:10px">'
+    + '<section class="image-picker-group"><div class="image-picker-group-title">Choice</div><div class="icon-grid">'
     + '<button type="button" class="icon-tile' + (!currentIconKey ? ' sel' : '') + '" data-icon-key="" aria-label="Default icon">'
-    + ingredientIconHtml('') + '<span class="icon-tile-label">Default</span></button>';
-  keys.forEach(function(key){
-    const src = 'assets/ingredients/' + key + '.png';
-    html += '<button type="button" class="icon-tile' + (currentIconKey === key ? ' sel' : '') + '" data-icon-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(key.replace(/-/g, ' ')) + ' icon">'
-      + ingredientIconHtml(src) + '</button>';
+    + ingredientIconHtml('') + '<span class="icon-tile-label">Default</span></button></div></section>';
+  ingredientIconPickerGroups().forEach(function(group){
+    html += '<section class="image-picker-group"><div class="image-picker-group-title">' + escapeHtml(group.label) + '</div><div class="icon-grid">';
+    group.keys.forEach(function(key){
+      const src = 'assets/ingredients/' + key + '.png';
+      html += '<button type="button" class="icon-tile' + (currentIconKey === key ? ' sel' : '') + '" data-icon-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(key.replace(/-/g, ' ')) + ' icon">'
+        + ingredientIconHtml(src) + '</button>';
+    });
+    html += '</div></section>';
   });
   html += '</div>';
   return html;
@@ -3303,15 +3327,19 @@ function resetRecipeBuilderOverride(){
 }
 
 function buildRecipeImageGrid(currentImageKey){
-  const keys = availableRecipeImageKeys();
-  let html = '<div class="icon-grid recipe-image-grid" data-role="recipe-image-grid" style="margin-top:10px">'
+  let html = '<div class="image-picker-groups recipe-image-grid" data-role="recipe-image-grid" style="margin-top:10px">'
+    + '<section class="image-picker-group"><div class="image-picker-group-title">Choice</div><div class="icon-grid">'
     + '<button type="button" class="icon-tile' + (!currentImageKey ? ' sel' : '') + '" data-image-key="" aria-label="Automatic recipe image">'
-    + '<span class="recipe-image-tile-auto">Auto</span><span class="icon-tile-label">Auto</span></button>';
-  keys.forEach(function(key){
-    const src = 'assets/recipes/' + key + '.png';
-    html += '<button type="button" class="icon-tile' + (currentImageKey === key ? ' sel' : '') + '" data-image-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(recipeImageLabel(key)) + ' image">'
-      + '<img class="recipe-image-tile" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" onerror="this.onerror=null;this.src=\'assets/recipes/default-recipe.png\'">'
-      + '<span class="icon-tile-label">' + escapeHtml(recipeImageLabel(key)) + '</span></button>';
+    + '<span class="recipe-image-tile-auto">Auto</span><span class="icon-tile-label">Auto</span></button></div></section>';
+  recipeImagePickerGroups().forEach(function(group){
+    html += '<section class="image-picker-group"><div class="image-picker-group-title">' + escapeHtml(group.label) + '</div><div class="icon-grid">';
+    group.keys.forEach(function(key){
+      const src = 'assets/recipes/' + key + '.png';
+      html += '<button type="button" class="icon-tile' + (currentImageKey === key ? ' sel' : '') + '" data-image-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(recipeImageLabel(key)) + ' image">'
+        + '<img class="recipe-image-tile" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" onerror="this.onerror=null;this.src=\'assets/recipes/default-recipe.png\'">'
+        + '<span class="icon-tile-label">' + escapeHtml(recipeImageLabel(key)) + '</span></button>';
+    });
+    html += '</div></section>';
   });
   html += '</div>';
   return html;
