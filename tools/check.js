@@ -7442,6 +7442,109 @@ function testWeekEatenOutToggleWiring(){
 }
 
 /* ===================================================================
+   ATE-OUT-QUICK-ADD: a ~15-second "restaurant / delivery" log path — a one-off custom
+   food built from typed macro totals (library.js:createAteOutFood), logged eaten-out via
+   the same rails as every other quick-add (log.js:logFoodEntry/setLogEntryEatenOut), with
+   no recipe or ingredient authoring required.
+   =================================================================== */
+
+// Functional coverage of createAteOutFood() + the logging funnel it feeds: (a) kcal is
+// derived from the ROUNDED (nearest 5g) macros via the 4/4/9 Atwater convention, itself
+// rounded to the nearest 50 kcal; (b) the food is occasional and never a candidatesFor()
+// result for any slot/style, and is never written into RECIPES_DB; (c) logging it eaten-out
+// contributes its kcal to the day's logged nutrition with eatenOut===true on the entry;
+// (d) it never appears on computeShoppingList (never planned) and, being eaten-out, never
+// depletes a pantry baseline for the same food id.
+function testAteOutQuickAdd(ctx){
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; logHistory = {}; pantry = {};");
+  let foodId = null;
+  try{
+    // 23/37/12 round to the nearest 5g -> 25/35/10; kcal = 4*25 + 4*35 + 9*10 = 330 (exact
+    // Atwater on the rounded macros, so the food's calories always match its own macros).
+    foodId = call(ctx, 'createAteOutFood', [{name: '__ateout_fixture__', protein: 23, carbs: 37, fat: 12}]);
+    assert(typeof foodId === 'string' && foodId.indexOf('cf-') === 0, 'createAteOutFood: returns a cf-* id', String(foodId));
+    const food = get(ctx, "FOODS['" + foodId + "']");
+    assert(food.protein === 25 && food.carbs === 35 && food.fat === 10,
+      'createAteOutFood: macros rounded to the nearest 5g (23/37/12 -> 25/35/10)', JSON.stringify(food));
+    assert(food.kcal === 330 && food.kcal === 4 * food.protein + 4 * food.carbs + 9 * food.fat,
+      'createAteOutFood: kcal === 4*protein + 4*carbs + 9*fat on the ROUNDED macros (exact, matches its own macros)', JSON.stringify(food));
+    assert(food.occasional === true && food.ateOut === true,
+      'createAteOutFood: the food is occasional:true and marked ateOut:true', JSON.stringify(food));
+    assert(food.unit === 'piece' && food.avgG === 1,
+      'createAteOutFood: unit:"piece"/avgG:1 so grams=1 logs exactly one whole-meal serving', JSON.stringify(food));
+
+    // (b) candidatesFor() only ever draws from RECIPES_DB, so a cf-* food id can never be a
+    // result for ANY slot/style — assert that directly rather than just trusting `occasional`.
+    let foundAsCandidate = false;
+    ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+      ['balanced', 'highprotein', 'lowcarb'].forEach(function(style){
+        const candidates = call(ctx, 'candidatesFor', [slot, style, [], [], {includeThumbsDown: true}]);
+        if(candidates.indexOf(foodId) !== -1) foundAsCandidate = true;
+      });
+    });
+    assert(!foundAsCandidate, 'createAteOutFood: the food never appears as a candidatesFor() result for any slot/style', String(foundAsCandidate));
+    assert(!Object.prototype.hasOwnProperty.call(get(ctx, 'RECIPES_DB'), foodId),
+      'createAteOutFood: the food is never written into RECIPES_DB (it is a food, not a recipe)', '');
+
+    // (c) logging eaten-out: entry.eatenOut === true and its kcal lands in the day total.
+    const dateISO = FIXED_MONDAY;
+    call(ctx, 'logFoodEntry', [dateISO, 'elena', foodId, 1]);
+    const arr = get(ctx, "getDayLog('" + dateISO + "').elena");
+    const idx = arr.length - 1; // logFoodEntry always appends (log.js doc)
+    call(ctx, 'setLogEntryEatenOut', [dateISO, 'elena', idx, true]);
+    const loggedEntry = get(ctx, "logHistory['" + dateISO + "'].elena[" + idx + "]");
+    assert(loggedEntry.eatenOut === true, 'the logged entry has eatenOut === true', JSON.stringify(loggedEntry));
+    const dayKcal = run(ctx, "logHistory['" + dateISO + "'].elena.reduce(function(s,e){ return s + logEntryNutrition(e).kcal; }, 0)");
+    assert(Math.abs(dayKcal - food.kcal) < 1e-9,
+      'the eaten-out entry still contributes its kcal to the day\'s logged nutrition', 'got ' + dayKcal + ' expected ' + food.kcal);
+
+    // (d) never planned -> never on the shopping list; eaten-out -> never depletes a pantry
+    // baseline set for the same food id.
+    const shopList = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+    assert(!shopList.totals[food.name], 'the ate-out food never appears on computeShoppingList (it was never planned)', JSON.stringify(Object.keys(shopList.totals)));
+
+    run(ctx, "pantry['" + foodId + "'] = {qty: 500, setAt: new Date(2026,6,13,0,0,0,0).getTime(), u: 1};");
+    const remaining = call(ctx, 'pantryRemaining', []);
+    assert(remaining[foodId] === 500, 'pantryRemaining: an eaten-out ate-out entry does not deplete the pantry (stays at the full baseline)', 'got ' + remaining[foodId]);
+  } finally {
+    if(foodId) run(ctx, "delete FOODS['" + foodId + "']; delete customFoods['" + foodId + "'];");
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+  }
+}
+
+// Wiring guard (source-structure, not DOM — same reasoning testEatenOutToggleWiring's doc
+// gives): the add-meal sheet's "Ate out" button really opens openAteOutSheet() carrying the
+// CURRENT addMealCtx (so a save from a planned slot can skip it), commitAteOut() really
+// drives the same rails the functional test above exercises directly, and the Log screen's
+// standalone entry point (no slot context) is present in index.html.
+function testAteOutQuickAddWiring(){
+  const renderSrc = readAllRenderSrc();
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+
+  const sheetFn = fnBody('openAddMealSheetForContext');
+  assert(sheetFn.length > 0, 'wiring setup: openAddMealSheetForContext() function body found in render-today.js', 'not found');
+  assert(sheetFn.indexOf('openAteOutSheet(addMealCtx)') !== -1,
+    'openAddMealSheetForContext(): the "Ate out" button opens openAteOutSheet() with the current addMealCtx', sheetFn);
+
+  const commitFn = fnBody('commitAteOut');
+  assert(commitFn.length > 0, 'wiring setup: commitAteOut() function body found in render-today.js', 'not found');
+  assert(commitFn.indexOf('createAteOutFood(') !== -1, 'commitAteOut(): creates the one-off food via createAteOutFood()', commitFn);
+  assert(commitFn.indexOf('logFoodEntry(') !== -1, 'commitAteOut(): logs it via logFoodEntry()', commitFn);
+  assert(commitFn.indexOf('setLogEntryEatenOut(') !== -1, 'commitAteOut(): flags the logged entry eatenOut', commitFn);
+  assert(commitFn.indexOf('markSlotSkipped(') !== -1, 'commitAteOut(): skips the planned slot when opened from a slot context', commitFn);
+  assert(commitFn.indexOf('refreshAfterLogChange()') !== -1, 'commitAteOut(): re-renders through the shared refreshAfterLogChange() funnel', commitFn);
+
+  const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  assert(indexHtml.indexOf('openAteOutSheet(null)') !== -1,
+    'index.html: the Log screen\'s "Ways to log" row has a standalone Ate out entry point', '');
+}
+
+/* ===================================================================
    task D2: sauce role, new ingredient (sea bass), new/extended catalog recipes
    (baked-fish, pasta, french-toast-fruit-maple fruit options, 3 new role:'main'
    recipes, 2 role:'sauce' recipes), butter-chicken season fix.
@@ -9972,6 +10075,8 @@ function main(){
   runTest('eaten-out toggle wiring (FAVORITES-EATENOUT-plan.md item 3)', function(){ testEatenOutToggleWiring(); });
   runTest('Week eaten-out: calories/pantry/shopping-list (both weeks)/shared/undo (WEEK-EATENOUT-plan.md)', function(){ testWeekEatenOut(ctx); });
   runTest('Week eaten-out toggle wiring (WEEK-EATENOUT-plan.md)', function(){ testWeekEatenOutToggleWiring(); });
+  runTest('Ate-out quick-add: createAteOutFood() kcal rounding, occasional/candidatesFor exclusion, eaten-out logging, shopping-list/pantry exclusion', function(){ testAteOutQuickAdd(ctx); });
+  runTest('Ate-out quick-add wiring (add-meal sheet button + Log screen standalone entry point)', function(){ testAteOutQuickAddWiring(); });
   runTest('mergeLogSection', function(){ testMergeLogSection(ctx); });
   runTest('mergePlansSection', function(){ testMergePlansSection(ctx); });
   runTest('mealRules pinFromDate persistence', function(){ testMealRulePinFromDatePersistence(ctx); });

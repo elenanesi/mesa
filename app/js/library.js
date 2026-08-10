@@ -1928,6 +1928,54 @@ function saveNewFood(){
   renderFoodLibraryCount();
 }
 
+// ATE-OUT-QUICK-ADD: builds a one-off cf-* food from typed macro TOTALS (not per-100g —
+// the whole restaurant meal in one go) so a night out can be logged in ~15 seconds with no
+// recipe and no ingredient form. Mirrors saveNewFood's customFoods/applyCustomFoods/
+// customRev funnel exactly (same id scheme via slugify/uniqueSlug, same merge path) so this
+// food behaves like any other custom food everywhere else in the app — except:
+//   - unit:'piece', avgG:1, and the macro fields ARE the whole-meal totals (not per-100g),
+//     so logFoodEntry(dateISO, person, foodId, 1) logs exactly "1 serving" = the whole meal
+//     the caller just estimated (openAteOutSheet/commitAteOut, render-today.js).
+//   - occasional:true keeps it out of automatic planning consideration (the same convention
+//     RECIPES_DB entries use, see candidatesFor/planner.js) and ateOut:true marks it as a
+//     rough one-off estimate rather than a real ingredient/dish — checked nowhere in the
+//     planner today (foods aren't planner candidates the way recipes are), but the flag is
+//     what tells this food apart from a normal custom ingredient if that ever changes, and
+//     is what a future "clean up my one-off ate-out foods" library action would key on.
+//   - breakfastPair is left false (default) so it's never offered as a breakfast pairing.
+// Macros are ROUNDED to the nearest 5g — no false precision on a guessed restaurant portion
+// — and kcal is DERIVED from those rounded macros (4*protein + 4*carbs + 9*fat, the same
+// Atwater convention computeNewFoodKcal uses) so the food's calories always match its own
+// macros exactly: the day's calorie ring and macro bars can never disagree by a rounding
+// artifact, keeping this estimate internally consistent even though it's not verified.
+// Returns the new food's id; does NOT persist() (same as saveNewFood) — the caller's own
+// log-write + refreshAfterLogChange() persists both the new food and the log entry in one
+// pass.
+function roundToStep(n, step){ return Math.round(n / step) * step; }
+function createAteOutFood(opts){
+  opts = opts || {};
+  const name = (typeof opts.name === 'string' && opts.name.trim()) ? opts.name.trim() : 'Meal eaten out';
+  const protein = roundToStep(Math.max(0, +opts.protein || 0), 5);
+  const carbs = roundToStep(Math.max(0, +opts.carbs || 0), 5);
+  const fat = roundToStep(Math.max(0, +opts.fat || 0), 5);
+  const kcal = 4 * protein + 4 * carbs + 9 * fat;
+  const id = uniqueSlug(slugify(name), FOODS, 'cf-');
+  const food = {
+    name: name, per: 1, unit: 'piece', avgG: 1,
+    kcal: kcal, protein: protein, carbs: carbs, fat: fat, satFat: 0, fiber: 0,
+    sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: [], cat: 'Pantry', season: 'evergreen', breakfastPair: false,
+    occasional: true, ateOut: true,
+    src: 'Ate-out estimate (restaurant/delivery quick-add)',
+    u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap), same as saveNewFood
+  };
+  if(deletedFoods[id]) delete deletedFoods[id]; // recreate-after-delete precedent (saveNewFood)
+  customFoods[id] = food;
+  customRev++;
+  applyCustomFoods();
+  return id;
+}
+
 function resetFoodOverride(id){
   if(!foodOverrides[id]) return;
   const name = foodOverrides[id].name || (BUILTIN_FOODS_DB[id] && BUILTIN_FOODS_DB[id].name) || 'ingredient';

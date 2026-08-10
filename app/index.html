@@ -328,6 +328,12 @@
         <button onclick="openBarcodeScanner()"><span class="qi">📷</span>Scan</button>
         <button onclick="openFoodLibrary()"><span class="qi">🧺</span>Ingredients</button>
         <button onclick="openMyRecipes()"><span class="qi">📖</span>My recipes</button>
+        <!-- ATE-OUT-QUICK-ADD: standalone entry point (no addMealCtx) — a night out logged
+             with a name + estimated macros, no recipe/ingredient authoring required. The
+             add-meal sheet's own "🍴 Ate out" button (render-today.js:openAddMealSheetForContext)
+             covers logging FROM a specific planned slot; this covers logging with no slot at
+             all, exactly like Scan/Ingredients/My recipes above. -->
+        <button onclick="openAteOutSheet(null)"><span class="qi">🍴</span>Ate out</button>
       </div>
 
       <!-- The picker (owner feedback: the old Log screen mirrored the whole day's plan

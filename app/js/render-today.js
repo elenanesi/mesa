@@ -125,6 +125,14 @@ function openAddMealSheetForContext(ctx){
     + (isEatenOut ? '🏠 Eaten out — tap for home-cooked' : '🍴 Eating out (log as delivery / restaurant)')
     + '</button>';
 
+  // ATE-OUT-QUICK-ADD: distinct from the toggle above — that one logs THIS PLANNED RECIPE
+  // as eaten out (macros unchanged, still the recipe's own numbers). This one is for when
+  // the meal wasn't anything Mesa planned at all (a genuinely different restaurant dish) —
+  // it opens a short name+macros sheet, logs a one-off estimate, and skips this planned
+  // slot so it drops off the shopping list instead of double-counting. Carries the CURRENT
+  // addMealCtx (just assigned above) so commitAteOut() knows which slot to skip on save.
+  html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">🍴 Ate out — log an estimate</button>';
+
   // Per-meal share toggle (2026-07-22): split a shared meal into two separate dishes ("eat
   // different tonight") or merge two back into one ("eat together"), for THIS occurrence only
   // — the household default (Profile → Meal sharing) is untouched, and the choice persists
@@ -250,6 +258,95 @@ function toggleWeekMealEatenOut(){
   refreshAfterLogChange();
   openAddMealRecipeSheet(ctx.slot, dateISO);
   toast(turningOn ? '🍴 Marked eating out — logged & dropped from the shopping list' : '🏠 Marked home-cooked again');
+}
+
+/* ---------------- ATE-OUT-QUICK-ADD: restaurant/delivery meal with estimated macros ----------------
+   The problem: logging a meal eaten out used to force authoring a whole recipe or picking
+   the closest built-in food. This is a ~15-second alternative — name + three macro
+   steppers, no ingredients, no recipe — for a meal Mesa never built and can't verify.
+   Deliberately NOT openNewFoodForm (library.js): that sheet is the full ingredient editor
+   (category, season, flags, icon picker...) built for a reusable pantry item; this one
+   creates a single-use estimate and logs it in the same action.
+
+   ateOutSheet holds the sheet's draft state while open: {name, protein, carbs, fat, ctx}.
+   `ctx` is a SNAPSHOT of addMealCtx ({weekStartDate, dayIndex, slot, person}) taken at open
+   time when reached from the add-meal sheet's button above — commitAteOut() below uses it
+   to mark that planned slot skipped so the plan drops off the shopping list instead of
+   double-counting. `ctx` is null when opened standalone (Log screen's "Ways to log" row),
+   where there is no planned slot to reconcile. Snapshotting (rather than reading the
+   `addMealCtx` global at commit time) keeps this sheet correct even though addMealCtx can
+   keep changing while a sheet is open (e.g. the underlying screen re-renders). */
+let ateOutSheet = null;
+
+function openAteOutSheet(slotCtx){
+  ateOutSheet = {name: '', protein: 0, carbs: 0, fat: 0, ctx: slotCtx || null};
+  document.getElementById('sheetBody').innerHTML = buildAteOutSheet();
+  document.getElementById('sheet').classList.remove('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+// 4*protein + 4*carbs + 9*fat (same Atwater convention as library.js's computeNewFoodKcal) —
+// exactly what createAteOutFood (library.js) stores, so the number shown here while typing is
+// what gets logged, and the food's calories always match its own macros (no rounding drift).
+function ateOutKcalPreview(){
+  if(!ateOutSheet) return 0;
+  return 4 * ateOutSheet.protein + 4 * ateOutSheet.carbs + 9 * ateOutSheet.fat;
+}
+
+function buildAteOutSheet(){
+  const s = ateOutSheet;
+  if(!s) return '';
+  const macroStepperRow = function(key, label){
+    return '<div class="field"><label>' + label + '</label><div class="inp" style="justify-content:flex-end">'
+      + '<span class="sv-stepper" style="margin:0">'
+      + '<button onclick="stepAteOutMacro(\'' + key + '\',-5)" aria-label="Decrease ' + label + '">–</button>'
+      + '<span class="sv-val">' + s[key] + '</span>'
+      + '<button onclick="stepAteOutMacro(\'' + key + '\',5)" aria-label="Increase ' + label + '">+</button>'
+      + '</span><span class="sv-unit">g</span></div></div>';
+  };
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Ate out</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + '<p class="sub" style="margin-top:6px">Log a meal Mesa didn’t build — just a name and a rough macro guess.</p>'
+    + '<div class="field"><label>Name</label>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(s.name) + '" oninput="ateOutSheet.name=this.value" placeholder="e.g. Dinner at Luigi’s" autocomplete="off"></div>'
+    + macroStepperRow('protein', 'Protein')
+    + macroStepperRow('carbs', 'Carbs')
+    + macroStepperRow('fat', 'Fat')
+    + '<div class="field"><label>Calories <span style="color:var(--muted);font-weight:400;font-size:11px">· estimated, not verified</span></label><div class="inp"><span>Estimated</span><b>≈ ' + ateOutKcalPreview() + ' kcal</b></div></div>'
+    + '<div class="cap-note">Estimated — Mesa can’t verify a meal it didn’t build.</div>'
+    + '<button class="cta" style="margin-top:14px" onclick="commitAteOut()">🍴 Log this meal</button>'
+    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+function stepAteOutMacro(key, delta){
+  if(!ateOutSheet) return;
+  ateOutSheet[key] = Math.max(0, ateOutSheet[key] + delta);
+  document.getElementById('sheetBody').innerHTML = buildAteOutSheet();
+}
+
+// Creates the one-off food (library.js:createAteOutFood), logs it for the slot's own date
+// (or the currently-viewed Log date when opened standalone) under that slot's own person
+// (or currentProf when standalone — see the ctx doc above), flags it eatenOut so it never
+// depletes the pantry, and — only when opened from a planned slot — skips that slot via the
+// same markSlotSkipped() the Week screen's ∅ button uses, so the plan drops off the
+// shopping list instead of sitting there double-counted alongside this estimate.
+function commitAteOut(){
+  if(!ateOutSheet) return;
+  const name = (ateOutSheet.name || '').trim();
+  if(!name){ toast('Give this meal a name'); return; }
+  if(!(ateOutSheet.protein > 0 || ateOutSheet.carbs > 0 || ateOutSheet.fat > 0)){ toast('Enter at least one macro above 0'); return; }
+  const ctx = ateOutSheet.ctx;
+  const person = ctx ? ctx.person : currentProf;
+  const dateISO = ctx ? addDaysISO(ctx.weekStartDate, ctx.dayIndex) : currentLogDateISO();
+  const foodId = createAteOutFood({name: name, protein: ateOutSheet.protein, carbs: ateOutSheet.carbs, fat: ateOutSheet.fat});
+  const entry = logFoodEntry(dateISO, person, foodId, 1);
+  const idx = getDayLog(dateISO)[person].indexOf(entry);
+  if(idx !== -1) setLogEntryEatenOut(dateISO, person, idx, true);
+  if(ctx) markSlotSkipped(dateISO, ctx.person, ctx.slot);
+  ateOutSheet = null;
+  refreshAfterLogChange();
+  closeSheet();
+  toast('🍴 Logged ' + name);
 }
 
 // Split this occurrence into two separate dishes, or merge two back into one — see the
