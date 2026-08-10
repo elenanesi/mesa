@@ -2828,6 +2828,86 @@ function testLunchFishMeatExclusionAndSwapVariety(ctx){
   }
 }
 
+/* ---------------- swap sheet: complete-meal-only pool + same-slot-first with an
+   other-meals toggle (Problems 3 & 4, 2026-08-11) ----------------
+   Problem 3: a swap must never propose a bare side/main (e.g. steamed rice, a plain
+   protein main) for lunch/dinner — every buildSwapAlternatives id must satisfy
+   isCompleteLunchDinnerRecipe. Problem 4: buildSwapSearchOptions defaults to same-slot AND
+   (for lunch/dinner) complete-meal-only, matching buildSwapAlternatives' contract; flipping
+   swapCtx.includeOtherMeals opens the pool to any slot/role as an explicit escape hatch,
+   tagging cross-slot matches with their usual slot ("usually breakfast" in the UI). */
+function testSwapCompleteMealPoolAndOtherMealsToggle(ctx){
+  const saved = cloneJSON(get(ctx, 'weekPlans'));
+  const savedSwapCtx = cloneJSON(get(ctx, 'swapCtx'));
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const wsd = get(ctx, "(function(){ var p = ensureWeekPlan(mondayOfWeek(todayISO())); return p.weekStartDate; })()");
+
+    // Problem 3: no lunch alternative, on any day, is a bare side/main.
+    for(let d = 0; d < 7; d++){
+      const alts = call(ctx, 'buildSwapAlternatives', [d, 'lunch', 'elena', wsd]);
+      alts.forEach(function(a){
+        assert(call(ctx, 'isCompleteLunchDinnerRecipe', [a.id]) === true,
+          'buildSwapAlternatives (lunch, day ' + d + '): every alternative is a complete meal, no bare side/main',
+          a.id);
+      });
+    }
+    assert(call(ctx, 'isCompleteLunchDinnerRecipe', ['turkey-spinach-omelette']) === false,
+      'setup: turkey-spinach-omelette (bare lunch main, <80g veg) fails the complete-meal contract');
+
+    // Pick a day whose planned lunch ISN'T turkey-spinach-omelette, so the exclusion
+    // checks below aren't confused with the "exclude the currently planned recipe" rule.
+    let bareTestDay = 0;
+    for(let d = 0; d < 7; d++){
+      const cur = get(ctx, "(function(){ var m = weekPlans['" + wsd + "'].days[" + d + "].meals.lunch; return m.shared ? m.recipeId : m.elena.recipeId; })()");
+      if(cur !== 'turkey-spinach-omelette'){ bareTestDay = d; break; }
+    }
+
+    // Problem 4, toggle OFF (default): same-slot AND complete-meal-only for lunch — a
+    // same-slot bare main (turkey-spinach-omelette) is excluded even though the query
+    // matches it directly, and a breakfast-only recipe never surfaces for a lunch query.
+    run(ctx, "swapCtx = {dayIndex: " + bareTestDay + ", slot: 'lunch', person: 'elena', weekStartDate: '" + wsd + "', includeOtherMeals: false};");
+    const offBareMain = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'turkey & spinach', wsd]).map(function(a){ return a.id; });
+    assert(offBareMain.indexOf('turkey-spinach-omelette') === -1,
+      'buildSwapSearchOptions (includeOtherMeals=false): excludes a same-slot bare main that fails the complete-meal contract',
+      JSON.stringify(offBareMain));
+
+    const offChicken = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'chicken', wsd]);
+    assert(offChicken.length > 0,
+      'setup: "chicken" matches at least one same-slot lunch recipe with the toggle off', JSON.stringify(offChicken));
+    offChicken.forEach(function(a){
+      assert(call(ctx, 'isCompleteLunchDinnerRecipe', [a.id]) === true,
+        'buildSwapSearchOptions (includeOtherMeals=false, lunch): every default-search match is a same-slot complete meal',
+        a.id);
+    });
+
+    const offOats = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'overnight oats', wsd]);
+    assert(offOats.length === 0,
+      'buildSwapSearchOptions (includeOtherMeals=false): a breakfast-only recipe does not surface for a lunch query',
+      JSON.stringify(offOats));
+
+    // Toggle ON: cross-slot recipes (any role, no complete-meal contract) become reachable,
+    // tagged with their usual slot so the UI can show "usually breakfast".
+    run(ctx, "swapCtx.includeOtherMeals = true;");
+    const onOats = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'overnight oats', wsd]);
+    const onOatsMatch = onOats.filter(function(a){ return a.id === 'oats-berries-walnuts'; })[0];
+    assert(!!onOatsMatch,
+      'buildSwapSearchOptions (includeOtherMeals=true): a breakfast recipe now matches a lunch search',
+      JSON.stringify(onOats));
+    assert(!!onOatsMatch && onOatsMatch.otherSlot === 'Breakfast',
+      'buildSwapSearchOptions (includeOtherMeals=true): a cross-slot match carries its usual-slot label for the UI tag',
+      JSON.stringify(onOats));
+
+    const onBareMain = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'turkey & spinach', wsd]).map(function(a){ return a.id; });
+    assert(onBareMain.indexOf('turkey-spinach-omelette') !== -1,
+      'buildSwapSearchOptions (includeOtherMeals=true): the complete-meal contract is dropped, so a bare same-slot main is reachable too',
+      JSON.stringify(onBareMain));
+  } finally {
+    ctx.weekPlans = saved;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; swapCtx = " + (savedSwapCtx ? JSON.stringify(savedSwapCtx) : 'null') + ";");
+  }
+}
+
 /* ---------------- Regenerate week (keep pinned + logged) ----------------
    regenerateWeekPreservingLocks() forces a fresh plan for a week from the current catalog
    while preserving pinned meals and anything logged/skipped — the on-demand version of the
@@ -10094,6 +10174,7 @@ function main(){
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('per-meal share override (eat different/together)', function(){ testMealShareOverride(ctx); });
   runTest('lunch fish/meat exclusion + swap variety', function(){ testLunchFishMeatExclusionAndSwapVariety(ctx); });
+  runTest('swap sheet: complete-meal-only pool + same-slot-first with other-meals toggle', function(){ testSwapCompleteMealPoolAndOtherMealsToggle(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

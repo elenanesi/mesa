@@ -2969,7 +2969,14 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
       planEntryComponents(e).forEach(function(c){ if(c.recipeId) usedThisWeek[c.recipeId] = true; });
     });
   });
-  const rawPool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId; });
+  // A swap must offer a COMPLETE meal, not a bare side/main dish that happens to be
+  // tagged for this slot (Problem 3, 2026-08-11) — restrict the pool to
+  // isCompleteLunchDinnerRecipe() ids for lunch/dinner BEFORE the relaxation tiers below,
+  // so every tier (today-avoiding, week-avoiding, raw) stays complete-meal-only; breakfast
+  // and snack have no completeness contract and are unaffected.
+  const completeOnly = slot === 'lunch' || slot === 'dinner';
+  let rawPool = candidatesFor(slot, styleKey, avoidL, [person]).filter(function(id){ return id !== currentId; });
+  if(completeOnly) rawPool = rawPool.filter(function(id){ return isCompleteLunchDinnerRecipe(id); });
   let pool = rawPool.filter(function(id){ return !plannedToday[id] && !usedThisWeek[id]; });
   if(!pool.length) pool = rawPool.filter(function(id){ return !plannedToday[id]; }); // relax week-wide
   if(!pool.length) pool = rawPool;                                                    // relax today
@@ -3007,10 +3014,24 @@ function swapSearchText(id){
   ].join(' ').toLowerCase();
 }
 
+// Small helper for the "usually {slot}" tag (Problem 4): a recipe's own primary slot,
+// mirroring RECIPE_SLOT_DB's derivation (recipe.slot), falling back to the first entry of
+// recipeSlotList() for the rare recipe missing a primary. Returns '' if neither resolves.
+function primarySlotLabel(r){
+  const s = (r && r.slot) || recipeSlotList(r)[0];
+  return SLOT_LABEL[s] || '';
+}
+
 // Searchable swap pool: every recipe in the same meal slot, built-in and custom, across
 // all plan styles. Manual search is explicit user intent, so it does not apply the current
 // household style filter. Avoid-lists still apply, and the currently planned recipe is
 // excluded because selecting it would be a no-op.
+// swapCtx.includeOtherMeals (Problem 4 — "I had breakfast for lunch") is the explicit
+// opt-in toggle on the swap sheet: OFF (default) keeps this same-slot, and for lunch/dinner
+// additionally requires isCompleteLunchDinnerRecipe() so the default search stays
+// consistent with buildSwapAlternatives' complete-meal-only contract (Problem 3). ON drops
+// the slot filter entirely (any slot, any role, including bare sides/mains) as the explicit
+// escape hatch the owner asked for — still excludes the current recipe and occasional dishes.
 function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
   const m = plan.days[dayIndex].meals[slot];
@@ -3022,16 +3043,25 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const q = String(query || '').trim().toLowerCase();
   if(q.length < 2) return [];
   const anchor = PERSON_ANCHOR[person];
+  const includeOtherMeals = !!(swapCtx && swapCtx.includeOtherMeals);
+  const completeOnly = !includeOtherMeals && (slot === 'lunch' || slot === 'dinner');
   const pool = Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
-    return recipeSlotList(r).indexOf(slot) !== -1 && id !== currentId && swapSearchText(id).indexOf(q) !== -1;
+    if(id === currentId || swapSearchText(id).indexOf(q) === -1) return false;
+    if(includeOtherMeals) return !r.occasional;
+    if(recipeSlotList(r).indexOf(slot) === -1) return false;
+    if(completeOnly && !isCompleteLunchDinnerRecipe(id)) return false;
+    return true;
   });
   const scored = pool.map(function(id){
+    const r = RECIPES_DB[id];
     const base = dbBaseNutrition(id);
     const bp = bestPortion(base.kcal, currentKcal, anchor, SLOT_MAX_PORTION[slot]);
     const protein = base.protein * bp.portion;
-    return {id: id, title: RECIPES_DB[id].title, custom: id.indexOf('cr-') === 0, avoidHit: recipeHitsAvoid(RECIPES_DB[id], avoidL), portion: bp.portion, kcal: bp.kcal, protein: protein,
-      kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein};
+    const otherSlot = recipeSlotList(r).indexOf(slot) === -1;
+    return {id: id, title: r.title, custom: id.indexOf('cr-') === 0, avoidHit: recipeHitsAvoid(r, avoidL), portion: bp.portion, kcal: bp.kcal, protein: protein,
+      kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein,
+      otherSlot: otherSlot ? primarySlotLabel(r) : null};
   });
   scored.sort(function(a, b){
     // PERSONAL-PREFS: swap sort favorites the CURRENTLY ACTIVE person's own prefs
@@ -3121,10 +3151,14 @@ function swapRecipeRowHtml(a){
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   const yours = a.custom ? '<span class="pill terra">Yours</span>' : '';
   const avoid = a.avoidHit ? '<span class="pill ghost">Contains avoided</span>' : '';
+  // Problem 4: cross-slot search results (swapCtx.includeOtherMeals) carry the recipe's
+  // usual slot so the row doesn't read as an unexplained lunch/dinner-shaped search hit.
+  const otherSlotTag = a.otherSlot ? '<div class="sub" style="margin:2px 0 0">usually ' + escapeHtml(a.otherSlot.toLowerCase()) + '</div>' : '';
   return '<div class="altrow" data-recipe-id="' + htmlAttr(a.id) + '">'
     + '<div class="ae">' + r.emoji + '</div>'
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
+    + otherSlotTag
     + '<div class="tags">' + yours + avoid + swapTagsHtml(r.tags) + '</div>'
     + '</div></div>';
 }
@@ -3178,11 +3212,34 @@ function attachSwapSearchHandler(){
 // FEATURE ("Swap anything"): the sheet has a short "Best matches" section and a search
 // field for the full same-slot recipe book. That keeps the default sheet calm while still
 // making every compatible recipe reachable, including custom `cr-...` recipes.
+function swapOtherMealsToggleLabel(slot){
+  const slotLabel = (SLOT_LABEL[slot] || slot).toLowerCase();
+  return swapCtx && swapCtx.includeOtherMeals
+    ? '↩︎ Showing all meals — limit to ' + slotLabel + ' only'
+    : '🍽️ Show other meals (e.g. a breakfast for lunch)';
+}
+
+// Problem 4 ("I had breakfast for lunch"): flips the same-slot-only search restriction and
+// re-renders just the search results + the toggle's own label. Never touches "Best
+// matches" (buildSwapAlternatives stays strictly same-slot + complete, per the owner's
+// same-slot-first decision) — only the search list beneath it changes.
+function toggleSwapOtherMeals(){
+  if(!swapCtx) return;
+  swapCtx.includeOtherMeals = !swapCtx.includeOtherMeals;
+  const btn = document.getElementById('swapOtherMealsToggle');
+  if(btn) btn.textContent = swapOtherMealsToggleLabel(swapCtx.slot);
+  const el = document.getElementById('swapSearchResults');
+  if(el) el.innerHTML = buildSwapSearchResults();
+}
+
 function buildSwapSheet(ctx){
   const best = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
   if(swapCtx){
     swapCtx.alts = best;
     swapCtx.searchQuery = swapCtx.searchQuery || '';
+    // Reset every time the sheet (re)opens for a fresh context — a stale "show other
+    // meals" opt-in from a previous swap should never leak into the next one.
+    swapCtx.includeOtherMeals = false;
   }
 
   const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
@@ -3196,6 +3253,7 @@ function buildSwapSheet(ctx){
   }
 
   html += '<div class="shop-cat">Search ' + slotLabel + ' recipes</div>'
+    + '<button type="button" class="backbtn" id="swapOtherMealsToggle" style="margin:8px 0" onclick="toggleSwapOtherMeals()">' + escapeHtml(swapOtherMealsToggleLabel(ctx.slot)) + '</button>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapRecipeSearchInput" placeholder="Search recipes, tags, yours..." value="' + htmlAttr(swapCtx ? swapCtx.searchQuery || '' : '') + '" autocomplete="off">'
     + '<div id="swapSearchResults">' + buildSwapSearchResults() + '</div>';
   return html;
