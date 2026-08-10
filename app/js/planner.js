@@ -2353,6 +2353,24 @@ function classifyMaxBand(value, max){
   return (max > 0 && value > max) ? 'over' : 'in';
 }
 
+// Directional per-day balance for the Week view (display-only). Fiber: floor + Mesa comfort
+// ceiling; free sugars: ceiling only. Returns {fiber:'light'|'ok'|'rich', freeSugars:'ok'|'rich'}.
+// 'light'/'rich' are DESCRIPTORS, not verdicts. Free-sugar grams ceiling is single-sourced off
+// the person's calorie goal, same derivation as weekNutriSummary — never a re-typed literal.
+function perDayBalanceState(dayTotals, person){
+  const out = {fiber: 'ok', freeSugars: 'ok'};
+  if(!dayTotals) return out;
+  const fiberFloor = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
+  const fiberCeil  = fiberFloor * PER_DAY_BANDS.fiber.ceilMult;
+  if(classifyMinBand(dayTotals.fiber, fiberFloor) === 'under') out.fiber = 'light';
+  else if(classifyMaxBand(dayTotals.fiber, fiberCeil) === 'over') out.fiber = 'rich';
+  const calGoal = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].calGoalNum) || 0;
+  const sugarDailyG = calGoal > 0 ? (NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4 : 0;
+  const sugarCeil = sugarDailyG * PER_DAY_BANDS.freeSugars.ceilMult;
+  if(sugarCeil > 0 && classifyMaxBand(dayTotals.freeSugars, sugarCeil) === 'over') out.freeSugars = 'rich';
+  return out;
+}
+
 // Pure computation for the Insights screen (task D1 item 4). Every per-day kcal figure is
 // compared against that day's FROZEN target snapshot (state.js:ensureTargetSnapshot), so a
 // later calorie-target change never moves a past day's bar or band dot. Returns

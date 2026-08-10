@@ -104,6 +104,16 @@ const NUTRITION_GUIDANCE = {
   freeSugars: {kind:'Guideline', target:10, unit:'% of energy', source:'WHO sugars guideline'}
 };
 
+// Mesa PLANNING RULE — NOT a WHO/clinical threshold (see KNOWLEDGE-BASE.md claim legend).
+// The WHO figures in NUTRITION_GUIDANCE are expressed PER DAY, so a healthy week should not
+// be carried by one big day. These per-day bands, relative to each nutrient's daily target,
+// let the Week view flag a single day that runs unusually light or rich — directional only,
+// never a pass/fail grade. Multipliers, not literals, so they track the single-sourced targets.
+const PER_DAY_BANDS = {
+  fiber:      {floorMult: 0.6, ceilMult: 1.7}, // ~15g floor, ~43g comfort ceiling at a 25g/day goal
+  freeSugars: {ceilMult: 1.5}                  // no single day above ~1.5x the daily free-sugar share
+};
+
 /* Deterministic, factual "Why Mesa picked this" explanations. */
 function recipeFlagSet(recipeId){
   const r = RECIPES_DB[recipeId];

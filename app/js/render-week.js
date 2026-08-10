@@ -176,12 +176,17 @@ function renderWeek(){
   // B4: every row's view, computed exactly once, reused for the day macro lines AND the
   // week card below (see weekDayNutriViews's header comment).
   const dayViews = weekDayNutriViews(plan, person);
+  // Calm, positive framing of the per-day fiber cue above — headroom, not a scoreboard of
+  // "off" days. Counts days whose fiber falls inside the band (perDayBalanceState 'ok'),
+  // never re-deriving the classification the day rows already computed.
+  const fiberInRangeCount = dayViews.filter(function(d){ return perDayBalanceState(d.totals, person).fiber === 'ok'; }).length;
+  const fiberSpreadLine = '<div class="sub" style="margin:0 0 8px">Fiber spread: ' + fiberInRangeCount + ' of ' + dayViews.length + ' days in range</div>';
   // B5 (catch-up logging): on the CURRENT week only, rows for dates up to and including
   // today swap the pin/routine buttons for a single log-state button (data-act="log") so
   // rows never exceed their existing button budget (decision Q3). Next week and future
   // dates of this week are untouched — pins/routines on the past are meaningless anyway
   // (re-balance already ignores them), so nothing of value is hidden.
-  el.innerHTML = plan.days.map(function(day, di){
+  el.innerHTML = fiberSpreadLine + plan.days.map(function(day, di){
     const totals = dayViews[di].totals;
     const titles = [];
     const logEligible = !weekScreenShowsNext && day.date <= todayISO();
@@ -253,8 +258,13 @@ function renderWeek(){
     // Standalone entries need one compact line: their nutrition is included above but
     // otherwise has no corresponding meal row to explain a calorie/sugar increase.
     const standaloneLine = weekStandaloneLogLine(dayViews[di].standaloneEntries, day.date);
+    // Directional per-day balance cue (display-only, never pass/fail — see PER_DAY_BANDS'
+    // header comment in state.js). Quiet by default: an in-range day shows nothing extra.
+    const bal = perDayBalanceState(totals, person);
+    const cue = function(state){ return state === 'ok' ? '' : ' <span class="day-cue">· ' + state + '</span>'; };
     const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
-      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g · free sugars '+Math.round(totals.freeSugars)+'g</div>';
+      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g'+cue(bal.fiber)
+      +' · free sugars '+Math.round(totals.freeSugars)+'g'+cue(bal.freeSugars)+'</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     const expanded = isWeekDayExpanded(day.date, person);
     return '<div class="day'+(di === todayIdx ? ' today' : '')+(expanded ? ' expanded' : '')+'" id="wd'+di+'" data-di="'+di+'" data-date="'+htmlAttr(day.date)+'">'

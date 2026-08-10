@@ -4415,6 +4415,57 @@ function testWeekNutriSummary(ctx){
     'B4 source guard: neither fiber (25) nor sugar (6) target is re-typed as a bare literal in weekNutriSummary', summaryFn);
 }
 
+/* ---------------- Week view: directional per-day balance cue ----------------
+   perDayBalanceState (planner.js) is the pure, DOM-free classifier behind the Week screen's
+   quiet fiber/free-sugars "light"/"rich" descriptors — display-only, never a pass/fail grade
+   (see PER_DAY_BANDS' header comment in state.js). Covers fiber's floor AND Mesa comfort
+   ceiling, free sugars' ceiling-only band, the in-range quiet case, and the null-dayTotals
+   guard, using the SAME single-sourced targets (WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay,
+   the person's PROF calGoalNum) the Week/Insights screens already share. */
+function testPerDayBalanceState(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  call(ctx, 'ensureWeekPlan', []); // populates weekPlan/PROF the same way other tests rely on
+  const person = 'elena';
+  call(ctx, 'recomputeProf', [person]); // fresh calGoalNum before reading it
+
+  const fiberFloor = get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay');
+  const fiberCeilMult = get(ctx, 'PER_DAY_BANDS.fiber.ceilMult');
+  const fiberCeil = fiberFloor * fiberCeilMult;
+  assert(fiberFloor === 25 && fiberCeil > fiberFloor,
+    'test setup: fiber floor/ceiling are the expected single-sourced band', 'floor=' + fiberFloor + ' ceil=' + fiberCeil);
+
+  // Fiber: light (below floor), ok (in band), rich (above the Mesa comfort ceiling).
+  const light = call(ctx, 'perDayBalanceState', [{fiber: 10, freeSugars: 0}, person]);
+  assert(light.fiber === 'light', 'perDayBalanceState: fiber 10g (below the ' + fiberFloor + 'g floor) is "light"', JSON.stringify(light));
+  const okFiber = call(ctx, 'perDayBalanceState', [{fiber: 26, freeSugars: 0}, person]);
+  assert(okFiber.fiber === 'ok', 'perDayBalanceState: fiber 26g (inside the band) is "ok" (quiet, no cue)', JSON.stringify(okFiber));
+  const rich = call(ctx, 'perDayBalanceState', [{fiber: 50, freeSugars: 0}, person]);
+  assert(rich.fiber === 'rich', 'perDayBalanceState: fiber 50g (above the ' + fiberCeil + 'g comfort ceiling) is "rich"', JSON.stringify(rich));
+
+  // Free sugars: single-sourced ceiling off this person's calorie goal, same derivation as
+  // weekNutriSummary's sugarTargetG (NUTRITION_GUIDANCE.freeSugars.target/100 * calGoal/4).
+  const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
+  assert(calGoal > 0, 'test setup: PROF.elena.calGoalNum is positive (otherwise the free-sugars fixtures below prove nothing)', 'got ' + calGoal);
+  const sugarPct = get(ctx, 'NUTRITION_GUIDANCE.freeSugars.target');
+  const sugarCeilMult = get(ctx, 'PER_DAY_BANDS.freeSugars.ceilMult');
+  const sugarDailyG = (sugarPct / 100) * calGoal / 4;
+  const sugarCeil = sugarDailyG * sugarCeilMult;
+
+  const sugarOk = call(ctx, 'perDayBalanceState', [{fiber: 26, freeSugars: Math.floor(sugarCeil * 0.5)}, person]);
+  assert(sugarOk.freeSugars === 'ok', 'perDayBalanceState: free sugars well under the ' + Math.round(sugarCeil) + 'g ceiling is "ok" (quiet, no cue)', JSON.stringify(sugarOk));
+  const sugarRich = call(ctx, 'perDayBalanceState', [{fiber: 26, freeSugars: Math.ceil(sugarCeil + 5)}, person]);
+  assert(sugarRich.freeSugars === 'rich', 'perDayBalanceState: free sugars above the ' + Math.round(sugarCeil) + 'g ceiling is "rich"', JSON.stringify(sugarRich));
+
+  // A fully in-range day shows no cue on either axis (quiet-by-default).
+  const bothOk = call(ctx, 'perDayBalanceState', [{fiber: 30, freeSugars: Math.floor(sugarCeil * 0.5)}, person]);
+  assert(bothOk.fiber === 'ok' && bothOk.freeSugars === 'ok', 'perDayBalanceState: an in-range day is quiet on both fiber and free sugars', JSON.stringify(bothOk));
+
+  // Missing dayTotals (e.g. an unresolved slot) degrades to the quiet default, never a crash.
+  const nullDay = call(ctx, 'perDayBalanceState', [null, person]);
+  assert(nullDay.fiber === 'ok' && nullDay.freeSugars === 'ok', 'perDayBalanceState: null dayTotals degrades to the quiet {ok, ok} default', JSON.stringify(nullDay));
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -9828,6 +9879,7 @@ function main(){
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
+  runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
