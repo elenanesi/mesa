@@ -2353,22 +2353,43 @@ function classifyMaxBand(value, max){
   return (max > 0 && value > max) ? 'over' : 'in';
 }
 
-// Directional per-day balance for the Week view (display-only). Fiber: floor + Mesa comfort
-// ceiling; free sugars: ceiling only. Returns {fiber:'light'|'ok'|'rich', freeSugars:'ok'|'rich'}.
-// 'light'/'rich' are DESCRIPTORS, not verdicts. Free-sugar grams ceiling is single-sourced off
-// the person's calorie goal, same derivation as weekNutriSummary — never a re-typed literal.
+// Directional per-day balance for the Week view (display-only). Covers every tracked daily
+// target. States are DESCRIPTORS, never verdicts. Any target whose data is missing (no
+// calorie goal yet) resolves to 'ok' so the app never invents a warning. Grams ceilings are
+// single-sourced off the person's calorie goal, same derivation as weekNutriSummary.
 function perDayBalanceState(dayTotals, person){
-  const out = {fiber: 'ok', freeSugars: 'ok'};
+  const out = {kcal:'ok', protein:'ok', fiber:'ok', freeSugars:'ok', satFat:'ok'};
   if(!dayTotals) return out;
-  const fiberFloor = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
-  const fiberCeil  = fiberFloor * PER_DAY_BANDS.fiber.ceilMult;
-  if(classifyMinBand(dayTotals.fiber, fiberFloor) === 'under') out.fiber = 'light';
-  else if(classifyMaxBand(dayTotals.fiber, fiberCeil) === 'over') out.fiber = 'rich';
   const calGoal = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].calGoalNum) || 0;
-  const sugarDailyG = calGoal > 0 ? (NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4 : 0;
-  const sugarCeil = sugarDailyG * PER_DAY_BANDS.freeSugars.ceilMult;
-  if(sugarCeil > 0 && classifyMaxBand(dayTotals.freeSugars, sugarCeil) === 'over') out.freeSugars = 'rich';
+  const proteinTarget = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].targetP) || 0;
+  // kcal: within +/- tol of the daily goal
+  if(calGoal > 0){
+    if(dayTotals.kcal > calGoal * (1 + PER_DAY_BANDS.kcal.tol)) out.kcal = 'high';
+    else if(dayTotals.kcal < calGoal * (1 - PER_DAY_BANDS.kcal.tol)) out.kcal = 'low';
+  }
+  // protein: floor only
+  if(proteinTarget > 0 && classifyMinBand(dayTotals.protein, proteinTarget * PER_DAY_BANDS.protein.floorMult) === 'under') out.protein = 'low';
+  // fiber: floor + comfort ceiling
+  const fiberFloor = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
+  if(classifyMinBand(dayTotals.fiber, fiberFloor) === 'under') out.fiber = 'light';
+  else if(classifyMaxBand(dayTotals.fiber, fiberFloor * PER_DAY_BANDS.fiber.ceilMult) === 'over') out.fiber = 'rich';
+  // free sugars: ceiling
+  if(calGoal > 0){
+    const sugarCeil = ((NUTRITION_GUIDANCE.freeSugars.target/100)*calGoal/4) * PER_DAY_BANDS.freeSugars.ceilMult;
+    if(classifyMaxBand(dayTotals.freeSugars, sugarCeil) === 'over') out.freeSugars = 'rich';
+  }
+  // sat fat: ceiling
+  if(calGoal > 0 && typeof dayTotals.satFat === 'number'){
+    const satCeil = ((NUTRITION_GUIDANCE.satFat.target/100)*calGoal/9) * PER_DAY_BANDS.satFat.ceilMult;
+    if(classifyMaxBand(dayTotals.satFat, satCeil) === 'over') out.satFat = 'rich';
+  }
   return out;
+}
+// One holistic per-day state for the collapsed day header: 'balanced' when every tracked
+// target is in band, else 'off'. Keeps the overview to a single calm signal per day.
+function dayBalanceOverall(dayTotals, person){
+  const s = perDayBalanceState(dayTotals, person);
+  return (s.kcal==='ok' && s.protein==='ok' && s.fiber==='ok' && s.freeSugars==='ok' && s.satFat==='ok') ? 'balanced' : 'off';
 }
 
 // Pure computation for the Insights screen (task D1 item 4). Every per-day kcal figure is

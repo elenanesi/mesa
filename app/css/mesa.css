@@ -63,6 +63,9 @@ h1{font-family:var(--font-script);font-size:34px;line-height:1.04;margin:6px 0 2
 h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:500;color:#3c3228;}
 .sub{color:var(--muted);font-size:13.5px;margin:0 0 4px;}
 .day-cue{color:var(--gold);font-weight:500;}
+.day-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle;}
+.day-dot-ok{background:var(--sage-deep);}
+.day-dot-off{background:var(--gold);}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:1.7px;text-transform:uppercase;color:var(--sage-deep);}
 
 .card{background:rgba(255,250,240,.92);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:16px;margin-top:12px;border:1px solid rgba(176,146,105,.38);}

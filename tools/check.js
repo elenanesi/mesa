@@ -4417,17 +4417,18 @@ function testWeekNutriSummary(ctx){
 
 /* ---------------- Week view: directional per-day balance cue ----------------
    perDayBalanceState (planner.js) is the pure, DOM-free classifier behind the Week screen's
-   quiet fiber/free-sugars "light"/"rich" descriptors — display-only, never a pass/fail grade
-   (see PER_DAY_BANDS' header comment in state.js). Covers fiber's floor AND Mesa comfort
-   ceiling, free sugars' ceiling-only band, the in-range quiet case, and the null-dayTotals
-   guard, using the SAME single-sourced targets (WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay,
-   the person's PROF calGoalNum) the Week/Insights screens already share. */
+   quiet per-nutrient "light"/"rich"/"low"/"high" descriptors — display-only, never a pass/fail
+   grade (see PER_DAY_BANDS' header comment in state.js). Now covers ALL five tracked daily
+   targets (kcal, protein, fiber, free sugars, sat fat), not just fiber/free-sugars, using the
+   SAME single-sourced targets (WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay, the person's PROF
+   calGoalNum/targetP) the Week/Insights screens already share. dayBalanceOverall folds all
+   five into the single calm dot the collapsed day header shows. */
 function testPerDayBalanceState(ctx){
   run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
   run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
   call(ctx, 'ensureWeekPlan', []); // populates weekPlan/PROF the same way other tests rely on
   const person = 'elena';
-  call(ctx, 'recomputeProf', [person]); // fresh calGoalNum before reading it
+  call(ctx, 'recomputeProf', [person]); // fresh calGoalNum/targetP before reading them
 
   const fiberFloor = get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay');
   const fiberCeilMult = get(ctx, 'PER_DAY_BANDS.fiber.ceilMult');
@@ -4435,35 +4436,81 @@ function testPerDayBalanceState(ctx){
   assert(fiberFloor === 25 && fiberCeil > fiberFloor,
     'test setup: fiber floor/ceiling are the expected single-sourced band', 'floor=' + fiberFloor + ' ceil=' + fiberCeil);
 
+  const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
+  const proteinTarget = get(ctx, "PROF['" + person + "'].targetP");
+  assert(calGoal > 0, 'test setup: PROF.elena.calGoalNum is positive (otherwise the calorie/sugar/sat-fat fixtures below prove nothing)', 'got ' + calGoal);
+  assert(proteinTarget > 0, 'test setup: PROF.elena.targetP is positive (otherwise the protein fixtures below prove nothing)', 'got ' + proteinTarget);
+
+  const baseDay = function(overrides){
+    return Object.assign({kcal: calGoal, protein: proteinTarget, fiber: 26, freeSugars: 0, satFat: 0}, overrides || {});
+  };
+
   // Fiber: light (below floor), ok (in band), rich (above the Mesa comfort ceiling).
-  const light = call(ctx, 'perDayBalanceState', [{fiber: 10, freeSugars: 0}, person]);
+  const light = call(ctx, 'perDayBalanceState', [baseDay({fiber: 10}), person]);
   assert(light.fiber === 'light', 'perDayBalanceState: fiber 10g (below the ' + fiberFloor + 'g floor) is "light"', JSON.stringify(light));
-  const okFiber = call(ctx, 'perDayBalanceState', [{fiber: 26, freeSugars: 0}, person]);
+  const okFiber = call(ctx, 'perDayBalanceState', [baseDay({fiber: 26}), person]);
   assert(okFiber.fiber === 'ok', 'perDayBalanceState: fiber 26g (inside the band) is "ok" (quiet, no cue)', JSON.stringify(okFiber));
-  const rich = call(ctx, 'perDayBalanceState', [{fiber: 50, freeSugars: 0}, person]);
+  const rich = call(ctx, 'perDayBalanceState', [baseDay({fiber: 50}), person]);
   assert(rich.fiber === 'rich', 'perDayBalanceState: fiber 50g (above the ' + fiberCeil + 'g comfort ceiling) is "rich"', JSON.stringify(rich));
 
   // Free sugars: single-sourced ceiling off this person's calorie goal, same derivation as
   // weekNutriSummary's sugarTargetG (NUTRITION_GUIDANCE.freeSugars.target/100 * calGoal/4).
-  const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
-  assert(calGoal > 0, 'test setup: PROF.elena.calGoalNum is positive (otherwise the free-sugars fixtures below prove nothing)', 'got ' + calGoal);
   const sugarPct = get(ctx, 'NUTRITION_GUIDANCE.freeSugars.target');
   const sugarCeilMult = get(ctx, 'PER_DAY_BANDS.freeSugars.ceilMult');
   const sugarDailyG = (sugarPct / 100) * calGoal / 4;
   const sugarCeil = sugarDailyG * sugarCeilMult;
 
-  const sugarOk = call(ctx, 'perDayBalanceState', [{fiber: 26, freeSugars: Math.floor(sugarCeil * 0.5)}, person]);
+  const sugarOk = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.floor(sugarCeil * 0.5)}), person]);
   assert(sugarOk.freeSugars === 'ok', 'perDayBalanceState: free sugars well under the ' + Math.round(sugarCeil) + 'g ceiling is "ok" (quiet, no cue)', JSON.stringify(sugarOk));
-  const sugarRich = call(ctx, 'perDayBalanceState', [{fiber: 26, freeSugars: Math.ceil(sugarCeil + 5)}, person]);
+  const sugarRich = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.ceil(sugarCeil + 5)}), person]);
   assert(sugarRich.freeSugars === 'rich', 'perDayBalanceState: free sugars above the ' + Math.round(sugarCeil) + 'g ceiling is "rich"', JSON.stringify(sugarRich));
 
-  // A fully in-range day shows no cue on either axis (quiet-by-default).
-  const bothOk = call(ctx, 'perDayBalanceState', [{fiber: 30, freeSugars: Math.floor(sugarCeil * 0.5)}, person]);
-  assert(bothOk.fiber === 'ok' && bothOk.freeSugars === 'ok', 'perDayBalanceState: an in-range day is quiet on both fiber and free sugars', JSON.stringify(bothOk));
+  // kcal: within +/-tol is "ok"; above is "high"; below is "low".
+  const kcalTol = get(ctx, 'PER_DAY_BANDS.kcal.tol');
+  const kcalHigh = call(ctx, 'perDayBalanceState', [baseDay({kcal: Math.ceil(calGoal * (1 + kcalTol) + 5)}), person]);
+  assert(kcalHigh.kcal === 'high', 'perDayBalanceState: kcal above +' + (kcalTol * 100) + '% of the daily goal is "high"', JSON.stringify(kcalHigh));
+  const kcalLow = call(ctx, 'perDayBalanceState', [baseDay({kcal: Math.floor(calGoal * (1 - kcalTol) - 5)}), person]);
+  assert(kcalLow.kcal === 'low', 'perDayBalanceState: kcal below -' + (kcalTol * 100) + '% of the daily goal is "low"', JSON.stringify(kcalLow));
+  const kcalOk = call(ctx, 'perDayBalanceState', [baseDay({kcal: calGoal}), person]);
+  assert(kcalOk.kcal === 'ok', 'perDayBalanceState: kcal at the daily goal is "ok" (quiet, no cue)', JSON.stringify(kcalOk));
+
+  // Protein: floor only (0.8x target).
+  const proteinFloorMult = get(ctx, 'PER_DAY_BANDS.protein.floorMult');
+  const proteinLow = call(ctx, 'perDayBalanceState', [baseDay({protein: Math.floor(proteinTarget * proteinFloorMult) - 1}), person]);
+  assert(proteinLow.protein === 'low', 'perDayBalanceState: protein below ' + proteinFloorMult + 'x the daily target is "low"', JSON.stringify(proteinLow));
+  const proteinOk = call(ctx, 'perDayBalanceState', [baseDay({protein: proteinTarget}), person]);
+  assert(proteinOk.protein === 'ok', 'perDayBalanceState: protein at the daily target is "ok" (quiet, no cue)', JSON.stringify(proteinOk));
+
+  // Sat fat: ceiling only, single-sourced off calGoal (NUTRITION_GUIDANCE.satFat.target/100 * calGoal/9).
+  const satPct = get(ctx, 'NUTRITION_GUIDANCE.satFat.target');
+  const satCeilMult = get(ctx, 'PER_DAY_BANDS.satFat.ceilMult');
+  const satDailyG = (satPct / 100) * calGoal / 9;
+  const satCeil = satDailyG * satCeilMult;
+  const satRich = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.ceil(satCeil + 5)}), person]);
+  assert(satRich.satFat === 'rich', 'perDayBalanceState: sat fat above the ' + Math.round(satCeil) + 'g ceiling is "rich"', JSON.stringify(satRich));
+  const satOk = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.floor(satCeil * 0.5)}), person]);
+  assert(satOk.satFat === 'ok', 'perDayBalanceState: sat fat well under the ' + Math.round(satCeil) + 'g ceiling is "ok" (quiet, no cue)', JSON.stringify(satOk));
+
+  // A fully in-range day is quiet on every axis.
+  const allOk = call(ctx, 'perDayBalanceState', [baseDay(), person]);
+  assert(allOk.kcal === 'ok' && allOk.protein === 'ok' && allOk.fiber === 'ok' && allOk.freeSugars === 'ok' && allOk.satFat === 'ok',
+    'perDayBalanceState: an in-range day is quiet on kcal/protein/fiber/free-sugars/sat-fat', JSON.stringify(allOk));
 
   // Missing dayTotals (e.g. an unresolved slot) degrades to the quiet default, never a crash.
   const nullDay = call(ctx, 'perDayBalanceState', [null, person]);
-  assert(nullDay.fiber === 'ok' && nullDay.freeSugars === 'ok', 'perDayBalanceState: null dayTotals degrades to the quiet {ok, ok} default', JSON.stringify(nullDay));
+  assert(nullDay.kcal === 'ok' && nullDay.protein === 'ok' && nullDay.fiber === 'ok' && nullDay.freeSugars === 'ok' && nullDay.satFat === 'ok',
+    'perDayBalanceState: null dayTotals degrades to the quiet all-"ok" default', JSON.stringify(nullDay));
+
+  // dayBalanceOverall: the single holistic dot for the collapsed day header. 'balanced' only
+  // when every tracked target is in band; 'off' if even one axis is out.
+  const overallBalanced = call(ctx, 'dayBalanceOverall', [baseDay(), person]);
+  assert(overallBalanced === 'balanced', 'dayBalanceOverall: an in-range day on every axis is "balanced"', overallBalanced);
+  const overallOffFiber = call(ctx, 'dayBalanceOverall', [baseDay({fiber: 10}), person]);
+  assert(overallOffFiber === 'off', 'dayBalanceOverall: fiber alone out of band is enough to make the day "off"', overallOffFiber);
+  const overallOffKcal = call(ctx, 'dayBalanceOverall', [baseDay({kcal: Math.ceil(calGoal * (1 + kcalTol) + 5)}), person]);
+  assert(overallOffKcal === 'off', 'dayBalanceOverall: kcal alone out of band is enough to make the day "off"', overallOffKcal);
+  const overallOffSatFat = call(ctx, 'dayBalanceOverall', [baseDay({satFat: Math.ceil(satCeil + 5)}), person]);
+  assert(overallOffSatFat === 'off', 'dayBalanceOverall: sat fat alone out of band is enough to make the day "off"', overallOffSatFat);
 }
 
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------

@@ -89,7 +89,7 @@ function dayDateLabel(dateISO){
 function weekDayNutriViews(plan, person){
   return plan.days.map(function(day){
     const views = {};
-    const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0};
+    const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0, satFat: 0};
     SLOT_ORDER.forEach(function(slot){
       const m = day.meals[slot];
       const entry = m[person];
@@ -99,6 +99,7 @@ function weekDayNutriViews(plan, person){
       if(slotLogStatus(day.date, person, slot) === 'skipped') return;
       totals.kcal += view.kcal; totals.protein += view.protein; totals.carbs += view.carbs;
       totals.fat += view.fat; totals.fiber += view.fiber; totals.sugars += view.sugars; totals.freeSugars += view.freeSugars;
+      totals.satFat += view.satFat;
     });
     const standaloneEntries = [];
     if(day.date <= todayISO()){
@@ -112,6 +113,7 @@ function weekDayNutriViews(plan, person){
         const nut = logEntryNutrition(e);
         totals.kcal += nut.kcal; totals.protein += nut.protein; totals.carbs += nut.carbs;
         totals.fat += nut.fat; totals.fiber += nut.fiber; totals.sugars += nut.sugars; totals.freeSugars += nut.freeSugars;
+        totals.satFat += nut.satFat;
         const title = e.kind === 'food'
           ? ((FOODS[e.ref] && FOODS[e.ref].name) || 'Ingredient')
           : recipeDisplayTitle(e.ref, e.opts);
@@ -176,17 +178,18 @@ function renderWeek(){
   // B4: every row's view, computed exactly once, reused for the day macro lines AND the
   // week card below (see weekDayNutriViews's header comment).
   const dayViews = weekDayNutriViews(plan, person);
-  // Calm, positive framing of the per-day fiber cue above — headroom, not a scoreboard of
-  // "off" days. Counts days whose fiber falls inside the band (perDayBalanceState 'ok'),
-  // never re-deriving the classification the day rows already computed.
-  const fiberInRangeCount = dayViews.filter(function(d){ return perDayBalanceState(d.totals, person).fiber === 'ok'; }).length;
-  const fiberSpreadLine = '<div class="sub" style="margin:0 0 8px">Fiber spread: ' + fiberInRangeCount + ' of ' + dayViews.length + ' days in range</div>';
+  // Calm, positive framing of the per-day balance cue above — headroom, not a scoreboard of
+  // "off" days. Counts days whose EVERY tracked target is in band (dayBalanceOverall
+  // 'balanced'), never re-deriving the per-nutrient classification the day rows already
+  // computed. Holistic, matching the single dot shown on each collapsed day header below.
+  const balancedCount = dayViews.filter(function(d){ return dayBalanceOverall(d.totals, person) === 'balanced'; }).length;
+  const balanceLine = '<div class="sub" style="margin:0 0 8px">' + balancedCount + ' of ' + dayViews.length + ' days balanced</div>';
   // B5 (catch-up logging): on the CURRENT week only, rows for dates up to and including
   // today swap the pin/routine buttons for a single log-state button (data-act="log") so
   // rows never exceed their existing button budget (decision Q3). Next week and future
   // dates of this week are untouched — pins/routines on the past are meaningless anyway
   // (re-balance already ignores them), so nothing of value is hidden.
-  el.innerHTML = fiberSpreadLine + plan.days.map(function(day, di){
+  el.innerHTML = balanceLine + plan.days.map(function(day, di){
     const totals = dayViews[di].totals;
     const titles = [];
     const logEligible = !weekScreenShowsNext && day.date <= todayISO();
@@ -260,15 +263,25 @@ function renderWeek(){
     const standaloneLine = weekStandaloneLogLine(dayViews[di].standaloneEntries, day.date);
     // Directional per-day balance cue (display-only, never pass/fail — see PER_DAY_BANDS'
     // header comment in state.js). Quiet by default: an in-range day shows nothing extra.
+    // The overview stays a single calm dot (dh below); this expanded line carries the
+    // per-nutrient detail — protein floor and fiber/free-sugars in-line, plus compact kcal/
+    // sat-fat notes appended since they aren't itemized figures on this line.
     const bal = perDayBalanceState(totals, person);
-    const cue = function(state){ return state === 'ok' ? '' : ' <span class="day-cue">· ' + state + '</span>'; };
-    const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g · C '+Math.round(totals.carbs)
+    const cue = function(state){ return (state==='ok') ? '' : ' <span class="day-cue">· ' + state + '</span>'; };
+    const extraCues = (bal.kcal!=='ok' ? ' <span class="day-cue">· kcal '+bal.kcal+'</span>' : '')
+                    + (bal.satFat==='rich' ? ' <span class="day-cue">· sat fat rich</span>' : '');
+    const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g'+cue(bal.protein)+' · C '+Math.round(totals.carbs)
       +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g'+cue(bal.fiber)
-      +' · free sugars '+Math.round(totals.freeSugars)+'g'+cue(bal.freeSugars)+'</div>';
+      +' · free sugars '+Math.round(totals.freeSugars)+'g'+cue(bal.freeSugars)+extraCues+'</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     const expanded = isWeekDayExpanded(day.date, person);
+    // Single holistic balance dot for the always-visible day header — the overview stays
+    // one signal per day; per-nutrient detail lives only in dayMacroLine above, revealed
+    // when the day is expanded.
+    const overall = dayBalanceOverall(totals, person);
+    const dayDot = '<span class="day-dot day-dot-'+(overall==='balanced'?'ok':'off')+'" aria-label="'+(overall==='balanced'?'Balanced day':'Off-balance day')+'"></span>';
     return '<div class="day'+(di === todayIdx ? ' today' : '')+(expanded ? ' expanded' : '')+'" id="wd'+di+'" data-di="'+di+'" data-date="'+htmlAttr(day.date)+'">'
-      + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
+      + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">'+dayDot+'~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+dayMacroLine+standaloneLine+rows+'</div></div>';
   }).join('');

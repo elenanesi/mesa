@@ -109,9 +109,15 @@ const NUTRITION_GUIDANCE = {
 // be carried by one big day. These per-day bands, relative to each nutrient's daily target,
 // let the Week view flag a single day that runs unusually light or rich — directional only,
 // never a pass/fail grade. Multipliers, not literals, so they track the single-sourced targets.
+// Covers every tracked daily target (calories, protein, fiber, free sugars, sat fat), not just
+// fiber — the Week view's per-day balance signal is holistic, even though the overview only
+// ever shows one calm dot per day.
 const PER_DAY_BANDS = {
-  fiber:      {floorMult: 0.6, ceilMult: 1.7}, // ~15g floor, ~43g comfort ceiling at a 25g/day goal
-  freeSugars: {ceilMult: 1.5}                  // no single day above ~1.5x the daily free-sugar share
+  kcal:       {tol: 0.25},                    // any single day within +/-25% of the daily calorie goal
+  protein:    {floorMult: 0.8},               // no single day below 0.8x the daily protein target
+  fiber:      {floorMult: 0.6, ceilMult: 1.7},// ~15g floor, ~43g comfort ceiling at a 25g/day goal
+  freeSugars: {ceilMult: 1.5},                // no day above ~1.5x the daily free-sugar share
+  satFat:     {ceilMult: 1.8}                 // no day above ~1.8x the daily sat-fat share
 };
 
 /* Deterministic, factual "Why Mesa picked this" explanations. */
