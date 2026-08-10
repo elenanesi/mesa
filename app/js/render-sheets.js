@@ -45,6 +45,23 @@ function toggleShop(id, name){
   }
 }
 
+// Drops any per-week checked ("done") entry whose row is no longer on the list — a row
+// the pantry now fully covers (computeShoppingList's fullyCovered) is deleted from
+// list.totals, but its name-keyed tick used to linger and re-cross-off the item when it
+// returned. Reconciles the checked-set against the rows actually rendered (totals +
+// staples). Returns the number of stale ticks removed. Pure: no DOM, no persist.
+function reconcileCheckedShopSet(checked, list){
+  if(!checked || !list) return 0;
+  const visible = {};
+  Object.keys(list.totals || {}).forEach(function(n){ visible[n] = true; });
+  Object.keys(list.staples || {}).forEach(function(n){ visible[n] = true; });
+  let removed = 0;
+  Object.keys(checked).forEach(function(name){
+    if(!visible[name]){ delete checked[name]; removed++; }
+  });
+  return removed;
+}
+
 // Delegated click handler for the shopping list's .shop-item rows (buildShopSheet below).
 // Ingredient NAMES can be user-authored (custom food/recipe names), so rows carry the name
 // only in a data-* attribute (htmlAttr-escaped once by the HTML-attribute parser, never
@@ -65,6 +82,7 @@ function buildShopSheet(){
   currentShopWeekStartDate = weekStartDate; // toggleShop() writes into this week's checked-set
   const list = computeShoppingList(weekStartDate);
   const checked = checkedSetForWeek(weekStartDate);
+  if(reconcileCheckedShopSet(checked, list)) persist();
   const byCat = {};
   Object.keys(list.totals).forEach(function(name){
     const cat = foodCategoryForName(name); // real FOODS[..].cat, no hand-typed map (task C2)

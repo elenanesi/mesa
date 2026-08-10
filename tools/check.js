@@ -743,6 +743,21 @@ function testFoodDetailMarkup(ctx){
 }
 
 /* ---------------- ingredient icon picker (task C5) ---------------- */
+// Defect B regression: a row the pantry fully covers is deleted from list.totals
+// (computeShoppingList, planner.js), but its name-keyed entry in the per-week checked-set
+// used to linger, so the item came back pre-crossed-off. reconcileCheckedShopSet()
+// (render-sheets.js) prunes any checked name that isn't currently a total or a staple.
+function testReconcileCheckedShopSet(ctx){
+  const checked = {Flour: true, Eggs: true, Milk: true};
+  const list = {totals: {Eggs: {qty: 2}}, staples: {Milk: true}};
+  const removed = call(ctx, 'reconcileCheckedShopSet', [checked, list]);
+  assert(removed === 1, 'reconcileCheckedShopSet: prunes the stale (no-longer-listed) ticks and reports the count', String(removed));
+  assert(JSON.stringify(checked) === JSON.stringify({Eggs: true, Milk: true}),
+    'reconcileCheckedShopSet: keeps ticks for rows still on the list (a total and a staple), drops the rest', JSON.stringify(checked));
+  const removedAgain = call(ctx, 'reconcileCheckedShopSet', [checked, list]);
+  assert(removedAgain === 0, 'reconcileCheckedShopSet: idempotent once the checked-set is already reconciled', String(removedAgain));
+}
+
 function testDeletionConfirmation(ctx){
   let asked = '';
   ctx.confirm = function(message){ asked = message; return false; };
@@ -9756,6 +9771,7 @@ function main(){
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
+  runTest('reconcileCheckedShopSet: prunes stale shopping-list ticks (Defect B)', function(){ testReconcileCheckedShopSet(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('composite ingredient UI: save/detail/pantry/persist/D1 guards', function(){ testCompositeIngredientUi(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
