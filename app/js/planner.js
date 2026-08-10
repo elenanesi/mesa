@@ -899,8 +899,19 @@ function markWeekPlanEdited(plan){
   if(plan.weekStartDate === mondayOfWeek(todayISO())) weekPlan = plan;
 }
 
+// Reads through slotLoggedReadOnly (below) rather than slotLogStatus directly: slotLogStatus
+// goes through log.js:getDayLog(), which LAZILY CREATES an empty logHistory record for any
+// date it's asked about (see slotLoggedReadOnly's own doc). loggedSlotLocked's callers
+// (canAutoMutateUnit, preserveLoggedSlots, canApplyTodayRebalanceUnit) all run during plain
+// plan generation/refresh — including autoBalancePlan's enumerateSwapUnits() walk over every
+// (day, slot) of a freshly generated week, and computeShoppingList's read-only path — so
+// going through slotLogStatus here would leave a stray empty day record behind on every one
+// of those, silently growing logHistory (and its sync payload) with no logged data behind
+// it. A date with no logHistory record has nothing logged BY DEFINITION, so
+// slotLoggedReadOnly's "check logHistory[dateISO] first" is exactly equivalent and
+// side-effect-free.
 function loggedSlotLocked(dateISO, person, slot){
-  return typeof slotLogStatus === 'function' && !!slotLogStatus(dateISO, person, slot);
+  return typeof slotLoggedReadOnly === 'function' && slotLoggedReadOnly(dateISO, person, slot);
 }
 
 // Guards preserveLoggedSlots/preservePinnedSlots against resurrecting a recipe that no
@@ -1824,7 +1835,11 @@ function generateWeek(seed){
     console.warn('Mesa planner: generating ' + weekStartDate + ' left ' + emptyPoolPicks +
       ' slot(s) with NO candidate at all — likely diet/avoid filters too strict for this catalog/season.');
   }
-  return {v: 1, weekStartDate: weekStartDate, signature: signature, days: days, emptyPoolCount: emptyPoolPicks};
+  const plan = {v: 1, weekStartDate: weekStartDate, signature: signature, days: days, emptyPoolCount: emptyPoolPicks};
+  // Post-generation balancing pass (see autoBalancePlan's doc, below) — deterministic and
+  // bounded, so this stays a pure function of the same inputs generateWeek already is.
+  autoBalancePlan(plan);
+  return plan;
 }
 
 // task B2: builds every composed breakfast candidate for ONE role:'main' recipe — the
@@ -2390,6 +2405,65 @@ function perDayBalanceState(dayTotals, person){
 function dayBalanceOverall(dayTotals, person){
   const s = perDayBalanceState(dayTotals, person);
   return (s.kcal==='ok' && s.protein==='ok' && s.fiber==='ok' && s.freeSugars==='ok' && s.satFat==='ok') ? 'balanced' : 'off';
+}
+
+// autoBalancePlan (post-generation balancing pass, below): a person's whole-day fiber/
+// free-sugars/sat-fat/kcal/protein totals, summed straight off the assembled plan's raw
+// entries via planEntryNutrition — NOT the display/log-aware view weekDayNutriViews
+// builds, since there's no day log yet on a plan fresh out of generateWeek and this must
+// stay pure/deterministic.
+function personDayNutriTotals(day, person){
+  const totals = {kcal: 0, protein: 0, fiber: 0, freeSugars: 0, satFat: 0};
+  SLOT_ORDER.forEach(function(slot){
+    const m = day.meals[slot];
+    if(!m) return;
+    const nut = planEntryNutrition(m[person]);
+    totals.kcal += nut.kcal; totals.protein += nut.protein; totals.fiber += nut.fiber;
+    totals.freeSugars += nut.freeSugars; totals.satFat += nut.satFat;
+  });
+  return totals;
+}
+
+// Same single-sourced per-day targets perDayBalanceState (above) classifies against —
+// this turns those bands into a continuous "how far off" scalar the greedy pass below can
+// actually optimize (perDayBalanceState only ever reports a discrete state, never a
+// magnitude). Calories/protein are deliberately excluded from the sum: the generator
+// already balances those per day, and autoBalancePlan's own calorie-safe guard (reusing
+// dailyBandState, same rule sideCandidatesForUnit already applies) protects them from ever
+// regressing — this objective is fiber/free-sugars/sat-fat only.
+function dayImbalanceForPerson(dayTotals, person){
+  if(!dayTotals) return 0;
+  const calGoal = (PROF[person] && PROF[person].calGoalNum) || 0;
+  const fiberFloor = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
+  const fiberCeil = fiberFloor * PER_DAY_BANDS.fiber.ceilMult;
+  const sugarCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4) * PER_DAY_BANDS.freeSugars.ceilMult : 0;
+  const satCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.satFat.target / 100) * calGoal / 9) * PER_DAY_BANDS.satFat.ceilMult : 0;
+  let imb = 0;
+  if(fiberFloor > 0 && dayTotals.fiber < fiberFloor){
+    imb += (fiberFloor - dayTotals.fiber) / fiberFloor;
+  } else if(fiberCeil > 0 && dayTotals.fiber > fiberCeil){
+    imb += (dayTotals.fiber - fiberCeil) / fiberCeil;
+  }
+  if(sugarCeil > 0 && dayTotals.freeSugars > sugarCeil){
+    imb += (dayTotals.freeSugars - sugarCeil) / sugarCeil;
+  }
+  if(satCeil > 0 && dayTotals.satFat > satCeil){
+    imb += (dayTotals.satFat - satCeil) / satCeil;
+  }
+  return imb;
+}
+
+// Sum of every tracked person's per-day imbalance across the whole week — the scalar
+// autoBalancePlan (below) greedily drives toward 0 (or as low as the calorie-safe/variety-
+// guarded candidate pool allows within its move budget).
+function planImbalance(plan, people){
+  let total = 0;
+  plan.days.forEach(function(day){
+    people.forEach(function(person){
+      total += dayImbalanceForPerson(personDayNutriTotals(day, person), person);
+    });
+  });
+  return total;
 }
 
 // Pure computation for the Insights screen (task D1 item 4). Every per-day kcal figure is
@@ -3444,6 +3518,279 @@ function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson
     });
   });
   return results;
+}
+
+// Same "never push a day out of its calorie band, and never leave it stuck out" rule
+// sideCandidatesForUnit (above) already applies to its own single-metric what-if search —
+// factored out so autoBalancePlan's fiber/free-sugars/sat-fat pass protects calories the
+// identical way.
+function calorieSafeForPeople(beforeDaily, afterDaily, people){
+  return people.every(function(person){
+    const beforeInBand = beforeDaily[person].inBand;
+    const afterInBand = afterDaily[person].inBand;
+    if(beforeInBand && !afterInBand) return false;
+    if(!beforeInBand && !afterInBand) return false;
+    return true;
+  });
+}
+
+// Variety guard for autoBalancePlan's SWAP candidates: every main recipeId already planned
+// for any of `unitPeople` on any OTHER (day, slot) this week — swapping in an id already
+// used elsewhere would trade a fiber/sugar/sat-fat fix for a repeat the generator itself
+// would never have produced.
+function autoBalanceUsedMainIds(plan, unit, unitPeople){
+  const used = {};
+  plan.days.forEach(function(day, di){
+    SLOT_ORDER.forEach(function(slot){
+      if(di === unit.dayIndex && slot === unit.slot) return;
+      const m = day.meals[slot];
+      if(!m) return;
+      unitPeople.forEach(function(person){
+        const id = m.shared ? m.recipeId : (m[person] && m[person].recipeId);
+        if(id) used[id] = true;
+      });
+    });
+  });
+  return used;
+}
+
+// applySwapToPlan/addSideToPlan stamp Date.now() onto the entry/cell they touch (the real
+// swap-sheet's sync.js:mergePlansSection conflict marker) — exactly what a freshly
+// generated plan must never carry. generateWeek is otherwise zero-Date.now/zero-
+// Math.random by design (two independent calls with the same inputs must stay byte-
+// identical regardless of wall-clock time — see testRecipeOptions' D2 determinism check),
+// and autoBalancePlan runs entirely inside generation, before the plan is ever handed to a
+// user, so it scrubs every stamp its own moves introduce right back off.
+function autoBalanceStripStamps(plan, unit){
+  const m = plan.days[unit.dayIndex].meals[unit.slot];
+  delete m.t;
+  if(m.elena) delete m.elena.t;
+  if(m.partner) delete m.partner.t;
+}
+
+// Deterministic tie-break for autoBalancePlan's greedy step: the strictly-most-improving
+// move wins outright; ties break by lowest unit index in enumerateSwapUnits() order, then
+// 'addSide' before 'swap', then lowest candidate recipe id (string compare) — fixed order,
+// no Math.random/Date.now, so the same plan always resolves the same way.
+function autoBalanceCandidateBetter(a, b){
+  if(a.improvement > b.improvement + 1e-9) return true;
+  if(b.improvement > a.improvement + 1e-9) return false;
+  if(a.unitIndex !== b.unitIndex) return a.unitIndex < b.unitIndex;
+  if(a.kind !== b.kind) return a.kind === 'addSide';
+  return a.candId < b.candId;
+}
+
+// dailyBandState()[dayIndex]'s exact per-day computation (dailyTotalsForPlan + calBand),
+// scoped to a single day object instead of the whole plan — autoBalancePlan evaluates one
+// day per candidate move, so recomputing all 7 days' band state (and, via dailyBandState's
+// dailyTotalsForPlan, re-walking every OTHER day's nutrition) for every candidate would be
+// wasted work. Numerically identical to dailyBandState(plan)[dayIndex] for that same day.
+function autoBalanceDayBand(day){
+  const totals = {
+    elena: SLOT_ORDER.reduce(function(sum, slot){ return sum + planEntryNutrition(day.meals[slot].elena).kcal; }, 0),
+    partner: SLOT_ORDER.reduce(function(sum, slot){ return sum + planEntryNutrition(day.meals[slot].partner).kcal; }, 0)
+  };
+  const state = {};
+  ['elena', 'partner'].forEach(function(person){
+    const band = calBand(PROF[person]);
+    state[person] = {total: totals[person], min: band[0], max: band[1], inBand: totals[person] >= band[0] && totals[person] <= band[1]};
+  });
+  return state;
+}
+
+// data/validate.js's own per-slot kcal band, at the SAME +/-20% tolerance
+// testComposedMeals (tools/check.js) holds every full AND composed pick to — reused here so
+// autoBalancePlan can never accept a move that lands a unit outside the same tolerance the
+// generator's own picks are already held to (applySwapToPlan re-portions to roughly track
+// the old kcal, but addSideToPlan just appends a side's calories on top with no
+// re-portioning, so this has to be checked explicitly rather than assumed).
+const AUTO_BALANCE_KCAL_TOLERANCE = 0.20;
+function autoBalanceSlotKcalSafe(unit, trialDay){
+  const band = KCAL_BAND[unit.slot];
+  if(!band) return true;
+  const m = trialDay.meals[unit.slot];
+  const entries = unit.shared ? [m.elena, m.partner] : [m[unit.person]];
+  return entries.every(function(entry){
+    if(!entry || !entry.recipeId) return true;
+    const kcal = planEntryNutrition(entry).kcal;
+    return kcal >= band[0] * (1 - AUTO_BALANCE_KCAL_TOLERANCE) && kcal <= band[1] * (1 + AUTO_BALANCE_KCAL_TOLERANCE);
+  });
+}
+
+// Lunch/dinner's composition contract (mealStructureForRecipe's doc, above) only holds for
+// the whole unit, not any candidate that merely fits the slot — candidatesFor()'s raw pool
+// includes role:'side' ids (valid as an EXTRA, never as the main dish) alongside role:'main'/
+// 'full' ids, and applySwapToPlan always carries the unit's existing extras over onto
+// whatever id it swaps in. So a lunch/dinner SWAP has to stay within whichever shape the
+// unit already is: a composed unit (extras present) may only swap its role:'main' dish
+// (keeping the carb/veg extras that make it complete — mirrors pickSharedMeal/pickSoloMeal's
+// own mainIds filter, above); a standalone unit (no extras) may only swap to another
+// role:'full' complete recipe (mirrors their fullIds filter) — never to a bare main or side,
+// which would leave the slot without its required protein/carb/veg composition.
+function autoBalanceSwapCandidateIds(unit, rawIds, hasExtras){
+  if(unit.slot !== 'lunch' && unit.slot !== 'dinner') return rawIds;
+  return rawIds.filter(function(id){
+    const r = RECIPES_DB[id];
+    if(!r) return false;
+    return hasExtras ? (r.role === 'main' && isProteinMain(id)) : (r.role === 'full' && isCompleteLunchDinnerRecipe(id));
+  });
+}
+
+// Whole-week red/poultry/total lunch-dinner meat counts for one person, straight off the
+// assembled plan — the generation-time equivalent (history[person].meatUse, built
+// incrementally by recordDayUsage as picks are made) no longer exists once generateWeek has
+// returned its picks, so autoBalancePlan re-derives the same counts from the finished plan.
+function autoBalanceMeatCounts(plan, person){
+  const counts = {red: 0, poultry: 0, total: 0};
+  plan.days.forEach(function(day){
+    ['lunch', 'dinner'].forEach(function(slot){
+      const m = day.meals[slot];
+      const entry = m && m[person];
+      if(!entry || !entry.recipeId) return;
+      const kind = entryProteinKind(entry);
+      if(kind === 'red' || kind === 'poultry'){ counts[kind]++; counts.total++; }
+    });
+  });
+  return counts;
+}
+
+// MEAT_WEEK_LIMITS (above) is a GENERATION-time rule (applyLunchDinnerMainRules), invisible
+// to autoBalancePlan's post-generation moves unless re-checked explicitly — never REGRESS
+// it: a move that would push any category from at-or-under its weekly cap to over, or push
+// an already-over category even further over, is rejected; a move that holds steady or
+// improves an already-over category is fine (never blocks the pass from making things
+// better, only from making them worse). `meatBefore` is the per-person counts on the
+// UNMUTATED plan at the start of this step (computed once, reused by every candidate).
+function autoBalanceMeatSafe(unit, unitPeople, oldEntry, newEntry, meatBefore){
+  if(unit.slot !== 'lunch' && unit.slot !== 'dinner') return true;
+  const oldKind = entryProteinKind(oldEntry);
+  const newKind = entryProteinKind(newEntry);
+  if(oldKind === newKind) return true;
+  return unitPeople.every(function(person){
+    const before = meatBefore[person];
+    let red = before.red, poultry = before.poultry, total = before.total;
+    if(oldKind === 'red') red--; else if(oldKind === 'poultry') poultry--;
+    if(oldKind === 'red' || oldKind === 'poultry') total--;
+    if(newKind === 'red') red++; else if(newKind === 'poultry') poultry++;
+    if(newKind === 'red' || newKind === 'poultry') total++;
+    if(red > MEAT_WEEK_LIMITS.red && red > before.red) return false;
+    if(poultry > MEAT_WEEK_LIMITS.poultry && poultry > before.poultry) return false;
+    if(total > MEAT_WEEK_LIMITS.total && total > before.total) return false;
+    return true;
+  });
+}
+
+// Post-generation balancing pass — called once at the end of generateWeek, right before it
+// returns. The generator already balances calories and protein per day, but fiber/free-
+// sugars/sat-fat are only weekly-averaged, so an individual day can still land light or
+// rich on them. This bounded, deterministic greedy search nudges those days back toward
+// their bands using the exact same feasibility-checked swap/side machinery the manual
+// re-balance features (proposeRebalanceSuggestions/proposeTodayRebalanceSuggestions, above)
+// already use — just optimizing planImbalance (every tracked day x person) instead of a
+// single worst weekly metric, and guarded so it can only ever help:
+//   - every accepted move strictly lowers planImbalance (MAX_MOVES bounds the loop, so it
+//     always terminates even if it never reaches exactly 0)
+//   - every accepted move is calorie-safe (calorieSafeForPeople — never pushes a day's
+//     calories out of band, never leaves one stuck out)
+//   - every accepted move keeps the unit's combined kcal within the same slot-band
+//     tolerance the generator's own picks are held to (autoBalanceSlotKcalSafe — addSideToPlan
+//     in particular just appends a side's calories with no re-portioning of its own)
+//   - a lunch/dinner unit's composition contract is preserved (autoBalanceSwapCandidateIds —
+//     a composed unit only swaps its role:'main' dish, a standalone unit only swaps to
+//     another role:'full' complete recipe; candidatesFor()'s raw pool includes role:'side'
+//     ids that are only ever valid as an extra, never as the main dish)
+//   - the household's weekly red/poultry/total meat caps never regress (autoBalanceMeatSafe —
+//     MEAT_WEEK_LIMITS is otherwise a generation-time-only rule, invisible to a post-
+//     generation swap)
+//   - swap candidates respect a variety guard (autoBalanceUsedMainIds — never swap in an id
+//     already used elsewhere this week for the affected person(s)) on top of the existing
+//     avoid-list/diet filtering candidatesFor()/sidePoolFor() already do
+// Fixed iteration order (enumerateSwapUnits' day-then-slot order, candidatesFor/sidePoolFor's
+// sorted-id order) plus the deterministic tie-break above — no Math.random, no Date.now
+// (autoBalanceStripStamps scrubs the stamps applySwapToPlan/addSideToPlan leave behind) — so
+// calling generateWeek() twice with the same inputs stays byte-identical, same as before
+// this pass existed.
+function autoBalancePlan(plan){
+  // Test-only escape hatch (MESA_TEST_TODAY, state.js, is the same convention): lets
+  // tools/check.js capture the pre-pass plan generateWeek would otherwise have produced, to
+  // compare against the real (pass-enabled) output — never set outside a test sandbox, so
+  // production generation always runs the pass.
+  if(typeof MESA_TEST_DISABLE_AUTO_BALANCE !== 'undefined' && MESA_TEST_DISABLE_AUTO_BALANCE) return plan;
+  const people = isSoloHousehold() ? ['elena'] : ['elena', 'partner'];
+  const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
+  const MAX_MOVES = 24;
+  for(let step = 0; step < MAX_MOVES; step++){
+    // Per-day imbalance, computed once per step — both the prune ("only consider units in
+    // days currently contributing imbalance") and the O(1 day) delta every candidate below
+    // is scored against (base - dayImb[unit.dayIndex] + <that day's trial imbalance>,
+    // instead of re-walking all 7 days' nutrition per candidate).
+    const dayImb = plan.days.map(function(day){
+      return people.reduce(function(sum, person){ return sum + dayImbalanceForPerson(personDayNutriTotals(day, person), person); }, 0);
+    });
+    const base = dayImb.reduce(function(a, b){ return a + b; }, 0);
+    if(base <= 1e-9) break;
+    const dailyBefore = dailyBandState(plan);
+    // Meat-cap counts, once per step (not per candidate) — same non-regression baseline
+    // autoBalanceMeatSafe compares every lunch/dinner candidate's kind-delta against.
+    const meatBefore = {elena: autoBalanceMeatCounts(plan, 'elena'), partner: autoBalanceMeatCounts(plan, 'partner')};
+    const units = enumerateSwapUnits(plan);
+    let best = null;
+    units.forEach(function(unit, unitIndex){
+      if(dayImb[unit.dayIndex] <= 1e-9) return;
+      const unitPeople = unit.shared ? ['elena', 'partner'] : [unit.person];
+      const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+      const m = plan.days[unit.dayIndex].meals[unit.slot];
+      const currentEntry = unit.shared ? m.elena : m[unit.person];
+      const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
+      const currentId = unit.shared ? m.recipeId : m[unit.person].recipeId;
+
+      // Structural-sharing trial: clone only the ONE day this unit's move touches (every
+      // other index keeps its original day reference) instead of deep-cloning the whole
+      // 7-day plan per candidate — applySwapToPlan/addSideToPlan only ever mutate
+      // trial.days[unit.dayIndex].meals[unit.slot], so this is exactly as isolated as a
+      // full deepClone(plan) would be, just far cheaper across the many candidates tried
+      // per unit.
+      function consider(kind, candId, apply){
+        const trialDay = deepClone(plan.days[unit.dayIndex]);
+        const trial = {weekStartDate: plan.weekStartDate, days: plan.days.slice()};
+        trial.days[unit.dayIndex] = trialDay;
+        apply(trial);
+        autoBalanceStripStamps(trial, unit);
+        const newDayImb = people.reduce(function(sum, person){ return sum + dayImbalanceForPerson(personDayNutriTotals(trialDay, person), person); }, 0);
+        const trialImbalance = base - dayImb[unit.dayIndex] + newDayImb;
+        if(!(trialImbalance < base - 1e-9)) return;
+        const dailyAfter = autoBalanceDayBand(trialDay);
+        if(!calorieSafeForPeople(dailyBefore[unit.dayIndex], dailyAfter, unitPeople)) return;
+        if(!autoBalanceSlotKcalSafe(unit, trialDay)) return;
+        const newEntry = unit.shared ? trialDay.meals[unit.slot].elena : trialDay.meals[unit.slot][unit.person];
+        if(!autoBalanceMeatSafe(unit, unitPeople, currentEntry, newEntry, meatBefore)) return;
+        const candidate = {unitIndex: unitIndex, kind: kind, candId: candId, improvement: base - trialImbalance, trial: trial};
+        if(!best || autoBalanceCandidateBetter(candidate, best)) best = candidate;
+      }
+
+      // (a) ADD SIDE — the same avoid/season-filtered role:'side' pool sideCandidatesForUnit
+      // draws from, excluding whatever's already the main or an extra in this unit.
+      sidePoolFor(avoidL, unitPeople).filter(function(id){
+        return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
+      }).forEach(function(sideId){
+        consider('addSide', sideId, function(trial){ addSideToPlan(trial, unit, sideId); });
+      });
+
+      // (b) SWAP — the same avoid/diet-filtered style pool candidatesFor() draws from,
+      // narrowed to the unit's composition contract (autoBalanceSwapCandidateIds) and the
+      // variety guard, excluding the current main.
+      const usedElsewhere = autoBalanceUsedMainIds(plan, unit, unitPeople);
+      const rawSwapIds = candidatesFor(unit.slot, styleKey, avoidL, unitPeople);
+      autoBalanceSwapCandidateIds(unit, rawSwapIds, currentExtras.length > 0).filter(function(id){
+        return id !== currentId && !usedElsewhere[id];
+      }).forEach(function(candId){
+        consider('swap', candId, function(trial){ applySwapToPlan(trial, unit, candId); });
+      });
+    });
+    if(!best) break;
+    plan.days = best.trial.days;
+  }
+  return plan;
 }
 
 function todayRebalanceDayIndex(plan, dateISO){

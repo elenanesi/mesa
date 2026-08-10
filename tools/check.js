@@ -4513,6 +4513,84 @@ function testPerDayBalanceState(ctx){
   assert(overallOffSatFat === 'off', 'dayBalanceOverall: sat fat alone out of band is enough to make the day "off"', overallOffSatFat);
 }
 
+/* ---------------- post-generation balancing pass (autoBalancePlan) ----------------
+   generateWeek() already balances calories/protein per day; fiber/free-sugars/sat-fat were
+   only weekly-averaged, so an individual day could land light or rich on them even though
+   the week as a whole looked fine. autoBalancePlan (planner.js), called at the very end of
+   generateWeek, is a bounded/deterministic greedy swap-or-add-side search that nudges those
+   days back toward their bands.
+
+   MESA_TEST_DISABLE_AUTO_BALANCE (same test-only-escape-hatch convention as MESA_TEST_TODAY)
+   lets this suite capture the PRE-pass plan generateWeek would otherwise have produced, from
+   the exact same inputs (weekStartDate + signature), so "before" and "after" are two
+   generations of the identical week — not two different weeks/signatures. */
+function testAutoBalancePlan(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+  const sig = call(ctx, 'computePlanSignature', []);
+
+  run(ctx, 'weekPlans = {}; weekPlan = null; MESA_TEST_DISABLE_AUTO_BALANCE = true;');
+  const rawPlan = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sig}]);
+
+  run(ctx, 'weekPlans = {}; weekPlan = null; MESA_TEST_DISABLE_AUTO_BALANCE = false;');
+  const balancedPlan = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sig}]);
+
+  const people = call(ctx, 'isSoloHousehold', []) ? ['elena'] : ['elena', 'partner'];
+
+  // (1) The pass never makes the week's fiber/free-sugars/sat-fat imbalance worse.
+  const beforeImbalance = call(ctx, 'planImbalance', [rawPlan, people]);
+  const afterImbalance = call(ctx, 'planImbalance', [balancedPlan, people]);
+  assert(afterImbalance <= beforeImbalance + 1e-9,
+    'autoBalancePlan: never increases planImbalance for a freshly generated week',
+    'before=' + beforeImbalance.toFixed(4) + ' after=' + afterImbalance.toFixed(4));
+
+  // (2) At least as many (day, person) slots read dayBalanceOverall === 'balanced' afterward.
+  function balancedDayPersonCount(plan){
+    let n = 0;
+    plan.days.forEach(function(day){
+      people.forEach(function(person){
+        const totals = call(ctx, 'personDayNutriTotals', [day, person]);
+        if(call(ctx, 'dayBalanceOverall', [totals, person]) === 'balanced') n++;
+      });
+    });
+    return n;
+  }
+  const beforeBalancedCount = balancedDayPersonCount(rawPlan);
+  const afterBalancedCount = balancedDayPersonCount(balancedPlan);
+  const totalSlots = 7 * people.length;
+  assert(afterBalancedCount >= beforeBalancedCount,
+    'autoBalancePlan: at least as many (day, person) slots are dayBalanceOverall "balanced" after the pass as before it',
+    'before=' + beforeBalancedCount + '/' + totalSlots + ' after=' + afterBalancedCount + '/' + totalSlots);
+
+  // (3) Calorie-safety: the pass never pushes a day that was calorie-in-band out of band —
+  // the same guarantee autoBalancePlan's own calorieSafeForPeople guard is supposed to give.
+  const rawBand = call(ctx, 'dailyBandState', [rawPlan]);
+  const balancedBand = call(ctx, 'dailyBandState', [balancedPlan]);
+  const calorieRegressions = [];
+  rawBand.forEach(function(day, di){
+    people.forEach(function(person){
+      if(day[person].inBand && !balancedBand[di][person].inBand) calorieRegressions.push(di + '/' + person);
+    });
+  });
+  assert(calorieRegressions.length === 0,
+    'autoBalancePlan: never pushes a day that was calorie-in-band out of band',
+    calorieRegressions.join(', '));
+
+  // (4) Determinism: a second, independent generateWeek() call against the same inputs (pass
+  // enabled) stays byte-identical — the pass introduces no Math.random/Date.now leakage.
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+  const balancedPlan2 = call(ctx, 'generateWeek', [{weekStartDate: FIXED_MONDAY, signature: sig}]);
+  assert(JSON.stringify(balancedPlan) === JSON.stringify(balancedPlan2),
+    'autoBalancePlan: deterministic — two independent generateWeek() calls with the pass enabled stay byte-identical',
+    'lenA=' + JSON.stringify(balancedPlan).length + ' lenB=' + JSON.stringify(balancedPlan2).length);
+
+  console.log('[autoBalancePlan demo week ' + FIXED_MONDAY + '] planImbalance before=' + beforeImbalance.toFixed(4) +
+    ' after=' + afterImbalance.toFixed(4) + ' | balanced (day,person) slots before=' + beforeBalancedCount + '/' + totalSlots +
+    ' after=' + afterBalancedCount + '/' + totalSlots);
+
+  run(ctx, 'MESA_TEST_DISABLE_AUTO_BALANCE = false; weekPlans = {}; weekPlan = null;');
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -9927,6 +10005,7 @@ function main(){
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });
+  runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });
