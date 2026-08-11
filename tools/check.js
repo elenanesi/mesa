@@ -6007,15 +6007,52 @@ function testRecipeOptions(ctx){
     const poolShellfishAvoid = call(ctx, 'candidatesFor', ['dinner', 'balanced', ['shellfish']]);
     assert(poolShellfishAvoid.indexOf(FIXTURE_ALL_SHELLFISH_ID) === -1,
       'candidatesFor: a recipe with a zero-allowed-choices group drops from the pool entirely once the avoid-list is applied', '');
+
+    // task (variant-fit planner): viableRecipeOptionCombos returns [] (not a combo
+    // missing the exhausted group) once a group has zero allowed choices — checked here,
+    // still inside this IIFE, before FIXTURE_ALL_SHELLFISH_ID is deleted below.
+    const combosAllExcluded = call(ctx, 'viableRecipeOptionCombos', [FIXTURE_ALL_SHELLFISH_ID, ['shellfish'], []]);
+    assert(Array.isArray(combosAllExcluded) && combosAllExcluded.length === 0,
+      'viableRecipeOptionCombos: a group with zero allowed choices under the avoid-list yields zero combos, not a partial one', JSON.stringify(combosAllExcluded));
+
     run(ctx, "delete RECIPES_DB['" + FIXTURE_ALL_SHELLFISH_ID + "'];");
+  })();
+
+  // -------- (6b) task (variant-fit planner): viableRecipeOptionCombos — one combo per
+  // viable choice-per-group, cartesian across groups, deterministic order; recipes
+  // without optionGroups resolve to the single default combo {}. --------
+  (function(){
+    const combosNoAvoid = call(ctx, 'viableRecipeOptionCombos', [FIXTURE_ID, [], []]);
+    assert(Array.isArray(combosNoAvoid) && combosNoAvoid.length === 6,
+      'viableRecipeOptionCombos: a known optionGroups recipe (3 protein choices x 2 carb choices, no avoid-list) returns MORE THAN ONE combo (6, the full cartesian product)',
+      JSON.stringify(combosNoAvoid));
+    const expectedCombosNoAvoid = [
+      {protein: 'cod', carb: 'potato'}, {protein: 'cod', carb: 'rice'},
+      {protein: 'prawns', carb: 'potato'}, {protein: 'prawns', carb: 'rice'},
+      {protein: 'salmon', carb: 'potato'}, {protein: 'salmon', carb: 'rice'}
+    ];
+    assert(JSON.stringify(combosNoAvoid) === JSON.stringify(expectedCombosNoAvoid),
+      'viableRecipeOptionCombos: deterministic order — cartesian product across groups in authored order, each group\'s own choices already sorted by id (allowedChoicesForGroup\'s tie-break)',
+      JSON.stringify(combosNoAvoid));
+
+    const combosShellfishAvoid = call(ctx, 'viableRecipeOptionCombos', [FIXTURE_ID, ['shellfish'], []]);
+    assert(combosShellfishAvoid.length === 4 && combosShellfishAvoid.every(function(c){ return c.protein !== 'prawns'; }),
+      'viableRecipeOptionCombos: an avoid-list drops the excluded choice from every combo it would have appeared in (shellfish -> no "prawns" protein, 2x2=4 combos left)',
+      JSON.stringify(combosShellfishAvoid));
+
+    const combosNoOptions = call(ctx, 'viableRecipeOptionCombos', ['yogurt', [], []]);
+    assert(JSON.stringify(combosNoOptions) === JSON.stringify([{}]),
+      'viableRecipeOptionCombos: a recipe without optionGroups always resolves to exactly one combo, {} — unchanged, so it stays the sole "default" candidate pickSharedMeal/pickSoloMeal score it against',
+      JSON.stringify(combosNoOptions));
   })();
 
   // -------- (7) planner wiring end-to-end: pickSoloMeal/pickSharedMeal, called directly
   // with a single-candidate pool (so the fixture is guaranteed to win — this isolates the
   // opts-assignment wiring from the unrelated kcal/protein scoring competition against the
-  // real 30+ recipe catalog), actually store the rotated combo on entry.opts, agree with
-  // chosenOptsForRecipe() called with the same inputs, and are deterministic across two
-  // calls. --------
+  // real 30+ recipe catalog), actually store the BEST-FIT combo (task: variant-fit
+  // planner — every viable combo is scored on its own real kcal/protein, not always the
+  // default, and NOT a chosenOptsForRecipe() rotation re-roll after the fact) on
+  // entry.opts, and are deterministic across two calls. --------
   (function(){
     function freshHistory(){
       const h = {};
@@ -6044,10 +6081,27 @@ function testRecipeOptions(ctx){
       'pickSoloMeal: two calls with identical inputs produce a byte-identical entry (incl. .opts)', JSON.stringify(soloEntry1) + ' vs ' + JSON.stringify(soloEntry2));
     assert(soloEntry1.recipeId === FIXTURE_ID && !!soloEntry1.opts,
       'pickSoloMeal: the single-candidate pool is picked and its entry carries an .opts field', JSON.stringify(soloEntry1));
-    const expectedSoloOpts = call(ctx, 'chosenOptsForRecipe', [fixtureRecipe, weekSeed, 3, 2, []]);
+    // task (variant-fit planner): entry.opts is no longer a chosenOptsForRecipe() rotation
+    // re-roll — it's whichever of the 6 viable combos (3 protein choices x 2 carb
+    // choices, avoidList=[] so nothing is excluded) scores best against THIS pick's
+    // desired kcal. desired = SLOT_WEIGHT.snack(0.10) * remainingKcalP(600) / remainingWeight(1)
+    // = 60kcal; snack's maxPortion=1.5 means bestPortion floors at PORTION_STEPS[0]=0.5,
+    // so every combo's error is |combo's 4/4/9-recomputed 1x kcal * 0.5 - 60|. Hand-summed
+    // from the fixture's real ingredients against data/foods.js: cod (78kcal/100g) is the
+    // leanest of the 3 protein choices, and potato (77kcal/100g raw, 150g -> 115.5kcal) is
+    // far lower-kcal than rice (355kcal/100g dry, 100g) — cod+potato totals ~276.6kcal, the
+    // closest of all 6 combos to 60kcal at the 0.5x floor (err ~78.3, vs cod+rice's ~198,
+    // and every salmon/prawns combo is even further off), so it wins on kcal-fit alone —
+    // all 6 combos clear the 3g desiredProtein by a wide margin at 0.5x, so proteinShort
+    // never separates them.
+    const expectedSoloOpts = {protein: 'cod', carb: 'potato'};
     assert(JSON.stringify(soloEntry1.opts) === JSON.stringify(expectedSoloOpts),
-      'pickSoloMeal: entry.opts matches chosenOptsForRecipe() called with the same (weekSeed, dayIndex, slotIndex, avoidList=PROF.elena.avoid)',
+      'pickSoloMeal: entry.opts is the combo that best fits this pick\'s desired kcal (hand-verified against data/foods.js), not the default or a rotated pick',
       'got=' + JSON.stringify(soloEntry1.opts) + ' expected=' + JSON.stringify(expectedSoloOpts));
+    const defaultCombo = call(ctx, 'normalizeRecipeOpts', [fixtureRecipe, null]);
+    assert(JSON.stringify(soloEntry1.opts) !== JSON.stringify(defaultCombo),
+      'pickSoloMeal: a generated/picked entry CAN carry a non-default opts combo when a variant fits the slot better (this pick\'s winning combo != {protein:"salmon",carb:"rice"})',
+      'got=' + JSON.stringify(soloEntry1.opts) + ' default=' + JSON.stringify(defaultCombo));
 
     ctx.__savedElenaAvoid2__ = get(ctx, 'PROF.elena.avoid');
     ctx.__savedPartnerAvoid__ = get(ctx, 'PROF.partner.avoid');

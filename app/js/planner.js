@@ -653,6 +653,13 @@ function recipeOptionsViable(recipe, avoidList, dietList){
 // for this pick, i.e. after recipeOptionsViable(recipe, avoidList) gated the pool the
 // recipe came from — every group is expected to have >=1 allowed choice; returns null
 // (defensive, shouldn't happen given that gate) if one doesn't.
+// NOTE (variant-fit planner task): pickSharedMeal/pickSoloMeal no longer call this to
+// choose the FINAL opts for a winning candidate — they now score every viable combo
+// (viableRecipeOptionCombos below) and keep whichever one actually fit the slot, so the
+// combo on a generated entry is never a rotation re-roll after the fact. This function
+// stays: it is still exercised directly by tools/check.js's rotation/avoid-respect tests,
+// and remains available as a pure "rotate through the choices" helper for any future
+// caller (e.g. a recipe-screen "surprise me" control) that wants variety instead of fit.
 function chosenOptsForRecipe(recipe, weekSeed, dayIndex, slotIndex, avoidList, dietList){
   if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return null;
   const opts = {};
@@ -665,6 +672,56 @@ function chosenOptsForRecipe(recipe, weekSeed, dayIndex, slotIndex, avoidList, d
     opts[group.key] = allowed[idx].id;
   }
   return opts;
+}
+
+// task (variant-fit planner): every VIABLE {groupKey: choiceId} combo for a recipe's
+// optionGroups — one choice per group, cartesian-producted across groups in AUTHORED
+// group order, each group's choices already sorted by id (allowedChoicesForGroup's own
+// tie-break) — so the returned array is in a fixed, deterministic order for a given
+// (recipeId, avoidList, dietList). Reuses allowedChoicesForGroup rather than re-deriving
+// avoid/diet viability — the exact per-choice gate recipeOptionsViable/
+// chosenOptsForRecipe already use, so a choice excluded there is excluded here too. A
+// recipe without optionGroups (or an empty optionGroups array) has exactly one "combo":
+// {} — the same empty-opts shape normalizeRecipeOpts/recipeEffectiveIngredients already
+// treat as "use the defaults", so pickSharedMeal/pickSoloMeal need no options-less
+// special case to stay byte-identical for the common case. If a group has zero allowed
+// choices under this avoid/diet-list (the whole recipe should already have been excluded
+// by candidatesFor()'s recipeOptionsViable gate before this is ever reached from there),
+// this returns [] — an empty result a caller's .forEach() simply skips, rather than a
+// combo silently missing that group.
+function viableRecipeOptionCombos(recipeId, avoidList, dietList){
+  const r = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[recipeId] : undefined;
+  if(!r || !Array.isArray(r.optionGroups) || !r.optionGroups.length) return [{}];
+  let combos = [{}];
+  for(let i = 0; i < r.optionGroups.length; i++){
+    const group = r.optionGroups[i];
+    if(!group || typeof group.key !== 'string') continue;
+    const allowed = allowedChoicesForGroup(group, avoidList, dietList);
+    if(!allowed.length) return [];
+    const next = [];
+    combos.forEach(function(combo){
+      allowed.forEach(function(choice){
+        const c = Object.assign({}, combo);
+        c[group.key] = choice.id;
+        next.push(c);
+      });
+    });
+    combos = next;
+  }
+  return combos;
+}
+
+// Deterministic string key for an opts combo — keys sorted so key ORDER never affects the
+// signature, '' for {}/null (an options-less recipe's one-and-only "combo"). Used only to
+// keep pickSharedMeal/pickSoloMeal's final tie-break (`c.tieId < best.tieId`) meaningful
+// now that a single recipe can contribute one candidate PER viable combo instead of
+// exactly one — an options-less recipe's tieId is untouched ('' appends nothing), so its
+// candidates stay byte-identical to pre-variant-fit output.
+function optsComboSignature(opts){
+  if(!opts) return '';
+  const keys = Object.keys(opts).sort();
+  if(!keys.length) return '';
+  return keys.map(function(k){ return k + '=' + opts[k]; }).join(',');
 }
 
 // Decisions Q2 whitelist (breads + fruit) — FOODS[id].breakfastPair === true — filtered by
@@ -1899,15 +1956,23 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   // computed this further down for the composed-pair pools) so the final opts-rotation
   // step after `best` is picked can use it regardless of slot, snack included.
   const avoidBoth = unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []);
+  // task (variant-fit planner): same reasoning as avoidBoth above — hoisted so every
+  // combos lookup below (snack included) shares one computation.
+  const dietBoth = unionDiets(['elena', 'partner']);
 
-  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams},
+  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams}, opts,
   //              portionE, portionA, kcalE, kcalA, proteinE, proteinA,
   //              totalsE, totalsA (task C2, 2026-07-18: per-person combined-unit nutrition
   //              fed to tuningBonus() below — {protein,fiber,freeSugars,fat,satFat,hasOmega3})}
+  // task (variant-fit planner): `opts` is the combo THIS candidate was scored with
+  // (recipeNutrition(id, 1, opts), never always the default) — carried through so the
+  // eventual winner's opts is exactly the combo whose numbers won, not a rotation re-roll
+  // after the fact (see viableRecipeOptionCombos/optsComboSignature above).
   const candidates = [];
-  function pushFull(id, base, bpE, bpA){
+  function pushFull(id, base, bpE, bpA, opts){
     const hasO3 = recipeHasOmega3(id);
-    candidates.push({tieId: id, mainId: id, extra: null,
+    const sig = optsComboSignature(opts);
+    candidates.push({tieId: id + (sig ? '|opts:' + sig : ''), mainId: id, extra: null, opts: opts,
       portionE: bpE.portion, portionA: bpA.portion,
       kcalE: bpE.kcal, kcalA: bpA.kcal,
       proteinE: base.protein * bpE.portion, proteinA: base.protein * bpA.portion,
@@ -1919,57 +1984,67 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // Snack never composes — every id in the pool (any role) is a standalone pick,
     // exactly today's behavior (B2 tagging handoff).
     pool.forEach(function(id){
-      const base = dbBaseNutrition(id);
-      const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
-      const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
-      pushFull(id, base, bpE, bpA);
+      // task (variant-fit planner): one candidate per viable combo — [{}] for a recipe
+      // without optionGroups, so this loop still runs exactly once per id there, byte-
+      // identical to before.
+      viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
+        const base = recipeNutrition(id, 1, opts).totals;
+        const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+        const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+        pushFull(id, base, bpE, bpA, opts);
+      });
     });
   } else {
     const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); });
     const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); });
     fullIds.forEach(function(id){
-      const base = dbBaseNutrition(id);
-      const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
-      const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
-      pushFull(id, base, bpE, bpA);
+      viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
+        const base = recipeNutrition(id, 1, opts).totals;
+        const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+        const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+        pushFull(id, base, bpE, bpA, opts);
+      });
     });
 
     if(slot === 'breakfast'){
       const foodPoolRaw = breakfastPairFoodIds(avoidBoth);
       const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history.elena.bfPairUse[dayIndex - 1], history.partner.bfPairUse[dayIndex - 1]], [history.elena.dayUseFood[dayIndex], history.partner.dayUseFood[dayIndex]]);
       mainIds.forEach(function(id){
-        const base = dbBaseNutrition(id);
-        const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
-        const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
-        pushFull(id, base, bpE, bpA); // standalone role:'main' breakfast remains legal
-        // Paired candidates need each person's OWN kcal/protein total, but the extra
-        // (food+grams) must be the SAME for both (shared dish) — build each side's totals
-        // per person, then only keep candidates where both persons' step search picked the
-        // same food (grams may differ per person's remaining gap; see below).
-        pushBreakfastPairCandidates(function(tieId, kcalE, proteinE, extraE){
-          // Re-run the same food's step search against Elena's target to get her totals,
-          // and against Andrea's target for his — both share `extraE.foodId`, but each
-          // person's grams are chosen independently against their own desired kcal (same
-          // convention lunch/dinner's shared side-portion-but-per-person-main uses).
-          let bestStepA = null;
-          foodPairingSteps(extraE.foodId).forEach(function(grams){
-            const m = foodMacros(extraE.foodId, grams);
-            const err = Math.abs(bpA.kcal + m.kcal - desiredA);
-            const better = !bestStepA || err < bestStepA.err - 1e-9 || (Math.abs(err - bestStepA.err) <= 1e-9 && grams < bestStepA.grams);
-            if(better) bestStepA = {grams: grams, kcal: m.kcal, protein: m.protein, err: err};
-          });
-          const hasO3 = recipeHasOmega3(id); // extra here is a plain FOOD, never counts toward omega3
-          const foodMacrosE = foodMacros(extraE.foodId, extraE.grams);
-          const foodMacrosA = foodMacros(extraE.foodId, bestStepA.grams);
-          candidates.push({
-            tieId: tieId, mainId: id, extra: {foodId: extraE.foodId, gramsE: extraE.grams, gramsA: bestStepA.grams},
-            portionE: bpE.portion, portionA: bpA.portion,
-            kcalE: kcalE, kcalA: bpA.kcal + bestStepA.kcal,
-            proteinE: proteinE, proteinA: base.protein * bpA.portion + bestStepA.protein,
-            totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bpE.portion), foodMacrosE), hasO3),
-            totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bpA.portion), foodMacrosA), hasO3)
-          });
-        }, id, base, bpE, desiredE, foodPool);
+        viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
+          const base = recipeNutrition(id, 1, opts).totals;
+          const sig = optsComboSignature(opts);
+          const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+          const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+          pushFull(id, base, bpE, bpA, opts); // standalone role:'main' breakfast remains legal
+          // Paired candidates need each person's OWN kcal/protein total, but the extra
+          // (food+grams) must be the SAME for both (shared dish) — build each side's totals
+          // per person, then only keep candidates where both persons' step search picked the
+          // same food (grams may differ per person's remaining gap; see below).
+          pushBreakfastPairCandidates(function(tieId, kcalE, proteinE, extraE){
+            // Re-run the same food's step search against Elena's target to get her totals,
+            // and against Andrea's target for his — both share `extraE.foodId`, but each
+            // person's grams are chosen independently against their own desired kcal (same
+            // convention lunch/dinner's shared side-portion-but-per-person-main uses).
+            let bestStepA = null;
+            foodPairingSteps(extraE.foodId).forEach(function(grams){
+              const m = foodMacros(extraE.foodId, grams);
+              const err = Math.abs(bpA.kcal + m.kcal - desiredA);
+              const better = !bestStepA || err < bestStepA.err - 1e-9 || (Math.abs(err - bestStepA.err) <= 1e-9 && grams < bestStepA.grams);
+              if(better) bestStepA = {grams: grams, kcal: m.kcal, protein: m.protein, err: err};
+            });
+            const hasO3 = recipeHasOmega3(id); // extra here is a plain FOOD, never counts toward omega3
+            const foodMacrosE = foodMacros(extraE.foodId, extraE.grams);
+            const foodMacrosA = foodMacros(extraE.foodId, bestStepA.grams);
+            candidates.push({
+              tieId: (sig ? tieId + '|opts:' + sig : tieId), mainId: id, extra: {foodId: extraE.foodId, gramsE: extraE.grams, gramsA: bestStepA.grams}, opts: opts,
+              portionE: bpE.portion, portionA: bpA.portion,
+              kcalE: kcalE, kcalA: bpA.kcal + bestStepA.kcal,
+              proteinE: proteinE, proteinA: base.protein * bpA.portion + bestStepA.protein,
+              totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bpE.portion), foodMacrosE), hasO3),
+              totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bpA.portion), foodMacrosA), hasO3)
+            });
+          }, id, base, bpE, desiredE, foodPool);
+        });
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidBoth, ['elena', 'partner']);
@@ -1979,26 +2054,33 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       const carbPool = sidePool.filter(isCarbSide), vegPool = sidePool.filter(isVegSide);
       if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
-          const mainBase = dbBaseNutrition(mainId);
-          const carbIds = topKSideIds(mainBase.kcal, carbPool, desiredE / 2, SIDE_TOP_K);
-          const vegIds = topKSideIds(mainBase.kcal, vegPool, desiredE / 2, SIDE_TOP_K);
-          carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
-            if(carbId === vegId) return;
-            const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
-            [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){
-              const extrasKcal = carbBase.kcal * carbPortion + vegBase.kcal * vegPortion;
-              const extrasProtein = carbBase.protein * carbPortion + vegBase.protein * vegPortion;
-              const bpE = bestPortion(mainBase.kcal, desiredE - extrasKcal, PERSON_ANCHOR.elena, maxPortion);
-              const bpA = bestPortion(mainBase.kcal, desiredA - extrasKcal, PERSON_ANCHOR.partner, maxPortion);
-              const extras = [{recipeId: carbId, portion: carbPortion}, {recipeId: vegId, portion: vegPortion}];
-              const extraTotals = addNutrientTotals(scaleNutrientTotals(carbBase, carbPortion), scaleNutrientTotals(vegBase, vegPortion));
-              const hasO3 = recipeHasOmega3(mainId) || recipeHasOmega3(carbId) || recipeHasOmega3(vegId);
-              candidates.push({tieId: mainId + '|carb|' + carbId + '@' + carbPortion + '|veg|' + vegId + '@' + vegPortion, mainId: mainId, extras: extras,
-                portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal + extrasKcal, kcalA: bpA.kcal + extrasKcal,
-                proteinE: mainBase.protein * bpE.portion + extrasProtein, proteinA: mainBase.protein * bpA.portion + extrasProtein,
-                totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpE.portion), extraTotals), hasO3), totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpA.portion), extraTotals), hasO3)});
+          // task (variant-fit planner): topKSideIds is computed PER combo — a variant's
+          // own kcal changes which sides fit it best (e.g. baked-fish's leaner sole vs
+          // richer salmon choice wants a different-sized carb/veg pairing).
+          viableRecipeOptionCombos(mainId, avoidBoth, dietBoth).forEach(function(opts){
+            const mainBase = recipeNutrition(mainId, 1, opts).totals;
+            const sig = optsComboSignature(opts);
+            const carbIds = topKSideIds(mainBase.kcal, carbPool, desiredE / 2, SIDE_TOP_K);
+            const vegIds = topKSideIds(mainBase.kcal, vegPool, desiredE / 2, SIDE_TOP_K);
+            carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
+              if(carbId === vegId) return;
+              const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
+              [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){
+                const extrasKcal = carbBase.kcal * carbPortion + vegBase.kcal * vegPortion;
+                const extrasProtein = carbBase.protein * carbPortion + vegBase.protein * vegPortion;
+                const bpE = bestPortion(mainBase.kcal, desiredE - extrasKcal, PERSON_ANCHOR.elena, maxPortion);
+                const bpA = bestPortion(mainBase.kcal, desiredA - extrasKcal, PERSON_ANCHOR.partner, maxPortion);
+                const extras = [{recipeId: carbId, portion: carbPortion}, {recipeId: vegId, portion: vegPortion}];
+                const extraTotals = addNutrientTotals(scaleNutrientTotals(carbBase, carbPortion), scaleNutrientTotals(vegBase, vegPortion));
+                const hasO3 = recipeHasOmega3(mainId) || recipeHasOmega3(carbId) || recipeHasOmega3(vegId);
+                const tieId = mainId + '|carb|' + carbId + '@' + carbPortion + '|veg|' + vegId + '@' + vegPortion + (sig ? '|opts:' + sig : '');
+                candidates.push({tieId: tieId, mainId: mainId, extras: extras, opts: opts,
+                  portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal + extrasKcal, kcalA: bpA.kcal + extrasKcal,
+                  proteinE: mainBase.protein * bpE.portion + extrasProtein, proteinA: mainBase.protein * bpA.portion + extrasProtein,
+                  totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpE.portion), extraTotals), hasO3), totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpA.portion), extraTotals), hasO3)});
+              }); });
             }); });
-          }); });
+          });
         });
       }
     }
@@ -2026,13 +2108,13 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // and render-week.js's day-meal-row for where this is read.
     return {shared: true, recipeId: null, elena: {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'}, partner: {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'}};
   }
-  // task D1: the SAME variant for both people (one shared dish) — rotated deterministically
-  // off (weekSeed, dayIndex, slotIndex) over the choices allowed under avoidBoth (both
-  // people's avoid-lists, per the plan's "both people for shared slots"). null for a
-  // recipe without optionGroups; makePlanEntry's own normalizeRecipeOpts no-ops on null.
-  const sharedOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidBoth, unionDiets(['elena', 'partner']));
-  const elenaEntry = makePlanEntry(best.mainId, best.portionE, undefined, sharedOpts);
-  const partnerEntry = makePlanEntry(best.mainId, best.portionA, undefined, sharedOpts);
+  // task (variant-fit planner): the SAME variant for both people (one shared dish) — the
+  // combo `best` actually WON with (every candidate above was scored under its own combo's
+  // real kcal/protein via viableRecipeOptionCombos+recipeNutrition, so this is the combo
+  // that best fit both people's targets, not a rotation re-roll after the fact). {} for a
+  // recipe without optionGroups; makePlanEntry's own normalizeRecipeOpts no-ops on that.
+  const elenaEntry = makePlanEntry(best.mainId, best.portionE, undefined, best.opts);
+  const partnerEntry = makePlanEntry(best.mainId, best.portionA, undefined, best.opts);
   if(best.extras){
     elenaEntry.extras = best.extras.slice(); partnerEntry.extras = best.extras.slice();
   } else if(best.extra){
@@ -2057,42 +2139,57 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   pool = applyVarietyFilter(pool, history, person, slot, dayIndex);
   const maxPortion = SLOT_MAX_PORTION[slot];
   const avoidP = PROF[person].avoid || [];
+  // task (variant-fit planner): hoisted once, same reasoning as pickSharedMeal's dietBoth.
+  const dietP = unionDiets([person]);
 
-  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams}, portion,
-  //              kcal, protein, totals (task C2, 2026-07-18: combined-unit nutrition fed
-  //              to tuningBonus() below — {protein,fiber,freeSugars,fat,satFat,hasOmega3})}
+  // candidates: {tieId, mainId, extra: null|{recipeId,portion}|{foodId,grams}, opts,
+  //              portion, kcal, protein, totals (task C2, 2026-07-18: combined-unit
+  //              nutrition fed to tuningBonus() below —
+  //              {protein,fiber,freeSugars,fat,satFat,hasOmega3})}
+  // task (variant-fit planner): `opts` is the combo THIS candidate was scored with — see
+  // pickSharedMeal's matching comment above.
   const candidates = [];
-  function pushFull(id, base, bp){
-    candidates.push({tieId: id, mainId: id, extra: null, portion: bp.portion, kcal: bp.kcal, protein: base.protein * bp.portion,
+  function pushFull(id, base, bp, opts){
+    const sig = optsComboSignature(opts);
+    candidates.push({tieId: id + (sig ? '|opts:' + sig : ''), mainId: id, extra: null, opts: opts, portion: bp.portion, kcal: bp.kcal, protein: base.protein * bp.portion,
       totals: withOmega3(scaleNutrientTotals(base, bp.portion), recipeHasOmega3(id))});
   }
 
   if(slot === 'snack'){
     // Snack never composes — every id in the pool (any role) is a standalone pick.
     pool.forEach(function(id){
-      const base = dbBaseNutrition(id);
-      pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion));
+      // task (variant-fit planner): one candidate per viable combo — [{}] for a recipe
+      // without optionGroups, byte-identical to before.
+      viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
+        const base = recipeNutrition(id, 1, opts).totals;
+        pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion), opts);
+      });
     });
   } else {
     const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); });
     const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); });
     fullIds.forEach(function(id){
-      const base = dbBaseNutrition(id);
-      pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion));
+      viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
+        const base = recipeNutrition(id, 1, opts).totals;
+        pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion), opts);
+      });
     });
 
     if(slot === 'breakfast'){
       const foodPoolRaw = breakfastPairFoodIds(avoidP);
       const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history[person].bfPairUse[dayIndex - 1]], [history[person].dayUseFood[dayIndex]]);
       mainIds.forEach(function(id){
-        const base = dbBaseNutrition(id);
-        const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
-        pushFull(id, base, bp); // standalone role:'main' breakfast remains legal
-        const hasO3 = recipeHasOmega3(id); // extra here is a plain FOOD, never counts toward omega3
-        pushBreakfastPairCandidates(function(tieId, kcal, protein, extra){
-          candidates.push({tieId: tieId, mainId: id, extra: extra, portion: bp.portion, kcal: kcal, protein: protein,
-            totals: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bp.portion), foodMacros(extra.foodId, extra.grams)), hasO3)});
-        }, id, base, bp, desired, foodPool);
+        viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
+          const base = recipeNutrition(id, 1, opts).totals;
+          const sig = optsComboSignature(opts);
+          const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
+          pushFull(id, base, bp, opts); // standalone role:'main' breakfast remains legal
+          const hasO3 = recipeHasOmega3(id); // extra here is a plain FOOD, never counts toward omega3
+          pushBreakfastPairCandidates(function(tieId, kcal, protein, extra){
+            candidates.push({tieId: (sig ? tieId + '|opts:' + sig : tieId), mainId: id, extra: extra, opts: opts, portion: bp.portion, kcal: kcal, protein: protein,
+              totals: withOmega3(addNutrientTotals(scaleNutrientTotals(base, bp.portion), foodMacros(extra.foodId, extra.grams)), hasO3)});
+          }, id, base, bp, desired, foodPool);
+        });
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
       const sidePoolRaw = sidePoolFor(avoidP, [person]);
@@ -2100,14 +2197,19 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
       const carbPool = sidePool.filter(isCarbSide), vegPool = sidePool.filter(isVegSide);
       if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
-          const mainBase = dbBaseNutrition(mainId);
-          const carbIds = topKSideIds(mainBase.kcal, carbPool, desired / 2, SIDE_TOP_K);
-          const vegIds = topKSideIds(mainBase.kcal, vegPool, desired / 2, SIDE_TOP_K);
-          pushComposedSideCandidates(function(tieId, kcal, protein, extras, portion){
-            const extraTotals = addNutrientTotals(scaleNutrientTotals(dbBaseNutrition(extras[0].recipeId), extras[0].portion), scaleNutrientTotals(dbBaseNutrition(extras[1].recipeId), extras[1].portion));
-            candidates.push({tieId: tieId, mainId: mainId, extras: extras, portion: portion, kcal: kcal, protein: protein,
-              totals: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, portion), extraTotals), recipeHasOmega3(mainId) || recipeHasOmega3(extras[0].recipeId) || recipeHasOmega3(extras[1].recipeId))});
-          }, mainId, mainBase, desired, anchor, maxPortion, carbIds, vegIds);
+          // task (variant-fit planner): see pickSharedMeal's matching comment — sides are
+          // re-ranked PER combo since a variant's own kcal changes the best-fitting pair.
+          viableRecipeOptionCombos(mainId, avoidP, dietP).forEach(function(opts){
+            const mainBase = recipeNutrition(mainId, 1, opts).totals;
+            const sig = optsComboSignature(opts);
+            const carbIds = topKSideIds(mainBase.kcal, carbPool, desired / 2, SIDE_TOP_K);
+            const vegIds = topKSideIds(mainBase.kcal, vegPool, desired / 2, SIDE_TOP_K);
+            pushComposedSideCandidates(function(tieId, kcal, protein, extras, portion){
+              const extraTotals = addNutrientTotals(scaleNutrientTotals(dbBaseNutrition(extras[0].recipeId), extras[0].portion), scaleNutrientTotals(dbBaseNutrition(extras[1].recipeId), extras[1].portion));
+              candidates.push({tieId: (sig ? tieId + '|opts:' + sig : tieId), mainId: mainId, extras: extras, opts: opts, portion: portion, kcal: kcal, protein: protein,
+                totals: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, portion), extraTotals), recipeHasOmega3(mainId) || recipeHasOmega3(extras[0].recipeId) || recipeHasOmega3(extras[1].recipeId))});
+            }, mainId, mainBase, desired, anchor, maxPortion, carbIds, vegIds);
+          });
         });
       }
     }
@@ -2126,12 +2228,12 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     // See pickSharedMeal's matching branch above for why `reason` is set.
     return {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'};
   }
-  // task D1: rotated deterministically off (weekSeed, dayIndex, slotIndex) over the
-  // choices allowed under THIS person's own avoid-list (avoidP) — a solo slot can pick a
-  // different variant per person even on the same day/slot, since each person's avoid-
-  // list can allow a different set of choices. null for a recipe without optionGroups.
-  const soloOpts = chosenOptsForRecipe(RECIPES_DB[best.mainId], weekSeed, dayIndex, slotIndex, avoidP, unionDiets([person]));
-  const entry = makePlanEntry(best.mainId, best.portion, undefined, soloOpts);
+  // task (variant-fit planner): the combo `best` actually WON with — a solo slot can still
+  // land on a different variant per person even on the same day/slot, since each person's
+  // own avoid/diet list can allow a different set of choices AND each person's own
+  // desired kcal/protein can favor a different combo. {} for a recipe without
+  // optionGroups.
+  const entry = makePlanEntry(best.mainId, best.portion, undefined, best.opts);
   if(best.extras) entry.extras = best.extras.slice();
   else if(best.extra) entry.extras = [best.extra];
   return entry;
