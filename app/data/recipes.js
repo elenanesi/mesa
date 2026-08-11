@@ -1509,6 +1509,111 @@ const RECIPES_DB = {
     steps: ['Order the burger, fries and cola.', 'Use the menu as a single loggable meal.', 'Adjust portions later with servings if the actual order was larger or smaller.'],
     tags: [],
     avoid: ['gluten', 'lactose']
+  },
+
+  /* ================= MEDITERRANEAN/ITALIAN + EAST-SE ASIAN batch (recipe-pool-balance task) —
+     ~half fish/seafood, ~half poultry/eggs, no tofu (legumes/beans carry the fiber lever
+     instead). Full lunch/dinner meals sized for isCompleteLunchDinnerRecipe (>=12g protein,
+     a carb ingredient contributing >=15g carbs, >=80g Produce); most land ~8-14g fiber, with
+     a few naturally higher (bean/lentil/chickpea-based) and a couple lighter for variety, per
+     recipeMacros(id) computed against the real food DB — see task report for the numbers. */
+
+  'baked-salmon-farro-broccoli': {
+    title: 'Baked salmon, farro & broccoli', emoji: '🐟', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['salmon-fillet', 150], ['farro-cooked', 130], ['broccoli', 120], ['cherry-tomatoes', 80], ['olive-oil', 8]],
+    toTaste: ['lemon', 'herbs', 'black pepper'],
+    steps: ['Rub the salmon with olive oil, lemon and black pepper.', 'Bake at 200C for 12-15 min until just cooked through.', 'Steam the broccoli until tender-crisp.', 'Warm the cooked farro and toss with halved cherry tomatoes and herbs.', 'Plate the farro and broccoli with the salmon on top.'],
+    tags: ['omega3', 'muscle', 'heart'],
+    avoid: []
+  },
+  'sea-bass-cannellini-rocket': {
+    title: 'Sea bass, cannellini beans & rocket', emoji: '🐟', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 22,
+    ingredients: [['sea-bass-fillet', 200], ['cannellini-beans', 150], ['rocket-arugula', 40], ['cherry-tomatoes', 100], ['olive-oil', 8], ['lemon-juice', 10]],
+    toTaste: ['garlic', 'black pepper'],
+    steps: ['Pan-sear or bake the sea bass fillets in olive oil until just cooked through.', 'Warm the cannellini beans with garlic and a splash of olive oil.', 'Toss rocket and cherry tomatoes with lemon juice.', 'Plate the beans and rocket salad with the sea bass on top.'],
+    tags: ['heart', 'highFiber', 'muscle'],
+    avoid: []
+  },
+  'chicken-lentil-stew-broccoli': {
+    title: 'Chicken & lentil stew with broccoli', emoji: '🍲', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 28,
+    ingredients: [['chicken-breast', 130], ['cooked-lentils', 130], ['tomato-passata', 100], ['broccoli', 130], ['olive-oil', 8]],
+    toTaste: ['garlic', 'oregano', 'black pepper'],
+    steps: ['Cook the chicken breast until browned and cooked through, then slice.', 'Simmer the cooked lentils with tomato passata, garlic and oregano for 8-10 min.', 'Steam the broccoli until tender.', 'Stir the sliced chicken through the lentil stew.', 'Serve with the broccoli alongside, finished with olive oil.'],
+    tags: ['highFiber', 'muscle', 'heart'],
+    avoid: []
+  },
+  'prawn-courgette-wholegrain-linguine': {
+    title: 'Prawn & courgette wholegrain linguine', emoji: '🍤', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 22,
+    ingredients: [['prawns', 180], ['wholegrain-pasta', 80], ['courgette', 150], ['cherry-tomatoes', 100], ['olive-oil', 10], ['garlic', 5]],
+    toTaste: ['lemon', 'parsley', 'chilli if wanted'],
+    steps: ['Cook the wholegrain linguine according to the packet.', 'Pan-sear the prawns with garlic in olive oil until pink, 2-3 min.', 'Add the courgette ribbons and cherry tomatoes, tossing until just softened.', 'Toss everything with the drained pasta and a squeeze of lemon.'],
+    tags: ['muscle', 'highFiber'],
+    avoid: ['shellfish']
+  },
+  'chicken-vegetable-egg-fried-rice': {
+    title: 'Chicken & vegetable egg fried rice', emoji: '🍳', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 22,
+    ingredients: [['chicken-breast', 130], ['rice', 55], ['eggs', 50], ['pak-choy', 180], ['mushrooms', 100], ['carrots', 70], ['soy-sauce', 12], ['olive-oil', 8]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Cook the rice and let it cool slightly.', 'Stir-fry the chicken in olive oil until cooked through.', 'Add the mushrooms, pak choy and carrots, stir-frying until just tender.', 'Push everything aside, scramble the egg in the pan, then mix through.', 'Add the rice and soy sauce with ginger and garlic, tossing well to combine.'],
+    tags: ['muscle', 'quick'],
+    avoid: []
+  },
+  'coconut-chicken-chickpea-curry-rice': {
+    title: 'Coconut chicken & chickpea curry with rice', emoji: '🍛', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['chicken-breast', 120], ['chickpeas', 120], ['coconut-milk', 20], ['bell-pepper', 80], ['spinach', 60], ['rice', 45], ['ginger', 8], ['garlic', 5], ['olive-oil', 4]],
+    toTaste: ['curry spices', 'lime'],
+    steps: ['Cook the rice separately.', 'Cook the chicken with ginger and garlic until browned.', 'Add the chickpeas, bell pepper and coconut milk; simmer 10-12 min with curry spices.', 'Stir in the spinach until just wilted.', 'Serve the curry over the rice.'],
+    tags: ['highFiber', 'muscle'],
+    avoid: []
+  },
+  'cod-vegetable-noodle-soup': {
+    title: 'Cod & vegetable noodle soup', emoji: '🍜', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['cod', 180], ['egg-noodles', 70], ['pak-choy', 150], ['carrots', 70], ['mushrooms', 80], ['soy-sauce', 12], ['ginger', 8], ['garlic', 5], ['olive-oil', 5]],
+    toTaste: ['lime', 'coriander'],
+    steps: ['Simmer a light broth with soy sauce, ginger and garlic.', 'Add the noodles and mushrooms, cooking until the noodles are almost tender.', 'Add the pak choy and carrots, simmering briefly.', 'Slide in the cod pieces and poach gently until just cooked, 4-5 min.', 'Ladle into bowls and finish with lime.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['gluten']
+  },
+  'white-beans-tomato-poached-eggs': {
+    title: 'White beans, tomato & poached eggs', emoji: '🍳', slot: 'breakfast', role: 'full', season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 15,
+    ingredients: [['cannellini-beans', 120], ['tomatoes', 150], ['eggs', 100], ['spinach', 40], ['olive-oil', 8]],
+    toTaste: ['garlic', 'herbs', 'black pepper'],
+    steps: ['Warm the cannellini beans with the tomatoes, garlic and a little olive oil.', 'Wilt the spinach into the bean mixture.', 'Poach or fry the eggs.', 'Spoon the bean and tomato mixture into a bowl and top with the eggs.'],
+    tags: ['muscle', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'ginger-egg-pak-choy-rice-bowl': {
+    title: 'Ginger egg, pak choy & rice bowl', emoji: '🍳', slot: 'breakfast', role: 'full', season: 'evergreen',
+    styles: ['balanced'], time: 15,
+    ingredients: [['eggs', 100], ['pak-choy', 150], ['rice', 45], ['mushrooms', 60], ['soy-sauce', 10], ['ginger', 6], ['olive-oil', 5]],
+    toTaste: ['garlic'],
+    steps: ['Cook the rice.', 'Sauté the pak choy and mushrooms in olive oil with ginger and garlic.', 'Push aside and scramble the eggs in the same pan.', 'Combine with the rice and finish with a drizzle of soy sauce.'],
+    tags: ['muscle', 'quick'],
+    avoid: []
+  },
+  'ginger-lime-chickpea-carrot-snack': {
+    title: 'Snack: Ginger-lime chickpea & carrot salad', emoji: '🥗', slot: 'snack', role: 'full', season: 'evergreen',
+    styles: ['balanced'], time: 8,
+    ingredients: [['chickpeas', 90], ['carrots', 80], ['cucumber', 60], ['soy-sauce', 8], ['lime-juice', 8], ['olive-oil', 6]],
+    toTaste: ['ginger', 'coriander'],
+    steps: ['Toss the chickpeas with carrots and cucumber.', 'Whisk together soy sauce, lime juice and olive oil.', 'Dress the salad and toss well.', 'Serve chilled, finished with coriander if wanted.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
   }
 
 };
