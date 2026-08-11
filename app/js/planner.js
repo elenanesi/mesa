@@ -3334,6 +3334,20 @@ function toggleSwapOtherMeals(){
   if(el) el.innerHTML = buildSwapSearchResults();
 }
 
+// #5b: from the swap sheet, jump straight into composing a ONE-TIME meal for this slot from
+// ingredients and/or existing recipes — the add-meal composer (openAddMealSheetForContext),
+// which lets you add plain ingredients, a side, or a full recipe and recomputes the macros —
+// rather than only swapping to a single preset. Reads the shared swapCtx (set by openWeekSwap
+// et al.). Saving a composed meal as a reusable recipe is a documented follow-up
+// (IMPROVEMENTS-2026-08-plan-and-changes.md).
+function openBuildYourOwnMeal(){
+  if(!swapCtx) return;
+  const weekStartDate = swapCtx.weekStartDate || mondayOfWeek(todayISO());
+  if(typeof openAddMealSheetForContext === 'function'){
+    openAddMealSheetForContext({weekStartDate: weekStartDate, dayIndex: swapCtx.dayIndex, slot: swapCtx.slot, person: swapCtx.person});
+  }
+}
+
 function buildSwapSheet(ctx){
   const best = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
   if(swapCtx){
@@ -3345,7 +3359,8 @@ function buildSwapSheet(ctx){
   }
 
   const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
-  let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Best matches keep the plan close. Search can pick any compatible ' + slotLabel + ' recipe, including yours.</p>';
+  let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Best matches keep the plan close. Search can pick any compatible ' + slotLabel + ' recipe, including yours.</p>'
+    + '<button class="cta ghostbtn" style="margin-top:4px" onclick="openBuildYourOwnMeal()">🧩 Build your own meal — ingredients &amp; recipes</button>';
 
   if(!best.length){
     html += '<p class="sub">No other option fits this slot today.</p>';
