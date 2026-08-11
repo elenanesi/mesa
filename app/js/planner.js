@@ -3827,12 +3827,18 @@ function autoBalancePlan(plan){
       }
 
       // (a) ADD SIDE — the same avoid/season-filtered role:'side' pool sideCandidatesForUnit
-      // draws from, excluding whatever's already the main or an extra in this unit.
-      sidePoolFor(avoidL, unitPeople).filter(function(id){
-        return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
-      }).forEach(function(sideId){
-        consider('addSide', sideId, function(trial){ addSideToPlan(trial, unit, sideId); });
-      });
+      // draws from, excluding whatever's already the main or an extra in this unit. ONLY on
+      // lunch/dinner: those are the slots that compose a main with a role:'side' (the
+      // generator's own contract). Breakfast composes only from the breakfastPair whitelist
+      // and snack never composes, so adding a bare side there would produce an
+      // ill-formed composed unit (the "composed meals" invariant in tools/check.js).
+      if(unit.slot === 'lunch' || unit.slot === 'dinner'){
+        sidePoolFor(avoidL, unitPeople).filter(function(id){
+          return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
+        }).forEach(function(sideId){
+          consider('addSide', sideId, function(trial){ addSideToPlan(trial, unit, sideId); });
+        });
+      }
 
       // (b) SWAP — the same avoid/diet-filtered style pool candidatesFor() draws from,
       // narrowed to the unit's composition contract (autoBalanceSwapCandidateIds) and the
