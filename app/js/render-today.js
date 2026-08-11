@@ -121,17 +121,16 @@ function openAddMealSheetForContext(ctx){
   // NOT the `logged` var above, which only reflects a today-or-past CONFIRMED slot — so a
   // future date's not-yet-elapsed row still shows the right state right after a pre-log.
   const isEatenOut = slotLoggedEatenOut(dateISO, addMealCtx.person, addMealCtx.slot);
-  html += '<button class="cta ghostbtn" onclick="toggleWeekMealEatenOut()">'
-    + (isEatenOut ? '🏠 Eaten out — tap for home-cooked' : '🍴 Eating out (log as delivery / restaurant)')
+  // #5a: ONE unified "ate out / eating out" entry (replaces two confusingly-similar buttons —
+  // the old "Eating out" toggle and a separate "Ate out — log an estimate"). It opens the
+  // ate-out sheet, which — when this slot has a planned meal — lets the user pick "I ate my
+  // planned meal" (keep Mesa's VERIFIED computed macros; the toggleWeekMealEatenOut path) OR
+  // "I ate something different" (a typed ESTIMATE). Both capabilities stay reachable in one
+  // place. The label reflects current eaten-out state so the Week/Today row's state is still
+  // legible at a glance.
+  html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">'
+    + (isEatenOut ? '🍴 Eaten out — tap to change' : '🍴 Ate out / eating out')
     + '</button>';
-
-  // ATE-OUT-QUICK-ADD: distinct from the toggle above — that one logs THIS PLANNED RECIPE
-  // as eaten out (macros unchanged, still the recipe's own numbers). This one is for when
-  // the meal wasn't anything Mesa planned at all (a genuinely different restaurant dish) —
-  // it opens a short name+macros sheet, logs a one-off estimate, and skips this planned
-  // slot so it drops off the shopping list instead of double-counting. Carries the CURRENT
-  // addMealCtx (just assigned above) so commitAteOut() knows which slot to skip on save.
-  html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">🍴 Ate out — log an estimate</button>';
 
   // Per-meal share toggle (2026-07-22): split a shared meal into two separate dishes ("eat
   // different tonight") or merge two back into one ("eat together"), for THIS occurrence only
@@ -305,7 +304,30 @@ function buildAteOutSheet(){
       + '<button onclick="stepAteOutMacro(\'' + key + '\',5)" aria-label="Increase ' + label + '">+</button>'
       + '</span><span class="sv-unit">g</span></div></div>';
   };
+  // #5a: when opened from a planned slot (ctx set from the add-meal sheet), offer the "I ate
+  // my planned meal" path — keeps Mesa's VERIFIED computed macros via the same eaten-out
+  // toggle — ABOVE the typed ESTIMATE below, so both eating-out actions live in one sheet.
+  // ctx is null from the Log screen's standalone entry, where there is no planned meal.
+  let plannedBlock = '';
+  if(s.ctx){
+    const dISO = addDaysISO(s.ctx.weekStartDate, s.ctx.dayIndex);
+    const plan = ensureWeekPlan(s.ctx.weekStartDate);
+    const meal = plan && plan.days[s.ctx.dayIndex] && plan.days[s.ctx.dayIndex].meals[s.ctx.slot];
+    const entry = meal && meal[s.ctx.person];
+    const plannedTitle = (entry && entry.recipeId && RECIPES_DB[entry.recipeId]) ? RECIPES_DB[entry.recipeId].title : null;
+    if(plannedTitle){
+      const eatenOut = slotLoggedEatenOut(dISO, s.ctx.person, s.ctx.slot);
+      plannedBlock = eatenOut
+        ? '<p class="sub" style="margin-top:6px">✓ Logged as eaten out — <b>' + escapeHtml(plannedTitle) + '</b> <span class="chip-computed">✓ computed</span>. '
+            + '<button class="week-standalone-link" onclick="ateOutTogglePlanned()">Mark home-cooked</button></p>'
+            + '<div class="shop-cat">Or — log something different you ate instead</div>'
+        : '<div class="shop-cat">I ate my planned meal</div>'
+            + '<button class="cta ghostbtn" onclick="ateOutTogglePlanned()">✓ ' + escapeHtml(plannedTitle) + ' — log eaten out <span class="chip-computed">✓ computed</span></button>'
+            + '<div class="shop-cat">Or — I ate something different</div>';
+    }
+  }
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Ate out</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+    + plannedBlock
     + '<p class="sub" style="margin-top:6px">Log a meal Mesa didn’t build — just a name and a rough macro guess.</p>'
     + '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(s.name) + '" oninput="ateOutSheet.name=this.value" placeholder="e.g. Dinner at Luigi’s" autocomplete="off"></div>'
@@ -347,6 +369,18 @@ function commitAteOut(){
   refreshAfterLogChange();
   closeSheet();
   toast('🍴 Logged ' + name);
+}
+
+// #5a: the "I ate my planned meal" / "Mark home-cooked" action inside the ate-out sheet.
+// Reuses the existing eaten-out toggle (keeps the planned recipe's VERIFIED macros, drops it
+// from the shopping list, skips pantry depletion). toggleWeekMealEatenOut reads the shared
+// addMealCtx global, so point it at this sheet's snapshot ctx first, then hand off — it
+// re-renders the add-meal sheet in place, showing the meal's new eaten-out state.
+function ateOutTogglePlanned(){
+  if(!ateOutSheet || !ateOutSheet.ctx) return;
+  addMealCtx = ateOutSheet.ctx;
+  ateOutSheet = null;
+  toggleWeekMealEatenOut();
 }
 
 // Split this occurrence into two separate dishes, or merge two back into one — see the
