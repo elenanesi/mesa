@@ -81,20 +81,22 @@ builds good eating habits):
 - UI/behaviour verified in the local no-auth preview (`?preview=1`) — see AGENT-HANDOVER.md.
   For balance, `MESA_TEST_DISABLE_AUTO_BALANCE` toggles the pass for before/after checks.
 
-## 6. Still open
+## 6. Also shipped (follow-up requests)
 
-**Requested next (this session):**
-1. **#1 — planner considers recipe variants.** `candidatesFor` returns recipe IDs with
-   *default* options only; the 5 recipes with `optionGroups` (different condiments/flavours)
-   are never weighed as distinct nutrient options. Fix: evaluate viable option-combos and
-   pick the best-fit variant per pick (threads `opts` through `makePlanEntry`). Changes
-   generator determinism → will need test updates.
-2. **#5a — reconcile "Ate out" vs "Eating out".** The new "Ate out" quick-add (log your own
-   estimate) competes with the existing "Eating out" toggle (marks the *planned* meal
-   eaten-out, keeping its macros). Needs a 360° solution where both actions remain possible.
-   **Involve the expert panel.**
-3. **#5b — one-time recipe in swap.** Let the user build a one-off meal from ingredients
-   and/or existing recipes inside the swap flow, then choose whether to save it under recipes.
+| Commit | Deliverable |
+|---|---|
+| `a355cd7` | **#1 — planner considers recipe variants by fit.** `pickSharedMeal`/`pickSoloMeal` enumerate each candidate's viable option-combos (`viableRecipeOptionCombos`) and score each combo's real macros, carrying the winning combo's `opts` into `makePlanEntry` (was: default macros + a variety rotation). Recipes without `optionGroups` stay byte-identical. |
+| `1b86318` | **#5a — unified "Ate out / eating out".** One entry (was two competing buttons); the ate-out sheet offers "I ate my planned {meal}" (keeps VERIFIED ✓ computed macros via `toggleWeekMealEatenOut`) or "I ate something different" (typed ESTIMATE). Applied the panel's documented principles from EXPERT-PANEL.md (the live panel agents were cut off by a session limit). |
+| `dcbcd8b` | **#5b (part 1) — "Build your own meal" in swap.** A `🧩 Build your own meal` button in the swap sheet opens the add-meal composer for the slot (compose a one-time meal from ingredients and/or existing recipes, macros recomputed). |
+
+## 7. Still open
+
+**#5b part 2 — save a composed meal as a reusable recipe (NOT done).** From the composed
+one-time meal, offer "💾 Save as a recipe": flatten the plan entry's components to a single
+ingredient list via `foodQuantitiesForComponents(planEntryComponents(entry))` → `{foodId: g}`
+→ `[[foodId, g]]`, then create a `cr-` custom recipe (mirror `saveRecipeBuilder`: name,
+≥2 ingredients, `applyCustomFoods`/`customRev`, persist). Deferred deliberately — the flatten +
+naming + validation deserves its own careful pass, not a rushed change under a session limit.
 
 **Roadmap (later phases):**
 - Phase 2: pantry **Defect C** (Need→In cart→Stocked / Already home; tick keyed on foodId),
