@@ -384,8 +384,17 @@ function buildAteOutSheet(){
             + '<div class="shop-cat">Or — I ate something different</div>';
     }
   }
+  // Meal builder (owner spec 2026-08-17): building the meal from its actual ingredients
+  // gives COMPUTED macros (✓ — the same deterministic-trust guarantee every other logged
+  // meal carries) instead of the typed P/C/F guess below, so it's offered first/prominently
+  // regardless of whether there's a planned meal to fall back to. The typed fields become the
+  // secondary "or type a rough estimate" path — still fully functional (a real meal Mesa
+  // truly can't decompose, e.g. a restaurant dish with no known ingredients), just demoted.
+  const buildFromIngredientsBlock = '<button class="cta ghostbtn" style="margin-top:6px" onclick="openMealBuilderFromAteOut()">🧩 Build it from ingredients</button>';
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Ate out</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + plannedBlock
+    + buildFromIngredientsBlock
+    + '<div class="shop-cat" style="margin-top:14px">Or — type a rough estimate</div>'
     + '<p class="sub" style="margin-top:6px">Log a meal Mesa didn’t build — just a name and a rough macro guess.</p>'
     + '<div class="field"><label>Name</label>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(s.name) + '" oninput="ateOutSheet.name=this.value" placeholder="e.g. Dinner at Luigi’s" autocomplete="off"></div>'
@@ -396,6 +405,20 @@ function buildAteOutSheet(){
     + '<div class="cap-note">Estimated — Mesa can’t verify a meal it didn’t build.</div>'
     + '<button class="cta" style="margin-top:14px" onclick="commitAteOut()">🍴 Log this meal</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+}
+
+// "🧩 Build it from ingredients" (ate-out sheet secondary-path promotion, owner spec
+// 2026-08-17): hands off to the meal builder in mode:'eatenOut', carrying this sheet's own
+// ctx snapshot — same snapshot-then-null-then-handoff pattern ateOutTogglePlanned() above
+// already uses — so a slot-context open still knows which plan slot to reconcile, while a
+// standalone open (ctx null, Log screen's "Ways to log" row) still opens the builder (its
+// footer then offers only "Save to My recipes" — "Log as eaten out" needs a slot ctx, per
+// mealBuilder's own mode/ctx-gated footer in buildMealBuilderSheet).
+function openMealBuilderFromAteOut(){
+  if(!ateOutSheet) return;
+  const ctx = ateOutSheet.ctx;
+  ateOutSheet = null;
+  openMealBuilder(ctx, 'eatenOut');
 }
 
 function stepAteOutMacro(key, delta){
@@ -803,6 +826,395 @@ function stepMealExtraFoodGrams(foodId, delta){
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
+}
+
+/* ---------------- MEAL BUILDER: compose a one-time meal from ingredients + recipes ----------------
+   owner spec (2026-08-17): the add-meal composer above (openAddMealSheetForContext) can add
+   extras on top of a meal's base recipe, but can never touch the BASE recipe's OWN
+   ingredients — only remove/edit extras. This fills the gap: "start from a recipe, edit its
+   ingredients (add/remove), and only optionally save it" — a SEPARATE draft where every row
+   is a plain {foodId, grams}, mirroring library.js's recipeBuilder.ingredients shape but with
+   NO privileged base at all — every row can be edited or removed the same way.
+   Deliberately does NOT touch planEntryComponents' schema (that assumes a non-null base
+   recipe — changing it ripples into shopping/pantry/week, per the architecture this feature
+   was scoped from); this composes entirely in its own draft and only ever writes a real
+   ONE-TIME recipe (library.js:createOneTimeRecipeFromRows) at commit time, through the exact
+   same customRecipes path every other custom recipe already uses.
+
+   mealBuilder shape: {rows:[{foodId,grams}], name, ctx:{weekStartDate,dayIndex,slot,person}
+   |null, mode:'plan'|'eatenOut', pickerQuery, recipeQuery}. `pickerQuery` mirrors
+   recipeBuilder.pickerQuery's naming (the plain-ingredient food search); `recipeQuery` is
+   this sheet's OWN addition — its recipe search, shared by BOTH "Seed from a recipe" and
+   "Add a recipe's ingredients": they are the exact same explode-and-merge operation
+   (addRecipeToMealBuilder below), so one search box that relabels itself by section headline
+   (see buildMealBuilderSheet) avoids two redundant, easily-desynced copies of one widget. */
+let mealBuilder = null;
+
+function openMealBuilder(ctx, mode){
+  mealBuilder = {rows: [], name: '', ctx: ctx || null, mode: mode === 'eatenOut' ? 'eatenOut' : 'plan', pickerQuery: '', recipeQuery: ''};
+  document.getElementById('sheetBody').innerHTML = buildMealBuilderSheet();
+  attachMealBuilderSheetHandler();
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+}
+
+function closeMealBuilder(){
+  mealBuilder = null;
+  closeSheet();
+}
+
+function repaintMealBuilderSheet(){
+  const el = document.getElementById('sheetBody');
+  if(el) el.innerHTML = buildMealBuilderSheet();
+}
+
+// Sums foodMacros() over every row — the builder's own live total, kept DOM-free (foodMacros
+// is the app's single per-food macro source, engine.js) so it's directly testable and reused
+// by both the sheet's footer preview and the one-time recipe's own totals.
+function mealBuilderTotals(){
+  const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0};
+  (mealBuilder && mealBuilder.rows ? mealBuilder.rows : []).forEach(function(row){
+    const m = foodMacros(row.foodId, row.grams);
+    totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs; totals.fat += m.fat;
+  });
+  return totals;
+}
+
+// Merges `newRows` ({foodId,grams}) into mealBuilder.rows BY foodId — the same
+// merge-by-foodId convention planner.js:flattenComponentsToIngredientRows already applies
+// within a single components list, extended here to merge onto a SECOND, pre-existing list
+// (whatever's already in the draft). Grams are rounded once per merged row (not accumulated
+// unrounded across calls) so repeated fractional adds never compound rounding error, matching
+// flattenComponentsToIngredientRows' own final rounding pass.
+function mergeRowsIntoMealBuilder(newRows){
+  if(!mealBuilder) return;
+  (newRows || []).forEach(function(nr){
+    if(!(nr.grams > 0)) return;
+    const existing = mealBuilder.rows.filter(function(r){ return r.foodId === nr.foodId; })[0];
+    if(existing) existing.grams = Math.round(existing.grams + nr.grams);
+    else mealBuilder.rows.push({foodId: nr.foodId, grams: Math.round(nr.grams)});
+  });
+}
+
+// "Seed from a recipe" AND "Add a recipe's ingredients" are the identical operation: explode
+// recipeId's effective ingredients to ONE serving and merge by foodId into whatever rows
+// already exist (merging into an empty draft is just "seed"). Reuses
+// planner.js:flattenComponentsToIngredientRows([{recipeId,portion:1}]) rather than
+// reimplementing its recipeEffectiveIngredients/batchYield scaling — that's the exact "1
+// serving" math this needs. Pure/DOM-free so it's directly testable; the sheet's click
+// handler (chooseMealBuilderRecipe below) wraps this with the repaint + toast.
+function addRecipeToMealBuilder(recipeId){
+  if(!mealBuilder || !RECIPES_DB[recipeId]) return false;
+  mergeRowsIntoMealBuilder(flattenComponentsToIngredientRows([{recipeId: recipeId, portion: 1}]));
+  return true;
+}
+
+function addFoodToMealBuilder(foodId, grams){
+  if(!mealBuilder || !FOODS[foodId]) return false;
+  mergeRowsIntoMealBuilder([{foodId: foodId, grams: (typeof grams === 'number' && grams > 0) ? grams : defaultMealFoodGrams(foodId)}]);
+  return true;
+}
+
+// Recipe search pool for BOTH "Seed from a recipe" and "Add a recipe's ingredients": every
+// recipe (any slot — a meal build isn't restricted to the target slot, matching the swap
+// sheet's own "search any compatible recipe" latitude), built-in and custom, EXCLUDING
+// oneTime:true throwaways — a meal built from a previous one-time build shouldn't itself be
+// seedable, same "hide throwaways" rule as the My-recipes list (library.js:filteredRecipeIds).
+function mealBuilderRecipeSearchResults(query){
+  const q = String(query || '').trim().toLowerCase();
+  if(q.length < 2) return [];
+  return Object.keys(RECIPES_DB).filter(function(id){
+    const r = RECIPES_DB[id];
+    return r && !r.oneTime && swapSearchText(id).indexOf(q) !== -1;
+  }).sort(function(a, b){
+    return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
+  }).slice(0, 20);
+}
+
+// Recipe ids can be user-authored ('cr-…' slugs), so the id rides in a data-* attribute —
+// same reasoning/pattern as mealRecipeOptionRowHtml above.
+function mealBuilderRecipeRowHtml(id){
+  const r = RECIPES_DB[id];
+  const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
+  return '<div class="altrow" data-mb-recipe-id="' + htmlAttr(id) + '">'
+    + '<div class="ae">' + r.emoji + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
+    + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+    + '</div>';
+}
+
+function mealBuilderRecipeResultsHtml(q){
+  q = (q || '').trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:6px">Type at least 2 letters to search recipes.</p>';
+  const ids = mealBuilderRecipeSearchResults(q);
+  if(!ids.length) return '<p class="sub" style="margin-top:6px">No recipes match “' + escapeHtml(q) + '”.</p>';
+  return ids.map(mealBuilderRecipeRowHtml).join('');
+}
+
+function onMealBuilderRecipeSearch(value){
+  if(!mealBuilder) return;
+  mealBuilder.recipeQuery = value;
+  const el = document.getElementById('mealBuilderRecipeResults');
+  if(el) el.innerHTML = mealBuilderRecipeResultsHtml(value);
+}
+
+function chooseMealBuilderRecipe(recipeId){
+  if(!addRecipeToMealBuilder(recipeId)) return;
+  const title = RECIPES_DB[recipeId].title;
+  mealBuilder.recipeQuery = '';
+  toast('＋ Added ' + title + '’s ingredients');
+  repaintMealBuilderSheet();
+}
+
+// Same "reuse render-sheets.js:searchFoods + renderMealFoodResults pattern" the add-meal
+// composer's own food search already established.
+function mealBuilderFoodResultsHtml(q){
+  q = (q || '').trim();
+  if(q.length < 2) return '<p class="sub" style="margin-top:6px">Type at least 2 letters to add plain foods.</p>';
+  const ids = searchFoods(q).slice(0, 12);
+  if(!ids.length) return '<p class="sub" style="margin-top:6px">No ingredients match “' + escapeHtml(q) + '”.</p>';
+  return ids.map(function(id){
+    const f = FOODS[id];
+    const grams = defaultMealFoodGrams(id);
+    const nut = roundedNutritionTotals(foodMacros(id, grams));
+    return '<div class="altrow" data-mb-food-id="' + htmlAttr(id) + '">'
+      + '<div class="ae">' + foodIconHtml(id) + '</div>'
+      + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
+      + '<div class="ad">' + foodAmountLabel(f, grams) + ' · ' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + '</div>';
+  }).join('');
+}
+
+function onMealBuilderFoodSearch(value){
+  if(!mealBuilder) return;
+  mealBuilder.pickerQuery = value;
+  const el = document.getElementById('mealBuilderFoodResults');
+  if(el) el.innerHTML = mealBuilderFoodResultsHtml(value);
+}
+
+function chooseMealBuilderFood(foodId){
+  if(!addFoodToMealBuilder(foodId)) return;
+  const name = FOODS[foodId].name;
+  mealBuilder.pickerQuery = '';
+  toast('＋ Added ' + name);
+  repaintMealBuilderSheet();
+}
+
+function stepMealBuilderRowGrams(i, delta){
+  if(!mealBuilder) return;
+  const row = mealBuilder.rows[i];
+  if(!row) return;
+  row.grams = Math.max(1, Math.min(2000, Math.round(row.grams + delta)));
+  repaintMealBuilderSheet();
+}
+
+function removeMealBuilderRow(i){
+  if(!mealBuilder) return;
+  if(!confirmDeletion()) return;
+  mealBuilder.rows.splice(i, 1);
+  repaintMealBuilderSheet();
+}
+
+// No base privilege (this feature's whole point): every row — whether it started life as
+// part of a seeded recipe or was added one-by-one — gets the SAME grams stepper (piece-aware,
+// same `isPiece` convention buildEditTodayFoodSheet's own stepper above uses) and the SAME
+// ✕ Remove. Row index `i` is a controlled loop counter (not user text), so a plain inline
+// onclick is safe here — same convention library.js:stepRecipeIngredientGrams already uses
+// for its own by-index ingredient rows.
+function mealBuilderRowHtml(row, i){
+  const food = FOODS[row.foodId];
+  if(!food) return '';
+  const nut = roundedNutritionTotals(foodMacros(row.foodId, row.grams));
+  const isPiece = food.unit === 'piece' && Number(food.avgG) > 0;
+  const step = isPiece ? Number(food.avgG) : 10;
+  return '<div class="altrow" style="cursor:default">'
+    + '<div class="ae">' + foodIconHtml(row.foodId) + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(food.name) + '</div>'
+    + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+    + '<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
+    + '<button onclick="stepMealBuilderRowGrams(' + i + ',-' + step + ')" aria-label="Less ' + htmlAttr(food.name) + '">-</button>'
+    + '<span class="sv-val">' + foodAmountLabel(food, row.grams) + '</span>'
+    + '<button onclick="stepMealBuilderRowGrams(' + i + ',' + step + ')" aria-label="More ' + htmlAttr(food.name) + '">+</button>'
+    + '</span>'
+    + '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="removeMealBuilderRow(' + i + ')">✕ Remove</button>'
+    + '</div>';
+}
+
+function buildMealBuilderSheet(){
+  const mb = mealBuilder;
+  if(!mb) return '';
+  const totals = mealBuilderTotals();
+  const seeding = mb.rows.length === 0;
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Build a meal</h2><button class="backbtn" style="margin:0" onclick="closeMealBuilder()">✕ Close</button></div>'
+    + '<p class="sub" style="margin-top:6px">Combine recipes and plain ingredients into one meal — Mesa computes the calories and nutrients from what’s actually in it.</p>';
+
+  html += '<div class="shop-cat">' + (seeding ? 'Seed from a recipe' : 'Add a recipe’s ingredients') + '</div>'
+    + (seeding ? '<p class="sub" style="margin-top:4px">Start from a recipe, then add, remove or adjust anything below.</p>' : '')
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="search" id="mealBuilderRecipeSearchInput" placeholder="Search recipes…" value="' + htmlAttr(mb.recipeQuery) + '" oninput="onMealBuilderRecipeSearch(this.value)" autocomplete="off">'
+    + '<div id="mealBuilderRecipeResults" style="margin-top:4px">' + mealBuilderRecipeResultsHtml(mb.recipeQuery) + '</div>';
+
+  html += '<div class="shop-cat">In this meal</div>';
+  html += mb.rows.length
+    ? mb.rows.map(mealBuilderRowHtml).join('')
+    : '<p class="sub" style="margin-top:6px">Nothing yet — add an ingredient or a recipe below.</p>';
+
+  html += '<div class="nutri" style="margin-top:10px">'
+    + '<div class="n"><div class="nt"><span>Calories</span><b>' + Math.round(totals.kcal) + ' kcal</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Protein</span><b>' + Math.round(totals.protein) + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Carbs</span><b>' + Math.round(totals.carbs) + ' g</b></div></div>'
+    + '<div class="n"><div class="nt"><span>Fat</span><b>' + Math.round(totals.fat) + ' g</b></div></div>'
+    + '</div>';
+
+  html += '<div class="shop-cat">Add an ingredient</div>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="mealBuilderFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(mb.pickerQuery) + '" oninput="onMealBuilderFoodSearch(this.value)" autocomplete="off">'
+    + '<div id="mealBuilderFoodResults" style="margin-top:4px">' + mealBuilderFoodResultsHtml(mb.pickerQuery) + '</div>';
+
+  html += '<button class="cta ghostbtn" style="margin-top:14px" onclick="openMealBuilderSaveSheet()">💾 Save to My recipes</button>';
+  if(mb.ctx && mb.mode === 'plan'){
+    html += '<button class="cta" onclick="confirmMealBuilderUseForThisMeal()">🍽️ Use for this meal</button>';
+  }
+  if(mb.ctx && mb.mode === 'eatenOut'){
+    html += '<button class="cta" onclick="confirmMealBuilderLogEatenOut()">🍴 Log as eaten out</button>';
+  }
+  return html;
+}
+
+// Delegated click handler for the two search-result lists (data-mb-recipe-id/data-mb-food-id
+// — ids can be user-authored 'cr-'/'cf-' slugs, same reasoning attachAddMealSheetHandler's
+// own doc comment gives). Assigned ONCE per real sheet-open (openMealBuilder) directly onto
+// #sheetBody itself; repaintMealBuilderSheet() only ever reassigns #sheetBody's innerHTML
+// (its CONTENT), never the element itself, so this delegated onclick — a property of the
+// element, not part of its markup — survives every repaint, same non-accumulating pattern
+// attachSwapSearchHandler/attachAddMealSheetHandler already document.
+function attachMealBuilderSheetHandler(){
+  const el = document.getElementById('sheetBody');
+  if(!el) return;
+  el.onclick = function(e){
+    const recipeRow = e.target.closest('.altrow[data-mb-recipe-id]');
+    if(recipeRow && el.contains(recipeRow)){ chooseMealBuilderRecipe(recipeRow.getAttribute('data-mb-recipe-id')); return; }
+    const foodRow = e.target.closest('.altrow[data-mb-food-id]');
+    if(foodRow && el.contains(foodRow)) chooseMealBuilderFood(foodRow.getAttribute('data-mb-food-id'));
+  };
+}
+
+// "💾 Save to My recipes" footer action: a normal, reusable custom recipe (unlike the
+// one-time recipes "Use for this meal"/"Log as eaten out" create below) — its own name-entry
+// step, same "repaint #sheetBody with a smaller step" pattern render-today.js's own
+// openSaveComposedMealSheet uses. Requires >=2 rows (its own guard, checked again inside
+// confirmMealBuilderSave — saveRecipeBuilder()'s generic minimum is meant for the manual
+// "New recipe" form's toast, not this sheet's own copy).
+function openMealBuilderSaveSheet(){
+  if(!mealBuilder) return;
+  if(mealBuilder.rows.length < 2){ toast('Add another ingredient to save this as a recipe'); return; }
+  document.getElementById('sheetBody').innerHTML = buildMealBuilderSaveSheet();
+}
+
+function buildMealBuilderSaveSheet(){
+  const mb = mealBuilder;
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Save to My recipes</h2><button class="backbtn" style="margin:0" onclick="repaintMealBuilderSheet()">‹ Back</button></div>'
+    + '<p class="sub" style="margin-top:6px">Give this meal a name to save it as a recipe you can plan again.</p>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="mealBuilderSaveNameInput" value="' + htmlAttr(mb.name) + '" oninput="mealBuilder.name=this.value" placeholder="Recipe name" autocomplete="off">'
+    + '<button class="cta" style="margin-top:14px" onclick="confirmMealBuilderSave()">💾 Save to My recipes</button>'
+    + '<button class="cta ghostbtn" onclick="repaintMealBuilderSheet()">Cancel</button>';
+}
+
+// Reuses the recipe builder's OWN save path (library.js:saveRecipeBuilder) — the exact
+// function the manual "New recipe" form AND saveComposedMealAsRecipe both already funnel
+// through, so id/dup-name/tags/styles/season derivation and the customRecipes/RECIPES_DB
+// write stay the ONE place that gets this right (see saveComposedMealAsRecipe's own doc
+// comment for the same reasoning). Builds a fresh recipeBuilder draft straight from
+// mealBuilder's OWN rows — no base privilege, exactly the flat ingredient list the user
+// edited — and hands off; saveRecipeBuilder's own toast covers every abort case (no name,
+// duplicate name, <2 ingredients), recognized here by recipeBuilder staying non-null.
+function confirmMealBuilderSave(){
+  if(!mealBuilder) return;
+  const name = (mealBuilder.name || '').trim();
+  if(!name){ toast('Give this recipe a name'); return; }
+  if(mealBuilder.rows.length < 2){ toast('Add another ingredient to save this as a recipe'); return; }
+  const slots = (mealBuilder.ctx && mealBuilder.ctx.slot) ? [mealBuilder.ctx.slot] : ['dinner'];
+  recipeBuilder = {
+    name: name, emoji: '🍽️', imageKey: null, imagePickerOpen: false,
+    slots: slots, season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1,
+    ingredients: mealBuilder.rows.map(function(r){ return {foodId: r.foodId, grams: r.grams}; }),
+    optionGroups: [], stepsText: '', pickerQuery: ''
+  };
+  saveRecipeBuilder();
+  if(recipeBuilder === null){ mealBuilder = null; closeSheet(); }
+  else document.getElementById('sheetBody').innerHTML = buildMealBuilderSaveSheet(); // abort (e.g. dup name) — re-show the name step so its own toast has context to fix
+}
+
+// "🍽️ Use for this meal" (mode:'plan', shown only when ctx is set): freezes the builder's
+// rows into a ONE-TIME custom recipe (library.js:createOneTimeRecipeFromRows —
+// occasional:true so it never resurfaces for auto-planning, oneTime:true so it never
+// clutters My recipes) and sets it as ctx's own slot via applyOneTimeMealToSlot (planner.js)
+// — NOT applySwap/applySwapToPlan, which would re-portion the recipe to match whatever kcal
+// was already in the slot and silently distort the exact macros the live totals just showed.
+// If that slot is already CONFIRMED (logged) for its own date, corrects the log entry in
+// place too — same reasoning planner.js:chooseSwapRecipe already documents for a normal
+// swap: this IS a swap, just onto a freshly-minted recipe instead of an existing one, and
+// must not leave a stale logged dish behind it. Requires >=1 row.
+function confirmMealBuilderUseForThisMeal(){
+  if(!mealBuilder || !mealBuilder.ctx) return;
+  if(!mealBuilder.rows.length){ toast('Add at least one ingredient'); return; }
+  const ctx = mealBuilder.ctx;
+  const newId = createOneTimeRecipeFromRows(mealBuilder.rows, mealBuilder.name, [ctx.slot]);
+  if(!newId){ toast('Could not build this meal'); return; }
+  applyOneTimeMealToSlot(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, newId);
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  if(logHistory[dateISO]){
+    const plan = editableWeekPlan(ctx.weekStartDate);
+    const meal = plan.days[ctx.dayIndex].meals[ctx.slot];
+    const people = meal.shared ? ['elena', 'partner'] : [ctx.person];
+    people.forEach(function(person){
+      if(slotLogStatus(dateISO, person, ctx.slot) !== 'confirmed') return;
+      const planEntry = meal[person];
+      logPlanEntry(dateISO, person, ctx.slot, planEntry.recipeId, planEntry.portion, planEntryComponents(planEntry));
+    });
+  }
+  mealBuilder = null;
+  recomputeConsumed(currentProf);
+  recomputeProf(currentProf);
+  refreshRingAndBars();
+  renderTodayMeals();
+  renderLogScreen();
+  renderWeek();
+  persist();
+  closeSheet();
+  toast('🍽️ ' + RECIPES_DB[newId].title + ' set for this meal');
+}
+
+// "🍴 Log as eaten out" (mode:'eatenOut', shown only when ctx is set): same one-time recipe
+// creation as "Use for this meal" above, then logs it eaten out exactly like
+// toggleWeekMealEatenOut()'s "turning on" branch does (logPlanEntry + setLogEntryEatenOut) —
+// COMPUTED macros from real ingredient sums, not a typed P/C/F estimate, so this stays inside
+// the deterministic-trust boundary the ate-out sheet's typed fallback below explicitly steps
+// outside of. Requires >=1 row.
+function confirmMealBuilderLogEatenOut(){
+  if(!mealBuilder || !mealBuilder.ctx) return;
+  if(!mealBuilder.rows.length){ toast('Add at least one ingredient'); return; }
+  const ctx = mealBuilder.ctx;
+  const newId = createOneTimeRecipeFromRows(mealBuilder.rows, mealBuilder.name, [ctx.slot]);
+  if(!newId){ toast('Could not build this meal'); return; }
+  applyOneTimeMealToSlot(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, newId);
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  const plan = editableWeekPlan(ctx.weekStartDate);
+  const meal = plan.days[ctx.dayIndex].meals[ctx.slot];
+  const people = meal.shared ? ['elena', 'partner'] : [ctx.person];
+  const opts = dateISO === todayISO() ? undefined : {tNull: true};
+  people.forEach(function(person){
+    const entry = meal[person];
+    if(!entry || !entry.recipeId) return;
+    const components = planEntryComponents(entry);
+    logPlanEntry(dateISO, person, ctx.slot, entry.recipeId, entry.portion, components, opts);
+    const arr = getDayLog(dateISO)[person];
+    const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === ctx.slot; });
+    if(idx !== -1) setLogEntryEatenOut(dateISO, person, idx, true);
+  });
+  mealBuilder = null;
+  refreshAfterLogChange();
+  closeSheet();
+  toast('🍴 Logged ' + RECIPES_DB[newId].title + ' — eaten out');
 }
 
 /* ---------------- log / plan-first confirm (task D1: writes real LogEntrys) ---------------- */

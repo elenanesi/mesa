@@ -2695,6 +2695,10 @@ function filteredRecipeIds(){
     // Defensive: same reasoning as libFoodIdsByCategory above — a malformed entry from a
     // bad merge must not crash the whole Recipes sheet build.
     if(!r || !r.title) return false;
+    // Meal builder throwaways (render-today.js:createOneTimeRecipeFromRows): a one-time
+    // recipe still resolves fine for the plan/log entry that references it, but it's clutter
+    // here — nobody wants to browse or replan a single past "build it from ingredients" meal.
+    if(r.oneTime) return false;
     const q = (libRecipeFilters.query || '').trim().toLowerCase();
     if(q.length){
       const haystack = [
@@ -3933,6 +3937,55 @@ function saveComposedMealAsRecipe(entry, name){
   if(recipeBuilder !== null) return null; // saveRecipeBuilder rejected the save — its own toast already fired
   const newId = Object.keys(customRecipes).filter(function(id){ return beforeIds.indexOf(id) === -1; })[0];
   return newId || null;
+}
+
+// Meal builder (owner spec 2026-08-17) "Use for this meal" / "Log as eaten out": creates a
+// ONE-TIME custom recipe straight from the builder's own rows (render-today.js:mealBuilder —
+// a separate ingredient-row draft with no privileged base, see its own doc comment) —
+// occasional:true (keeps it out of auto-planning/candidatesFor forever, same as any other
+// occasional recipe) AND oneTime:true (a NEW, additive flag: also hides it from the
+// My-recipes list — see the oneTime filter in filteredRecipeIds() below — it's a throwaway
+// for THIS one meal, not something to browse or replan later; it still resolves fine for the
+// plan entry that references it).
+// Deliberately NOT saveRecipeBuilder(): that function enforces a >=2-ingredient minimum
+// meant for the hand-authored "New recipe" form, but a meal-builder "use this" can be a
+// single ingredient (e.g. one leftover eaten alone) and must never block on that. This
+// mirrors saveRecipeBuilder()'s own totals/deriveRecipeMeta/customRecipes-write shape closely
+// enough that a one-time recipe's own recipeNutrition() stays bit-for-bit consistent with
+// every other custom recipe — the same computed-not-typed nutrition guarantee the
+// deterministic-trust boundary already promises everywhere else.
+// `rows`: [{foodId,grams}, ...] (servings is always 1 for a one-time recipe, so these ARE
+// the per-serving amounts, same convention deriveRecipeMeta expects). Returns the new
+// recipe's id, or null if `rows` is empty.
+function createOneTimeRecipeFromRows(rows, name, slots){
+  if(!Array.isArray(rows) || !rows.length) return null;
+  const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
+  rows.forEach(function(row){
+    const m = foodMacros(row.foodId, row.grams);
+    totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
+    totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
+  });
+  totals.kcal = 4 * totals.protein + 4 * totals.carbs + 9 * totals.fat; // same 4/4/9 self-consistency as saveRecipeBuilder/recipeNutrition
+  const finalName = (name || '').trim() || 'Built meal';
+  const finalSlots = (Array.isArray(slots) && slots.length) ? slots : ['dinner'];
+  const time = 20;
+  const meta = deriveRecipeMeta(rows, totals, time); // servings 1 -> totals IS perServing, no division needed
+  const id = uniqueSlug(slugify(finalName), RECIPES_DB, 'cr-');
+  const recipe = {
+    title: finalName, emoji: '🧩', slot: finalSlots[0], slots: finalSlots,
+    styles: meta.styles, time: time, servings: 1,
+    season: normalizeSeason(derivedRecipeSeasonFromIngredients(rows)),
+    role: 'full',
+    ingredients: rows.map(function(r){ return [r.foodId, r.grams]; }),
+    toTaste: [], steps: ['Combine and enjoy.'],
+    tags: meta.tags, avoid: meta.avoid,
+    occasional: true, oneTime: true,
+    u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap)
+  };
+  customRecipes[id] = recipe;
+  customRev++;
+  applyCustomRecipes();
+  return id;
 }
 
 /* ===================================================================

@@ -8675,6 +8675,184 @@ function testSaveComposedMealAsRecipe(ctx){
 }
 
 /* ===================================================================
+   Meal builder (owner spec 2026-08-17): a SEPARATE ingredient-row draft
+   (render-today.js:mealBuilder) that lets a user start from a recipe's
+   ingredients and freely edit/remove them — unlike the add-meal composer
+   above (openAddMealSheetForContext), which can only add extras on top of
+   a privileged, un-removable base recipe. Deliberately does NOT touch
+   planEntryComponents' schema — every row is a plain {foodId,grams}, and
+   the draft only ever becomes a real recipe (customRecipes) at commit
+   time, through the SAME saveRecipeBuilder()/customRecipes path every
+   other custom recipe already uses (or, for the two one-time actions, a
+   small dedicated helper — library.js:createOneTimeRecipeFromRows).
+   =================================================================== */
+
+// Functional coverage: (a) seeding from a recipe explodes its ingredients into rows,
+// (b) adding a recipe merges by foodId into EXISTING rows (no duplicates), (c) "Save to My
+// recipes" creates a normal cr- (no occasional/oneTime) via the reused saveRecipeBuilder()
+// path, (d) a <2-row save aborts cleanly (its own guard, never touches recipeBuilder),
+// (e) "Use for this meal" creates an occasional:true+oneTime:true cr- whose OWN
+// recipeNutrition() reproduces the rows' macro sum exactly and gets set on the slot at
+// portion 1x (applyOneTimeMealToSlot, NOT the kcal-matching applySwap/applySwapToPlan), and
+// (f) oneTime recipes are excluded from the My-recipes list (filteredRecipeIds).
+function testMealBuilder(ctx){
+  run(ctx, "var __mbStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount, closeSheet: closeSheet}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){}; closeSheet = function(){};");
+
+  // -------- (a) seeding from a recipe explodes its ingredients into rows. 'yogurt' (data/
+  // recipes.js) has 5 ingredients and no `servings` field (batchYield 1), same fixture the
+  // composed-meal test above already relies on. --------
+  (function(){
+    run(ctx, "mealBuilder = {rows: [], name: '', ctx: null, mode: 'plan', pickerQuery: '', recipeQuery: ''};");
+    const ok = call(ctx, 'addRecipeToMealBuilder', ['yogurt']);
+    assert(ok === true, 'addRecipeToMealBuilder: seeding from "yogurt" reports success', String(ok));
+    const rows = get(ctx, 'mealBuilder.rows');
+    assert(rows.length === 5, 'addRecipeToMealBuilder: "yogurt" (5 ingredients, batchYield 1) explodes into 5 rows', JSON.stringify(rows));
+    const berries = rows.filter(function(r){ return r.foodId === 'mixed-berries'; })[0];
+    assert(!!berries && berries.grams === 80, 'addRecipeToMealBuilder: a seeded row carries the recipe\'s own gram amount (mixed-berries: 80g)', JSON.stringify(berries));
+  })();
+
+  // -------- (b) adding a recipe merges by foodId into EXISTING rows, not a duplicate --------
+  (function(){
+    run(ctx, "mealBuilder = {rows: [{foodId: 'mixed-berries', grams: 40}], name: '', ctx: null, mode: 'plan', pickerQuery: '', recipeQuery: ''};");
+    call(ctx, 'addRecipeToMealBuilder', ['yogurt']); // yogurt itself contains mixed-berries: 80g
+    const rows = get(ctx, 'mealBuilder.rows');
+    assert(rows.length === 5, 'addRecipeToMealBuilder: merging "yogurt" into an existing mixed-berries row still yields 5 rows total (no duplicate)', JSON.stringify(rows));
+    const berries = rows.filter(function(r){ return r.foodId === 'mixed-berries'; });
+    assert(berries.length === 1 && berries[0].grams === 120, 'addRecipeToMealBuilder: shared foodId merges by SUM (40 existing + 80 from the recipe = 120g), not duplicated', JSON.stringify(berries));
+  })();
+
+  // -------- (c) "Save to My recipes" creates a normal cr- (no occasional/oneTime) --------
+  (function(){
+    run(ctx, "mealBuilder = {rows: [{foodId:'greek-yogurt',grams:150},{foodId:'mixed-berries',grams:80},{foodId:'granola',grams:20}], name: 'MB test save recipe', ctx: null, mode: 'plan', pickerQuery: '', recipeQuery: ''}; recipeBuilder = null;");
+    const before = Object.keys(get(ctx, 'customRecipes'));
+    call(ctx, 'confirmMealBuilderSave', []);
+    const after = Object.keys(get(ctx, 'customRecipes'));
+    const newIds = after.filter(function(id){ return before.indexOf(id) === -1; });
+    assert(newIds.length === 1, 'confirmMealBuilderSave: creates exactly one new customRecipes entry', JSON.stringify(newIds));
+    const newId = newIds[0];
+    assert(newId.indexOf('cr-') === 0, 'confirmMealBuilderSave: the new recipe id is a normal cr- id', newId);
+    const saved = get(ctx, "RECIPES_DB['" + newId + "']");
+    assert(saved.title === 'MB test save recipe', 'confirmMealBuilderSave: saved recipe carries the given name', saved.title);
+    assert(saved.occasional !== true && saved.oneTime !== true, 'confirmMealBuilderSave: a normal save is NOT occasional/oneTime (unlike "Use for this meal")', JSON.stringify({occasional: saved.occasional, oneTime: saved.oneTime}));
+    assert(get(ctx, 'mealBuilder') === null, 'confirmMealBuilderSave: a successful save clears the mealBuilder draft', '');
+    run(ctx, "delete customRecipes['" + newId + "']; applyCustomRecipes();");
+  })();
+
+  // -------- (d) a <2-row save aborts cleanly: no recipe created, draft left untouched --------
+  (function(){
+    run(ctx, "mealBuilder = {rows: [{foodId:'greek-yogurt',grams:150}], name: 'MB test single row', ctx: null, mode: 'plan', pickerQuery: '', recipeQuery: ''}; recipeBuilder = null;");
+    const before = Object.keys(get(ctx, 'customRecipes')).length;
+    call(ctx, 'confirmMealBuilderSave', []);
+    const after = Object.keys(get(ctx, 'customRecipes')).length;
+    assert(after === before, 'confirmMealBuilderSave: a single-row draft aborts (its own >=2-row guard) — no recipe created', 'before=' + before + ' after=' + after);
+    assert(get(ctx, 'mealBuilder') !== null, 'confirmMealBuilderSave: an aborted save leaves the mealBuilder draft in place (nothing lost)', '');
+    assert(get(ctx, 'recipeBuilder') === null, 'confirmMealBuilderSave: an aborted <2-row save never even touches recipeBuilder', '');
+  })();
+
+  // -------- (e) "Use for this meal": occasional:true + oneTime:true cr-, own recipeNutrition
+  // equals the rows' macro sum exactly, set as the slot's meal at portion 1x (NOT re-portioned
+  // toward whatever kcal was already there — applyOneTimeMealToSlot, not applySwap). --------
+  (function(){
+    const rows = [{foodId: 'greek-yogurt', grams: 150}, {foodId: 'mixed-berries', grams: 80}, {foodId: 'chia-seeds', grams: 6}];
+    const expected = rows.reduce(function(sum, r){
+      const m = call(ctx, 'foodMacros', [r.foodId, r.grams]);
+      sum.protein += m.protein; sum.carbs += m.carbs; sum.fat += m.fat;
+      return sum;
+    }, {protein: 0, carbs: 0, fat: 0});
+    expected.kcal = 4 * expected.protein + 4 * expected.carbs + 9 * expected.fat;
+
+    const newId = call(ctx, 'createOneTimeRecipeFromRows', [rows, 'MB test one-time', ['dinner']]);
+    assert(typeof newId === 'string' && newId.indexOf('cr-') === 0, 'createOneTimeRecipeFromRows: returns a new cr- recipe id', String(newId));
+    const saved = get(ctx, "RECIPES_DB['" + newId + "']");
+    assert(saved.occasional === true && saved.oneTime === true, 'createOneTimeRecipeFromRows: the recipe is occasional:true AND oneTime:true', JSON.stringify({occasional: saved.occasional, oneTime: saved.oneTime}));
+    const savedNut = call(ctx, 'recipeNutrition', [newId, 1]).totals;
+    assert(Math.abs(savedNut.kcal - expected.kcal) < 1e-6 && Math.abs(savedNut.protein - expected.protein) < 1e-6,
+      'createOneTimeRecipeFromRows: the recipe\'s own recipeNutrition() reproduces the rows\' macro sum EXACTLY (servings:1, no batch scaling)',
+      'saved=' + JSON.stringify(savedNut) + ' expected=' + JSON.stringify(expected));
+
+    // Now set it as a slot's meal — explicit fixture (both people pointed at a real recipe,
+    // shared:false) mirrors testWeekEatenOut's own fixture-safety convention, avoiding any
+    // dependency on the plan generator's own (deterministic but unrelated) random pick.
+    // The existing slot is deliberately given a WILDLY different kcal footprint first
+    // (portion 3x baked-cod-greens) to prove applyOneTimeMealToSlot does NOT bestPortion-
+    // match toward it, unlike applySwap/applySwapToPlan.
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+    run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner = " + JSON.stringify({
+      shared: false,
+      elena: {recipeId: 'baked-cod-greens', portion: 3, kcal: 0, protein: 0},
+      partner: {recipeId: 'baked-cod-greens', portion: 1, kcal: 0, protein: 0}
+    }) + ';');
+    call(ctx, 'applyOneTimeMealToSlot', [FIXED_MONDAY, 0, 'dinner', 'elena', newId]);
+    const entry = get(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena");
+    assert(entry.recipeId === newId && entry.portion === 1, 'applyOneTimeMealToSlot: sets the slot to the new recipe at portion 1x — no bestPortion re-scaling toward the old slot\'s kcal', JSON.stringify(entry));
+    assert(Math.abs(entry.kcal - expected.kcal) < 1e-6, 'applyOneTimeMealToSlot: the slot\'s own kcal matches the built meal\'s exact computed total', 'got ' + entry.kcal + ' expected ' + expected.kcal);
+
+    run(ctx, "delete customRecipes['" + newId + "']; applyCustomRecipes();");
+  })();
+
+  // -------- (f) oneTime recipes are excluded from the My-recipes list (filteredRecipeIds) --------
+  (function(){
+    const rows = [{foodId: 'greek-yogurt', grams: 100}, {foodId: 'honey', grams: 10}];
+    const newId = call(ctx, 'createOneTimeRecipeFromRows', [rows, 'MB test hidden throwaway', ['dinner']]);
+    run(ctx, "libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};");
+    const ids = call(ctx, 'filteredRecipeIds', []);
+    assert(ids.indexOf(newId) === -1, 'filteredRecipeIds: a oneTime:true recipe is excluded from the My-recipes list', newId);
+    assert(ids.indexOf('yogurt') !== -1, 'setup sanity: a normal (non-oneTime) built-in recipe still appears in the list', JSON.stringify(ids.slice(0, 5)));
+    run(ctx, "delete customRecipes['" + newId + "']; applyCustomRecipes();");
+  })();
+
+  run(ctx, "mealBuilder = null; toast = __mbStub.toast; openMyRecipes = __mbStub.openMyRecipes; applyProf = __mbStub.applyProf; renderFoodLibraryCount = __mbStub.renderFoodLibraryCount; closeSheet = __mbStub.closeSheet; delete __mbStub;");
+}
+
+// Wiring guard (source-structure, not DOM — same reasoning testAteOutQuickAddWiring's doc
+// gives): the swap sheet's "Build your own meal" button really opens the MEAL BUILDER (not
+// the old add-meal composer), the ate-out sheet's "Build it from ingredients" button really
+// hands off into it too, and both one-time-recipe footer actions reuse the RIGHT underlying
+// primitives — applyOneTimeMealToSlot, never the kcal-matching applySwap/applySwapToPlan.
+function testMealBuilderWiring(){
+  const renderSrc = readAllRenderSrc();
+  const plannerSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'planner.js'), 'utf8');
+  const librarySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
+  const fnBodyIn = function(src, name){
+    const m = src.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+
+  const openFn = fnBodyIn(plannerSrc, 'openBuildYourOwnMeal');
+  assert(openFn.length > 0, 'wiring setup: openBuildYourOwnMeal() found in planner.js', 'not found');
+  assert(openFn.indexOf('openMealBuilder(') !== -1, 'openBuildYourOwnMeal(): opens the MEAL BUILDER, not the old add-meal composer', openFn);
+  assert(openFn.indexOf("'plan'") !== -1, 'openBuildYourOwnMeal(): opens it in mode:\'plan\' (its footer can set the slot\'s base)', openFn);
+
+  const ateOutFn = fnBodyIn(renderSrc, 'buildAteOutSheet');
+  assert(ateOutFn.length > 0, 'wiring setup: buildAteOutSheet() found in render-today.js', 'not found');
+  assert(ateOutFn.indexOf('openMealBuilderFromAteOut()') !== -1, 'buildAteOutSheet(): offers the "Build it from ingredients" hand-off to the meal builder', ateOutFn);
+
+  const handoffFn = fnBodyIn(renderSrc, 'openMealBuilderFromAteOut');
+  assert(handoffFn.length > 0, 'wiring setup: openMealBuilderFromAteOut() found in render-today.js', 'not found');
+  assert(handoffFn.indexOf("openMealBuilder(ctx, 'eatenOut')") !== -1, 'openMealBuilderFromAteOut(): hands off in mode:\'eatenOut\', carrying the ate-out sheet\'s own ctx', handoffFn);
+
+  const useFn = fnBodyIn(renderSrc, 'confirmMealBuilderUseForThisMeal');
+  assert(useFn.length > 0, 'wiring setup: confirmMealBuilderUseForThisMeal() found in render-today.js', 'not found');
+  assert(useFn.indexOf('createOneTimeRecipeFromRows(') !== -1, 'confirmMealBuilderUseForThisMeal(): creates the one-time recipe via createOneTimeRecipeFromRows()', useFn);
+  assert(useFn.indexOf('applyOneTimeMealToSlot(') !== -1, 'confirmMealBuilderUseForThisMeal(): sets the slot via applyOneTimeMealToSlot()', useFn);
+  assert(useFn.indexOf('applySwap(') === -1 && useFn.indexOf('applySwapToPlan(') === -1, 'confirmMealBuilderUseForThisMeal(): never calls the kcal-matching applySwap/applySwapToPlan (would silently re-portion the built meal)', useFn);
+
+  const logFn = fnBodyIn(renderSrc, 'confirmMealBuilderLogEatenOut');
+  assert(logFn.length > 0, 'wiring setup: confirmMealBuilderLogEatenOut() found in render-today.js', 'not found');
+  assert(logFn.indexOf('createOneTimeRecipeFromRows(') !== -1, 'confirmMealBuilderLogEatenOut(): creates the one-time recipe via createOneTimeRecipeFromRows()', logFn);
+  assert(logFn.indexOf('logPlanEntry(') !== -1 && logFn.indexOf('setLogEntryEatenOut(') !== -1, 'confirmMealBuilderLogEatenOut(): logs it via logPlanEntry() + setLogEntryEatenOut(), the same rails toggleWeekMealEatenOut() uses', logFn);
+
+  const saveFn = fnBodyIn(renderSrc, 'confirmMealBuilderSave');
+  assert(saveFn.length > 0, 'wiring setup: confirmMealBuilderSave() found in render-today.js', 'not found');
+  assert(saveFn.indexOf('saveRecipeBuilder()') !== -1, 'confirmMealBuilderSave(): reuses saveRecipeBuilder() rather than a second persistence codepath', saveFn);
+
+  const filterFn = fnBodyIn(librarySrc, 'filteredRecipeIds');
+  assert(filterFn.length > 0, 'wiring setup: filteredRecipeIds() found in library.js', 'not found');
+  assert(filterFn.indexOf('r.oneTime') !== -1, 'filteredRecipeIds(): excludes oneTime:true recipes from the My-recipes list', filterFn);
+}
+
+/* ===================================================================
    Multi-select diet preferences (finishing a previous agent's uncommitted batch):
    PROF[key].diet (single string) -> PROF[key].diets (ARRAY), with real per-diet
    semantics in planner.js:recipeViolatesDiet (replacing the old D4 mock that only
@@ -10481,6 +10659,8 @@ function main(){
   runTest('required lunch/dinner structure + retired sauce role', function(){ testRequiredLunchDinnerStructure(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('save a composed meal as a recipe (#5b follow-up)', function(){ testSaveComposedMealAsRecipe(ctx); });
+  runTest('meal builder: seed/merge-by-foodId, save-to-My-recipes, one-time recipe + slot-set, oneTime hidden from My-recipes (owner spec 2026-08-17)', function(){ testMealBuilder(ctx); });
+  runTest('meal builder wiring (owner spec 2026-08-17)', function(){ testMealBuilderWiring(); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('openAddMenu "Log food" routes to the Log screen', function(){ testOpenAddMenuRoutesToLogScreen(); });
   runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today\'s pending row', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });

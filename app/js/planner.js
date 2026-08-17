@@ -3061,6 +3061,33 @@ function applySwapToPlan(plan, unit, newRecipeId){
   return m;
 }
 
+// Meal builder (owner spec 2026-08-17) "Use for this meal"/"Log as eaten out": sets a
+// slot's base recipe directly at portion 1x — deliberately NOT applySwapToPlan/applySwap,
+// which re-portion (bestPortion) to land close to whatever kcal was already in the slot.
+// That's exactly right for a like-for-like swap, but wrong here: the builder's rows already
+// ARE the exact composed meal the user just reviewed (live totals in the sheet), and scaling
+// them by an unrelated "how many kcal was here before" portion would silently multiply (or
+// shrink) those very macros. Mirrors applySwapToPlan's own shared-vs-solo cell handling (a
+// shared slot's build applies to BOTH people, same as a normal shared swap) but always at
+// makePlanEntry(recipeId, 1) — no bestPortion, no extras carried over (the built recipe's
+// ingredients already ARE the whole meal, nothing left to layer on top of).
+function applyOneTimeMealToSlot(weekStartDate, dayIndex, slot, person, recipeId){
+  const plan = editableWeekPlan(weekStartDate);
+  const meal = plan.days[dayIndex].meals[slot];
+  const now = Date.now();
+  if(meal.shared){
+    meal.recipeId = recipeId;
+    meal.t = now;
+    meal.elena = makePlanEntry(recipeId, 1, now);
+    meal.partner = makePlanEntry(recipeId, 1, now);
+  } else {
+    meal[person] = makePlanEntry(recipeId, 1, now);
+    delete meal.t;
+  }
+  markWeekPlanEdited(plan);
+  return meal;
+}
+
 function addSideToPlan(plan, unit, sideRecipeId){
   const m = plan.days[unit.dayIndex].meals[unit.slot];
   const now = Date.now();
@@ -3440,17 +3467,18 @@ function toggleSwapOtherMeals(){
   if(el) el.innerHTML = buildSwapSearchResults();
 }
 
-// #5b: from the swap sheet, jump straight into composing a ONE-TIME meal for this slot from
-// ingredients and/or existing recipes — the add-meal composer (openAddMealSheetForContext),
-// which lets you add plain ingredients, a side, or a full recipe and recomputes the macros —
-// rather than only swapping to a single preset. Reads the shared swapCtx (set by openWeekSwap
-// et al.). Saving a composed meal as a reusable recipe is a documented follow-up
-// (IMPROVEMENTS-2026-08-plan-and-changes.md).
+// #5b/meal-builder (owner spec 2026-08-17): from the swap sheet, jump straight into the
+// MEAL BUILDER (render-today.js:openMealBuilder) for this slot — a separate ingredient-row
+// draft that can start from a recipe's ingredients and freely edit/remove them (not just add
+// extras on top of a privileged base, which is all the add-meal composer/
+// openAddMealSheetForContext ever allowed). Reads the shared swapCtx (set by openWeekSwap et
+// al.); mode 'plan' shows the builder's "Use for this meal" footer action, which sets THIS
+// slot's base recipe once the user commits (planner.js:applyOneTimeMealToSlot).
 function openBuildYourOwnMeal(){
   if(!swapCtx) return;
   const weekStartDate = swapCtx.weekStartDate || mondayOfWeek(todayISO());
-  if(typeof openAddMealSheetForContext === 'function'){
-    openAddMealSheetForContext({weekStartDate: weekStartDate, dayIndex: swapCtx.dayIndex, slot: swapCtx.slot, person: swapCtx.person});
+  if(typeof openMealBuilder === 'function'){
+    openMealBuilder({weekStartDate: weekStartDate, dayIndex: swapCtx.dayIndex, slot: swapCtx.slot, person: swapCtx.person}, 'plan');
   }
 }
 
