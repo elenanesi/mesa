@@ -3278,6 +3278,7 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const pool = Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     if(id === currentId || swapSearchText(id).indexOf(q) === -1) return false;
+    if(r.oneTime) return false; // throwaway one-time built meals never clutter swap search (same intent as filteredRecipeIds hiding them from My recipes)
     if(includeOtherMeals) return !r.occasional;
     if(recipeSlotList(r).indexOf(slot) === -1) return false;
     if(completeOnly && !isCompleteLunchDinnerRecipe(id)) return false;
