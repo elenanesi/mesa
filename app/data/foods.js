@@ -38,6 +38,13 @@
    (nutrition tags): lowGI, omega3, selenium, highIodine, glutenFree,
    highFiber, fermented.
 
+   sub — OPTIONAL sub-category, currently only 'fruit'. cat:'Produce' alone
+   can't distinguish fruit from vegetables (both share that one category —
+   see the swap sheet's "what do you feel like?" craving filter, planner.js
+   recipeContainsFoodSub/recipeContainsVeg), so the actual fruit entries
+   below carry sub:'fruit'; every other Produce entry (vegetables, herbs,
+   aromatics) is left without it.
+
    FOOD_ALIASES maps every ingredient-name STRING used in RECIPES
    (app/js/state.js) to a food id here, since recipe ingredient names
    are free-text mockup copy ("Salmon fillet") and don't always match
@@ -53,22 +60,22 @@ const FOODS = {
   'mixed-berries': {
     name: 'Mixed berries (strawberry, blueberry, raspberry)', per: 100, unit: 'g',
     kcal: 51, protein: 0.8, carbs: 11.0, fat: 0.4, satFat: 0.1, fiber: 3.5, sugars: 7.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', breakfastPair: true, iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
+    flags: ['lowGI'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', breakfastPair: true, iconKey: 'mixed-berries', src: 'USDA FDC 173946-style avg of strawberry/blueberry/raspberry'
   },
   'blueberries': {
     name: 'Blueberries, raw', per: 100, unit: 'g',
     kcal: 64, protein: 0.7, carbs: 14.5, fat: 0.3, satFat: 0.0, fiber: 2.4, sugars: 10.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'blueberries', src: 'USDA FDC 171711-style (blueberries, raw); kcal per 4/4/9'
+    flags: ['lowGI'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'blueberries', src: 'USDA FDC 171711-style (blueberries, raw); kcal per 4/4/9'
   },
   'strawberries': {
     name: 'Strawberries, raw', per: 100, unit: 'g',
     kcal: 36, protein: 0.7, carbs: 7.7, fat: 0.3, satFat: 0.0, fiber: 2.0, sugars: 4.9, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'strawberries', src: 'USDA FDC 167762-style (strawberries, raw); kcal per 4/4/9'
+    flags: ['lowGI'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'strawberries', src: 'USDA FDC 167762-style (strawberries, raw); kcal per 4/4/9'
   },
   'wild-strawberries': {
     name: 'Wild strawberries, raw', per: 100, unit: 'g',
     kcal: 37, protein: 0.8, carbs: 7.5, fat: 0.4, satFat: 0.0, fiber: 2.0, sugars: 4.9, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Produce', season: 'spring/summer', iconKey: 'wild-strawberries', src: 'Wild strawberry representative raw-fruit table; kcal per 4/4/9'
+    flags: ['lowGI'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'wild-strawberries', src: 'Wild strawberry representative raw-fruit table; kcal per 4/4/9'
   },
   'bell-pepper': {
     name: 'Bell pepper, red, raw', per: 100, unit: 'g',
@@ -153,12 +160,12 @@ const FOODS = {
   'peaches': {
     name: 'Peaches, raw', per: 100, unit: 'g',
     kcal: 44, protein: 0.9, carbs: 10.1, fat: 0.3, satFat: 0.0, fiber: 1.5, sugars: 8.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', season: 'spring/summer', breakfastPair: true, iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
+    flags: [], cat: 'Produce', sub: 'fruit', season: 'spring/summer', breakfastPair: true, iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
   },
   'pears': {
     name: 'Pears, raw', per: 100, unit: 'g',
     kcal: 59, protein: 0.4, carbs: 15.2, fat: 0.1, satFat: 0.0, fiber: 3.1, sugars: 9.8, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', breakfastPair: true, iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
+    flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
   },
   'mushrooms': {
     name: 'Mushrooms, raw', per: 100, unit: 'g',
@@ -218,17 +225,17 @@ const FOODS = {
   'oranges': {
     name: 'Oranges, raw', per: 100, unit: 'g',
     kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4, sugars: 9.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', breakfastPair: true, iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
+    flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
   },
   'apples': {
     name: 'Apples, raw, with skin', per: 100, unit: 'g',
     kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4, sugars: 10.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Produce', season: 'winter/autumn', breakfastPair: true, iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
+    flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
   },
   'bananas': {
     name: 'Bananas, raw', per: 100, unit: 'g',
     kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6, sugars: 12.2, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', breakfastPair: true, iconKey: 'bananas', src: 'USDA FDC 173944 (banana, raw)'
+    flags: [], cat: 'Produce', sub: 'fruit', breakfastPair: true, iconKey: 'bananas', src: 'USDA FDC 173944 (banana, raw)'
   },
   'rocket-arugula': {
     name: 'Rocket / arugula, raw', per: 100, unit: 'g',

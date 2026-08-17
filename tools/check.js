@@ -2908,6 +2908,159 @@ function testSwapCompleteMealPoolAndOtherMealsToggle(ctx){
   }
 }
 
+/* ---------------- swap sheet: "what do you feel like?" craving filter (owner spec,
+   2026-08-17) ----------------
+   recipeContainsFoodSub/recipeContainsVeg (planner.js) read a recipe's ingredients against
+   foods.js's new sub:'fruit' tag — fruit and veg both share cat:'Produce' (see foods.js
+   header), so `sub` is the added signal. buildSwapAlternatives threads swapCtx.craving into
+   a pool FILTER (fruit/veg/quick) that always falls back to the unfiltered pool rather than
+   ever returning empty, and a re-RANK (protein/light) applied on top of the existing
+   kcal-fit scoring. */
+function testSwapCravingFilter(ctx){
+  const savedWeekPlans = cloneJSON(get(ctx, 'weekPlans'));
+  const savedSwapCtx = cloneJSON(get(ctx, 'swapCtx'));
+  try{
+    // recipeContainsFoodSub/recipeContainsVeg: unit-level checks against real catalog ids.
+    assert(call(ctx, 'recipeContainsFoodSub', ['brazil-nuts-apple', 'fruit']) === true,
+      "recipeContainsFoodSub: a Brazil-nuts-and-apple snack is tagged fruit (apples carry sub:'fruit')");
+    assert(call(ctx, 'recipeContainsFoodSub', ['apple-almonds-snack', 'fruit']) === true,
+      'recipeContainsFoodSub: an apple & almonds snack is tagged fruit');
+    assert(call(ctx, 'recipeContainsFoodSub', ['roasted-chickpeas-snack', 'fruit']) === false,
+      'recipeContainsFoodSub: a chickpeas/olive-oil snack (no Produce ingredient at all) is not tagged fruit');
+    assert(call(ctx, 'recipeContainsFoodSub', ['hummus-veg-sticks', 'fruit']) === false,
+      'recipeContainsFoodSub: a chickpea-hummus/cucumber/cherry-tomato snack is not tagged fruit');
+    assert(call(ctx, 'recipeContainsVeg', ['hummus-veg-sticks']) === true,
+      'recipeContainsVeg: cucumber + cherry tomatoes (Produce, no fruit sub) count as veg');
+    assert(call(ctx, 'recipeContainsVeg', ['roasted-chickpeas-snack']) === false,
+      'recipeContainsVeg: a chickpeas/olive-oil snack has no Produce ingredient, so no veg');
+
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const wsd = get(ctx, "(function(){ var p = ensureWeekPlan(mondayOfWeek(todayISO())); return p.weekStartDate; })()");
+
+    function altsFor(dayIndex, slot, craving){
+      run(ctx, "swapCtx = {dayIndex: " + dayIndex + ", slot: '" + slot + "', person: 'elena', weekStartDate: '" + wsd + "', craving: " + (craving ? "'" + craving + "'" : 'null') + "};");
+      return call(ctx, 'buildSwapAlternatives', [dayIndex, slot, 'elena', wsd]);
+    }
+    function idsOf(alts){ return alts.map(function(a){ return a.id; }); }
+    function recipeTime(id){ const r = get(ctx, "RECIPES_DB['" + id + "']"); return r && r.time; }
+
+    // 'quick' filters the pool down to time<=15 candidates, falling back to the EXACT
+    // unfiltered ranking whenever no candidate in the day's (already-relaxed) pool is quick
+    // enough — some slots/days can easily have zero <=15min complete meals survive relaxation,
+    // so every day is checked under the same filter-or-exact-fallback contract as fruit/veg
+    // below. Scanned across the whole week (lunch has the catalog's best quick/non-quick mix)
+    // so the assertion also PROVES the filter has teeth at least once — a disabled no-op
+    // filter would otherwise vacuously satisfy the "or falls back" half every time.
+    const dinnerUnfiltered = altsFor(0, 'dinner', null);
+    let quickFilterEngaged = false;
+    for(let d = 0; d < 7; d++){
+      const lunchUnfiltered = altsFor(d, 'lunch', null);
+      const lunchQuick = altsFor(d, 'lunch', 'quick');
+      assert(lunchQuick.length > 0,
+        'buildSwapAlternatives (craving=quick, lunch, day ' + d + '): always returns something (filter or fallback)');
+      const allQuick = lunchQuick.every(function(a){ const t = recipeTime(a.id); return typeof t === 'number' && t <= 15; });
+      const quickEqualsUnfiltered = JSON.stringify(idsOf(lunchQuick)) === JSON.stringify(idsOf(lunchUnfiltered));
+      assert(allQuick || quickEqualsUnfiltered,
+        'buildSwapAlternatives (craving=quick, lunch, day ' + d + '): every alt has time<=15, or (no quick-enough candidate survives the pool) falls back to the exact unfiltered ranking',
+        'quick=' + JSON.stringify(idsOf(lunchQuick)) + ' unfiltered=' + JSON.stringify(idsOf(lunchUnfiltered)));
+      if(allQuick && !quickEqualsUnfiltered) quickFilterEngaged = true;
+    }
+    assert(quickFilterEngaged,
+      'buildSwapAlternatives (craving=quick, lunch): the filter genuinely narrows the pool on at least one day this week (not merely coinciding with fallback)');
+
+    // 'fruit' on snack: every returned alt contains fruit, OR (no fruit-tagged snack survives
+    // the day's usedThisWeek/plannedToday relaxation) it falls back to the EXACT unfiltered
+    // ranking rather than ever coming back empty.
+    const snackUnfiltered = altsFor(0, 'snack', null);
+    const snackFruit = altsFor(0, 'snack', 'fruit');
+    assert(snackFruit.length > 0,
+      'buildSwapAlternatives (craving=fruit, snack): always returns something (filter or fallback)');
+    const allFruit = snackFruit.every(function(a){ return call(ctx, 'recipeContainsFoodSub', [a.id, 'fruit']); });
+    const fruitEqualsUnfiltered = JSON.stringify(idsOf(snackFruit)) === JSON.stringify(idsOf(snackUnfiltered));
+    assert(allFruit || fruitEqualsUnfiltered,
+      'buildSwapAlternatives (craving=fruit, snack): every alt contains fruit, or (no fruit match survives the pool) falls back to the exact unfiltered ranking',
+      'fruit=' + JSON.stringify(idsOf(snackFruit)) + ' unfiltered=' + JSON.stringify(idsOf(snackUnfiltered)));
+
+    // 'veg' on snack: same filter-or-exact-fallback contract as 'fruit' above.
+    const snackVeg = altsFor(0, 'snack', 'veg');
+    assert(snackVeg.length > 0,
+      'buildSwapAlternatives (craving=veg, snack): always returns something (filter or fallback)');
+    const allVeg = snackVeg.every(function(a){ return call(ctx, 'recipeContainsVeg', [a.id]); });
+    const vegEqualsUnfiltered = JSON.stringify(idsOf(snackVeg)) === JSON.stringify(idsOf(snackUnfiltered));
+    assert(allVeg || vegEqualsUnfiltered,
+      'buildSwapAlternatives (craving=veg, snack): every alt contains a vegetable, or (no veg match survives the pool) falls back to the exact unfiltered ranking',
+      'veg=' + JSON.stringify(idsOf(snackVeg)));
+
+    // 'protein' re-ranks by protein-per-kcal, descending — a pure sort, never a pool filter
+    // (same candidate count as unfiltered).
+    const dinnerProtein = altsFor(0, 'dinner', 'protein');
+    assert(dinnerProtein.length === dinnerUnfiltered.length,
+      'buildSwapAlternatives (craving=protein): re-ranks, does not filter the pool');
+    for(let i = 1; i < dinnerProtein.length; i++){
+      const prev = dinnerProtein[i - 1].kcal > 0 ? dinnerProtein[i - 1].protein / dinnerProtein[i - 1].kcal : 0;
+      const cur = dinnerProtein[i].kcal > 0 ? dinnerProtein[i].protein / dinnerProtein[i].kcal : 0;
+      assert(prev >= cur - 1e-9,
+        'buildSwapAlternatives (craving=protein, dinner): sorted by protein-per-kcal, descending',
+        JSON.stringify(dinnerProtein.map(function(a){ return {id: a.id, protein: a.protein, kcal: a.kcal}; })));
+    }
+
+    // 'light' re-ranks by kcal, ascending.
+    const dinnerLight = altsFor(0, 'dinner', 'light');
+    assert(dinnerLight.length === dinnerUnfiltered.length,
+      'buildSwapAlternatives (craving=light): re-ranks, does not filter the pool');
+    for(let i = 1; i < dinnerLight.length; i++){
+      assert(dinnerLight[i - 1].kcal <= dinnerLight[i].kcal + 1e-9,
+        'buildSwapAlternatives (craving=light, dinner): sorted by kcal, ascending',
+        JSON.stringify(dinnerLight.map(function(a){ return {id: a.id, kcal: a.kcal}; })));
+    }
+
+    // toggleSwapCraving(): single-select — tapping the same key again clears it back to null,
+    // recomputing swapCtx.alts each time (reads swapCtx.craving directly, same convention
+    // buildSwapSearchOptions already uses for swapCtx.includeOtherMeals). Checked against an
+    // independent buildSwapAlternatives call under the same craving, rather than asserting
+    // content properties directly (already covered above) — this isolates exactly what
+    // toggleSwapCraving itself is responsible for: flipping the flag and recomputing alts.
+    run(ctx, "swapCtx = {dayIndex: 0, slot: 'dinner', person: 'elena', weekStartDate: '" + wsd + "', craving: null, alts: []};");
+    call(ctx, 'toggleSwapCraving', ['quick']);
+    assert(get(ctx, 'swapCtx.craving') === 'quick',
+      'toggleSwapCraving: selects the tapped chip');
+    const toggledAlts = get(ctx, 'swapCtx.alts');
+    const expectedQuickAlts = call(ctx, 'buildSwapAlternatives', [0, 'dinner', 'elena', wsd]);
+    assert(Array.isArray(toggledAlts) && JSON.stringify(idsOf(toggledAlts)) === JSON.stringify(idsOf(expectedQuickAlts)),
+      'toggleSwapCraving: recomputes swapCtx.alts to match buildSwapAlternatives under the new craving filter',
+      'got=' + JSON.stringify(idsOf(toggledAlts)) + ' expected=' + JSON.stringify(idsOf(expectedQuickAlts)));
+    call(ctx, 'toggleSwapCraving', ['quick']);
+    assert(get(ctx, 'swapCtx.craving') === null,
+      'toggleSwapCraving: tapping the already-active chip clears it (single-select toggle-off)');
+
+    // Free-text escape hatch funnels into the EXISTING search box state (swapCtx.searchQuery)
+    // rather than a second search, and clears any active preset chip.
+    run(ctx, "swapCtx = {dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: '" + wsd + "', craving: 'quick', searchQuery: '', alts: []};");
+    call(ctx, 'onSwapCravingFreeText', ['soup']);
+    assert(get(ctx, 'swapCtx.craving') === null,
+      'onSwapCravingFreeText: clears any active preset chip');
+    assert(get(ctx, 'swapCtx.searchQuery') === 'soup',
+      "onSwapCravingFreeText: funnels the typed text into the existing swapCtx.searchQuery search state");
+
+    // buildSwapSheet: resets swapCtx.craving to null on every fresh open (mirrors
+    // swapCtx.includeOtherMeals's existing reset), and renders the chip row wired to
+    // toggleSwapCraving for each of the five preset keys.
+    run(ctx, "swapCtx = {dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: '" + wsd + "', craving: 'fruit'};");
+    const sheetHtml = call(ctx, 'buildSwapSheet', [{dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: wsd}]);
+    assert(get(ctx, 'swapCtx.craving') === null,
+      'buildSwapSheet: resets swapCtx.craving to null on every fresh open, same as includeOtherMeals');
+    ['fruit', 'veg', 'protein', 'light', 'quick'].forEach(function(key){
+      assert(sheetHtml.indexOf("toggleSwapCraving('" + key + "')") !== -1,
+        'buildSwapSheet: renders a "' + key + '" craving chip wired to toggleSwapCraving');
+    });
+    assert(sheetHtml.indexOf('What do you feel like?') !== -1,
+      'buildSwapSheet: renders the "What do you feel like?" craving section');
+  } finally {
+    ctx.weekPlans = savedWeekPlans;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; swapCtx = " + (savedSwapCtx ? JSON.stringify(savedSwapCtx) : 'null') + ";");
+  }
+}
+
 /* ---------------- Regenerate week (keep pinned + logged) ----------------
    regenerateWeekPreservingLocks() forces a fresh plan for a week from the current catalog
    while preserving pinned meals and anything logged/skipped — the on-demand version of the
@@ -10298,6 +10451,7 @@ function main(){
   runTest('per-meal share override (eat different/together)', function(){ testMealShareOverride(ctx); });
   runTest('lunch fish/meat exclusion + swap variety', function(){ testLunchFishMeatExclusionAndSwapVariety(ctx); });
   runTest('swap sheet: complete-meal-only pool + same-slot-first with other-meals toggle', function(){ testSwapCompleteMealPoolAndOtherMealsToggle(ctx); });
+  runTest('swap sheet: "what do you feel like?" craving filter (fruit/veg/protein/light/quick)', function(){ testSwapCravingFilter(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

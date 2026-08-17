@@ -3081,6 +3081,32 @@ function addSideToPlan(plan, unit, sideRecipeId){
   return m;
 }
 
+// "What do you feel like?" swap filter (owner spec, 2026-08-17): does recipeId contain any
+// ingredient (from recipeEffectiveIngredients — the recipe's CHOSEN-variant list, engine.js)
+// whose food is tagged FOODS[id].sub === sub. FOODS[id].cat alone can't answer "does this
+// contain fruit": fruit and veg both live under cat:'Produce' (see foods.js header), which is
+// exactly why foods.js now carries `sub:'fruit'` on the actual fruit entries.
+function recipeContainsFoodSub(recipeId, sub){
+  const r = RECIPES_DB[recipeId];
+  if(!r) return false;
+  return recipeEffectiveIngredients(r, {}).some(function(ing){
+    const food = FOODS[ing[0]];
+    return !!(food && food.sub === sub);
+  });
+}
+
+// "Veg" = any Produce ingredient that is NOT tagged fruit — onions, leafy greens, peppers,
+// tomatoes, and every other savory Produce entry. Mirrors recipeContainsFoodSub's ingredient
+// walk so the two stay consistent with each other as foods.js grows.
+function recipeContainsVeg(recipeId){
+  const r = RECIPES_DB[recipeId];
+  if(!r) return false;
+  return recipeEffectiveIngredients(r, {}).some(function(ing){
+    const food = FOODS[ing[0]];
+    return !!(food && food.cat === 'Produce' && food.sub !== 'fruit');
+  });
+}
+
 // Alternatives = same slot, same style, avoid-respecting, excluding the current recipe
 // and anything already planned elsewhere today for this person; ranked by closest
 // computed kcal to what's currently planned (deterministic tie-break by id).
@@ -3131,6 +3157,25 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   let pool = rawPool.filter(function(id){ return !plannedToday[id] && !usedThisWeek[id]; });
   if(!pool.length) pool = rawPool.filter(function(id){ return !plannedToday[id]; }); // relax week-wide
   if(!pool.length) pool = rawPool;                                                    // relax today
+
+  // "What do you feel like?" (owner spec, 2026-08-17): swapCtx.craving is the swap sheet's
+  // chip filter, read straight off the global — same convention buildSwapSearchOptions above
+  // already uses for swapCtx.includeOtherMeals. Fruit/Veg/Quick are hard FILTERS on the pool;
+  // Protein/Light are re-RANKS applied in the sort below, on top of the existing kcal-fit
+  // band (no pool change for those two). A filter that would empty the pool falls back to the
+  // unfiltered pool — same relaxation contract as the tiers immediately above: a swap must
+  // always offer something.
+  const craving = swapCtx ? swapCtx.craving : null;
+  if(craving === 'fruit' || craving === 'veg' || craving === 'quick'){
+    const cravingPool = pool.filter(function(id){
+      if(craving === 'fruit') return recipeContainsFoodSub(id, 'fruit');
+      if(craving === 'veg') return recipeContainsVeg(id);
+      const r = RECIPES_DB[id];
+      return !!(r && typeof r.time === 'number' && r.time <= 15);
+    });
+    if(cravingPool.length) pool = cravingPool;
+  }
+
   const anchor = PERSON_ANCHOR[person];
   const slotIndex = SLOT_ORDER.indexOf(slot);
   const scored = pool.map(function(id){
@@ -3146,6 +3191,13 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
     return {id: id, portion: bp.portion, kcal: bp.kcal, protein: protein, kcalDelta: bp.kcal - currentKcal, proteinDelta: protein - currentProtein, band: band, rot: rot};
   });
   scored.sort(function(a, b){
+    // Protein/Light craving re-rank takes priority over the kcal-fit band, but still falls
+    // through to it (then rot, then id) as a deterministic tie-break.
+    if(craving === 'protein' || craving === 'light'){
+      const av = craving === 'protein' ? (a.kcal > 0 ? a.protein / a.kcal : 0) : a.kcal;
+      const bv = craving === 'protein' ? (b.kcal > 0 ? b.protein / b.kcal : 0) : b.kcal;
+      if(av !== bv) return craving === 'protein' ? (bv - av) : (av - bv); // protein: higher first; light: lower kcal first
+    }
     if(a.band !== b.band) return a.band - b.band;
     if(a.rot !== b.rot) return a.rot - b.rot;
     return a.id < b.id ? -1 : (a.id > b.id ? 1 : 0);
@@ -3257,6 +3309,11 @@ function resolveSwapContext(mealKey){
   return {dayIndex: todayDayIndex(), slot: slot, person: currentProf};
 }
 
+// swapCtx shape: {dayIndex, slot, person, weekStartDate, targetElId, alts, searchQuery,
+// includeOtherMeals, craving}. craving (string|null — 'fruit'|'veg'|'protein'|'light'|'quick')
+// is the "What do you feel like?" chip state (owner spec, 2026-08-17); see
+// toggleSwapCraving/buildSwapAlternatives below. Reset to null on every fresh sheet open,
+// same as includeOtherMeals.
 let swapCtx = null;
 
 function swapRecipeDisplay(id){
@@ -3397,26 +3454,97 @@ function openBuildYourOwnMeal(){
   }
 }
 
+// "What do you feel like?" chips (owner spec, 2026-08-17): single-select preset chips that
+// filter/re-rank "Best matches" in place — instant re-render, no submit, matching the rest of
+// the swap sheet's feel. Deliberately NOT "Comforting": no real data signal in FOODS/
+// RECIPES_DB backs it (see recipeContainsFoodSub/recipeContainsVeg above buildSwapAlternatives
+// for what IS backed). 'protein'/'light' re-rank only; 'fruit'/'veg'/'quick' filter the pool
+// too — see buildSwapAlternatives' craving handling.
+const SWAP_CRAVING_OPTIONS = [
+  {key: 'fruit', label: '🍎 Fruit'},
+  {key: 'veg', label: '🥦 Veg'},
+  {key: 'protein', label: '🍗 Protein'},
+  {key: 'light', label: '🪶 Light'},
+  {key: 'quick', label: '⏱️ Quick'}
+];
+
+function swapCravingChipsHtml(){
+  const craving = swapCtx ? swapCtx.craving : null;
+  const chips = SWAP_CRAVING_OPTIONS.map(function(o){
+    const on = craving === o.key;
+    return '<button type="button" class="pill ghost chip-preset' + (on ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="toggleSwapCraving(\'' + o.key + '\')">' + o.label + '</button>';
+  }).join('');
+  return '<div class="shop-cat">What do you feel like?</div>'
+    + '<div class="chiprow">' + chips + '</div>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapCravingFreeText" placeholder="Or type what you feel like..." autocomplete="off" oninput="onSwapCravingFreeText(this.value)">';
+}
+
+// Shared by buildSwapSheet's initial render and toggleSwapCraving's re-render — same
+// shared-renderer idea swapAltRowHtml's own doc comment describes for "Best matches"/"All
+// options" staying visually identical.
+function swapBestMatchesHtml(best){
+  if(!best || !best.length) return '<p class="sub">No other option fits this slot today.</p>';
+  return '<div class="shop-cat">Best matches</div>' + best.map(function(a, i){ return swapAltRowHtml(a, i); }).join('');
+}
+
+// Chip tap: single-select (tapping the already-active chip clears it back to unfiltered),
+// instant re-render of just the chip row (selected state) and "Best matches" (re-filtered/
+// re-ranked). buildSwapAlternatives reads swapCtx.craving directly (same convention
+// buildSwapSearchOptions already uses for swapCtx.includeOtherMeals), so recomputing it here
+// is enough — no separate filter function to keep in sync.
+function toggleSwapCraving(key){
+  if(!swapCtx) return;
+  swapCtx.craving = (swapCtx.craving === key) ? null : key;
+  const best = buildSwapAlternatives(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, swapCtx.weekStartDate);
+  swapCtx.alts = best;
+  const chips = document.getElementById('swapCravingChips');
+  if(chips) chips.innerHTML = swapCravingChipsHtml();
+  const bm = document.getElementById('swapBestMatches');
+  if(bm) bm.innerHTML = swapBestMatchesHtml(best);
+}
+
+// Free-text escape hatch ("or type what you feel like..."): funnels straight into the
+// EXISTING recipe search below (swapCtx.searchQuery + buildSwapSearchResults) instead of
+// inventing a second search — typing here pre-fills and auto-triggers that search box. Clears
+// any active preset chip (mutually exclusive with typing) and reverts "Best matches" to its
+// unfiltered ranking, but does NOT rebuild the chip row's own HTML (that would wipe the field
+// the user is actively typing into on every keystroke) — it only clears the .chipsel class
+// directly via the DOM.
+function onSwapCravingFreeText(value){
+  if(!swapCtx) return;
+  if(swapCtx.craving){
+    swapCtx.craving = null;
+    const chips = document.getElementById('swapCravingChips');
+    if(chips && chips.querySelectorAll) chips.querySelectorAll('.chip-preset').forEach(function(btn){ btn.classList.remove('chipsel'); });
+    const best = buildSwapAlternatives(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, swapCtx.weekStartDate);
+    swapCtx.alts = best;
+    const bm = document.getElementById('swapBestMatches');
+    if(bm) bm.innerHTML = swapBestMatchesHtml(best);
+  }
+  onSwapRecipeSearch(value);
+  const searchInput = document.getElementById('swapRecipeSearchInput');
+  if(searchInput) searchInput.value = value;
+}
+
 function buildSwapSheet(ctx){
+  if(swapCtx){
+    // Reset every time the sheet (re)opens for a fresh context — a stale "show other
+    // meals" opt-in or craving filter from a previous swap should never leak into the next
+    // one. Reset BEFORE computing `best` below so the very first render is always unfiltered.
+    swapCtx.includeOtherMeals = false;
+    swapCtx.craving = null;
+  }
   const best = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
   if(swapCtx){
     swapCtx.alts = best;
     swapCtx.searchQuery = swapCtx.searchQuery || '';
-    // Reset every time the sheet (re)opens for a fresh context — a stale "show other
-    // meals" opt-in from a previous swap should never leak into the next one.
-    swapCtx.includeOtherMeals = false;
   }
 
   const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
   let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Best matches keep the plan close. Search can pick any compatible ' + slotLabel + ' recipe, including yours.</p>'
-    + '<button class="cta ghostbtn" style="margin-top:4px" onclick="openBuildYourOwnMeal()">🧩 Build your own meal — ingredients &amp; recipes</button>';
-
-  if(!best.length){
-    html += '<p class="sub">No other option fits this slot today.</p>';
-  } else {
-    html += '<div class="shop-cat">Best matches</div>';
-    html += best.map(function(a, i){ return swapAltRowHtml(a, i); }).join('');
-  }
+    + '<button class="cta ghostbtn" style="margin-top:4px" onclick="openBuildYourOwnMeal()">🧩 Build your own meal — ingredients &amp; recipes</button>'
+    + '<div id="swapCravingChips">' + swapCravingChipsHtml() + '</div>'
+    + '<div id="swapBestMatches">' + swapBestMatchesHtml(best) + '</div>';
 
   html += '<div class="shop-cat">Search ' + slotLabel + ' recipes</div>'
     + '<button type="button" class="backbtn" id="swapOtherMealsToggle" style="margin:8px 0" onclick="toggleSwapOtherMeals()">' + escapeHtml(swapOtherMealsToggleLabel(ctx.slot)) + '</button>'
