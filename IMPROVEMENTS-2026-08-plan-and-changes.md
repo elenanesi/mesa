@@ -98,8 +98,10 @@ Everything the owner requested in this initiative is shipped. Remaining are the 
 later-phase roadmap items only:
 
 **Roadmap (later phases):**
-- Phase 2: pantry **Defect C** (Need→In cart→Stocked / Already home; tick keyed on foodId),
-  recipe `macrosOverride` + suggested-sites web quick-add, rebalance-objective spread term.
+- Phase 2: ✅ pantry **Defect C** SHIPPED (`d35433c`) — one **Need → In cart → Already home**
+  lifecycle, foodId-keyed in-cart state, "Put cart away" as the single idempotent pantry
+  write-path, covered items shown under "Already home" (not dropped). Remaining Phase 2:
+  recipe `macrosOverride` + suggested-sites web quick-add; rebalance-objective spread term.
 - Phase 3: engagement layer (daily-confirm keystone, onboarding ≤3 screens, anchored
   self-suppressing notification, weekly review, couple shared-outcome view).
 - Phase 4: **generation rewire** (make every pick balance-aware — highest risk), LLM-estimated
