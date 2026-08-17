@@ -87,16 +87,15 @@ builds good eating habits):
 |---|---|
 | `a355cd7` | **#1 — planner considers recipe variants by fit.** `pickSharedMeal`/`pickSoloMeal` enumerate each candidate's viable option-combos (`viableRecipeOptionCombos`) and score each combo's real macros, carrying the winning combo's `opts` into `makePlanEntry` (was: default macros + a variety rotation). Recipes without `optionGroups` stay byte-identical. |
 | `1b86318` | **#5a — unified "Ate out / eating out".** One entry (was two competing buttons); the ate-out sheet offers "I ate my planned {meal}" (keeps VERIFIED ✓ computed macros via `toggleWeekMealEatenOut`) or "I ate something different" (typed ESTIMATE). Applied the panel's documented principles from EXPERT-PANEL.md (the live panel agents were cut off by a session limit). |
-| `dcbcd8b` | **#5b (part 1) — "Build your own meal" in swap.** A `🧩 Build your own meal` button in the swap sheet opens the add-meal composer for the slot (compose a one-time meal from ingredients and/or existing recipes, macros recomputed). |
+| `dcbcd8b` | **#5b (part 1) — "Build your own meal" in swap.** Opened the add-meal composer from swap. Superseded by the meal builder below (swap's button now opens the builder). |
+| `489f235` | **#5b (part 2) — save a composed meal as a recipe.** `flattenComponentsToIngredientRows` (planner.js) merges a composed meal's components by foodId → `saveComposedMealAsRecipe` (library.js) feeds `saveRecipeBuilder`. "💾 Save to My recipes" on the composer; <2 ingredients aborts. |
+| `f28f43d` | **Note 3 — swap "what do you feel like?" filter.** Chip row (Fruit/Veg/Protein/Light/Quick + free text) re-ranks Best matches. Tagged 9 fruit foods `sub:'fruit'` + `recipeContainsFoodSub`/`recipeContainsVeg`; Fruit/Veg/Quick filter (with fallback), Protein/Light re-rank. **Needed a D1 re-seed** (foods.js). |
+| `e47766a` | **Notes 1+2 — the meal builder.** A separate ingredient-row draft (no plan-entry schema change): seed from a recipe (explodes its ingredients into editable rows), add ingredients and/or other recipes' ingredients (merged by foodId), edit grams / remove ANY row (no privileged base). Footer: Save to My recipes (`saveRecipeBuilder`) · Use for this meal (a one-time `occasional`+`oneTime` `cr-` set at exact 1x macros via `applyOneTimeMealToSlot`, hidden from My recipes) · Log as eaten out (computed macros — note 2's "typing is too hard" fix). Swap's "Build your own meal" and the ate-out "something different" branch both open it; typed estimate demoted to a fallback. |
 
 ## 7. Still open
 
-**#5b part 2 — save a composed meal as a reusable recipe (NOT done).** From the composed
-one-time meal, offer "💾 Save as a recipe": flatten the plan entry's components to a single
-ingredient list via `foodQuantitiesForComponents(planEntryComponents(entry))` → `{foodId: g}`
-→ `[[foodId, g]]`, then create a `cr-` custom recipe (mirror `saveRecipeBuilder`: name,
-≥2 ingredients, `applyCustomFoods`/`customRev`, persist). Deferred deliberately — the flatten +
-naming + validation deserves its own careful pass, not a rushed change under a session limit.
+Everything the owner requested in this initiative is shipped. Remaining are the original
+later-phase roadmap items only:
 
 **Roadmap (later phases):**
 - Phase 2: pantry **Defect C** (Need→In cart→Stocked / Already home; tick keyed on foodId),
