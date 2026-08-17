@@ -2930,16 +2930,18 @@ function currentWeekRemainingFoodQuantities(){
 //
 // PANTRY-plan.md P3 additions (kept additive — `totals[name]` keeps its original {qty,
 // unit, foodIds} shape, `staples` and `weekStartDate` are unchanged; `covered` and
-// `fullyCovered` are new top-level fields):
+// `alreadyHome` are new top-level fields):
 //   Q1 — for the CURRENT week only, already-logged/skipped slots are excluded from the
 //   count in the first place (weekPlanComponents above) — see its doc block.
 //   Pantry subtraction — need = planned - available, floored at 0. `available` is
 //   pantryRemaining() for the current week, or the PROJECTED leftover for next week
 //   (pantryProjectedForNextWeek, js/pantry.js — see its doc block for why next week can't
 //   just use pantryRemaining() as-is). A row fully covered drops off `totals` entirely and
-//   its name is listed in `fullyCovered`; a row only partially covered keeps its REDUCED
-//   qty and is recorded in `covered[name] = {have, unit}` — never a silent disappearance,
-//   per the plan's explicit "indistinguishable from a bug" concern.
+//   is recorded as a structured row in `alreadyHome` (not just a name in a sentence — the
+//   "Defect C" shopping<->pantry redesign renders this as a real "Already home" section,
+//   render-sheets.js:buildShopSheet); a row only partially covered keeps its REDUCED qty
+//   and is recorded in `covered[name] = {have, unit}` — never a silent disappearance, per
+//   the plan's explicit "indistinguishable from a bug" concern.
 function computeShoppingList(weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);
   const totals = {};  // food display name -> {qty, unit, foodIds}
@@ -2984,14 +2986,22 @@ function computeShoppingList(weekStartDate){
   // rounding uses Math.ceil in fmtShopQty, so even 1e-9 piece would otherwise display "1").
   const availableByFood = isNextWeek ? pantryProjectedForNextWeek() : pantryRemaining();
   const covered = {};      // name -> {have, unit} for a row that's only PARTIALLY covered
-  const fullyCovered = []; // names dropped entirely — pantry covers the row's full need
+  // Defect C redesign: a row the pantry FULLY covers still drops off `totals` (nothing left
+  // to buy), but is never silently dropped — it's handed back as a structured row here
+  // instead of just a name in a summary sentence, so the shopping sheet can render a real
+  // "Already home" section (foodId, name, have-qty, unit) with its own "need more?" manual
+  // adjust, rather than the old one-line "Already at home, not on this list: ...". foodId is
+  // the row's primary contributing food (foodIds is normally a 1-element array — see the
+  // foodIds doc above); foodIds itself is carried too so a "need more?" tap can step down
+  // every contributing food if a row is ever the rare multi-foodId case.
+  const alreadyHome = [];
   Object.keys(totals).forEach(function(name){
     const row = totals[name];
     let have = 0;
     row.foodIds.forEach(function(foodId){ have += availableByFood[foodId] || 0; });
     if(have <= 1e-9) return;
     if(have >= row.qty - 1e-9){
-      fullyCovered.push(name);
+      alreadyHome.push({foodId: row.foodIds[0], foodIds: row.foodIds.slice(), name: name, have: have, unit: row.unit});
       delete totals[name];
     } else {
       covered[name] = {have: have, unit: row.unit};
@@ -2999,7 +3009,7 @@ function computeShoppingList(weekStartDate){
     }
   });
 
-  return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate, covered: covered, fullyCovered: fullyCovered};
+  return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate, covered: covered, alreadyHome: alreadyHome};
 }
 
 // Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs),

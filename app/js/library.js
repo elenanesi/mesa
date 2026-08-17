@@ -2444,15 +2444,24 @@ function attachPantryListHandler(){
   };
 }
 
-// Direct-on-row decrease (plan: "not behind a sheet"). Step mirrors the app's other grams
-// steppers (10g/ml per tap) for gram/ml foods; whole pieces for unit:'piece' foods. Floored
-// at 0 by setPantryRemaining itself.
-function decreasePantryItem(foodId){
+// Pure ("no DOM") one-step decrease of a single food's pantry remaining — the app's
+// standard step (10g/ml per tap for gram/ml foods; whole pieces for unit:'piece' foods),
+// floored at 0 by setPantryRemaining itself. Extracted so the Pantry page's row decrease
+// button (decreasePantryItem below) and the shopping sheet's "Already home" row "need
+// more?" stepper (render-sheets.js:requestShopNeedMore — Defect C redesign's sanctioned
+// manual adjust) go through the EXACT same rule and the same setPantryRemaining mutator,
+// rather than two copies of the step logic drifting apart.
+function stepPantryRemainingDown(foodId){
   const food = FOODS[foodId];
   if(!food) return;
   const current = pantryRemaining()[foodId] || 0;
   const step = food.unit === 'piece' ? 1 : 10;
   setPantryRemaining(foodId, current - step);
+}
+
+// Direct-on-row decrease (plan: "not behind a sheet").
+function decreasePantryItem(foodId){
+  stepPantryRemainingDown(foodId);
   refreshPantryList();
 }
 

@@ -743,19 +743,21 @@ function testFoodDetailMarkup(ctx){
 }
 
 /* ---------------- ingredient icon picker (task C5) ---------------- */
-// Defect B regression: a row the pantry fully covers is deleted from list.totals
-// (computeShoppingList, planner.js), but its name-keyed entry in the per-week checked-set
-// used to linger, so the item came back pre-crossed-off. reconcileCheckedShopSet()
-// (render-sheets.js) prunes any checked name that isn't currently a total or a staple.
-function testReconcileCheckedShopSet(ctx){
-  const checked = {Flour: true, Eggs: true, Milk: true};
-  const list = {totals: {Eggs: {qty: 2}}, staples: {Milk: true}};
-  const removed = call(ctx, 'reconcileCheckedShopSet', [checked, list]);
-  assert(removed === 1, 'reconcileCheckedShopSet: prunes the stale (no-longer-listed) ticks and reports the count', String(removed));
-  assert(JSON.stringify(checked) === JSON.stringify({Eggs: true, Milk: true}),
-    'reconcileCheckedShopSet: keeps ticks for rows still on the list (a total and a staple), drops the rest', JSON.stringify(checked));
-  const removedAgain = call(ctx, 'reconcileCheckedShopSet', [checked, list]);
-  assert(removedAgain === 0, 'reconcileCheckedShopSet: idempotent once the checked-set is already reconciled', String(removedAgain));
+// Defect C regression (shopping<->pantry redesign): a row the pantry fully covers is
+// deleted from list.totals (computeShoppingList, planner.js), but its foodId-keyed entry in
+// the per-week in-cart set used to linger, so the item came back pre-marked in-cart.
+// reconcileInCartShopSet() (render-sheets.js) prunes any in-cart foodId that isn't
+// currently contributed by a row on the "To buy" list (list.totals[name].foodIds) — staples
+// are never in-cart-able (they carry no foodId), so they're irrelevant to this reconcile.
+function testReconcileInCartShopSet(ctx){
+  const inCart = {'flour-id': true, 'eggs-id': true, 'milk-id': true};
+  const list = {totals: {Eggs: {qty: 2, foodIds: ['eggs-id']}}, staples: {Milk: true}};
+  const removed = call(ctx, 'reconcileInCartShopSet', [inCart, list]);
+  assert(removed === 2, 'reconcileInCartShopSet: prunes every stale (no-longer-needed) foodId and reports the count', String(removed));
+  assert(JSON.stringify(inCart) === JSON.stringify({'eggs-id': true}),
+    'reconcileInCartShopSet: keeps the tick for a foodId still contributing to a "To buy" row, drops the rest (a staple has no foodId to keep)', JSON.stringify(inCart));
+  const removedAgain = call(ctx, 'reconcileInCartShopSet', [inCart, list]);
+  assert(removedAgain === 0, 'reconcileInCartShopSet: idempotent once the in-cart set is already reconciled', String(removedAgain));
 }
 
 function testDeletionConfirmation(ctx){
@@ -1516,6 +1518,50 @@ function testMergePantrySectionTieBreakConverges(ctx){
   }
   assert(counts.every(function(c){ return c === 1; }),
     'mergePantrySection: repeated round-trips never grow the entry count on an exact-tie `u` conflict (ratchet regression)', 'counts=' + counts.join(', '));
+}
+
+/* ---------------- Defect C redesign: mergeShoppingSection (js/sync.js) ---------------- */
+// shopping is a MERGE_SECTIONS entry — a per-week union of BOTH sub-fields: checkedByWeek
+// (legacy, name-keyed, inert — kept only so an old-format payload round-trips harmlessly)
+// and inCartByWeek (the real, foodId-keyed "in cart" tick this redesign introduces). Both
+// union the exact same way, no tombstone (occasional stuck ticks are a non-issue for a
+// short-lived, weekly-regenerated list) — this test covers both sub-fields, union +
+// order-independence + idempotence, mirroring the mergePantrySection tests above.
+function testMergeShoppingSectionInCart(ctx){
+  const local = {
+    checkedByWeek: {'2026-07-13': ['Flour']},
+    inCartByWeek: {'2026-07-13': ['eggs-id'], '2026-07-20': ['milk-id']}
+  };
+  const remote = {
+    checkedByWeek: {'2026-07-13': ['Eggs']},
+    inCartByWeek: {'2026-07-13': ['bread-id'], '2026-07-27': ['rice-id']}
+  };
+  const mergedLR = call(ctx, 'mergeShoppingSection', [cloneJSON(local), cloneJSON(remote)]);
+  const mergedRL = call(ctx, 'mergeShoppingSection', [cloneJSON(remote), cloneJSON(local)]);
+
+  const sortedInCart = function(m, wk){ return (m.inCartByWeek[wk] || []).slice().sort(); };
+  assert(JSON.stringify(sortedInCart(mergedLR, '2026-07-13')) === JSON.stringify(['bread-id', 'eggs-id']),
+    'mergeShoppingSection: inCartByWeek unions foodIds within a week that both sides touched', JSON.stringify(mergedLR.inCartByWeek));
+  assert(JSON.stringify(sortedInCart(mergedLR, '2026-07-20')) === JSON.stringify(['milk-id'])
+    && JSON.stringify(sortedInCart(mergedLR, '2026-07-27')) === JSON.stringify(['rice-id']),
+    'mergeShoppingSection: inCartByWeek keeps a week only one side touched, untouched', JSON.stringify(mergedLR.inCartByWeek));
+  assert(JSON.stringify(sortedInCart(mergedLR, '2026-07-13')) === JSON.stringify(sortedInCart(mergedRL, '2026-07-13')),
+    'mergeShoppingSection: inCartByWeek merge is order-independent (merge(A,B) === merge(B,A))', 'LR=' + JSON.stringify(mergedLR.inCartByWeek) + ' RL=' + JSON.stringify(mergedRL.inCartByWeek));
+
+  const sortedChecked = function(m, wk){ return (m.checkedByWeek[wk] || []).slice().sort(); };
+  assert(JSON.stringify(sortedChecked(mergedLR, '2026-07-13')) === JSON.stringify(['Eggs', 'Flour']),
+    'mergeShoppingSection: the legacy checkedByWeek still unions too (inert but harmlessly round-tripped)', JSON.stringify(mergedLR.checkedByWeek));
+
+  // Idempotence: merging the converged result with either original input again changes nothing.
+  const again = call(ctx, 'mergeShoppingSection', [cloneJSON(mergedLR), cloneJSON(local)]);
+  assert(JSON.stringify(sortedInCart(again, '2026-07-13')) === JSON.stringify(sortedInCart(mergedLR, '2026-07-13')),
+    'mergeShoppingSection: merging the converged result with an original input again is a no-op', JSON.stringify(again.inCartByWeek));
+
+  // Missing sub-fields on one side (e.g. an old peer that never sent inCartByWeek) degrade
+  // gracefully to "nothing from that side" rather than throwing.
+  const onlyChecked = call(ctx, 'mergeShoppingSection', [{checkedByWeek: {'2026-07-13': ['Milk']}}, {}]);
+  assert(JSON.stringify(onlyChecked.inCartByWeek) === '{}',
+    'mergeShoppingSection: a payload with no inCartByWeek at all merges to an empty object, not a crash', JSON.stringify(onlyChecked));
 }
 
 // mergeLogSection: dedupe by identity, tombstone exclusion, plan:<slot> newer-wins,
@@ -6717,9 +6763,11 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
         'before=' + beforeNextQty + ' after=' + afterNextQty);
     })();
 
-    // ---- (b) pantry subtraction: a fully-covered row disappears entirely; a partially-
-    // covered row keeps a REDUCED qty and is annotated in `covered` rather than just
-    // vanishing (PANTRY-plan.md's explicit "never silent" requirement). ----
+    // ---- (b) pantry subtraction: a fully-covered row disappears from `totals` but is
+    // exposed as a structured "Already home" row (alreadyHome — Defect C redesign, not just
+    // a name in a sentence); a partially-covered row keeps a REDUCED qty and is annotated in
+    // `covered` rather than just vanishing (PANTRY-plan.md's explicit "never silent"
+    // requirement). ----
     (function(){
       run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
       run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};');
@@ -6730,6 +6778,10 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
       assert(!!base.totals[FOOD_NAME] && Math.abs(base.totals[FOOD_NAME].qty - 200) < 1e-6,
         'pantry subtraction test setup: planned qty is exactly 200g with an empty pantry', JSON.stringify(base.totals[FOOD_NAME]));
 
+      function findAlreadyHome(list, name){
+        return (list.alreadyHome || []).find(function(r){ return r.name === name; }) || null;
+      }
+
       // Partial: pantry has LESS than planned.
       run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 120, setAt: Date.now(), u: Date.now()};");
       const partial = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
@@ -6738,20 +6790,29 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
         'partially-covered row: shows the REDUCED quantity (200 planned - 120 in pantry = 80)', 'got ' + partial.totals[FOOD_NAME].qty);
       assert(!!partial.covered[FOOD_NAME] && Math.abs(partial.covered[FOOD_NAME].have - 120) < 1e-6,
         '`covered` annotates exactly how much the pantry contributed to the partially-covered row (120)', JSON.stringify(partial.covered[FOOD_NAME]));
-      assert(partial.fullyCovered.indexOf(FOOD_NAME) === -1, 'a partially-covered row is not ALSO listed in fullyCovered', JSON.stringify(partial.fullyCovered));
+      assert(!findAlreadyHome(partial, FOOD_NAME), 'a partially-covered row is not ALSO listed in alreadyHome', JSON.stringify(partial.alreadyHome));
 
-      // Full: pantry has AT LEAST as much as planned — the row drops off the list entirely,
-      // but is never silently missing: it's named in fullyCovered instead.
+      // Full: pantry has AT LEAST as much as planned — the row drops off `totals` entirely,
+      // but is never silently missing: it's a structured row in alreadyHome instead.
       run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: Date.now(), u: Date.now()};");
       const full = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
       assert(!full.totals[FOOD_NAME], 'fully-covered row: disappears entirely from totals once the pantry fully covers it', JSON.stringify(Object.keys(full.totals)));
-      assert(full.fullyCovered.indexOf(FOOD_NAME) !== -1, 'fully-covered row: named in fullyCovered instead of silently vanishing', JSON.stringify(full.fullyCovered));
+      const fullHomeRow = findAlreadyHome(full, FOOD_NAME);
+      assert(!!fullHomeRow, 'fully-covered row: appears as a structured row in alreadyHome instead of silently vanishing', JSON.stringify(full.alreadyHome));
+      assert(fullHomeRow.foodId === FOOD_ID && JSON.stringify(fullHomeRow.foodIds) === JSON.stringify([FOOD_ID]),
+        'alreadyHome row: carries the contributing foodId(s)', JSON.stringify(fullHomeRow));
+      assert(Math.abs(fullHomeRow.have - 200) < 1e-6 && fullHomeRow.unit === 'g',
+        'alreadyHome row: carries the have-qty and unit (200g)', JSON.stringify(fullHomeRow));
       assert(!full.covered[FOOD_NAME], 'fully-covered row: not double-listed in the partial `covered` map', JSON.stringify(full.covered[FOOD_NAME]));
 
-      // Over-coverage: pantry has MORE than planned — still fully covered, still dropped.
+      // Over-coverage: pantry has MORE than planned — still fully covered, still dropped,
+      // and alreadyHome shows the FULL have-qty (500), not capped at what was needed.
       run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: Date.now(), u: Date.now()};");
       const over = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
       assert(!over.totals[FOOD_NAME], 'over-coverage: still fully covered when the pantry has MORE than needed', JSON.stringify(Object.keys(over.totals)));
+      const overHomeRow = findAlreadyHome(over, FOOD_NAME);
+      assert(!!overHomeRow && Math.abs(overHomeRow.have - 500) < 1e-6,
+        'over-coverage: alreadyHome shows the full 500g on hand, not capped at the 200g that was needed', JSON.stringify(overHomeRow));
     })();
 
     // ---- (c) next-week projection: pantryProjectedForNextWeek() = pantryRemaining() minus
@@ -6799,7 +6860,7 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
       // (c4) meanwhile THIS week's own list still uses plain pantryRemaining() directly —
       // 350 in stock covers the 200 needed, so the row is fully covered there.
       const thisWeekList = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
-      assert(!thisWeekList.totals[FOOD_NAME] && thisWeekList.fullyCovered.indexOf(FOOD_NAME) !== -1,
+      assert(!thisWeekList.totals[FOOD_NAME] && (thisWeekList.alreadyHome || []).some(function(r){ return r.name === FOOD_NAME; }),
         'sanity: the CURRENT week\'s own list uses plain pantryRemaining() (350 covers the 200 needed -> fully covered)', JSON.stringify(Object.keys(thisWeekList.totals)));
     })();
   } finally {
@@ -6810,10 +6871,12 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
 }
 
 /* ===================================================================
-   PANTRY-plan.md P3 step 4 (Q2) — "Add ticked items to pantry": restockTickedShopItems()
-   (js/render.js), the pure (no-DOM) logic behind the shopping sheet's restock button.
+   Defect C redesign — "Put cart away": putShopCartAway() (js/render-sheets.js), the pure
+   (no-DOM) logic behind the shopping sheet's "Put cart away" button. Supersedes the old
+   name-keyed restockTickedShopItems()/checkedShopByWeek pair (PANTRY-plan.md P3 step 4)
+   with a foodId-keyed in-cart set (inCartShopByWeek, state.js).
    =================================================================== */
-function testRestockTickedShopItems(ctx){
+function testPutShopCartAway(ctx){
   const FOOD_ID = '__pantry_p3_restock_fixture_food__';
   const RECIPE_ID = '__pantry_p3_restock_fixture_recipe__';
   const FOOD_NAME = 'P3 restock fixture food';
@@ -6821,7 +6884,7 @@ function testRestockTickedShopItems(ctx){
   ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
   const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
   const savedPantry = cloneJSON(get(ctx, 'pantry'));
-  const savedChecked = cloneJSON(get(ctx, 'checkedShopByWeek'));
+  const savedInCart = cloneJSON(get(ctx, 'inCartShopByWeek'));
   try{
     run(ctx, "FOODS['" + FOOD_ID + "'] = " + JSON.stringify({
       name: FOOD_NAME, per: 100, unit: 'g',
@@ -6836,7 +6899,7 @@ function testRestockTickedShopItems(ctx){
     }) + ';');
 
     run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
-    run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {}; checkedShopByWeek = {};');
+    run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {}; inCartShopByWeek = {};');
     call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
     run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + JSON.stringify({recipeId: RECIPE_ID, portion: 1, kcal: 0, protein: 0}) + ';');
 
@@ -6845,42 +6908,71 @@ function testRestockTickedShopItems(ctx){
     const list = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
     assert(Math.abs(list.totals[FOOD_NAME].qty - 220) < 1e-6,
       'restock test setup: the listed qty is net of the existing 80g pantry stock (300 - 80 = 220)', JSON.stringify(list.totals[FOOD_NAME]));
+    assert(JSON.stringify(list.totals[FOOD_NAME].foodIds) === JSON.stringify([FOOD_ID]),
+      'restock test setup: the row carries the fixture foodId', JSON.stringify(list.totals[FOOD_NAME]));
 
-    // Ticking selects the row only. The final sheet action is the sole Pantry write path.
+    // Tapping a row selects (marks in-cart) only — it never itself stocks Pantry. The
+    // "Put cart away" button is the sole write path.
     const sheetSrc = fs.readFileSync(path.join(APP_DIR, 'js/render-sheets.js'), 'utf8');
-    const toggleBody = /function toggleShop\(id, name\)\{[\s\S]*?\n\}/.exec(sheetSrc);
-    assert(!!toggleBody && !/restockShopItemName/.test(toggleBody[0]) && /checked\[name\] = true/.test(toggleBody[0]),
-      'toggleShop: the shopping-list row tap selects the item without stocking Pantry', toggleBody && toggleBody[0]);
-    assert(sheetSrc.indexOf('Add ticked items to pantry') < sheetSrc.indexOf("let idx = 0;"),
+    const toggleBody = /function toggleShopInCart\(id, foodIdsJson\)\{[\s\S]*?\n\}/.exec(sheetSrc);
+    assert(!!toggleBody && !/restockShopItemName/.test(toggleBody[0]) && /inCart\[foodId\] = true/.test(toggleBody[0]),
+      'toggleShopInCart: the shopping-list row tap marks the item in-cart without stocking Pantry', toggleBody && toggleBody[0]);
+    assert(sheetSrc.indexOf('Put cart away') < sheetSrc.indexOf("let idx = 0;"),
       'shopping list: the final Pantry action appears above the selectable items');
 
-    // (a) The final action stocks the selected row at its LISTED (net) quantity (220), ON
+    // (a) The final action stocks the in-cart row at its LISTED (net) quantity (220), ON
     // TOP of the 80g already there — expected new remaining = 80 + 220 = 300.
-    const checkedObj = {}; checkedObj[FOOD_NAME] = true;
-    run(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "'] = " + JSON.stringify(checkedObj) + ';');
+    run(ctx, "inCartShopByWeek['" + FIXED_MONDAY + "'] = " + JSON.stringify({[FOOD_ID]: true}) + ';');
 
-    const beforeRestock = Date.now();
-    const count = call(ctx, 'restockTickedShopItems', [FIXED_MONDAY]);
-    assert(count === 1, 'restockTickedShopItems: writes exactly one foodId (the single ticked row\'s single foodId)', 'got ' + count);
+    const beforePutAway = Date.now();
+    const count = call(ctx, 'putShopCartAway', [FIXED_MONDAY]);
+    assert(count === 1, 'putShopCartAway: writes exactly one foodId (the single in-cart row\'s single foodId)', 'got ' + count);
     const remaining = call(ctx, 'pantryRemaining', []);
     assert(Math.abs(remaining[FOOD_ID] - 300) < 1e-6,
-      'restockTickedShopItems: stocks the LISTED (net) quantity ON TOP of what was already there (80 + 220 = 300)', 'got ' + remaining[FOOD_ID]);
+      'putShopCartAway: stocks the LISTED (net) quantity ON TOP of what was already there (80 + 220 = 300)', 'got ' + remaining[FOOD_ID]);
 
-    // (c) goes through the ONE re-baselining mutator (setPantryRemaining) — qty/setAt/u are
+    // (b) goes through the ONE re-baselining mutator (setPantryRemaining) — qty/setAt/u are
     // all freshly stamped there, not a raw pantry[...] write.
     let entry = get(ctx, "pantry['" + FOOD_ID + "']");
-    assert(entry.qty === 300, 'restockTickedShopItems: pantry entry stores the new total qty verbatim (re-baselined)', JSON.stringify(entry));
-    assert(typeof entry.setAt === 'number' && entry.setAt >= beforeRestock,
-      'restockTickedShopItems: re-stamps setAt to NOW via setPantryRemaining — proves it went through the mutator, not a raw write', JSON.stringify(entry));
-    assert(typeof entry.u === 'number' && entry.u >= beforeRestock,
-      'restockTickedShopItems: re-stamps a fresh sync u too', JSON.stringify(entry));
-    assert(!get(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "']['" + FOOD_NAME + "']"),
-      'restockTickedShopItems: clears the checked state after stocking, so a future need does not reappear already crossed off',
-      JSON.stringify(get(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "']")));
+    assert(entry.qty === 300, 'putShopCartAway: pantry entry stores the new total qty verbatim (re-baselined)', JSON.stringify(entry));
+    assert(typeof entry.setAt === 'number' && entry.setAt >= beforePutAway,
+      'putShopCartAway: re-stamps setAt to NOW via setPantryRemaining — proves it went through the mutator, not a raw write', JSON.stringify(entry));
+    assert(typeof entry.u === 'number' && entry.u >= beforePutAway,
+      'putShopCartAway: re-stamps a fresh sync u too', JSON.stringify(entry));
+    assert(!get(ctx, "inCartShopByWeek['" + FIXED_MONDAY + "']['" + FOOD_ID + "']"),
+      'putShopCartAway: clears the in-cart state after stocking, so a future need does not reappear pre-marked in-cart',
+      JSON.stringify(get(ctx, "inCartShopByWeek['" + FIXED_MONDAY + "']")));
 
-    // (c2) Later consumption makes the item needed again. Because the restock path cleared
-    // the checked state above, the regenerated shopping row comes back as an active buy row,
-    // not as a stale crossed-off item.
+    // (c) idempotent — calling again right away (nothing back in the cart) writes nothing,
+    // proving there's no double-count from calling it twice in a row.
+    const countRepeat = call(ctx, 'putShopCartAway', [FIXED_MONDAY]);
+    assert(countRepeat === 0, 'putShopCartAway: calling again with nothing back in the cart writes nothing (idempotent)', 'got ' + countRepeat);
+    const remainingAfterRepeat = call(ctx, 'pantryRemaining', []);
+    assert(Math.abs(remainingAfterRepeat[FOOD_ID] - 300) < 1e-6,
+      'putShopCartAway: the repeat call does not double the pantry qty (still 300, not 600)', 'got ' + remainingAfterRepeat[FOOD_ID]);
+
+    // (d) no double-count across a manual Pantry-page add (setPantryRemaining) landing
+    // BETWEEN ticking the row in-cart and hitting "Put cart away": the sheet always
+    // recomputes the row's net qty fresh at put-away time, so whatever was manually added
+    // is already reflected — it's added ON TOP of, never in addition to, that manual add.
+    run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 0, setAt: 1000, u: 1000};"); // back to needing the full 300
+    const listBeforeManual = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+    assert(Math.abs(listBeforeManual.totals[FOOD_NAME].qty - 300) < 1e-6,
+      'no-double-count test setup: with an empty pantry, the full 300g is needed', JSON.stringify(listBeforeManual.totals[FOOD_NAME]));
+    run(ctx, "inCartShopByWeek['" + FIXED_MONDAY + "'] = " + JSON.stringify({[FOOD_ID]: true}) + ';'); // tick while the sheet still shows 300 needed
+    call(ctx, 'setPantryRemaining', [FOOD_ID, 100]); // manual add on the Pantry page, 100g, BEFORE put-away
+    const countAfterManual = call(ctx, 'putShopCartAway', [FIXED_MONDAY]);
+    assert(countAfterManual === 1, 'no-double-count: put-away still writes the (now-smaller) net row once', 'got ' + countAfterManual);
+    const remainingAfterManual = call(ctx, 'pantryRemaining', []);
+    // Net need at put-away time was 300 - 100 = 200; put-away adds that ON TOP of the 100
+    // already there via the manual add -> 100 + 200 = 300, matching the full recipe need
+    // exactly once, never 100 (manual) + 300 (stale pre-manual net) = 400.
+    assert(Math.abs(remainingAfterManual[FOOD_ID] - 300) < 1e-6,
+      'no-double-count: manual add (100) + put-away\'s freshly-recomputed net (200) sum to exactly the 300g needed, not 400', 'got ' + remainingAfterManual[FOOD_ID]);
+
+    // (e) Later consumption makes the item needed again. Because put-away cleared the
+    // in-cart state above, the regenerated shopping row comes back as an active buy row,
+    // not pre-marked in-cart.
     run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 300, setAt: new Date(2026,6,13,0,0,0,0).getTime(), u: 1};");
     run(ctx, "logHistory['2026-07-13'] = {elena: [{kind:'food', ref:'" + FOOD_ID + "', grams:120, id:'consumed', kcal:1, protein:1, carbs:1, fat:1, satFat:0, fiber:0, sugars:0, freeSugars:0, t:'12:00', u:2}], partner: [], targets: {elena:null, partner:null}, skipped: {elena:{}, partner:{}}, tomb: {elena: [], partner: []}};");
     const listAfterConsumption = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
@@ -6888,18 +6980,18 @@ function testRestockTickedShopItems(ctx){
       'shopping list: as pantry stock is consumed, the missing quantity reappears on the list (300 planned - 180 remaining = 120)',
       JSON.stringify(listAfterConsumption.totals[FOOD_NAME]));
     const sheetAfterConsumption = call(ctx, 'buildShopSheet', []);
-    assert(sheetAfterConsumption.indexOf('data-shop-name="' + FOOD_NAME + '"') !== -1 && sheetAfterConsumption.indexOf('shop-item done') === -1,
-      'shopping list UI: the reappearing consumed item is unchecked, not stale-crossed-off',
+    assert(sheetAfterConsumption.indexOf('data-food-ids="[&quot;' + FOOD_ID + '&quot;]"') !== -1 && sheetAfterConsumption.indexOf('shop-item in-cart') === -1,
+      'shopping list UI: the reappearing consumed item is not pre-marked in-cart',
       sheetAfterConsumption);
 
-    // (d) nothing ticked -> nothing written.
-    run(ctx, "checkedShopByWeek['" + FIXED_MONDAY + "'] = {};");
-    const countNone = call(ctx, 'restockTickedShopItems', [FIXED_MONDAY]);
-    assert(countNone === 0, 'restockTickedShopItems: with nothing ticked, writes nothing', 'got ' + countNone);
+    // (f) nothing in cart -> nothing written.
+    run(ctx, "inCartShopByWeek['" + FIXED_MONDAY + "'] = {};");
+    const countNone = call(ctx, 'putShopCartAway', [FIXED_MONDAY]);
+    assert(countNone === 0, 'putShopCartAway: with nothing in the cart, writes nothing', 'got ' + countNone);
   } finally {
     run(ctx, "delete RECIPES_DB['" + RECIPE_ID + "']; delete FOODS['" + FOOD_ID + "'];");
     run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
-    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + '; checkedShopByWeek = ' + JSON.stringify(savedChecked) + ';');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + '; inCartShopByWeek = ' + JSON.stringify(savedInCart) + ';');
   }
 }
 
@@ -6992,6 +7084,70 @@ function testPantryLoadValidation(ctx){
     ctx.__savedPantry__ = savedPantry;
     run(ctx, 'pantry = __savedPantry__; delete __savedPantry__;');
     run(ctx, "localStorage.removeItem(STORE_KEY);");
+  }
+}
+
+/* ===================================================================
+   Defect C redesign — state.js inCartShopByWeek: buildSnapshot()/loadState() round trip,
+   the reset path, and malformed-entry filtering. Mirrors testPantryLoadValidation above.
+   =================================================================== */
+function testInCartShopByWeekRoundTrip(ctx){
+  const savedInCart = get(ctx, 'inCartShopByWeek');
+  ctx.__savedInCartShopByWeek__ = savedInCart;
+  try{
+    // A well-formed inCartByWeek round-trips exactly through buildSnapshot()/loadState(),
+    // alongside a well-formed legacy checkedByWeek (proves the two sub-fields don't clobber
+    // each other). Object.assign(buildSnapshot(), {shopping: ...}) keeps every OTHER field
+    // exactly as the live app currently has it, same convention testPantryLoadValidation uses.
+    const goodInCart = {'2026-07-13': ['eggs', 'olive-oil']};
+    const goodChecked = {'2026-07-13': ['Flour']};
+    run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(Object.assign({}, buildSnapshot(), {shopping: {checkedByWeek: " + JSON.stringify(goodChecked) + ", inCartByWeek: " + JSON.stringify(goodInCart) + "}})));");
+    run(ctx, 'inCartShopByWeek = {}; checkedShopByWeek = {};'); // scramble in-memory before reload
+    run(ctx, 'loadState();');
+    assert(JSON.stringify(get(ctx, 'inCartShopByWeek')) === JSON.stringify({'2026-07-13': {eggs: true, 'olive-oil': true}}),
+      'loadState(): a well-formed inCartByWeek round-trips exactly (expanded back to a foodId Set)',
+      'got ' + JSON.stringify(get(ctx, 'inCartShopByWeek')));
+    assert(JSON.stringify(get(ctx, 'checkedShopByWeek')) === JSON.stringify({'2026-07-13': {Flour: true}}),
+      'loadState(): the legacy checkedByWeek round-trips independently of inCartByWeek', 'got ' + JSON.stringify(get(ctx, 'checkedShopByWeek')));
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
+
+    // Malformed entries are dropped rather than trusted: a non-array value for a week, and
+    // a non-string id inside an otherwise-valid week's array.
+    const base = call(ctx, 'buildSnapshot', []);
+    base.shopping = {
+      checkedByWeek: {},
+      inCartByWeek: {
+        '2026-07-13': ['eggs', 42, null], // kept: only the string id ('eggs'); 42/null dropped
+        'not-a-week': ['eggs'],           // dropped: key isn't a YYYY-MM-DD week
+        '2026-07-20': 'eggs'              // dropped: value isn't an array at all
+      }
+    };
+    run(ctx, 'localStorage.setItem(STORE_KEY, ' + JSON.stringify(JSON.stringify(base)) + ');');
+    run(ctx, 'inCartShopByWeek = {};');
+    run(ctx, 'loadState();');
+    const loadedBad = get(ctx, 'inCartShopByWeek');
+    assert(JSON.stringify(Object.keys(loadedBad)) === JSON.stringify(['2026-07-13']),
+      'loadState(): drops a non-week key and a non-array week value, keeping only the well-formed week', 'got keys=' + JSON.stringify(Object.keys(loadedBad)));
+    assert(JSON.stringify(loadedBad['2026-07-13']) === JSON.stringify({eggs: true}),
+      'loadState(): within a kept week, drops non-string ids (42, null), keeping only the valid one', JSON.stringify(loadedBad['2026-07-13']));
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
+
+    // The reset path: a pre-redesign backup (no shopping.inCartByWeek key at all — every
+    // store before this feature) must reset inCartShopByWeek to {} rather than carry over
+    // whatever was in memory before loadState() ran.
+    const base2 = call(ctx, 'buildSnapshot', []);
+    delete base2.shopping.inCartByWeek;
+    run(ctx, 'localStorage.setItem(STORE_KEY, ' + JSON.stringify(JSON.stringify(base2)) + ');');
+    run(ctx, "inCartShopByWeek = {'2026-07-13': {eggs: true}};"); // scramble with a NONEMPTY value first
+    run(ctx, 'loadState();');
+    assert(JSON.stringify(get(ctx, 'inCartShopByWeek')) === '{}',
+      'loadState(): a pre-redesign backup (no shopping.inCartByWeek key at all) resets inCartShopByWeek to {} rather than keeping stale in-memory data',
+      'got ' + JSON.stringify(get(ctx, 'inCartShopByWeek')));
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
+  } finally {
+    ctx.__savedInCartShopByWeek__ = savedInCart;
+    run(ctx, 'inCartShopByWeek = __savedInCartShopByWeek__; delete __savedInCartShopByWeek__;');
+    run(ctx, 'localStorage.removeItem(STORE_KEY);');
   }
 }
 
@@ -10584,7 +10740,7 @@ function main(){
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
-  runTest('reconcileCheckedShopSet: prunes stale shopping-list ticks (Defect B)', function(){ testReconcileCheckedShopSet(ctx); });
+  runTest('reconcileInCartShopSet: prunes stale shopping-list in-cart ticks (Defect C redesign)', function(){ testReconcileInCartShopSet(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('composite ingredient UI: save/detail/pantry/persist/D1 guards', function(){ testCompositeIngredientUi(ctx); });
   runTest('recipe display helpers (compat-view removal)', function(){ testRecipeDisplayHelpers(ctx); });
@@ -10601,7 +10757,9 @@ function main(){
   runTest('mergePantrySection: delete not resurrected (PANTRY-plan.md P1)', function(){ testMergePantrySectionDeleteNotResurrected(ctx); });
   runTest('mergePantrySection: order-independence (PANTRY-plan.md P1)', function(){ testMergePantrySectionOrderIndependence(ctx); });
   runTest('mergePantrySection: tie-break converges (PANTRY-plan.md P1)', function(){ testMergePantrySectionTieBreakConverges(ctx); });
+  runTest('mergeShoppingSection: inCartByWeek + checkedByWeek union, order-independence, idempotence (Defect C redesign)', function(){ testMergeShoppingSectionInCart(ctx); });
   runTest('pantry load-validation (PANTRY-plan.md P1)', function(){ testPantryLoadValidation(ctx); });
+  runTest('inCartShopByWeek: buildSnapshot/loadState round trip + reset path (Defect C redesign)', function(){ testInCartShopByWeekRoundTrip(ctx); });
   runTest('validateBackupStructure: pantry field (PANTRY-plan.md P1)', function(){ testValidateBackupStructurePantry(ctx); });
   runTest('pantryConsumedSince/pantryRemaining derivation (PANTRY-plan.md P2)', function(){ testPantryConsumedSinceAndRemaining(ctx); });
   runTest('pantry re-baseline mutation path (PANTRY-plan.md P2)', function(){ testPantryRebaselineMutationPath(ctx); });
@@ -10655,7 +10813,7 @@ function main(){
   runTest('computeShoppingList decomposition parity (PANTRY-plan.md P1)', function(){ testShoppingListDecompositionParity(ctx); });
   runTest('computeShoppingList: Q1 logged-exclusion + pantry subtraction + next-week projection (PANTRY-plan.md P3)', function(){ testShoppingListLoggedExclusionAndPantrySubtraction(ctx); });
   runTest('solo households: no ghost-planned partner, no shopping doubling, two-person round-trip byte-identical (Phase 3B B3)', function(){ testHouseholdSizeSoloMode(ctx); });
-  runTest('restockTickedShopItems: Add ticked items to pantry (PANTRY-plan.md P3 Q2)', function(){ testRestockTickedShopItems(ctx); });
+  runTest('putShopCartAway: "Put cart away" writes exactly the in-cart items once (Defect C redesign)', function(){ testPutShopCartAway(ctx); });
   runTest('required lunch/dinner structure + retired sauce role', function(){ testRequiredLunchDinnerStructure(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
   runTest('save a composed meal as a recipe (#5b follow-up)', function(){ testSaveComposedMealAsRecipe(ctx); });

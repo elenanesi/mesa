@@ -5,8 +5,8 @@
 // screen was showing at that moment (task: "default: the week currently shown on the Week
 // screen when opened from there") — setShopWeek() then lets the sheet's own segmented
 // control switch it without closing/reopening. currentShopWeekStartDate is the resolved
-// Monday for whichever mode is active right now — toggleShop() writes into that week's
-// checked-set, so it's always kept in sync with buildShopSheet()'s own resolution.
+// Monday for whichever mode is active right now — toggleShopInCart() writes into that
+// week's in-cart set, so it's always kept in sync with buildShopSheet()'s own resolution.
 let shopWeekMode = 'current';
 let currentShopWeekStartDate = null;
 
@@ -27,62 +27,79 @@ function setShopWeek(mode){
   attachShopListClickHandler();
 }
 
-// Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list
-// recomputes (different week, different servings), so checked state is tracked by
-// ingredient NAME, PER WEEK (checkedShopByWeek/checkedSetForWeek, state.js). Ticking a
-// row selects it for the final "Add ticked items to pantry" action.
-function toggleShop(id, name){
-  const el = document.getElementById(id);
-  if(!el) return;
-  el.classList.toggle('done');
-  if(name && currentShopWeekStartDate){
-    const checked = checkedSetForWeek(currentShopWeekStartDate);
-    if(el.classList.contains('done')) checked[name] = true;
-    else {
-      delete checked[name];
-    }
-    persist();
-  }
+// Shopping-list ids (sh-0, sh-1…) are positional and change whenever the list recomputes
+// (different week, different servings), so the "in cart" tick is tracked by FOODID, PER
+// WEEK (inCartShopByWeek/inCartSetForWeek, state.js) — Defect C redesign. Tapping a "To
+// buy" row means "I put this in my cart" — the row dims but STAYS on the list (never the
+// old ambiguous crossed-off "done" that silently read as "I have it"). The pantry itself
+// is never touched here; "Put cart away" (putCartAway below) is the ONE write path from a
+// ticked row into the pantry.
+function shopRowIsInCart(row, inCart){
+  return !!(row && inCart && (row.foodIds || []).some(function(foodId){ return !!inCart[foodId]; }));
 }
 
-// Drops any per-week checked ("done") entry whose row is no longer on the list — a row
-// the pantry now fully covers (computeShoppingList's fullyCovered) is deleted from
-// list.totals, but its name-keyed tick used to linger and re-cross-off the item when it
-// returned. Reconciles the checked-set against the rows actually rendered (totals +
-// staples). Returns the number of stale ticks removed. Pure: no DOM, no persist.
-function reconcileCheckedShopSet(checked, list){
-  if(!checked || !list) return 0;
+function toggleShopInCart(id, foodIdsJson){
+  const el = document.getElementById(id);
+  if(!el || !currentShopWeekStartDate) return;
+  let foodIds;
+  try{ foodIds = JSON.parse(foodIdsJson || '[]'); }catch(e){ foodIds = []; }
+  if(!Array.isArray(foodIds) || !foodIds.length) return;
+  const inCart = inCartSetForWeek(currentShopWeekStartDate);
+  const nowInCart = !el.classList.contains('in-cart');
+  el.classList.toggle('in-cart', nowInCart);
+  foodIds.forEach(function(foodId){
+    if(nowInCart) inCart[foodId] = true;
+    else delete inCart[foodId];
+  });
+  persist();
+}
+
+// Drops any per-week in-cart foodId whose row is no longer on the "To buy" list — a row
+// the pantry now fully covers (computeShoppingList's alreadyHome) is deleted from
+// list.totals, but its foodId-keyed tick used to linger and re-mark the item in-cart when
+// it returned. Reconciles the in-cart set against the foodIds actually on the Need list.
+// Returns the number of stale ticks removed. Pure: no DOM, no persist.
+function reconcileInCartShopSet(inCart, list){
+  if(!inCart || !list) return 0;
   const visible = {};
-  Object.keys(list.totals || {}).forEach(function(n){ visible[n] = true; });
-  Object.keys(list.staples || {}).forEach(function(n){ visible[n] = true; });
+  Object.keys(list.totals || {}).forEach(function(name){
+    (list.totals[name].foodIds || []).forEach(function(foodId){ visible[foodId] = true; });
+  });
   let removed = 0;
-  Object.keys(checked).forEach(function(name){
-    if(!visible[name]){ delete checked[name]; removed++; }
+  Object.keys(inCart).forEach(function(foodId){
+    if(!visible[foodId]){ delete inCart[foodId]; removed++; }
   });
   return removed;
 }
 
-// Delegated click handler for the shopping list's .shop-item rows (buildShopSheet below).
-// Ingredient NAMES can be user-authored (custom food/recipe names), so rows carry the name
-// only in a data-* attribute (htmlAttr-escaped once by the HTML-attribute parser, never
-// re-parsed as JS) instead of interpolating it into an onclick="..." JS string — same
-// re-attach-after-innerHTML-rebuild pattern as attachSwapSearchHandler (planner.js).
+// Delegated click handler for the shopping sheet — a "To buy" row (carries data-food-ids)
+// toggles in-cart; an "Already home" row's "need more?" button steps that food's assumed
+// pantry stock down instead (requestShopNeedMore below), the sanctioned manual adjust for
+// "actually I need more of this". foodIds travel as a JSON array in a data-* attribute
+// (htmlAttr-escaped once by the HTML-attribute parser, never re-parsed as JS) instead of
+// being interpolated into an onclick="..." JS string — same re-attach-after-innerHTML-
+// rebuild pattern as attachSwapSearchHandler (planner.js).
 function attachShopListClickHandler(){
   const el = document.getElementById('sheetBody');
   if(!el) return;
   el.onclick = function(e){
-    const row = e.target.closest('.shop-item');
+    const needMoreBtn = e.target.closest('[data-act="need-more"]');
+    if(needMoreBtn && el.contains(needMoreBtn)){
+      requestShopNeedMore(needMoreBtn.getAttribute('data-food-ids') || '[]');
+      return;
+    }
+    const row = e.target.closest('.shop-item[data-food-ids]');
     if(!row || !el.contains(row)) return;
-    toggleShop(row.id, row.getAttribute('data-shop-name') || '');
+    toggleShopInCart(row.id, row.getAttribute('data-food-ids') || '[]');
   };
 }
 
 function buildShopSheet(){
   const weekStartDate = shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO());
-  currentShopWeekStartDate = weekStartDate; // toggleShop() writes into this week's checked-set
+  currentShopWeekStartDate = weekStartDate; // toggleShopInCart()/putCartAway() write into this week's in-cart set
   const list = computeShoppingList(weekStartDate);
-  const checked = checkedSetForWeek(weekStartDate);
-  if(reconcileCheckedShopSet(checked, list)) persist();
+  const inCart = inCartSetForWeek(weekStartDate);
+  if(reconcileInCartShopSet(inCart, list)) persist();
   const byCat = {};
   Object.keys(list.totals).forEach(function(name){
     const cat = foodCategoryForName(name); // real FOODS[..].cat, no hand-typed map (task C2)
@@ -98,44 +115,86 @@ function buildShopSheet(){
     + '<button style="flex:1" class="'+(shopWeekMode === 'next' ? 'on' : '')+'" onclick="setShopWeek(\'next\')">Next week</button>'
     + '</div>'
     + '<p class="sub" style="margin-top:10px"><b>' + weekRange + '</b> · ' + (isSoloHousehold() ? 'For you' : 'For both of you') + ' · 7 days · totals summed from ' + weekLabel + ' plan at each meal\'s planned portions. Shared meals are cooked once and counted once.</p>';
-  // PANTRY-plan.md P3: a row the pantry fully covers is dropped from the list below, but
-  // never silently — this short summary says where it went (the plan is explicit that
-  // silent disappearance is indistinguishable from a bug).
-  if(list.fullyCovered.length){
-    html += '<p class="sub" style="margin-top:0">Already at home, not on this list: ' + list.fullyCovered.slice().sort().map(escapeHtml).join(', ') + '.</p>';
-  }
-  html += '<button class="cta" onclick="addTickedShopItemsToPantry()">Add ticked items to pantry</button>';
+  // Defect C redesign: "Put cart away" is the ONE write path from the shopping sheet into
+  // the pantry — it moves every currently in-cart row into the pantry at its listed
+  // (already pantry-net) quantity, then clears their in-cart state.
+  html += '<button class="cta" onclick="putCartAway()">Put cart away</button>';
   let idx = 0;
+  html += '<div class="shop-cat" style="margin-top:6px">To buy</div>';
+  let anyToBuy = false;
   SHOP_CAT_ORDER.forEach(function(cat){
     const names = byCat[cat];
     if(!names || !names.length) return;
+    anyToBuy = true;
     names.sort();
     html += '<div class="shop-cat">'+cat+'</div>';
     names.forEach(function(name){
       const t = list.totals[name];
       const id = 'sh-' + (idx++);
-      const done = checked[name] ? ' done' : '';
+      const inCartClass = shopRowIsInCart(t, inCart) ? ' in-cart' : '';
+      const foodIdsAttr = htmlAttr(JSON.stringify(t.foodIds || []));
       // PANTRY-plan.md P3: a PARTIALLY covered row keeps the reduced qty (t.qty, already
-      // net of the pantry) but annotates what pantry already contributed — same "never
-      // silent" reasoning as the fullyCovered summary above, just per-row. Mirrors the
-      // existing .dm-t/.li-t small-under-title pattern (mesa.css) inline rather than adding
-      // a new selector, since this file's scope doesn't include the stylesheet.
+      // net of the pantry) but annotates what pantry already contributed — never silent.
+      // Mirrors the existing .dm-t/.li-t small-under-title pattern (mesa.css) inline rather
+      // than adding a new selector, since this file's scope doesn't include the stylesheet.
       const haveNote = list.covered[name]
         ? '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(list.covered[name].have, list.covered[name].unit) + '</small>'
         : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+haveNote+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      html += '<div class="shop-item'+inCartClass+'" id="'+id+'" data-food-ids="'+foodIdsAttr+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+haveNote+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
     });
   });
+  if(!anyToBuy){
+    html += '<p class="sub" style="margin-top:0">Nothing left to buy this week.</p>';
+  }
   const stapleNames = Object.keys(list.staples).sort();
   if(stapleNames.length){
     html += '<div class="shop-cat">Pantry staples — check you have these</div>';
     stapleNames.forEach(function(name){
-      const id = 'sh-' + (idx++);
-      const done = checked[name] ? ' done' : '';
-      html += '<div class="shop-item'+done+'" id="'+id+'" data-shop-name="'+htmlAttr(name)+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+'</div></div>';
+      html += '<div class="shop-item shop-item-static"><div class="sck">•</div><div class="sname">'+escapeHtml(name)+'</div></div>';
+    });
+  }
+  // Defect C redesign: a row the pantry FULLY covers is no longer silently dropped (nor
+  // just named in a one-line sentence) — it gets its own visible, greyed section, with a
+  // "need more?" stepper for the sanctioned manual adjust.
+  if(list.alreadyHome && list.alreadyHome.length){
+    const homeByCat = {};
+    list.alreadyHome.forEach(function(row){
+      const cat = foodCategoryForName(row.name);
+      (homeByCat[cat] = homeByCat[cat] || []).push(row);
+    });
+    html += '<div class="shop-cat" style="margin-top:22px">Already home</div>'
+      + '<p class="sub" style="margin-top:0">Already in your pantry — not counted in what\'s left to buy.</p>';
+    SHOP_CAT_ORDER.forEach(function(cat){
+      const rows = homeByCat[cat];
+      if(!rows || !rows.length) return;
+      rows.sort(function(a, b){ return a.name < b.name ? -1 : (a.name > b.name ? 1 : 0); });
+      html += '<div class="shop-cat">'+cat+'</div>';
+      rows.forEach(function(row){
+        const foodIdsAttr = htmlAttr(JSON.stringify(row.foodIds || []));
+        html += '<div class="shop-item already-home"><div class="sck">✓</div><div class="sname">'+escapeHtml(row.name)
+          + '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(row.have, row.unit) + '</small></div>'
+          + '<button class="backbtn" style="margin:0;min-height:36px;padding:4px 8px;font-size:12px" data-act="need-more" data-food-ids="'+foodIdsAttr+'">Need more?</button></div>';
+      });
     });
   }
   return html;
+}
+
+// Steps every foodId in `foodIdsJson` down by the standard pantry step (10g/ml or 1 piece —
+// library.js:stepPantryRemainingDown, the SAME mutator the Pantry page's own row-decrease
+// button uses) and re-renders the sheet. This is the "Already home" row's "need more?"
+// affordance — the sanctioned manual adjust when the assumed pantry stock is wrong, so the
+// row reappears (fully or partially) on "To buy" instead of the user having to go find it
+// on the separate Pantry page. Almost always a single foodId (foodId:name is 1:1 in
+// practice — see computeShoppingList's own doc note on the foodIds array); stepping every
+// contributing foodId keeps the rare aggregated-row case correct too.
+function requestShopNeedMore(foodIdsJson){
+  let foodIds;
+  try{ foodIds = JSON.parse(foodIdsJson || '[]'); }catch(e){ foodIds = []; }
+  if(!Array.isArray(foodIds) || !foodIds.length) return;
+  foodIds.forEach(function(foodId){ stepPantryRemainingDown(foodId); });
+  document.getElementById('sheetBody').innerHTML = buildShopSheet();
+  attachShopListClickHandler();
 }
 
 function restockShopItemName(weekStartDate, name){
@@ -155,37 +214,44 @@ function restockShopItemName(weekStartDate, name){
   return count;
 }
 
-// Stocks every currently-TICKED row of `weekStartDate`'s shopping list into the pantry at
+// Stocks every currently IN-CART row of `weekStartDate`'s shopping list into the pantry at
 // its LISTED quantity (computeShoppingList's already pantry-reduced `qty` — exactly what's
-// still missing), adding it ON TOP of whatever's already in stock. This is called only by
-// the shopping sheet's final "Add ticked items to pantry" action.
-function restockTickedShopItems(weekStartDate){
+// still missing), adding it ON TOP of whatever's already in stock, then clears those rows'
+// in-cart state. This is the ONE write path from the shopping sheet into the pantry (Defect
+// C redesign) — called only by the sheet's "Put cart away" action. A row counts as in-cart
+// if ANY of its contributing foodIds is ticked (foodId:name is 1:1 in practice — see
+// computeShoppingList's doc note), matching how toggleShopInCart ticks a row's foodIds
+// together as one unit. Idempotent: once a row's foodIds are cleared from the in-cart set,
+// a repeat call finds nothing in-cart to stock and writes nothing (same guarantee the old
+// restockTickedShopItems gave).
+function putShopCartAway(weekStartDate){
   const list = computeShoppingList(weekStartDate);
-  const checked = checkedSetForWeek(weekStartDate);
+  const inCart = inCartSetForWeek(weekStartDate);
   let count = 0;
-  const stockedNames = {};
+  const stockedFoodIds = {};
   Object.keys(list.totals).forEach(function(name){
-    if(!checked[name]) return;
+    const row = list.totals[name];
+    if(!shopRowIsInCart(row, inCart)) return;
     const stocked = restockShopItemName(weekStartDate, name);
     if(stocked){
-      stockedNames[name] = true;
+      (row.foodIds || []).forEach(function(foodId){ stockedFoodIds[foodId] = true; });
       count += stocked;
     }
   });
   if(count){
-    Object.keys(stockedNames).forEach(function(name){ delete checked[name]; });
+    Object.keys(stockedFoodIds).forEach(function(foodId){ delete inCart[foodId]; });
     persist();
   }
   return count;
 }
 
-function addTickedShopItemsToPantry(){
+function putCartAway(){
   const weekStartDate = currentShopWeekStartDate || (shopWeekMode === 'next' ? nextMondayISO() : mondayOfWeek(todayISO()));
-  const count = restockTickedShopItems(weekStartDate);
-  if(!count){ toast('Tick items first, then add them to your pantry'); return; }
+  const count = putShopCartAway(weekStartDate);
+  if(!count){ toast('Add items to your cart first, then put them away'); return; }
   document.getElementById('sheetBody').innerHTML = buildShopSheet();
   attachShopListClickHandler();
-  toast('Added to pantry');
+  toast('✓ Pantry updated');
 }
 
 /* ---------------- re-balance week (task C2 item 4 — real solver) ---------------- */

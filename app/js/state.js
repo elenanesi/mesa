@@ -397,6 +397,7 @@ function pruneOldWeekPlans(){
     if(k < cutoff){
       delete weekPlans[k];
       delete checkedShopByWeek[k];
+      delete inCartShopByWeek[k];
     }
   });
 }
@@ -640,19 +641,37 @@ let lastPersistOk = true;
 const CURRENT_STORE_VERSION = 6;
 
 let onboarded = false;
-// Shopping-list checked state, keyed PER WEEK (task: "shopping list per week" — checked
-// items for next week's list are independent of this week's, and are pruned along with
-// their week by pruneOldWeekPlans()): weekStartDate ('YYYY-MM-DD') -> {ingredientName:
-// true}. Ids in the shopping sheet are positional and change whenever the list recomputes,
-// so checked state is tracked by ingredient NAME within each week's bucket, same
-// convention the single-week version used.
+// LEGACY (Defect C redesign, 2026-08): the old shopping-list "tick" — keyed by ingredient
+// display NAME, per week — used to mean "selected for the restock action", but read to
+// users as "I have it", the opposite of what the code actually did (a pantry-covered row
+// was silently DROPPED, never ticked). Superseded by inCartShopByWeek below, which is
+// foodId-keyed and means only "in cart while shopping" — the pantry never changes until
+// "Put cart away" (render-sheets.js:putShopCartAway) explicitly commits it. Nothing in the
+// app writes into this field anymore; it's kept ONLY so buildSnapshot()/loadState() and a
+// couple-sync payload from an not-yet-updated peer still round-trip without erroring — see
+// the redesign's own doc note: "let old name-keyed data age out / be ignored" rather than
+// migrate it. It ages out on its own via pruneOldWeekPlans() as weeks roll over.
 let checkedShopByWeek = {};
-// Returns (creating on first touch) the checked-name set for one week's shopping list —
-// every reader/writer of shopping-check state goes through this so a week with no checks
-// yet doesn't need a null-check dance.
+// Returns (creating on first touch) the legacy checked-name set for one week — kept only
+// for the backward-compat round-trip described above; no current code path writes to it.
 function checkedSetForWeek(weekStartDate){
   if(!checkedShopByWeek[weekStartDate]) checkedShopByWeek[weekStartDate] = {};
   return checkedShopByWeek[weekStartDate];
+}
+// Shopping-sheet "in cart" state (Defect C redesign) — the REAL per-row tick now, keyed PER
+// WEEK and PER FOODID (not display name): weekStartDate -> {foodId: true}. Tapping a "To
+// buy" row toggles its foodId(s) here; the row just dims and STAYS on the list (never
+// silently vanishes like the old "done"/crossed-off state implied). Reconciled against the
+// current derived list every render (reconcileInCartShopSet, render-sheets.js) so a foodId
+// no longer needed (fully covered, recipe swapped out, …) can't linger pre-ticked. Pruned
+// alongside its week by pruneOldWeekPlans(), same as checkedShopByWeek above.
+let inCartShopByWeek = {};
+// Returns (creating on first touch) the in-cart foodId set for one week's shopping list —
+// every reader/writer of in-cart state goes through this so a week with nothing ticked yet
+// doesn't need a null-check dance.
+function inCartSetForWeek(weekStartDate){
+  if(!inCartShopByWeek[weekStartDate]) inCartShopByWeek[weekStartDate] = {};
+  return inCartShopByWeek[weekStartDate];
 }
 
 /* ---------------- user content library (post-MVP: ingredients + recipes) ----------------
@@ -852,6 +871,14 @@ function buildSnapshot(){
     const names = Object.keys(checkedShopByWeek[wk]).filter(function(n){ return checkedShopByWeek[wk][n]; });
     if(names.length) checkedByWeek[wk] = names;
   });
+  // Defect C redesign: the real per-row tick now (see inCartShopByWeek's doc block above).
+  // checkedByWeek (legacy, name-keyed) is still written above purely so an old-format
+  // couple-sync payload or backup keeps round-tripping harmlessly — see that field's doc.
+  const inCartByWeek = {};
+  Object.keys(inCartShopByWeek).forEach(function(wk){
+    const ids = Object.keys(inCartShopByWeek[wk]).filter(function(id){ return inCartShopByWeek[wk][id]; });
+    if(ids.length) inCartByWeek[wk] = ids;
+  });
   return {
     v: CURRENT_STORE_VERSION, // v4: weekPlans (keyed) + shopping.checkedByWeek (keyed) — see loadState() migrations
     currentProf: currentProf,
@@ -863,9 +890,11 @@ function buildSnapshot(){
     shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
-    // Per-week checked-item state (task: "shopping list per week") — see checkedShopByWeek
-    // above for the shape; keyed the same way weekPlans is, by that week's Monday.
-    shopping: { checkedByWeek: checkedByWeek },
+    // Per-week shopping-sheet state, keyed the same way weekPlans is (by that week's
+    // Monday). checkedByWeek is the legacy name-keyed tick (see checkedShopByWeek's doc
+    // block above — kept for harmless round-trip only). inCartByWeek is the real, foodId-
+    // keyed "in cart" tick the Defect C redesign introduced (see inCartShopByWeek above).
+    shopping: { checkedByWeek: checkedByWeek, inCartByWeek: inCartByWeek },
     // user content library (post-MVP): plain JSON data, stored verbatim — see the block
     // above for the shape. Exported/imported for free as part of the whole store (task F2).
     customFoods: customFoods,
@@ -1097,6 +1126,23 @@ function loadState(){
     const set = {};
     saved.shopping.checked.forEach(function(name){ if(typeof name === 'string') set[name] = true; });
     checkedShopByWeek[legacyWeek] = set;
+  }
+
+  // In-cart state (Defect C redesign) — foodId-keyed, per week; see inCartShopByWeek's doc
+  // block above. Brand-new field, so unlike checkedByWeek above there is no legacy shape to
+  // migrate from — a store/backup predating this feature simply has no
+  // shopping.inCartByWeek key at all, and the reset just above (this whole block starts
+  // from inCartShopByWeek = {}) already covers that case.
+  inCartShopByWeek = {};
+  if(saved.shopping && typeof saved.shopping === 'object' && saved.shopping.inCartByWeek && typeof saved.shopping.inCartByWeek === 'object'){
+    Object.keys(saved.shopping.inCartByWeek).forEach(function(wk){
+      if(!/^\d{4}-\d{2}-\d{2}$/.test(wk)) return;
+      const arr = saved.shopping.inCartByWeek[wk];
+      if(!Array.isArray(arr)) return;
+      const set = {};
+      arr.forEach(function(foodId){ if(typeof foodId === 'string') set[foodId] = true; });
+      inCartShopByWeek[wk] = set;
+    });
   }
 
   // user content library: structurally-wrong ids/entries are dropped rather than trusted

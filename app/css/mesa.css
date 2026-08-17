@@ -783,16 +783,22 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .altrow .at .ad b{color:var(--sage-deep);}
 .altrow .tags{margin-top:7px;}
 
-/* shopping list */
+/* shopping list (Defect C redesign: "in cart" dims but never strikes through — that used
+   to read as "done/have it", the opposite of what the tick actually meant; "already-home"
+   rows are a real greyed section now, not a dropped row + summary sentence) */
 .shop-cat{font-size:11.5px;font-weight:700;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted);margin:18px 0 4px;}
 .shop-cat:first-child{margin-top:6px;}
 .shop-item{display:flex;align-items:center;gap:12px;padding:12px 2px;border-bottom:1px solid var(--line);cursor:pointer;min-height:44px;}
 .shop-item .sck{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);flex:0 0 22px;display:grid;place-items:center;color:#fff;font-size:13px;}
-.shop-item.done .sck{background:var(--sage);border-color:var(--sage);}
+.shop-item.in-cart .sck{background:var(--sage);border-color:var(--sage);}
 .shop-item .sname{flex:1;font-size:14px;}
 .shop-item .sqty{font-size:13px;font-weight:700;color:var(--ink-soft);white-space:nowrap;}
-.shop-item.done .sname{text-decoration:line-through;color:var(--muted);}
-.shop-item.done .sqty{color:var(--muted);}
+.shop-item.in-cart{opacity:.55;}
+.shop-item.in-cart .sname{color:var(--muted);}
+.shop-item.in-cart .sqty{color:var(--muted);}
+.shop-item-static{cursor:default;}
+.shop-item.already-home{cursor:default;opacity:.6;gap:8px;}
+.shop-item.already-home .sck{background:var(--sage);border-color:var(--sage);}
 
 /* onboarding */
 .onboard{position:absolute;inset:0;background:var(--bg);z-index:44;display:flex;flex-direction:column;padding:56px 24px 30px;}

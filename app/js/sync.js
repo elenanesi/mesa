@@ -26,7 +26,9 @@
                              differ (a regenerated week replaces wholesale —
                              cell stamps aren't comparable across
                              generations).
-     - shopping            : union-merge of checked item names, per week.
+     - shopping            : union-merge of the in-cart foodId set, per week (Defect C
+                             redesign; the legacy name-keyed checked set unions the same
+                             way, but is inert — kept only for round-trip).
      - profile:elena/partner: LWW each, one section per person so an
                              edit to Elena's profile can never clobber a
                              concurrent edit to Andrea's (they're
@@ -139,7 +141,9 @@ function plansSectionData(){
 }
 
 // checkedShopByWeek (state.js) is {week: {name: true}} — the wire shape uses arrays of
-// names (JSON-friendlier, and what mergeShoppingSection below unions over).
+// names (JSON-friendlier, and what mergeShoppingSection below unions over). LEGACY (Defect
+// C redesign): still synced purely so an old-format payload keeps round-tripping; nothing
+// writes into checkedShopByWeek anymore (see its doc block, state.js).
 function cloneCheckedByWeek(){
   const out = {};
   Object.keys(checkedShopByWeek).forEach(function(wk){
@@ -147,6 +151,9 @@ function cloneCheckedByWeek(){
   });
   return out;
 }
+// Shared by both checkedShopByWeek (names) and inCartShopByWeek (foodIds) — generic
+// "{week: [key,...]}" wire shape <-> "{week: {key: true}}" live shape expander, since both
+// are the exact same per-week Set-of-strings pattern.
 function expandCheckedByWeek(byWeekArrays){
   const out = {};
   Object.keys(byWeekArrays || {}).forEach(function(wk){
@@ -156,7 +163,17 @@ function expandCheckedByWeek(byWeekArrays){
   });
   return out;
 }
-function shoppingSectionData(){ return {checkedByWeek: cloneCheckedByWeek()}; }
+// inCartShopByWeek (state.js) is {week: {foodId: true}} — same wire-shape convention as
+// checkedByWeek above, just foodId-keyed. This is the REAL per-row shopping tick now (Defect
+// C redesign) — see state.js's doc block on inCartShopByWeek.
+function cloneInCartByWeek(){
+  const out = {};
+  Object.keys(inCartShopByWeek).forEach(function(wk){
+    out[wk] = Object.keys(inCartShopByWeek[wk]).filter(function(id){ return inCartShopByWeek[wk][id]; });
+  });
+  return out;
+}
+function shoppingSectionData(){ return {checkedByWeek: cloneCheckedByWeek(), inCartByWeek: cloneInCartByWeek()}; }
 
 // pantry (PANTRY-plan.md P1) — see state.js's pantry doc block for the entry shape
 // ({qty, setAt, u}) and why a delete is a qty:0 entry rather than a separate tombstone map.
@@ -300,21 +317,31 @@ function sectionData(sec){
 }
 
 /* ---------------- merge rules for the non-LWW sections ---------------- */
-// shopping: union of checked names, per week — a name checked on EITHER phone stays
-// checked (no tombstone: the plan doesn't call for one here, and shopping lists are
-// short-lived/regenerated weekly, so an occasional stuck-checked item is a non-issue).
-function mergeShoppingSection(local, remote){
+// Generic per-week union-of-keys merge, shared by both shopping sub-fields below: a key
+// present on EITHER phone stays present (no tombstone — shopping-sheet ticks are short-
+// lived/regenerated weekly, so an occasional stuck tick is a non-issue, same reasoning the
+// original checkedByWeek-only version used).
+function unionByWeek(localByWeek, remoteByWeek){
   const weeks = {};
-  Object.keys((local && local.checkedByWeek) || {}).forEach(function(w){ weeks[w] = true; });
-  Object.keys((remote && remote.checkedByWeek) || {}).forEach(function(w){ weeks[w] = true; });
+  Object.keys(localByWeek || {}).forEach(function(w){ weeks[w] = true; });
+  Object.keys(remoteByWeek || {}).forEach(function(w){ weeks[w] = true; });
   const merged = {};
   Object.keys(weeks).forEach(function(w){
-    const names = {};
-    ((local && local.checkedByWeek && local.checkedByWeek[w]) || []).forEach(function(n){ names[n] = true; });
-    ((remote && remote.checkedByWeek && remote.checkedByWeek[w]) || []).forEach(function(n){ names[n] = true; });
-    merged[w] = Object.keys(names);
+    const keys = {};
+    ((localByWeek && localByWeek[w]) || []).forEach(function(k){ keys[k] = true; });
+    ((remoteByWeek && remoteByWeek[w]) || []).forEach(function(k){ keys[k] = true; });
+    merged[w] = Object.keys(keys);
   });
-  return {checkedByWeek: merged};
+  return merged;
+}
+// shopping: union-merge BOTH sub-fields — checkedByWeek (legacy, name-keyed, kept only for
+// harmless round-trip — see state.js's doc block) and inCartByWeek (the real, foodId-keyed
+// "in cart" tick the Defect C redesign introduced). Same per-week union rule for each.
+function mergeShoppingSection(local, remote){
+  return {
+    checkedByWeek: unionByWeek(local && local.checkedByWeek, remote && remote.checkedByWeek),
+    inCartByWeek: unionByWeek(local && local.inCartByWeek, remote && remote.inCartByWeek)
+  };
 }
 
 // plans (FIX: cross-device swap consistency): two phones can swap DIFFERENT meals in
@@ -879,6 +906,7 @@ function applySyncResponse(sent, remoteSections){
     } else if(sec === 'shopping'){
       const merged = mergeShoppingSection(sentEntry.data, remote.data);
       checkedShopByWeek = expandCheckedByWeek(merged.checkedByWeek);
+      inCartShopByWeek = expandCheckedByWeek(merged.inCartByWeek);
       applyMergedRevBookkeeping(sec, merged, remote);
     } else if(sec === 'pantry'){
       const merged = mergePantrySection(sentEntry.data, remote.data);
