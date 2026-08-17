@@ -8453,6 +8453,75 @@ function testRecipeOptionsBuilder(ctx){
 }
 
 /* ===================================================================
+   "Save a composed meal as a recipe" (#5b follow-up): the add-meal composer's own 💾 Save
+   to My recipes button (render-today.js:confirmSaveComposedMeal) flattens a plan entry's
+   LIVE components (planner.js:flattenComponentsToIngredientRows) into a new custom recipe
+   via library.js:saveComposedMealAsRecipe, which hands off to the real saveRecipeBuilder().
+   =================================================================== */
+function testSaveComposedMealAsRecipe(ctx){
+  run(ctx, "var __scmStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){};");
+
+  // -------- (a) base recipe + one extra FOOD that shares a foodId with the base recipe
+  // ('yogurt': greek-yogurt 150g, mixed-berries 80g, granola 20g, honey 8g, chia-seeds 6g,
+  // batchYield 1 (no `servings` field) — plus an extra 40g of mixed-berries). Merge case:
+  // the saved recipe must end up with ONE mixed-berries row (80+40=120g), not two, and its
+  // own recipeNutrition() must reproduce the composed meal's kcal. --------
+  (function(){
+    run(ctx, "var __scmEntry = {recipeId: 'yogurt', portion: 1, extras: [{foodId: 'mixed-berries', grams: 40}]};");
+    run(ctx, "var __scmExpected = planEntryNutrition(__scmEntry);");
+    const expectedKcal = get(ctx, '__scmExpected').kcal;
+
+    run(ctx, "var __scmNewId = saveComposedMealAsRecipe(__scmEntry, 'Test combo');");
+    const newId = get(ctx, '__scmNewId');
+    assert(typeof newId === 'string' && newId.indexOf('cr-') === 0,
+      'saveComposedMealAsRecipe: returns a new cr- recipe id', String(newId));
+
+    const customRecipes = get(ctx, 'customRecipes');
+    const RECIPES_DB = get(ctx, 'RECIPES_DB');
+    assert(!!customRecipes[newId] && !!RECIPES_DB[newId],
+      'saveComposedMealAsRecipe: the new recipe exists in both customRecipes and RECIPES_DB', String(newId));
+
+    const saved = RECIPES_DB[newId];
+    assert(saved.title === 'Test combo', 'saveComposedMealAsRecipe: saved recipe carries the given name', saved.title);
+
+    const berries = saved.ingredients.filter(function(ing){ return ing[0] === 'mixed-berries'; });
+    assert(berries.length === 1 && berries[0][1] === 120,
+      'flattenComponentsToIngredientRows: shared foodId (mixed-berries, base 80g + extra 40g) merges into ONE 120g row, not two',
+      JSON.stringify(saved.ingredients));
+    assert(saved.ingredients.length === 5,
+      'flattenComponentsToIngredientRows: 5 distinct foodIds total (greek-yogurt, mixed-berries merged, granola, honey, chia-seeds)',
+      JSON.stringify(saved.ingredients));
+
+    const savedKcal = call(ctx, 'recipeNutrition', [newId, 1]).totals.kcal;
+    assert(Math.abs(savedKcal - expectedKcal) <= 3,
+      'saveComposedMealAsRecipe: saved recipe\'s own nutrition reproduces the composed meal\'s kcal (within gram-rounding tolerance)',
+      'composed=' + expectedKcal + ' saved=' + savedKcal);
+
+    run(ctx, "delete customRecipes['" + newId + "']; applyCustomRecipes();");
+  })();
+
+  // -------- (b) fewer than 2 flattened ingredients (a single-ingredient recipe, no
+  // extras) aborts with a friendly toast and creates NO recipe — saveRecipeBuilder's own
+  // generic "Add at least 2 ingredients" toast never even fires, and recipeBuilder is never
+  // left dangling. --------
+  (function(){
+    const FIXTURE_ID = '__scm_one_ingredient_fixture__';
+    run(ctx, "RECIPES_DB['" + FIXTURE_ID + "'] = {title: 'One-ingredient fixture', emoji: '🍚', slot: 'side', role: 'side', styles: [], time: 5, ingredients: [['rice', 150]], toTaste: [], steps: ['Cook.'], tags: [], avoid: []};");
+    const beforeCount = Object.keys(get(ctx, 'customRecipes')).length;
+    run(ctx, "var __scmEntry2 = {recipeId: '" + FIXTURE_ID + "', portion: 1}; recipeBuilder = null;");
+    run(ctx, "var __scmNewId2 = saveComposedMealAsRecipe(__scmEntry2, 'Should not save');");
+    const newId2 = get(ctx, '__scmNewId2');
+    assert(newId2 === null, 'saveComposedMealAsRecipe: a single-ingredient composed meal aborts (returns null), no recipe created', String(newId2));
+    const afterCount = Object.keys(get(ctx, 'customRecipes')).length;
+    assert(afterCount === beforeCount, 'saveComposedMealAsRecipe: aborted save leaves customRecipes untouched', 'before=' + beforeCount + ' after=' + afterCount);
+    assert(get(ctx, 'recipeBuilder') === null, 'saveComposedMealAsRecipe: aborted save never leaves a dangling recipeBuilder draft', '');
+    run(ctx, "delete RECIPES_DB['" + FIXTURE_ID + "'];");
+  })();
+
+  run(ctx, "toast = __scmStub.toast; openMyRecipes = __scmStub.openMyRecipes; applyProf = __scmStub.applyProf; renderFoodLibraryCount = __scmStub.renderFoodLibraryCount; delete __scmStub;");
+}
+
+/* ===================================================================
    Multi-select diet preferences (finishing a previous agent's uncommitted batch):
    PROF[key].diet (single string) -> PROF[key].diets (ARRAY), with real per-diet
    semantics in planner.js:recipeViolatesDiet (replacing the old D4 mock that only
@@ -10257,6 +10326,7 @@ function main(){
   runTest('restockTickedShopItems: Add ticked items to pantry (PANTRY-plan.md P3 Q2)', function(){ testRestockTickedShopItems(ctx); });
   runTest('required lunch/dinner structure + retired sauce role', function(){ testRequiredLunchDinnerStructure(ctx); });
   runTest('recipe builder Options section (task D3)', function(){ testRecipeOptionsBuilder(ctx); });
+  runTest('save a composed meal as a recipe (#5b follow-up)', function(){ testSaveComposedMealAsRecipe(ctx); });
   runTest('refreshAfterLogChange renders Week exactly once (task C1)', function(){ testRefreshAfterLogChangeRendersWeekOnce(); });
   runTest('openAddMenu "Log food" routes to the Log screen', function(){ testOpenAddMenuRoutesToLogScreen(); });
   runTest('meal-card action buttons: shared mealActionButtonHtml() helper used by Today\'s pending row', function(){ testMealActionButtonHelperSharedByBothScreens(ctx); });

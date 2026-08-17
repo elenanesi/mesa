@@ -3896,6 +3896,45 @@ function saveRecipeBuilder(){
   renderFoodLibraryCount();
 }
 
+// "Save a composed meal as a recipe" (wired from the add-meal composer's 💾 button,
+// render-today.js:confirmSaveComposedMeal — the swap sheet's 🧩 "Build your own meal" is
+// the other entry point into that same composer). Flattens `entry`'s LIVE components
+// (planner.js:planEntryComponents + flattenComponentsToIngredientRows — base recipe plus
+// every extra ingredient/side/full recipe, foodId-merged) into ONE new custom recipe, so a
+// meal composed on the fly can be replanned again without re-composing it from scratch.
+// Populates the SAME recipeBuilder draft shape openEditRecipeForm's recipeToBuilder does,
+// then hands off to the real saveRecipeBuilder() — the manual "New recipe" form's own save
+// path — rather than a second persistence codepath, so id/dup-name derivation, tags/styles/
+// season derivation (deriveRecipeMeta), and the customRecipes/RECIPES_DB write are all the
+// ONE place that already gets this right. slots mirrors recipeToBuilder's own fallback
+// (the base recipe's recipeSlotList(), or its bare `slot`, or 'dinner') so the saved recipe
+// lands in the same meal-slot category the original composed meal did.
+// saveRecipeBuilder enforces a >=2-ingredient minimum (recipe builder's own manual-entry
+// rule) — a flattened meal with fewer than 2 distinct foodIds (e.g. a single standalone
+// food with no base recipe or extras) would silently trip that generic "Add at least 2
+// ingredients" toast against a draft the caller never showed, so that case is caught HERE
+// first with a toast that actually explains what to do, before recipeBuilder is even
+// touched. Returns the new recipe's id on success; null if it aborted (too few ingredients,
+// or saveRecipeBuilder itself rejected the save — e.g. a duplicate name — which fires its
+// own toast, recognized here by recipeBuilder staying non-null since saveRecipeBuilder only
+// nulls it out on a successful save).
+function saveComposedMealAsRecipe(entry, name){
+  const rows = flattenComponentsToIngredientRows(planEntryComponents(entry));
+  if(rows.length < 2){ toast('Add another ingredient to save this as a recipe'); return null; }
+  const base = entry && entry.recipeId ? RECIPES_DB[entry.recipeId] : null;
+  const slots = (base && recipeSlotList(base).length) ? recipeSlotList(base) : [(base && base.slot) || 'dinner'];
+  recipeBuilder = {
+    name: (name || '').trim(), emoji: '🍽️', imageKey: null, imagePickerOpen: false,
+    slots: slots, season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1,
+    ingredients: rows, optionGroups: [], stepsText: '', pickerQuery: ''
+  };
+  const beforeIds = Object.keys(customRecipes);
+  saveRecipeBuilder();
+  if(recipeBuilder !== null) return null; // saveRecipeBuilder rejected the save — its own toast already fired
+  const newId = Object.keys(customRecipes).filter(function(id){ return beforeIds.indexOf(id) === -1; })[0];
+  return newId || null;
+}
+
 /* ===================================================================
    ONE-SHOT CLEANUP MIGRATION (2026-07 fix): before couple-sync's library
    merge got per-entry `u` stamps, applySyncResponse's 'library' branch

@@ -18,6 +18,11 @@ function openSwap(mealKey, targetElId){
 // way openWeekSwap already does.
 let addMealCtx = null;
 let addMealFoodQuery = '';
+// "Save a composed meal as a recipe" (#5b follow-up): draft name text for the composer's
+// own 💾 Save to My recipes name-entry step (openSaveComposedMealSheet/
+// buildSaveComposedMealSheet/confirmSaveComposedMeal below) — same "one module-level draft
+// var, repainted straight into #sheetBody" pattern addMealFoodQuery above already uses.
+let saveComposedMealName = '';
 
 // (b)/(a) fix: the sheet is now sections instead of one undifferentiated, slot-filtered
 // pile — "In this meal" (with a remove control per extra), "Sides", and "Full recipes" (every remaining recipe from ANY
@@ -132,6 +137,14 @@ function openAddMealSheetForContext(ctx){
     + (isEatenOut ? '🍴 Eaten out — tap to change' : '🍴 Ate out / eating out')
     + '</button>';
 
+  // "Save a composed meal as a recipe" (#5b follow-up): flattens this meal's base recipe +
+  // extras into a new custom recipe (library.js:saveComposedMealAsRecipe) — only worth
+  // offering once there's actually a meal composed here (allComponents mirrors the "In this
+  // meal" section built just below, so this stays in lockstep with what's on screen).
+  if(allComponents.length){
+    html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">💾 Save to My recipes</button>';
+  }
+
   // Per-meal share toggle (2026-07-22): split a shared meal into two separate dishes ("eat
   // different tonight") or merge two back into one ("eat together"), for THIS occurrence only
   // — the household default (Profile → Meal sharing) is untouched, and the choice persists
@@ -198,6 +211,51 @@ function openAddMealSheetForContext(ctx){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+}
+
+// "Save a composed meal as a recipe" (#5b follow-up): resolves addMealCtx's LIVE plan
+// entry, the same {weekStartDate, dayIndex, slot, person} resolution the sheet's own commit
+// paths (e.g. toggleMealShareFromSheet) use — not the `logged` snapshot
+// openAddMealSheetForContext also handles, since this always saves what's CURRENTLY planned
+// for this slot, not a historical logged estimate.
+function resolveAddMealCtxEntry(){
+  if(!addMealCtx) return null;
+  const plan = ensureWeekPlan(addMealCtx.weekStartDate);
+  const day = plan.days[addMealCtx.dayIndex];
+  const meal = day && day.meals[addMealCtx.slot];
+  return meal ? meal[addMealCtx.person] : null;
+}
+
+// Opens the composer's own tiny name-entry step in place of the main sheet body (same
+// "repaint #sheetBody with a smaller step" pattern as library.js's pantry-add qty sheet) —
+// defaults the name to the base recipe's title + " (my version)" as a starting point the
+// user can overwrite.
+function openSaveComposedMealSheet(){
+  const entry = resolveAddMealCtxEntry();
+  if(!entry){ toast('Meal not found'); return; }
+  const base = entry.recipeId && RECIPES_DB[entry.recipeId];
+  saveComposedMealName = base ? (base.title + ' (my version)') : '';
+  document.getElementById('sheetBody').innerHTML = buildSaveComposedMealSheet();
+}
+
+function buildSaveComposedMealSheet(){
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Save to My recipes</h2>'
+    + '<button class="backbtn" style="margin:0" onclick="openAddMealSheetForContext(addMealCtx)">‹ Back</button></div>'
+    + '<p class="sub" style="margin-top:6px">Give this composed meal a name to save it as a new recipe you can plan again.</p>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="saveComposedMealNameInput" value="' + htmlAttr(saveComposedMealName) + '" oninput="saveComposedMealName=this.value" placeholder="Recipe name" autocomplete="off">'
+    + '<button class="cta" style="margin-top:14px" onclick="confirmSaveComposedMeal()">💾 Save to My recipes</button>'
+    + '<button class="cta ghostbtn" onclick="openAddMealSheetForContext(addMealCtx)">Cancel</button>';
+}
+
+function confirmSaveComposedMeal(){
+  const entry = resolveAddMealCtxEntry();
+  if(!entry){ toast('Meal not found'); return; }
+  const name = (saveComposedMealName || '').trim();
+  if(!name){ toast('Give this recipe a name'); return; }
+  const newId = saveComposedMealAsRecipe(entry, name); // library.js — its own toast covers every abort case
+  if(!newId) return;
+  toast('✓ Saved to My recipes');
+  openAddMealSheetForContext(addMealCtx);
 }
 
 // Today card ✎/＋, the recipe screen's "Manage" strip, and the Log screen's Add/Edit

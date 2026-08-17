@@ -862,6 +862,55 @@ function planEntryComponents(entry){
   return components;
 }
 
+// "Save a composed meal as a recipe" (library.js:saveComposedMealAsRecipe, wired from the
+// add-meal composer's own 💾 button, render-today.js): flattens planEntryComponents()'s
+// LIVE component list — base recipe + every extra — into a single foodId-merged ingredient
+// list a NEW custom recipe can be saved from. A recipe component expands via engine.js:
+// recipeEffectiveIngredients(r, c.opts) — base ingredients plus whichever opts-selected
+// variant this component actually froze — scaled from "one batch" to "c.portion servings of
+// it, in a batch that yields r.servings servings" (grams * portion / batchYield), the EXACT
+// scaling recipeNutrition/nutritionForRecipeComponents use, so the flattened recipe's own
+// nutrition (recipeNutrition(newId, 1)) reproduces the composed meal's totals. Deliberately
+// does NOT go through planner.js:foodQuantitiesForComponents — that helper is the shopping
+// list's own decomposition (converts `piece`-unit foods to a unit count and explodes
+// composite FOODS into their sub-ingredients), neither of which belongs in a recipe's own
+// ingredient list: a composite food id here should stay ONE row, just like it does in every
+// hand-authored recipe in data/recipes.js. A food component adds its own grams directly.
+// The same foodId appearing more than once (the base recipe and an extra both using
+// olive-oil, say) is summed into ONE row rather than duplicated — merged rows keep the
+// FIRST-seen insertion order, matching how a person would naturally list a recipe's
+// ingredients. Grams are rounded to the nearest whole gram (data/recipes.js's own
+// convention — every hand-authored ingredient row is an integer) once accumulation is done,
+// not per-component, so merging several fractional contributions doesn't compound rounding
+// error.
+function flattenComponentsToIngredientRows(components){
+  const rows = [];
+  const indexByFoodId = {};
+  function addGrams(foodId, grams){
+    if(!(grams > 0)) return;
+    if(indexByFoodId.hasOwnProperty(foodId)){
+      rows[indexByFoodId[foodId]].grams += grams;
+    } else {
+      indexByFoodId[foodId] = rows.length;
+      rows.push({foodId: foodId, grams: grams});
+    }
+  }
+  (components || []).forEach(function(c){
+    if(c && c.recipeId && RECIPES_DB[c.recipeId]){
+      const r = RECIPES_DB[c.recipeId];
+      const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
+      const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
+      recipeEffectiveIngredients(r, c.opts).forEach(function(ing){
+        addGrams(ing[0], ing[1] * portion / batchYield);
+      });
+    } else if(c && c.foodId && FOODS[c.foodId]){
+      addGrams(c.foodId, (typeof c.grams === 'number' && c.grams > 0) ? c.grams : 0);
+    }
+  });
+  rows.forEach(function(row){ row.grams = Math.round(row.grams); });
+  return rows;
+}
+
 function planEntryNutrition(entry){
   if(!entry || !entry.recipeId || !RECIPES_DB[entry.recipeId]) return fallbackNutritionTotals(entry);
   return nutritionForRecipeComponents(planEntryComponents(entry));
