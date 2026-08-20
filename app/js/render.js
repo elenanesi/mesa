@@ -47,6 +47,25 @@ function accountedSlotCount(dateISO, person){
   }, 0);
 }
 
+// Phase 3 D1 (weekly adherence band): how many days of the CURRENT week `person` has fully
+// SET — i.e. closed the day, every slot accounted (the same accountedSlotCount === 4 state the
+// keystone/day-completion reward already treat as "complete"). The reflective weekly echo of
+// the daily-confirm keystone. Framed against the whole week (denominator 7): a future day that
+// hasn't arrived and a past day that was missed both simply aren't counted — visually and
+// numerically indistinguishable, which is the quiet-reset guardrail (a miss is never flagged as
+// failure, only as "not set"). Deterministic; MESA_TEST_TODAY drives the week window in tests.
+function weekDaysSetCount(person){
+  const monday = mondayOfWeek(todayISO());
+  const today = todayISO();
+  let n = 0;
+  for(let i = 0; i < 7; i++){
+    const d = addDaysISO(monday, i);
+    if(d > today) continue; // not-yet — leaves the week's denominator at 7 without counting
+    if(accountedSlotCount(d, person) === SLOT_ORDER.length) n++;
+  }
+  return n;
+}
+
 function clearLogReward(){
   clearTimeout(logRewardTimer);
   logRewardTimer = null;

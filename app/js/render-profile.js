@@ -671,10 +671,15 @@ function renderInsights(){
     {sv: Math.round(data.avgProtein) + 'g', sl: 'Avg protein/day (7d)', good: data.avgProtein >= data.targetProtein, goodNote: '▲ on target', badNote: '▼ below target'},
     {sv: Math.round(data.avgFiber) + 'g', sl: 'Avg fibre/day (7d)', good: data.avgFiber >= NUTRITION_GUIDANCE.fiber.target, goodNote: '▲ at WHO guide', badNote: '▼ below 25g guide'},
     {sv: Math.round(data.satFatEnergyPct) + '%', sl: 'Saturated fat (7d energy)', good: data.satFatEnergyPct < NUTRITION_GUIDANCE.satFat.target, goodNote: '▲ within WHO <10%', badNote: '▼ at or above WHO 10%'},
-    {sv: data.daysLoggedCount + '/7', sl: 'Days logged this week', good: data.daysLoggedCount >= 5, goodNote: '▲ steady', badNote: '▼ log a few more days'}
+    // Phase 3 D1: the weekly echo of the daily-confirm keystone. Days SET = days fully closed
+    // (weekDaysSetCount). Deliberately calm/quiet-reset: below 5 is NOT a red ▼ failure (panel
+    // guardrail — no streak, no guilt), just a neutral nudge; a missed day reads the same as a
+    // day that hasn't happened yet.
+    {sv: weekDaysSetCount(currentProf) + '/7', sl: 'Days set this week', good: weekDaysSetCount(currentProf) >= 5, calm: true, goodNote: '▲ steady rhythm', badNote: 'one tap closes a day'}
   ];
   statWrap.innerHTML = tiles.map(function(t){
-    return '<div class="s"><div class="sv">'+t.sv+'</div><div class="sl">'+t.sl+'</div><div class="sd '+(t.good ? 'up' : 'dn2')+'">'+(t.good ? t.goodNote : t.badNote)+'</div></div>';
+    const noteCls = t.good ? 'up' : (t.calm ? 'calm' : 'dn2');
+    return '<div class="s"><div class="sv">'+t.sv+'</div><div class="sl">'+t.sl+'</div><div class="sd '+noteCls+'">'+(t.good ? t.goodNote : t.badNote)+'</div></div>';
   }).join('');
 
   // weekly band

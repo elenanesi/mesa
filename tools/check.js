@@ -5045,6 +5045,15 @@ function testTodayKeystone(ctx){
   assert(rewardSrc.indexOf('Today’s record is complete.') !== -1,
     'keystone: render.js playDayCompletionReward still uses that exact sentence (settled state stays one voice)', '');
 
+  // (7) Weekly adherence echo (weekDaysSetCount). FIXED_MONDAY is the Monday of its week, so
+  // only "today" is elapsed; the day is fully closed above => 1 of 7 set. A missed/partial day
+  // and a not-yet day both simply don't count (quiet reset — denominator stays 7).
+  assert(call(ctx, 'weekDaysSetCount', ['elena']) === 1,
+    'keystone: a fully-closed today counts as 1 of 7 days set this week', 'got=' + call(ctx, 'weekDaysSetCount', ['elena']));
+  run(ctx, 'logHistory = {};'); // wipe the close -> today is no longer set
+  assert(call(ctx, 'weekDaysSetCount', ['elena']) === 0,
+    'keystone: with nothing set (and future days not-yet), the week reads 0 of 7 — never negative, never a failure flag', '');
+
   run(ctx, "MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; logHistory = {};");
 }
 
