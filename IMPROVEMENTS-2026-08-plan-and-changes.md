@@ -121,7 +121,21 @@ later-phase roadmap items only:
     (kcal still 4/4/9), relaxed `saveRecipeBuilder` ≥2-ingredient rule, and a curated recipe-site
     quick-add reusing the ate-out name+P/C/F sheet pattern — labelled *estimated, not verified*,
     NEVER the `chip-computed` "✓ computed" badge.
-- Phase 3: engagement layer (daily-confirm keystone, onboarding ≤3 screens, anchored
-  self-suppressing notification, weekly review, couple shared-outcome view).
+- Phase 3: engagement layer. **IN PROGRESS.**
+  - ✅ **D1 daily-confirm keystone + calm closure** (`352c1dd`) — evening-anchored one-tap
+    "Confirm today as planned" folded into the top of `#todayProgressCard` (render-today.js
+    `renderTodayKeystone`/`todayKeystoneState`/`confirmTodayAsPlanned`). Ghost by day, promoted
+    to the filled sage CTA after 18:00 (new `currentHour()`/`MESA_TEST_HOUR` + `isEveningHour()`
+    in state.js; reused by the greeting). HONESTY invariants (hard — do not loosen without
+    re-consulting the panel): logs pending slots ONLY (never overrides a skip/swap), copy always
+    "as planned", every meal individually undoable. Fully-closed day settles to the same sentence
+    the botanical wreath reward uses. Design synthesized from a psychologist+UX panel re-spawn.
+  - ✅ **D1b weekly "Days set" adherence band** (`52cdb00`) — reframed the punitive "Days logged
+    this week" Insights stat tile into a calm "Days set this week N/7" (`weekDaysSetCount`, render.js
+    = days fully closed). No red/▼ (new neutral `.sd.calm`), no second dot-grid, missed day ≡
+    not-yet day (quiet reset). Placed in Insights (not on the daily keystone) per the panel.
+  - ⏳ Remaining: D2 weekly review moment, D3 onboarding ≤3 screens (needs owner: which fields),
+    D4 anchored self-suppressing notification (needs owner: push in scope + iOS-PWA feasibility),
+    D5 couple shared-outcome view. Tests → 1729 green.
 - Phase 4: **generation rewire** (make every pick balance-aware — highest risk), LLM-estimated
   macros.
