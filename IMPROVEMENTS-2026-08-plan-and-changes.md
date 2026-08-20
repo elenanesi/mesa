@@ -98,10 +98,29 @@ Everything the owner requested in this initiative is shipped. Remaining are the 
 later-phase roadmap items only:
 
 **Roadmap (later phases):**
-- Phase 2: ✅ pantry **Defect C** SHIPPED (`d35433c`) — one **Need → In cart → Already home**
-  lifecycle, foodId-keyed in-cart state, "Put cart away" as the single idempotent pantry
-  write-path, covered items shown under "Already home" (not dropped). Remaining Phase 2:
-  recipe `macrosOverride` + suggested-sites web quick-add; rebalance-objective spread term.
+- Phase 2: ✅ **COMPLETE.**
+  - ✅ pantry **Defect C** (`d35433c`) — one **Need → In cart → Already home** lifecycle,
+    foodId-keyed in-cart state, "Put cart away" as the single idempotent pantry write-path,
+    covered items shown under "Already home" (not dropped).
+  - ✅ **rebalance-objective per-day spread term** (`ff49195`) — `objectiveFor` (planner.js)
+    now carries a SECONDARY per-day spread penalty (reuses `planImbalance`), keeping the
+    weekly average primary via a small weight + a weekly non-regression gate. New `'spread'`
+    mode: when every weekly target is met but `planImbalance > REBALANCE_SPREAD_TRIGGER`, the
+    "Re-balance" button evens the days (minimizing `planImbalance`) without letting any weekly
+    target slip — so the manual button now complements `autoBalancePlan` for weeks that went
+    day-uneven after edits/logs/swaps. Mode-aware, directional sheet copy ("these small swaps
+    just even out a day that runs rich or light"; "Balanced days: N → M of T"). Solo-household
+    handling preserved; deterministic; +12 check.js tests (→ 1712). No D1/catalog change.
+  - ❌ **recipe `macrosOverride` + suggested-sites web quick-add — DROPPED (owner, 2026-08-20).**
+    Scope check: the **meal builder** (reusable, computed-from-ingredients) + the **ate-out
+    estimate** (typed P/C/F, one-off, labelled *estimated*) already cover the "log/keep a meal
+    without itemizing a full recipe" need. The only gap this would have filled — a *reusable,
+    planner-eligible, estimated, source-linked* recipe — was judged not worth the added surface.
+    If revisited, the design was: `macrosOverride`+`nutritionSource:'estimated'`(+`sourceUrl`)
+    on `cr-` customRecipes, `recipeNutrition`/`validate.js:recipeMacros` preferring the override
+    (kcal still 4/4/9), relaxed `saveRecipeBuilder` ≥2-ingredient rule, and a curated recipe-site
+    quick-add reusing the ate-out name+P/C/F sheet pattern — labelled *estimated, not verified*,
+    NEVER the `chip-computed` "✓ computed" badge.
 - Phase 3: engagement layer (daily-confirm keystone, onboarding ≤3 screens, anchored
   self-suppressing notification, weekly review, couple shared-outcome view).
 - Phase 4: **generation rewire** (make every pick balance-aware — highest risk), LLM-estimated
