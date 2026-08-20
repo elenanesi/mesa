@@ -530,7 +530,7 @@ function renderTodayHeader(){
   const el = document.getElementById('todayEyebrow');
   if(el) el.textContent = WEEKDAY_FULL[now.getDay()] + ' · ' + now.getDate() + ' ' + MONTHS[now.getMonth()];
   const g = document.getElementById('todayGreeting');
-  const h = now.getHours();
+  const h = typeof currentHour === 'function' ? currentHour() : now.getHours();
   if(g) g.textContent = h < 5 ? 'Up late?' : h < 12 ? 'Good morning' : h < 18 ? 'Good afternoon' : 'Good evening';
 }
 

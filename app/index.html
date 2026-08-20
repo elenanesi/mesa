@@ -95,6 +95,11 @@
       </div>
 
       <div class="card" id="todayProgressCard">
+        <!-- Phase 3 D1: evening-anchored daily-confirm keystone. Painted by
+             render-today.js:renderTodayKeystone() into #todayKeystone on every ring refresh /
+             log change (render.js:refreshRingAndBars). One calm affordance that closes the day
+             "as planned" in a single tap (pending slots only); calm settle when complete. -->
+        <div id="todayKeystone" class="today-keystone"></div>
         <div class="ring-wrap">
           <div class="ring">
             <svg width="128" height="128" viewBox="0 0 128 128">

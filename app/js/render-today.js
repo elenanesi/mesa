@@ -2290,6 +2290,92 @@ function scrollToMealCard(slot){
   if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
 }
 
+/* ---------------- Phase 3 D1: daily-confirm keystone ----------------
+   The prominent, evening-anchored one-tap "close the day" affordance that lives at the top of
+   #todayProgressCard. Design synthesized from the panel (psychologist + UX):
+   - ONE calm affordance, folded into the existing status card — never a second competing menu.
+     The four per-meal card rows stay the precise tool; this is the coarse "as planned" shortcut.
+   - Evening-anchored by PROMINENCE, not visibility: pre-evening it is a quiet ghost button,
+     after isEveningHour() it promotes to the filled sage CTA. It is never hidden, never a modal.
+   - HONESTY guardrails (hard invariants — do not loosen without re-consulting the panel): the
+     one-tap only ever logs slots that are still PENDING (never overrides a skip/swap already
+     set), the copy always says "as planned" (never bare "eaten") so provenance stays legible,
+     and every meal stays individually undoable via its card row.
+   - Directional, never pass/fail: a fully-closed day settles to the same quiet sentence the
+     botanical wreath reward uses; a missed prior day is never surfaced here.
+   todayKeystoneState() is pure (no DOM) so tools/check.js can pin the state machine directly. */
+function todayKeystoneState(dateISO, person, hour){
+  var total = SLOT_ORDER.length;
+  var accounted = 0;      // confirmed OR skipped — a "handled" slot
+  var pending = [];       // slots still open (status null)
+  SLOT_ORDER.forEach(function(slot){
+    if(slotLogStatus(dateISO, person, slot)) accounted++;
+    else pending.push(slot);
+  });
+  var evening = Number(hour) >= 18;
+  if(accounted >= total){
+    // Calm closure — reuse the wreath reward's exact sentence so the transient reward and the
+    // resting card state speak in one voice.
+    return {phase: 'complete', accounted: accounted, total: total, pending: pending, evening: evening,
+      prominence: 'settled', settledText: 'Today’s record is complete.'};
+  }
+  var partial = accounted > 0;
+  return {
+    phase: partial ? 'partial' : (evening ? 'fresh-pm' : 'fresh-am'),
+    accounted: accounted, total: total, pending: pending, evening: evening,
+    prominence: evening ? 'cta' : 'ghost',
+    label: partial ? 'Confirm the rest as planned' : 'Confirm today as planned',
+    sub: partial ? (accounted + ' of ' + total + ' set · the rest whenever you’re ready.')
+                 : (evening ? 'Ate today as planned? Close it in one tap.' : total + ' meals lined up today.')
+  };
+}
+
+function renderTodayKeystone(){
+  var wrap = document.getElementById('todayKeystone');
+  if(!wrap) return;
+  var st = todayKeystoneState(todayISO(), currentProf, currentHour());
+  if(st.phase === 'complete'){
+    wrap.innerHTML = '<div class="ks-settled"><span class="ks-check" aria-hidden="true">✓</span>' + st.settledText + '</div>';
+    return;
+  }
+  var btnCls = st.prominence === 'cta' ? 'cta' : 'cta ghostbtn';
+  wrap.innerHTML = '<button class="' + btnCls + ' ks-btn" onclick="confirmTodayAsPlanned(this)">' + st.label + '</button>'
+    + '<div class="ks-sub sub">' + st.sub + '</div>';
+}
+
+// The pure logging core (no DOM / no reward) so tools/check.js can pin the HONESTY invariant
+// directly: only logs slots with NO status yet (pending) — a slot already confirmed, skipped,
+// or eaten-different is left exactly as the user left it — and only where the plan actually has
+// a meal. Reuses the same computeMenuForDate + logPlanEntry path a single card confirm uses, so
+// the recorded macros are identical to confirming each meal by hand. Returns how many it closed.
+function confirmTodayAsPlannedApply(dateISO, person){
+  var menu = computeMenuForDate(dateISO, person);
+  var logged = 0;
+  SLOT_ORDER.forEach(function(slot){
+    if(slotLogStatus(dateISO, person, slot)) return;   // pending-only — never override a choice
+    var v = menu[slot];
+    if(!v || !v.recipeId) return;                      // no planned meal here -> stay honest, leave open
+    logPlanEntry(dateISO, person, slot, v.recipeId, v.portion, v.components);
+    logged++;
+  });
+  return logged;
+}
+
+// One-tap "close the day as planned". Thin wrapper: apply the pending-only logging, then run the
+// shared refresh funnel and fire the calm day-completion wreath (which itself only appears iff
+// this actually closed every slot). Every meal stays individually undoable via its card row.
+function confirmTodayAsPlanned(anchorEl){
+  var date = todayISO();
+  var anchorRect = typeof captureRewardAnchor === 'function' ? captureRewardAnchor(anchorEl) : null;
+  var logged = confirmTodayAsPlannedApply(date, currentProf);
+  if(!logged){ toast('Nothing left to confirm today'); return; }
+  refreshAfterLogChange();
+  if(typeof playDayCompletionReward === 'function'){
+    playDayCompletionReward({dateISO: date, person: currentProf, anchorRect: anchorRect});
+  }
+  toast(logged === 1 ? 'Set as planned · undo anytime' : logged + ' meals set as planned · undo anytime');
+}
+
 function showArcPopover(macro, event){
   event.stopPropagation();
   var pop = document.getElementById('arcPopover');

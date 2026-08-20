@@ -4971,6 +4971,83 @@ function testRebalanceSpreadObjective(ctx){
   run(ctx, 'weekPlans = {}; weekPlan = null;');
 }
 
+/* ---------------- Phase 3 D1: daily-confirm keystone ----------------
+   The evening-anchored one-tap "close the day as planned" affordance on Today. Pins (a) the
+   deterministic clock hook currentHour()/MESA_TEST_HOUR + the isEveningHour() >= 18 threshold,
+   (b) the pure todayKeystoneState() state machine (fresh AM ghost / fresh PM cta / partial /
+   complete-settled), and (c) the HONESTY invariant of the one-tap: confirmTodayAsPlannedApply
+   logs ONLY pending slots — never overriding a skip or an existing confirm — reusing the same
+   logPlanEntry path a single card confirm uses, and is idempotent. */
+function testTodayKeystone(ctx){
+  const TODAY = FIXED_MONDAY;
+  const slotOrder = get(ctx, 'SLOT_ORDER');
+  function reset(){
+    run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = []; logHistory = {}; currentProf = 'elena';");
+    call(ctx, 'ensureWeekPlan', []);
+  }
+
+  // (1) Clock hook + evening threshold (single-sourced at hour >= 18).
+  reset();
+  run(ctx, 'MESA_TEST_HOUR = 9;');
+  assert(call(ctx, 'currentHour', []) === 9 && call(ctx, 'isEveningHour', []) === false,
+    'keystone: MESA_TEST_HOUR hook drives currentHour(); 9:00 is not evening', '');
+  run(ctx, 'MESA_TEST_HOUR = 17;');
+  assert(call(ctx, 'isEveningHour', []) === false, 'keystone: 17:00 is still not evening (threshold is 18)', '');
+  run(ctx, 'MESA_TEST_HOUR = 18;');
+  assert(call(ctx, 'isEveningHour', []) === true, 'keystone: 18:00 is evening (boundary)', '');
+
+  // (2) Fresh day (nothing logged): ghost in the afternoon, promoted CTA in the evening — the
+  // element is never hidden, only re-weighted (panel: anchor by prominence, not visibility).
+  const am = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 9]);
+  assert(am.phase === 'fresh-am' && am.prominence === 'ghost' && am.label === 'Confirm today as planned',
+    'keystone: fresh afternoon is a quiet ghost "Confirm today as planned"', 'phase=' + am.phase + ' prom=' + am.prominence);
+  const pm = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+  assert(pm.phase === 'fresh-pm' && pm.prominence === 'cta' && pm.label === am.label,
+    'keystone: fresh evening promotes to the filled CTA (same label, style-only change)', 'phase=' + pm.phase + ' prom=' + pm.prominence);
+
+  // (3) Partial day: a skipped breakfast + a confirmed lunch => 2 of 4 "set", label switches to
+  // "Confirm the rest as planned", and only the two still-open slots are pending.
+  call(ctx, 'markSlotSkipped', [TODAY, 'elena', 'breakfast']);
+  const lunchV = call(ctx, 'computeMenuForDate', [TODAY, 'elena']).lunch;
+  call(ctx, 'logPlanEntry', [TODAY, 'elena', 'lunch', lunchV.recipeId, lunchV.portion, lunchV.components]);
+  assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === 2, 'keystone: skip + confirm makes 2 of 4 accounted', '');
+  const part = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+  assert(part.phase === 'partial' && part.label === 'Confirm the rest as planned'
+      && part.sub.indexOf('2 of 4 set') !== -1 && JSON.stringify(part.pending) === JSON.stringify(['dinner', 'snack']),
+    'keystone: partial state reads "Confirm the rest", "2 of 4 set", pending = dinner+snack',
+    'sub=' + part.sub + ' pending=' + JSON.stringify(part.pending));
+
+  // (4) HONESTY invariant: the one-tap closes ONLY the two pending slots, leaves the skipped
+  // breakfast a skip and the already-confirmed lunch untouched, and reuses the real log path.
+  const lunchRefBefore = JSON.stringify(get(ctx, 'logHistory')[TODAY].elena.filter(function(e){ return e.slot === 'lunch'; }));
+  const closed = call(ctx, 'confirmTodayAsPlannedApply', [TODAY, 'elena']);
+  assert(closed === 2, 'keystone: confirmTodayAsPlannedApply closed exactly the 2 pending slots', 'closed=' + closed);
+  assert(call(ctx, 'slotLogStatus', [TODAY, 'elena', 'breakfast']) === 'skipped',
+    'keystone: the pre-existing breakfast SKIP is preserved (never overridden)', '');
+  assert(call(ctx, 'slotLogStatus', [TODAY, 'elena', 'dinner']) === 'confirmed'
+      && call(ctx, 'slotLogStatus', [TODAY, 'elena', 'snack']) === 'confirmed',
+    'keystone: the two pending slots are now confirmed', '');
+  const lunchRefAfter = JSON.stringify(get(ctx, 'logHistory')[TODAY].elena.filter(function(e){ return e.slot === 'lunch'; }));
+  assert(lunchRefBefore === lunchRefAfter,
+    'keystone: the already-confirmed lunch entry is byte-identical (not duplicated or rewritten)', '');
+  assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === slotOrder.length,
+    'keystone: the day is now fully accounted (4 of 4)', '');
+
+  // (5) Idempotent: nothing pending => a second tap logs nothing.
+  assert(call(ctx, 'confirmTodayAsPlannedApply', [TODAY, 'elena']) === 0,
+    'keystone: a second confirm-as-planned closes nothing (idempotent)', '');
+
+  // (6) Complete state settles to the SAME sentence the botanical wreath reward uses (one voice).
+  const done = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+  assert(done.phase === 'complete' && done.prominence === 'settled' && done.settledText === 'Today’s record is complete.',
+    'keystone: a fully-closed day settles to "Today’s record is complete."', 'phase=' + done.phase + ' text=' + done.settledText);
+  const rewardSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  assert(rewardSrc.indexOf('Today’s record is complete.') !== -1,
+    'keystone: render.js playDayCompletionReward still uses that exact sentence (settled state stays one voice)', '');
+
+  run(ctx, "MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; logHistory = {};");
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -10907,6 +10984,7 @@ function main(){
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });
   runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
+  runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });

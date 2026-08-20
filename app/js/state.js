@@ -831,6 +831,16 @@ function todayISO(){
   return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
 }
 
+// Local hour-of-day (0-23) — the single source of "what time is it" for time-of-day UI
+// (the Today greeting bucket and the evening-anchored daily-confirm keystone). MESA_TEST_HOUR
+// is the tools/check.js-only hook, same convention as MESA_TEST_TODAY above; never set in the
+// running app. Evening for keystone/greeting purposes is hour >= 18 (single-sourced here).
+function currentHour(){
+  if(typeof MESA_TEST_HOUR !== 'undefined' && MESA_TEST_HOUR !== null && MESA_TEST_HOUR !== '') return Number(MESA_TEST_HOUR);
+  return new Date().getHours();
+}
+function isEveningHour(){ return currentHour() >= 18; }
+
 // Fields copied verbatim between PROF[key] and the store. Deliberately excludes
 // goalAdj/goalName/goalTag/seg/av (task B1/B2: fully derived — goalAdj/goalName/goalTag
 // from `goals`, seg/av from `displayName` — see engine.js: deriveGoalAdj/deriveGoalName/

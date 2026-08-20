@@ -847,6 +847,16 @@ body.gate-open{overflow:hidden;}
 .arc-popover .ap-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
 .arc-popover .ap-detail{color:var(--muted);font-size:11px;margin-top:3px;}
 
+/* Phase 3 D1: daily-confirm keystone — lives at the top of #todayProgressCard. Its button
+   reuses .cta / .cta.ghostbtn; the wrapper just resets .cta's top margin and adds the calm
+   subtext + settled (day-complete) state. No streak/scoreboard styling; never red. */
+.today-keystone{margin:0 0 14px;}
+.today-keystone:empty{display:none;}
+.today-keystone .ks-btn{margin-top:0;}
+.today-keystone .ks-sub{margin:8px 2px 0;text-align:center;}
+.today-keystone .ks-settled{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:600;color:var(--sage-deep);padding:4px 0 2px;}
+.today-keystone .ks-check{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--sage-tint);color:var(--sage-deep);font-size:12px;font-weight:700;}
+
 /* progress dots (meal completion indicators) */
 .progress-dots{display:flex;gap:6px;align-items:center;margin-top:10px;}
 .pdot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:13px;border:1.5px solid var(--line);background:#fff;cursor:pointer;transition:all .15s;}

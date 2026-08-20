@@ -329,6 +329,9 @@ function refreshRingAndBars(){
   // --- Progress dots ---
   renderProgressDots();
 
+  // --- Phase 3 D1: evening-anchored daily-confirm keystone (top of #todayProgressCard) ---
+  if(typeof renderTodayKeystone === 'function') renderTodayKeystone();
+
 }
 
 // The fuller calorie and nutrient view deliberately stays after the meal cards. This
