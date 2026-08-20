@@ -384,7 +384,11 @@ function renderWeekNutriCard(plan, person, dayViews){
    pass/fail — a lighter week gets a gentle "the next one starts fresh", never a failure note.
    buildWeekReview() is pure (no DOM) so tools/check.js can pin the window + framing directly. */
 const WEEK_REVIEW_FROM_DAYINDEX = 4; // Friday (0=Mon .. 6=Sun)
-function buildWeekReview(plan, person, dayIndex, daysSet, balancedCount){
+// opts (Phase 3 D5, optional): {solo, sharedDinners, partnerName} adds ONE warm JOINT line for
+// a two-person household — the aggregate shared outcome ("you and X shared N dinners together"),
+// never a per-person comparison or leaderboard (panel guardrail: couple adherence stays private).
+// Omitted/solo/zero-shared -> no couple line, so a solo review is byte-identical to before.
+function buildWeekReview(plan, person, dayIndex, daysSet, balancedCount, opts){
   if(dayIndex < WEEK_REVIEW_FROM_DAYINDEX || daysSet <= 0) return {show: false};
   const s = summarizeWeekPlan(plan, person);
   const proteinOnTarget = s.targetProtein > 0 && s.avgProteinPerDay >= s.targetProtein;
@@ -402,7 +406,7 @@ function buildWeekReview(plan, person, dayIndex, daysSet, balancedCount){
   const warm = daysSet >= 5 ? 'a steady rhythm.'
     : daysSet >= 3 ? 'nicely there.'
     : 'a lighter week — the next one starts fresh.';
-  return {
+  const out = {
     show: true,
     headline: dayIndex >= 6 ? 'Your week in review' : 'Your week so far',
     adherence: daysSet + ' of 7 days set',
@@ -410,6 +414,32 @@ function buildWeekReview(plan, person, dayIndex, daysSet, balancedCount){
     nutrition: nutrition,
     balance: balancedCount + ' of 7 days balanced'
   };
+  const o = opts || {};
+  if(!o.solo && o.sharedDinners > 0){
+    const who = o.partnerName ? ('you and ' + o.partnerName) : 'you both';
+    out.couple = who.charAt(0).toUpperCase() + who.slice(1) + ' shared ' + o.sharedDinners
+      + ' dinner' + (o.sharedDinners === 1 ? '' : 's') + ' together this week.';
+  }
+  return out;
+}
+
+// Phase 3 D5: shared dinners the household actually ate TOGETHER this week — a day counts only
+// when dinner is a shared slot AND both people confirmed it. Deterministic, elapsed-days only.
+// The JOINT half of the couple mechanic; per-person adherence is never exposed here.
+function weekSharedDinnersTogether(){
+  const monday = mondayOfWeek(todayISO());
+  const today = todayISO();
+  const plan = ensureWeekPlan(monday);
+  let n = 0;
+  for(let i = 0; i < 7; i++){
+    const d = addDaysISO(monday, i);
+    if(d > today) continue;
+    const day = plan.days[i];
+    const dinner = day && day.meals && day.meals.dinner;
+    if(!dinner || !dinner.shared) continue;
+    if(slotLogStatus(d, 'elena', 'dinner') === 'confirmed' && slotLogStatus(d, 'partner', 'dinner') === 'confirmed') n++;
+  }
+  return n;
 }
 
 function renderWeekReview(plan, person, dayViews){
@@ -419,12 +449,20 @@ function renderWeekReview(plan, person, dayViews){
   const dayIndex = diffDaysISO(todayISO(), mondayOfWeek(todayISO()));
   const daysSet = typeof weekDaysSetCount === 'function' ? weekDaysSetCount(person) : 0;
   const balancedCount = dayViews.filter(function(d){ return dayBalanceOverall(d.totals, person) === 'balanced'; }).length;
-  const r = buildWeekReview(plan, person, dayIndex, daysSet, balancedCount);
+  const solo = typeof isSoloHousehold === 'function' && isSoloHousehold();
+  const otherSlot = person === 'elena' ? 'partner' : 'elena';
+  const opts = {
+    solo: solo,
+    sharedDinners: (!solo && typeof weekSharedDinnersTogether === 'function') ? weekSharedDinnersTogether() : 0,
+    partnerName: (!solo && typeof resolveDisplayName === 'function') ? resolveDisplayName(otherSlot) : ''
+  };
+  const r = buildWeekReview(plan, person, dayIndex, daysSet, balancedCount, opts);
   if(!r.show){ wrap.innerHTML = ''; return; }
   wrap.innerHTML = '<div class="card week-review-card">'
     + '<div class="wr-head"><span class="wr-leaf" aria-hidden="true">🌿</span>' + r.headline + '</div>'
     + '<div class="wr-adh"><b>' + r.adherence + '</b> · ' + r.warm + '</div>'
     + '<div class="wr-sub sub">' + r.nutrition + ' ' + r.balance + '.</div>'
+    + (r.couple ? '<div class="wr-couple">🍽️ ' + escapeHtml(r.couple) + '</div>' : '')
     + '</div>';
 }
 

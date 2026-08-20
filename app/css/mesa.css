@@ -865,6 +865,8 @@ body.gate-open{overflow:hidden;}
 .week-review-card .wr-adh{font-size:13.5px;color:var(--ink-soft);margin-top:7px;}
 .week-review-card .wr-adh b{color:var(--sage-deep);}
 .week-review-card .wr-sub{margin:5px 0 0;}
+/* Phase 3 D5: the warm JOINT couple line — aggregate shared outcome, never a comparison. */
+.week-review-card .wr-couple{margin:8px 0 0;padding-top:8px;border-top:1px solid rgba(127,147,100,.22);font-size:13px;font-weight:600;color:var(--sage-deep);}
 
 /* Phase 3 D1: daily-confirm keystone — lives at the top of #todayProgressCard. Its button
    reuses .cta / .cta.ghostbtn; the wrapper just resets .cta's top margin and adds the calm

@@ -5095,6 +5095,21 @@ function testWeekReview(ctx){
   assert(light.warm.indexOf('fresh') !== -1 && light.warm.toLowerCase().indexOf('fail') === -1,
     'week review: a lighter week is framed as a fresh start, never a failure', 'warm=' + light.warm);
 
+  // Phase 3 D5: the JOINT couple line — aggregate shared outcome only, never per-person.
+  const solo5 = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 5, 5]); // no opts -> solo
+  assert(!('couple' in solo5) || !solo5.couple,
+    'week review D5: a solo review (no opts) has no couple line', '');
+  const couple = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 5, 5, {solo: false, sharedDinners: 3, partnerName: 'Andrea'}]);
+  assert(couple.couple === 'You and Andrea shared 3 dinners together this week.',
+    'week review D5: couple household gets the warm joint "shared N dinners together" line', 'got=' + couple.couple);
+  const one = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 5, 5, {solo: false, sharedDinners: 1, partnerName: 'Andrea'}]);
+  assert(one.couple.indexOf('1 dinner together') !== -1 && one.couple.indexOf('dinners') === -1,
+    'week review D5: singular "1 dinner together"', 'got=' + one.couple);
+  const zero = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 5, 5, {solo: false, sharedDinners: 0, partnerName: 'Andrea'}]);
+  assert(!zero.couple, 'week review D5: no couple line when zero dinners were shared (never a sad "0 together")', 'got=' + zero.couple);
+  const soloOpt = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 5, 5, {solo: true, sharedDinners: 3, partnerName: 'Andrea'}]);
+  assert(!soloOpt.couple, 'week review D5: a solo household never gets a couple line even with shared data present', '');
+
   run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
 }
 
