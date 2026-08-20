@@ -5118,6 +5118,41 @@ function testOnboardingStructure(){
   });
 }
 
+/* ---------------- Phase 3 D3b: "targets are an estimate" banner ----------------
+   Pins the pure show-condition (onboarded, not-confirmed, not-dismissed), that markBasicsConfirmed
+   and dismiss both retire it, and — critically — the GRANDFATHER migration: an existing install
+   that predates the flag must load as confirmed (never nag an established user on deploy), while a
+   genuinely fresh install (no saved store) starts unconfirmed. */
+function testBasicsBanner(ctx){
+  run(ctx, 'onboarded = true; basicsConfirmed = false; basicsBannerDismissed = false;');
+  assert(call(ctx, 'shouldShowBasicsBanner', []) === true,
+    'basics banner: shows for an onboarded user who has not confirmed real basics', '');
+  run(ctx, 'basicsConfirmed = true;');
+  assert(call(ctx, 'shouldShowBasicsBanner', []) === false, 'basics banner: hidden once basics are confirmed', '');
+  run(ctx, 'basicsConfirmed = false; basicsBannerDismissed = true;');
+  assert(call(ctx, 'shouldShowBasicsBanner', []) === false, 'basics banner: hidden after a manual dismiss (one-time nudge, no re-nag)', '');
+  run(ctx, 'basicsBannerDismissed = false; onboarded = false;');
+  assert(call(ctx, 'shouldShowBasicsBanner', []) === false, 'basics banner: never shows before onboarding is finished', '');
+
+  // markBasicsConfirmed() flips the flag and retires the banner. (Touches only the banner
+  // globals — deliberately NOT loadState()/localStorage here: reloading the whole store mid-
+  // suite pollutes the shared vm context. The grandfather MIGRATION is guarded by source below
+  // and verified live in the ?preview=1 browser.)
+  run(ctx, 'onboarded = true; basicsConfirmed = false; basicsBannerDismissed = false; markBasicsConfirmed();');
+  assert(get(ctx, 'basicsConfirmed') === true && call(ctx, 'shouldShowBasicsBanner', []) === false,
+    'basics banner: markBasicsConfirmed() confirms + retires it', '');
+
+  // Grandfather migration source guard: loadState() must default an existing store's missing
+  // flag to hadStoredStateOnBoot (true for an established install), NOT to a bare false — a
+  // false default would nag every existing user on the deploy that ships this field.
+  const stateSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'state.js'), 'utf8');
+  assert(/basicsConfirmed\s*=\s*hadStoredStateOnBoot/.test(stateSrc),
+    'basics banner: loadState() grandfathers existing installs (basicsConfirmed = hadStoredStateOnBoot)', '');
+
+  // Restore the banner globals for later tests in the shared context.
+  run(ctx, 'onboarded = true; basicsConfirmed = true; basicsBannerDismissed = false;');
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -11057,6 +11092,7 @@ function main(){
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });
   runTest('Week review moment (Phase 3 D2)', function(){ testWeekReview(ctx); });
   runTest('Onboarding structure (Phase 3 D3)', function(){ testOnboardingStructure(); });
+  runTest('Basics estimate banner (Phase 3 D3b)', function(){ testBasicsBanner(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });

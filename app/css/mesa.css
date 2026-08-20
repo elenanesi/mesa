@@ -847,6 +847,15 @@ body.gate-open{overflow:hidden;}
 .arc-popover .ap-dot{width:8px;height:8px;border-radius:50%;display:inline-block;}
 .arc-popover .ap-detail{color:var(--muted);font-size:11px;margin-top:3px;}
 
+/* Phase 3 D3b: "targets are an estimate" banner — calm/informational (soft gold wash, the
+   same "off/estimate" family as the balance dots), NEVER red/alarm. Hidden when empty. */
+.basics-banner:empty{display:none;}
+.basics-banner-card{display:flex;align-items:center;gap:9px;background:#f6edd6;border:1px solid rgba(154,116,20,.28);border-radius:12px;padding:9px 11px;margin:0 0 12px;}
+.basics-banner-card .bb-leaf{font-size:15px;flex:0 0 auto;}
+.basics-banner-card .bb-text{flex:1;font-size:12px;line-height:1.35;color:#7a5c14;}
+.basics-banner-card .bb-add{flex:0 0 auto;border:0;background:var(--sage);color:#fff;font:inherit;font-weight:700;font-size:12px;padding:7px 11px;border-radius:9px;cursor:pointer;min-height:34px;}
+.basics-banner-card .bb-x{flex:0 0 auto;border:0;background:none;color:#9a7414;font-size:14px;cursor:pointer;padding:4px 2px;line-height:1;min-height:34px;}
+
 /* Phase 3 D2: end-of-week "week in review" card — warm but calm (soft sage wash), never a
    scoreboard. Hidden when empty (rendered only Fri-Sun on the current week with data). */
 .week-review:empty{display:none;}

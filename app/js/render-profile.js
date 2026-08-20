@@ -47,6 +47,7 @@ function renderBasics(){
 // second household member's answers land on THEIR slot even while currentProf is still
 // showing the household owner's — see app.js:obTargetSlot() for how that slot is resolved.
 function afterBasicsChange(label, profileKey){
+  if(typeof markBasicsConfirmed === 'function') markBasicsConfirmed(); // Phase 3 D3b: real basics entered -> retire the estimate banner
   const key = (profileKey === 'elena' || profileKey === 'partner') ? profileKey : currentProf;
   const p = PROF[key];
   const oldGoal = p.calGoalNum;
@@ -161,6 +162,7 @@ function setActivity(i){
 function commitSex(prof, sex){
   if(!PROF[prof]) return;
   PROF[prof].sex = sex;
+  if(typeof markBasicsConfirmed === 'function') markBasicsConfirmed(); // Phase 3 D3b
   persist();
 }
 
@@ -168,6 +170,7 @@ function commitDob(prof, dobY, dobM){
   if(!PROF[prof]) return;
   PROF[prof].dobY = dobY;
   PROF[prof].dobM = dobM;
+  if(typeof markBasicsConfirmed === 'function') markBasicsConfirmed(); // Phase 3 D3b
   applyProf(prof);
 }
 
@@ -175,6 +178,7 @@ function commitActivity(prof, i){
   const a = ACTIVITY_LEVELS[i];
   if(!PROF[prof] || !a) return;
   PROF[prof].activity = a.f;
+  if(typeof markBasicsConfirmed === 'function') markBasicsConfirmed(); // Phase 3 D3b
   applyProf(prof);
 }
 

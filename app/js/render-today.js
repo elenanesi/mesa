@@ -2376,6 +2376,36 @@ function confirmTodayAsPlanned(anchorEl){
   toast(logged === 1 ? 'Set as planned · undo anytime' : logged + ' meals set as planned · undo anytime');
 }
 
+/* ---------------- Phase 3 D3b: "these targets are an estimate" banner ----------------
+   Shown under the keystone when the user finished onboarding but chose "Fill in later" instead
+   of entering real body basics (basicsConfirmed false). Honest and calm (panel guardrail — no
+   red, no "incomplete", no countdown): a one-time nudge that a manual ✕ dismisses for good and
+   that entering real basics retires automatically. Existing installs are grandfathered
+   (loadState), so it only ever reaches a genuinely fresh skipper. shouldShowBasicsBanner() is
+   pure so tools/check.js can pin the show-condition + grandfather migration. */
+function shouldShowBasicsBanner(){
+  return (typeof onboarded !== 'undefined' && !!onboarded)
+    && (typeof basicsConfirmed !== 'undefined' && !basicsConfirmed)
+    && !(typeof basicsBannerDismissed !== 'undefined' && basicsBannerDismissed);
+}
+function renderBasicsBanner(){
+  var wrap = document.getElementById('basicsBanner');
+  if(!wrap) return;
+  if(!shouldShowBasicsBanner()){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = '<div class="basics-banner-card">'
+    + '<span class="bb-leaf" aria-hidden="true">🌱</span>'
+    + '<div class="bb-text">These targets are a general estimate. Add your basics for a plan built around you.</div>'
+    + '<button class="bb-add" onclick="openBasicsFromBanner()">Add basics</button>'
+    + '<button class="bb-x" aria-label="Dismiss" onclick="dismissBasicsBanner()">✕</button>'
+    + '</div>';
+}
+function openBasicsFromBanner(){ if(typeof go === 'function') go('profileAbout'); }
+function dismissBasicsBanner(){
+  if(typeof basicsBannerDismissed !== 'undefined') basicsBannerDismissed = true;
+  if(typeof persist === 'function') persist();
+  renderBasicsBanner();
+}
+
 function showArcPopover(macro, event){
   event.stopPropagation();
   var pop = document.getElementById('arcPopover');

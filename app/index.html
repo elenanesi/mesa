@@ -100,6 +100,10 @@
              log change (render.js:refreshRingAndBars). One calm affordance that closes the day
              "as planned" in a single tap (pending slots only); calm settle when complete. -->
         <div id="todayKeystone" class="today-keystone"></div>
+        <!-- Phase 3 D3b: honest "these targets are an estimate" nudge for a user who chose
+             "Fill in later" in onboarding (basicsConfirmed false). Painted by
+             render-today.js:renderBasicsBanner(); neutral (never red), one-time-dismissible. -->
+        <div id="basicsBanner" class="basics-banner"></div>
         <div class="ring-wrap">
           <div class="ring">
             <svg width="128" height="128" viewBox="0 0 128 128">
@@ -769,7 +773,7 @@
 
   <!-- onboarding -->
   <div class="onboard hidden" id="onboard">
-    <button class="ob-skip" onclick="finishOnboarding()">Skip</button>
+    <button class="ob-skip" onclick="finishOnboarding()">Fill in later</button>
     <div class="ob-slides" id="obSlides">
       <!-- Phase 3 D3: onboarding collapsed to 3 input screens to a real plan (was 5, with
            two ceremony slides). Screen 1 = name + household; screen 2 = body basics; screen 3

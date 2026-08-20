@@ -641,6 +641,21 @@ let lastPersistOk = true;
 const CURRENT_STORE_VERSION = 6;
 
 let onboarded = false;
+// Phase 3 D3b: the daily targets shown after onboarding are a general ESTIMATE until the user
+// enters their real body basics (sex/DOB/height/weight/activity). basicsConfirmed flips true
+// the moment ANY body-stat commit runs (Profile Basics OR onboarding's obCommit* wrappers,
+// which funnel through the same commit* — markBasicsConfirmed() below), and existing installs
+// are grandfathered true on load. basicsBannerDismissed remembers a manual dismiss so the
+// honest "these are estimates" Today banner is a one-time nudge, never a recurring nag.
+let basicsConfirmed = false;
+let basicsBannerDismissed = false;
+// Sets the flag + persists. Called from every body-stat commit funnel so onboarding and the
+// Profile editor can never disagree about whether the user has entered real basics.
+function markBasicsConfirmed(){
+  if(basicsConfirmed) return;
+  basicsConfirmed = true;
+  if(typeof persist === 'function') persist();
+}
 // LEGACY (Defect C redesign, 2026-08): the old shopping-list "tick" — keyed by ingredient
 // display NAME, per week — used to mean "selected for the restock action", but read to
 // users as "I have it", the opposite of what the code actually did (a pantry-covered row
@@ -893,6 +908,8 @@ function buildSnapshot(){
     v: CURRENT_STORE_VERSION, // v4: weekPlans (keyed) + shopping.checkedByWeek (keyed) — see loadState() migrations
     currentProf: currentProf,
     onboarded: onboarded,
+    basicsConfirmed: basicsConfirmed,        // Phase 3 D3b
+    basicsBannerDismissed: basicsBannerDismissed,
     householdStyle: householdStyle,
     householdSize: householdSize,
     householdSizeManual: householdSizeManual,
@@ -1340,6 +1357,17 @@ function loadState(){
   } else {
     try{ onboarded = !!localStorage.getItem(LEGACY_ONBOARD_KEY); }catch(e){ onboarded = false; }
   }
+
+  // Phase 3 D3b: basicsConfirmed / basicsBannerDismissed. GRANDFATHER existing installs — a
+  // store saved before this field existed belongs to someone already using the app with real
+  // basics, so treat their basics as confirmed (never surface the "these are estimates" banner
+  // to an established user). Only a genuinely fresh install (no saved store) starts false.
+  if(typeof saved.basicsConfirmed === 'boolean'){
+    basicsConfirmed = saved.basicsConfirmed;
+  } else {
+    basicsConfirmed = hadStoredStateOnBoot; // pre-flag existing store => grandfather true; fresh => false
+  }
+  basicsBannerDismissed = (typeof saved.basicsBannerDismissed === 'boolean') ? saved.basicsBannerDismissed : false;
 
   // couple sync (task S1) — see syncState's doc above. Absent entirely on any pre-v5
   // store (fresh install or an app that's never configured sync), in which case it stays

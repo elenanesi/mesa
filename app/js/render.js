@@ -350,6 +350,8 @@ function refreshRingAndBars(){
 
   // --- Phase 3 D1: evening-anchored daily-confirm keystone (top of #todayProgressCard) ---
   if(typeof renderTodayKeystone === 'function') renderTodayKeystone();
+  // --- Phase 3 D3b: "targets are an estimate" banner (fill-in-later nudge) ---
+  if(typeof renderBasicsBanner === 'function') renderBasicsBanner();
 
 }
 
