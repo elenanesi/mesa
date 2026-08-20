@@ -121,21 +121,42 @@ later-phase roadmap items only:
     (kcal still 4/4/9), relaxed `saveRecipeBuilder` ≥2-ingredient rule, and a curated recipe-site
     quick-add reusing the ate-out name+P/C/F sheet pattern — labelled *estimated, not verified*,
     NEVER the `chip-computed` "✓ computed" badge.
-- Phase 3: engagement layer. **IN PROGRESS.**
-  - ✅ **D1 daily-confirm keystone + calm closure** (`352c1dd`) — evening-anchored one-tap
-    "Confirm today as planned" folded into the top of `#todayProgressCard` (render-today.js
-    `renderTodayKeystone`/`todayKeystoneState`/`confirmTodayAsPlanned`). Ghost by day, promoted
-    to the filled sage CTA after 18:00 (new `currentHour()`/`MESA_TEST_HOUR` + `isEveningHour()`
-    in state.js; reused by the greeting). HONESTY invariants (hard — do not loosen without
+- Phase 3: engagement layer. ✅ **COMPLETE** (2026-08-20). Tests 1712 → **1759 green**. All
+  UX/behaviour decisions were synthesized from re-spawned psychologist+UX expert-panel consults
+  (EXPERT-PANEL.md); D4 was descoped by the owner.
+  - ✅ **D1a daily-confirm keystone + calm closure** (`352c1dd`) — evening-anchored one-tap
+    "Confirm today as planned" at the top of `#todayProgressCard` (render-today.js
+    `renderTodayKeystone`/`todayKeystoneState`/`confirmTodayAsPlanned`+`…Apply`). Ghost by day,
+    filled sage CTA after 18:00 (new `currentHour()`/`MESA_TEST_HOUR` + `isEveningHour()`,
+    state.js; reused by the greeting). HONESTY invariants (hard — do not loosen without
     re-consulting the panel): logs pending slots ONLY (never overrides a skip/swap), copy always
-    "as planned", every meal individually undoable. Fully-closed day settles to the same sentence
-    the botanical wreath reward uses. Design synthesized from a psychologist+UX panel re-spawn.
+    "as planned", every meal individually undoable. A fully-closed day settles to the same
+    sentence the existing botanical wreath reward uses (`playDayCompletionReward`).
   - ✅ **D1b weekly "Days set" adherence band** (`52cdb00`) — reframed the punitive "Days logged
-    this week" Insights stat tile into a calm "Days set this week N/7" (`weekDaysSetCount`, render.js
-    = days fully closed). No red/▼ (new neutral `.sd.calm`), no second dot-grid, missed day ≡
-    not-yet day (quiet reset). Placed in Insights (not on the daily keystone) per the panel.
-  - ⏳ Remaining: D2 weekly review moment, D3 onboarding ≤3 screens (needs owner: which fields),
-    D4 anchored self-suppressing notification (needs owner: push in scope + iOS-PWA feasibility),
-    D5 couple shared-outcome view. Tests → 1729 green.
+    this week" Insights tile into a calm "Days set this week N/7" (`weekDaysSetCount` = days fully
+    closed). No red/▼ (neutral `.sd.calm`), no second dot-grid, missed day ≡ not-yet day (quiet
+    reset). In Insights, not on the daily keystone, per the panel.
+  - ✅ **D2 week-in-review moment** (`ff1894c`) — a warm "🌿 Your week in review" card atop the
+    Planner, Fri–Sun on the current week once a day is set. Reuses `summarizeWeekPlan` +
+    `weekDaysSetCount` + the day-balance count; positive/plain, quiet reset. `buildWeekReview`
+    pure + tested.
+  - ✅ **D3a onboarding → 3 screens to a real plan** (`ae3ed02`) — was 5 slides (2 ceremony).
+    Screen 1 name+household (`setHouseholdSize`), 2 body basics, 3 goal (fatLoss/maintain/
+    muscleGain) + "anything to avoid?" (`AVOID_KEYS` hard filter) + eating style. Ceremony slides
+    cut (landing on Today's ring/keystone is the reward, aha <60s). Slot-safe obSetHousehold/
+    obSetGoal/obToggleAvoid wrappers. Owner-chosen fields: household + goal + allergies + Mifflin.
+  - ✅ **D3b "Fill in later" + honest estimate banner** (`51da00d`) — "Skip"→"Fill in later"; a
+    calm Today banner (under the keystone) shows when a user finished onboarding without entering
+    real basics (`basicsConfirmed` flag, set by every body-stat commit funnel). One-time
+    dismissible, never red; **grandfather migration** (`basicsConfirmed = hadStoredStateOnBoot`)
+    so no established user is nagged on deploy. `shouldShowBasicsBanner` pure + tested.
+  - ❌ **D4 anchored self-suppressing notification — DESCOPED (owner, 2026-08-20).** iOS PWA push
+    is unreliable and the evening-anchored keystone already provides the in-context cue; not worth
+    the platform surface. If revisited: one evening in-app reminder, self-suppressing (no prompt
+    if already confirmed), auto-quiet after N ignored days, in-context permission priming.
+  - ✅ **D5 couple shared-outcome view** (`eccd248`) — one warm JOINT line in the week-review card
+    for two-person households: "You and <partner> shared N dinners together this week"
+    (`weekSharedDinnersTogether` = shared dinners both confirmed). Aggregate only; per-person
+    adherence stays private; no comparison/leaderboard. Solo households never see it.
 - Phase 4: **generation rewire** (make every pick balance-aware — highest risk), LLM-estimated
   macros.
