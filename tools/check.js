@@ -5098,6 +5098,26 @@ function testWeekReview(ctx){
   run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
 }
 
+/* ---------------- Phase 3 D3: onboarding structure guard ----------------
+   The onboarding wizard is boot code (app.js) the vm harness can't exercise as UI, so this is
+   a structural guard on the markup + handlers: the dot count MUST equal the slide count (a
+   mismatch ships a wizard whose progress dots lie), the flow is the intended 3 input screens,
+   and every new D3 collector handler referenced in index.html actually exists in app.js. */
+function testOnboardingStructure(){
+  const html = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  const obBlock = html.slice(html.indexOf('id="obSlides"'), html.indexOf('id="obNext"'));
+  const slideCount = (obBlock.match(/class="ob-slide( active)?"/g) || []).length; // matches "ob-slide" / "ob-slide active", not "ob-slides"
+  const dotCount = (obBlock.match(/<span class="d(?: on)?"><\/span>/g) || []).length;
+  assert(slideCount === 3, 'onboarding: exactly 3 input screens (ceremony slides cut for <=3-to-plan)', 'slides=' + slideCount);
+  assert(dotCount === slideCount, 'onboarding: progress dots match slide count', 'dots=' + dotCount + ' slides=' + slideCount);
+  assert(html.indexOf('id="obHouseholdSeg"') !== -1 && html.indexOf('id="obGoalSeg"') !== -1 && html.indexOf('id="obAvoidRow"') !== -1,
+    'onboarding: household, goal and avoid controls are present in the markup', '');
+  const appjs = fs.readFileSync(path.join(APP_DIR, 'js', 'app.js'), 'utf8');
+  ['obSetHousehold', 'obSetGoal', 'obToggleAvoid', 'obPopulateHousehold', 'obPopulateGoal', 'obPopulateAvoid'].forEach(function(fn){
+    assert(appjs.indexOf('function ' + fn + '(') !== -1, 'onboarding: ' + fn + '() is defined in app.js', '');
+  });
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -11036,6 +11056,7 @@ function main(){
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });
   runTest('Week review moment (Phase 3 D2)', function(){ testWeekReview(ctx); });
+  runTest('Onboarding structure (Phase 3 D3)', function(){ testOnboardingStructure(); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });

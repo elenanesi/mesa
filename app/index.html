@@ -771,14 +771,13 @@
   <div class="onboard hidden" id="onboard">
     <button class="ob-skip" onclick="finishOnboarding()">Skip</button>
     <div class="ob-slides" id="obSlides">
+      <!-- Phase 3 D3: onboarding collapsed to 3 input screens to a real plan (was 5, with
+           two ceremony slides). Screen 1 = name + household; screen 2 = body basics; screen 3
+           = goal + what-to-avoid + eating style. The old intro/"ready" ceremony slides are cut
+           (the Today plan/ring filling in is the reward). -->
       <div class="ob-slide active">
-        <div class="ob-emoji">🥗🍽️</div>
-        <h1>A week of meals that fit you</h1>
-        <p class="sub" style="text-align:center">Mesa builds one weekly menu around your goals. Cooking for yourself, or sharing the table with someone whose needs are different? Both work — same meals, portions that quietly tilt to each of you.</p>
-      </div>
-      <div class="ob-slide">
-        <h1 style="text-align:center">What should we call you?</h1>
-        <p class="sub" style="text-align:center">Shown on your profile, avatar and shared meal plans. You can change it anytime in Profile → Basics.</p>
+        <h1 style="text-align:center">First, the basics</h1>
+        <p class="sub" style="text-align:center">Mesa builds one weekly menu — same meals, portions that quietly tilt to each of you if you're two. Change anything later in Profile.</p>
         <!-- Task B2 (generic identity): a brand-new user is no longer asked "are you Elena
              or Andrea" — just their own name, using the same commit-on-blur/Enter input
              convention as the Basics "Name" field (render-profile.js:commitDisplayName).
@@ -797,6 +796,14 @@
             <span class="sv-stepper" style="margin:0">
               <input class="sv-val" id="obNameVal" type="text" maxlength="24" style="width:8.5em" placeholder="You" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="obCommitName(this.value)" aria-label="Your display name">
             </span>
+          </div>
+        </div>
+        <!-- Phase 3 D3: household size — reuses the same "Just me / Me + partner" choice that
+             lives in Profile -> Basics (setHouseholdSize), so it no longer hides in Profile. -->
+        <div class="field" style="margin-top:14px"><label>Who are you cooking for?</label>
+          <div class="seg" id="obHouseholdSeg" style="width:100%;margin-top:6px">
+            <button type="button" style="flex:1" onclick="obSetHousehold(1)">Just me</button>
+            <button type="button" style="flex:1" onclick="obSetHousehold(2)">Me + partner</button>
           </div>
         </div>
         <div class="row" id="obGoalsPreview" style="gap:7px;flex-wrap:wrap;margin-top:14px"></div>
@@ -845,9 +852,26 @@
            (app.js, queries by name regardless of DOM position) and obToggleDiet() ->
            toggleDiet() (render-profile.js, the one funnel every diets write goes through)
            are both untouched by the grouping. -->
+      <!-- Phase 3 D3 screen 3: goal (calorie direction) + what-to-avoid (hard planner filter,
+           AVOID_KEYS) + eating style. Goal maps to the two calorie-kind GOAL_DEFS_UNION entries
+           (fatLoss/muscleGain) or maintenance (both off); avoid pills reuse .pill.chip-preset/
+           .chipsel and the addAvoid/removeAvoid vocabulary; eating style keeps the obToggleDiet
+           funnel. Diet "intolerances" (gluten-free/lactose-intolerant) live in Profile -> Diet
+           now — the avoid chips (Gluten/Lactose) cover the same restriction as a hard filter. -->
       <div class="ob-slide">
-        <h1 style="text-align:center">Dietary preference</h1>
-        <p class="sub" style="text-align:center">Shapes what meals the planner suggests. You can change this anytime in Profile → Diet.</p>
+        <h1 style="text-align:center">Your goal &amp; preferences</h1>
+        <p class="sub" style="text-align:center">Shapes your targets and which meals get picked. Change anything anytime in Profile.</p>
+        <div class="field" style="margin-top:14px"><label>What's the goal for this plan?</label>
+          <div class="seg" id="obGoalSeg" style="width:100%;margin-top:6px">
+            <button type="button" style="flex:1" onclick="obSetGoal('fatLoss')">Eat lighter</button>
+            <button type="button" style="flex:1" onclick="obSetGoal('maintain')">Steady</button>
+            <button type="button" style="flex:1" onclick="obSetGoal('muscleGain')">Build muscle</button>
+          </div>
+        </div>
+        <div class="field" style="margin-top:14px"><label>Anything to avoid?</label>
+          <div class="row" id="obAvoidRow" style="gap:8px;margin-top:6px;flex-wrap:wrap"></div>
+          <p class="sub" style="margin:6px 0 0;font-size:11.5px">We'll never plan a meal with these.</p>
+        </div>
         <div class="field" style="margin-top:14px"><label>Eating style — choose one</label>
           <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="none" onchange="obToggleDiet('none')"> No restriction</label>
@@ -856,20 +880,9 @@
             <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="pescatarian" onchange="obToggleDiet('pescatarian')"> Pescatarian</label>
           </div>
         </div>
-        <div class="field" style="margin-top:14px"><label>Intolerances — stack freely</label>
-          <div class="row" style="gap:8px;margin-top:6px;flex-direction:column">
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="gluten-free" onchange="obToggleDiet('gluten-free')"> Gluten-free</label>
-            <label style="display:flex;align-items:center;gap:8px;cursor:pointer"><input type="checkbox" name="obDiet" value="lactose-intolerant" onchange="obToggleDiet('lactose-intolerant')"> Lactose-intolerant</label>
-          </div>
-        </div>
-      </div>
-      <div class="ob-slide">
-        <div class="ob-emoji">✅</div>
-        <h1>Your first week is ready</h1>
-        <p class="sub" style="text-align:center">7 days, balanced meals, one shopping list — tap in any time to see why a meal fits you.</p>
       </div>
     </div>
-    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span><span class="d"></span><span class="d"></span></div>
+    <div class="ob-dots"><span class="d on"></span><span class="d"></span><span class="d"></span></div>
     <button class="cta" id="obNext" onclick="obNext()">Continue</button>
   </div>
 

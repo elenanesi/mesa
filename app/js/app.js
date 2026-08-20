@@ -280,15 +280,15 @@ function obShow(i){
   obIndex = i;
   document.querySelectorAll('.ob-slide').forEach(function(s, idx){ s.classList.toggle('active', idx === i); });
   document.querySelectorAll('.ob-dots .d').forEach(function(d, idx){ d.classList.toggle('on', idx === i); });
-  document.getElementById('obNext').textContent = i === 4 ? "Let's go →" : 'Continue';
-  // Task D3: populate body stats slide (slide 2) on first show
-  if(i === 2) obPopulateBodyStats();
-  // Task D4: populate diet slide (slide 3) on first show
-  if(i === 3) obPopulateDiet();
+  // Phase 3 D3: 3 input screens now (0 name+household, 1 body basics, 2 goal+avoid+diet).
+  document.getElementById('obNext').textContent = i === 2 ? 'Build my plan →' : 'Continue';
+  if(i === 0) obPopulateHousehold();
+  if(i === 1) obPopulateBodyStats();
+  if(i === 2){ obPopulateDiet(); obPopulateGoal(); obPopulateAvoid(); }
 }
 
 function obNext(){
-  if(obIndex < 4){ obShow(obIndex + 1); } else { finishOnboarding(); }
+  if(obIndex < 2){ obShow(obIndex + 1); } else { finishOnboarding(); }
 }
 
 function renderObGoals(key){
@@ -478,6 +478,71 @@ function obToggleDiet(key){
   if(!obEnsureWritable(slot)) return;
   toggleDiet(slot, key);
   obPopulateDiet(); // reflect any DIET_EXCLUSIVE_GROUP collapse back into the checkboxes
+}
+
+/* ---------------- Phase 3 D3: household + goal + avoid onboarding wrappers ----------------
+   Household size is a HOUSEHOLD-level setting (not per-slot), so it reuses setHouseholdSize()
+   directly. Goal + avoid are per-profile, so — like every ob* wrapper — they resolve the slot
+   fresh and write to it (goal via the same exclusivity rule toggleGoal enforces; avoid straight
+   onto PROF[slot].avoid, the array planner.js:recipeHitsAvoid hard-filters on). Each populate*()
+   reflects the current stored state back into the control on slide entry. */
+function obSetHousehold(size){
+  if(typeof setHouseholdSize === 'function') setHouseholdSize(size);
+  obPopulateHousehold();
+}
+function obPopulateHousehold(){
+  const seg = document.getElementById('obHouseholdSeg');
+  if(!seg) return;
+  const solo = typeof isSoloHousehold === 'function' && isSoloHousehold();
+  const btns = seg.querySelectorAll('button');
+  if(btns[0]) btns[0].classList.toggle('on', solo);
+  if(btns[1]) btns[1].classList.toggle('on', !solo);
+}
+
+// which ∈ 'fatLoss' | 'maintain' | 'muscleGain' — the two calorie-kind goals (mutually
+// exclusive) or maintenance (both off). Nudge-kind goals (muscle/heart) are left to Profile.
+function obSetGoal(which){
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  const p = PROF[slot];
+  if(!p || !p.goals) return;
+  p.goals.fatLoss = (which === 'fatLoss');
+  p.goals.muscleGain = (which === 'muscleGain');
+  recomputeProf(slot);
+  applyProf(slot);
+  obPopulateGoal();
+}
+function obPopulateGoal(){
+  const seg = document.getElementById('obGoalSeg');
+  if(!seg) return;
+  const g = (PROF[obProfile] && PROF[obProfile].goals) || {};
+  const active = g.fatLoss ? 'fatLoss' : g.muscleGain ? 'muscleGain' : 'maintain';
+  seg.querySelectorAll('button').forEach(function(b){
+    const key = /fatLoss/.test(b.getAttribute('onclick')) ? 'fatLoss'
+      : /muscleGain/.test(b.getAttribute('onclick')) ? 'muscleGain' : 'maintain';
+    b.classList.toggle('on', key === active);
+  });
+}
+
+function obToggleAvoid(key){
+  const slot = obTargetSlot();
+  if(!obEnsureWritable(slot)) return;
+  const p = PROF[slot];
+  if(!p) return;
+  p.avoid = p.avoid || [];
+  const i = p.avoid.indexOf(key);
+  if(i === -1) p.avoid.push(key); else p.avoid.splice(i, 1);
+  applyProf(slot);
+  obPopulateAvoid();
+}
+function obPopulateAvoid(){
+  const row = document.getElementById('obAvoidRow');
+  if(!row || typeof AVOID_KEYS === 'undefined') return;
+  const avoid = (PROF[obProfile] && PROF[obProfile].avoid) || [];
+  row.innerHTML = AVOID_KEYS.map(function(k){
+    const on = avoid.indexOf(k) !== -1;
+    return '<span class="pill chip-preset' + (on ? ' chipsel' : '') + '" role="button" tabindex="0" onclick="obToggleAvoid(\'' + k + '\')">' + avoidLabel(k) + '</span>';
+  }).join('');
 }
 
 // Onboarding-only wrappers around render-profile.js's commitDisplayName/commitHeight/
