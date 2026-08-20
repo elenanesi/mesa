@@ -4870,6 +4870,107 @@ function testAutoBalancePlan(ctx){
   run(ctx, 'MESA_TEST_DISABLE_AUTO_BALANCE = false; weekPlans = {}; weekPlan = null;');
 }
 
+/* ---------------- Re-balance button: per-day spread objective (Phase 2) ----------------
+   The manual "Re-balance" solver (proposeRebalanceSuggestions) used to optimize ONLY the
+   weekly coverage average and bail the moment every weekly target was met — so a week that
+   was weekly-fine but had a rich/light single day (exactly what autoBalancePlan evens after
+   generation, but which edits/logs/swaps can re-introduce) got "nicely balanced, nothing to
+   do". This suite pins the extension: the objective now carries a SECONDARY per-day spread
+   term (reusing planImbalance), and the button runs in a 'spread' mode that evens the days
+   while the weekly average — still primary — is never allowed to regress a met target. */
+function testRebalanceSpreadObjective(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+  const plan = call(ctx, 'ensureWeekPlan', [call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])])]);
+  const people = call(ctx, 'isSoloHousehold', []) ? ['elena'] : ['elena', 'partner'];
+  const gaps0 = call(ctx, 'coverageGaps', [call(ctx, 'computeWeeklyCoverage', [plan])]);
+  const worstKey = Object.keys(gaps0).reduce(function(a, b){ return gaps0[b].gap > gaps0[a].gap ? b : a; });
+  const person = gaps0[worstKey].person;
+  const trigger = get(ctx, 'REBALANCE_SPREAD_TRIGGER');
+  const alpha = get(ctx, 'REBALANCE_SPREAD_ALPHA');
+  const spread0 = call(ctx, 'planImbalance', [plan, people]);
+
+  // (1) Objective decomposition: the blended objectiveFor is exactly the pure weekly term
+  // minus the secondary spread penalty — the panel guardrail "weekly primary" made explicit.
+  const wk = call(ctx, 'weeklyObjectiveFor', [worstKey, plan, person]);
+  const pen = call(ctx, 'rebalanceSpreadPenalty', [worstKey, plan]);
+  const blended = call(ctx, 'objectiveFor', [worstKey, plan, person]);
+  assert(Math.abs(blended - (wk - pen)) < 1e-9,
+    're-balance spread: objectiveFor === weeklyObjectiveFor − rebalanceSpreadPenalty',
+    'blended=' + blended + ' wk=' + wk + ' pen=' + pen);
+
+  // (2) The spread penalty is a positive, planImbalance-proportional secondary term whenever
+  // the days are uneven (and the metric has a scale) — never a phantom penalty on a flat week.
+  const scale = worstKey === 'fiber'
+    ? get(ctx, 'NUTRITION_GUIDANCE').fiber.target
+    : get(ctx, 'NUTRITION_GUIDANCE')[worstKey].target / 100;
+  assert(Math.abs(pen - alpha * scale * spread0) < 1e-9,
+    're-balance spread: penalty === REBALANCE_SPREAD_ALPHA · metricScale · planImbalance',
+    'pen=' + pen + ' expected=' + (alpha * scale * spread0));
+  assert(spread0 <= 1e-9 ? pen <= 1e-9 : pen > 0,
+    're-balance spread: penalty is > 0 exactly when the week has per-day imbalance', 'spread0=' + spread0 + ' pen=' + pen);
+
+  // (3) Mode dispatch: the scalar each mode maximizes is the documented one.
+  assert(Math.abs(call(ctx, 'rebalanceModeObjective', ['gap', worstKey, plan, person]) - blended) < 1e-9,
+    're-balance spread: gap mode maximizes the blended objectiveFor', '');
+  assert(Math.abs(call(ctx, 'rebalanceModeObjective', ['spread', worstKey, plan, person]) - (-spread0)) < 1e-9,
+    're-balance spread: spread mode maximizes −planImbalance (pure per-day evenness)', '');
+
+  const prop = call(ctx, 'proposeRebalanceSuggestions', [plan.weekStartDate]);
+
+  // (4) On the demo week every weekly target is already met (worst gap 0) yet the days are
+  // uneven above the trigger — the exact case the old button ignored. It must now run in
+  // 'spread' mode and actually propose something.
+  assert(gaps0[worstKey].gap <= 1e-9,
+    're-balance spread: demo week fixture has every weekly coverage target met (spread-mode case)',
+    'worst ' + worstKey + ' gap=' + gaps0[worstKey].gap.toFixed(4));
+  assert(spread0 > trigger,
+    're-balance spread: demo week fixture has per-day imbalance above REBALANCE_SPREAD_TRIGGER',
+    'spread0=' + spread0.toFixed(4) + ' trigger=' + trigger);
+  assert(prop.mode === 'spread' && prop.suggestions.length > 0,
+    're-balance spread: a weekly-met-but-day-uneven week runs in spread mode with suggestions',
+    'mode=' + prop.mode + ' n=' + prop.suggestions.length);
+
+  // (5) The proposal actually evens the days: planImbalance strictly drops, and at least as
+  // many (day, person) slots read dayBalanceOverall "balanced" afterward.
+  const acceptedPlan = call(ctx, 'rebalanceAcceptedPlan', [prop]);
+  const spreadAfter = call(ctx, 'planImbalance', [acceptedPlan, people]);
+  assert(spreadAfter < spread0 - 1e-9,
+    're-balance spread: accepted plan lowers planImbalance (evens the days)',
+    'before=' + spread0.toFixed(4) + ' after=' + spreadAfter.toFixed(4));
+  function balancedCount(p){
+    let n = 0;
+    p.days.forEach(function(day){ people.forEach(function(person2){
+      if(call(ctx, 'dayBalanceOverall', [call(ctx, 'personDayNutriTotals', [day, person2]), person2]) === 'balanced') n++;
+    }); });
+    return n;
+  }
+  assert(balancedCount(acceptedPlan) >= balancedCount(plan),
+    're-balance spread: accepted plan has at least as many balanced (day, person) slots',
+    'before=' + balancedCount(plan) + ' after=' + balancedCount(acceptedPlan));
+
+  // (6) Weekly average stays primary: NOT ONE weekly coverage target is worse after the
+  // evening than before it — spread can never buy per-day evenness at a weekly target's cost.
+  const gapsAfter = call(ctx, 'coverageGaps', [call(ctx, 'computeWeeklyCoverage', [acceptedPlan])]);
+  const regressed = ['fiber', 'satFat', 'freeSugars'].filter(function(k){ return gapsAfter[k].gap > gaps0[k].gap + 1e-9; });
+  assert(regressed.length === 0,
+    're-balance spread: no weekly coverage target regresses while evening the days',
+    'regressed=' + regressed.join(','));
+
+  // (7) Deterministic: the suggestions (what the user accepts/applies) are byte-identical
+  // across two independent calls — the only per-call variation is applySwapToPlan's Date.now
+  // sync-conflict stamps on the result plan, which are by design and not part of suggestions.
+  const prop2 = call(ctx, 'proposeRebalanceSuggestions', [plan.weekStartDate]);
+  assert(JSON.stringify(prop.suggestions) === JSON.stringify(prop2.suggestions),
+    're-balance spread: proposal suggestions are deterministic across calls', '');
+
+  console.log('[re-balance spread demo week ' + FIXED_MONDAY + '] mode=' + prop.mode + ' suggestions=' + prop.suggestions.length +
+    ' | planImbalance ' + spread0.toFixed(4) + ' -> ' + spreadAfter.toFixed(4) +
+    ' | balanced slots ' + balancedCount(plan) + ' -> ' + balancedCount(acceptedPlan) + '/' + (7 * people.length));
+
+  run(ctx, 'weekPlans = {}; weekPlan = null;');
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -10805,6 +10906,7 @@ function main(){
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });
   runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
+  runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });

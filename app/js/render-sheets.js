@@ -303,18 +303,28 @@ function buildRebalanceSheet(){
 function renderRebalanceSheet(){
   if(!rebalanceProposal) return '';
   const g = rebalanceProposal.gapInfo;
+  // 'gap' = a weekly target is missed (close it); 'spread' = weekly targets all met but the
+  // days are uneven (even them out); 'none' = fully balanced. Default defensively for any
+  // proposal shape that predates the mode field.
+  const mode = rebalanceProposal.mode || (g && g.gap <= 1e-9 ? 'none' : 'gap');
+  const spread = mode === 'spread';
   const acceptedPlan = rebalanceAcceptedPlan(rebalanceProposal);
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
   if(!rebalanceProposal.suggestions.length){
-    const allMet = g.gap <= 1e-9;
-    html += '<p class="sub">' + (allMet
-      ? 'Nothing to fix — all four weekly coverage targets are already met. Nicely balanced.'
-      : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal suggestion improves it for this week.')
+    html += '<p class="sub">' + (mode === 'none'
+      ? 'Nothing to fix — every weekly coverage target is met and your days are already even. Nicely balanced.'
+      : spread
+        ? 'Every weekly target is already met; a day or two runs a little rich or light, but no small swap evens them out further right now.'
+        : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal suggestion improves it for this week.')
       + '</p>'
       + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
     return html;
   }
-  html += '<p class="sub">Keeps fixed: pinned meals, logged or skipped slots, foods you avoid, and past dates. Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Suggestions stay conservative and week-aware.</p>'
+  html += '<p class="sub">Keeps fixed: pinned meals, logged or skipped slots, foods you avoid, and past dates. '
+    + (spread
+      ? 'Every weekly target is already met — these small swaps just even out a day that runs rich or light.'
+      : 'Biggest computed gap: <b>' + g.label + '</b> at ' + coverageValueText(g) + ' (target ' + coverageTargetText(g) + '). Suggestions stay conservative and week-aware.')
+    + '</p>'
     + '<div class="card" style="padding:14px">'
     + '<b style="font-size:13px">Suggestions</b>';
   rebalanceProposal.suggestions.forEach(function(s, i){
@@ -326,20 +336,46 @@ function renderRebalanceSheet(){
     const last = i === rebalanceProposal.suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'swap' : 'side';
     const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
+    const note = (kind === 'swap' ? 'Swap' : 'Add side') + ' · ' + (spread ? 'evens the days' : '+' + g.label);
     html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + icon + '</div>'
       + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
-      + '<small>' + (kind === 'swap' ? 'Swap' : 'Add side') + ' · +' + g.label + '</small></div>'
+      + '<small>' + note + '</small></div>'
       + '<div class="row" style="gap:8px">'
       + '<button class="backbtn' + (accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
       + '<button class="backbtn' + (!accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'
       + '</div></div>';
   });
-  const acceptedGap = coverageGaps(computeWeeklyCoverage(acceptedPlan))[rebalanceProposal.metricKey];
-  html += '</div>'
-    + '<p class="sub">' + g.label + ' after accepted suggestions: <b>' + coverageValueText(acceptedGap) + '</b> (now ' + coverageValueText(g) + ').</p>'
-    + '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
+  html += '</div>';
+  if(spread){
+    // Directional, never pass/fail (panel guardrail): report how many day-by-person slots read
+    // "balanced" after the accepted evening, framed as a contribution not a score.
+    const before = rebalanceBalancedDayCount(ensureWeekPlan(rebalanceProposal.weekStartDate));
+    const after = rebalanceBalancedDayCount(acceptedPlan);
+    html += '<p class="sub">Balanced days: <b>' + before.n + ' → ' + after.n + ' of ' + after.total + '</b> after accepted swaps. Every weekly target stays met.</p>';
+  } else {
+    const acceptedGap = coverageGaps(computeWeeklyCoverage(acceptedPlan))[rebalanceProposal.metricKey];
+    html += '<p class="sub">' + g.label + ' after accepted suggestions: <b>' + coverageValueText(acceptedGap) + '</b> (now ' + coverageValueText(g) + ').</p>';
+  }
+  html += '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
   return html;
+}
+
+// Count of (day, person) slots reading dayBalanceOverall === 'balanced' across a plan — the
+// same holistic per-day signal the Week view's day dots use, reused here so the spread-mode
+// re-balance summary speaks in the app's existing "N of 7 balanced" vocabulary.
+function rebalanceBalancedDayCount(plan){
+  const people = (typeof isSoloHousehold === 'function' && isSoloHousehold()) ? ['elena'] : ['elena', 'partner'];
+  let n = 0;
+  const total = (plan && plan.days ? plan.days.length : 0) * people.length;
+  if(plan && plan.days){
+    plan.days.forEach(function(day){
+      people.forEach(function(person){
+        if(dayBalanceOverall(personDayNutriTotals(day, person), person) === 'balanced') n++;
+      });
+    });
+  }
+  return {n: n, total: total};
 }
 
 function openRebalanceSheet(){

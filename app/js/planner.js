@@ -3832,14 +3832,79 @@ function enumerateSwapUnits(plan){
   return units;
 }
 
-// The scalar the greedy search maximizes for a given worst-metric key (higher = better;
-// sat-fat is negated since lower is better there).
-function objectiveFor(metricKey, plan, fixedPerson){
+// The people the weekly re-balance solver optimizes over — solo households never optimize
+// the (intentionally empty) partner column (same guard enumerateSwapUnits/autoBalancePlan use).
+function rebalanceTrackedPeople(){
+  return isSoloHousehold() ? ['elena'] : ['elena', 'partner'];
+}
+
+// The PRIMARY term the greedy re-balance search maximizes for a given worst-metric key
+// (higher = better; sat-fat/free-sugars are negated since lower is better there). This is
+// the pure weekly-coverage average — the metric the button has always chased.
+function weeklyObjectiveFor(metricKey, plan, fixedPerson){
   const cov = computeWeeklyCoverage(plan);
   if(metricKey === 'fiber') return cov.fiberAvgPerDay[fixedPerson];
   if(metricKey === 'satFat') return -cov.satFatShareOfKcal;
   if(metricKey === 'freeSugars') return -cov.freeSugarShareOfKcal;
   return 0;
+}
+
+// SECONDARY per-day spread guard for the manual Re-balance button. The auto-balance pass
+// (autoBalancePlan) already evens fiber/free-sugars/sat-fat across days after generation via
+// planImbalance; before this, the manual button only ever chased the WEEKLY average, so it
+// could leave (or even create) a rich/light single day the auto pass would have fixed. We
+// reuse the SAME planImbalance scalar so the button and the automatic pass optimize one
+// notion of per-day balance. It is deliberately a soft secondary term (panel guardrail:
+// weekly average stays primary): scaled to a small fraction of each metric's own magnitude,
+// and the solver additionally gates every move on the weekly term never regressing — so
+// spread can only break near-ties among, and keep going past, weekly-neutral moves; it can
+// never buy per-day evenness at the cost of the weekly average.
+const REBALANCE_SPREAD_ALPHA = 0.05;
+const REBALANCE_METRIC_SCALE = {
+  fiber: NUTRITION_GUIDANCE.fiber.target,            // g/day, matches weeklyObjectiveFor units
+  satFat: NUTRITION_GUIDANCE.satFat.target / 100,    // energy share, matches -satFatShareOfKcal
+  freeSugars: NUTRITION_GUIDANCE.freeSugars.target / 100
+};
+function rebalanceSpreadPenalty(metricKey, plan){
+  const scale = REBALANCE_METRIC_SCALE[metricKey] || 0;
+  if(!scale) return 0;
+  return REBALANCE_SPREAD_ALPHA * scale * planImbalance(plan, rebalanceTrackedPeople());
+}
+
+// The blended scalar the greedy search actually ranks/accepts by: weekly average (primary)
+// minus the secondary per-day spread penalty. Higher = better for both terms.
+function objectiveFor(metricKey, plan, fixedPerson){
+  return weeklyObjectiveFor(metricKey, plan, fixedPerson) - rebalanceSpreadPenalty(metricKey, plan);
+}
+
+// The re-balance button runs in one of two modes:
+//   'gap'    — a weekly coverage target is missed; close that worst gap (as it always has),
+//              and, via the blended objectiveFor above, prefer moves that ALSO even the days
+//              and keep going on weekly-neutral day-evening moves.
+//   'spread' — every weekly target is already met but individual days are still rich/light
+//              (planImbalance above REBALANCE_SPREAD_TRIGGER). Here there is no weekly gap to
+//              chase, so the objective is pure per-day evenness (minimize planImbalance) and
+//              the guard is that NO weekly target may slip out of "met" while we tidy the days.
+// This is what makes the manual button complement autoBalancePlan: a week that was weekly-fine
+// but went day-uneven after edits/logs/swaps can be re-evened without waiting for a regenerate.
+const REBALANCE_SPREAD_TRIGGER = 0.30;
+
+// The scalar a given mode maximizes for a trial plan (higher = better).
+function rebalanceModeObjective(mode, worstKey, plan, fixedPerson){
+  if(mode === 'spread') return -planImbalance(plan, rebalanceTrackedPeople());
+  return objectiveFor(worstKey, plan, fixedPerson);
+}
+
+// Whether a trial move is allowed to be considered at all — the weekly-average guardrail.
+// 'gap' mode: the worst metric may not regress (unchanged from the original button). 'spread'
+// mode: not a single weekly coverage gap may grow, so evening the days can never cost a target
+// that was already met.
+function rebalanceModeHoldsWeekly(mode, worstKey, gaps0, baseWeekly, trial, fixedPerson){
+  if(mode === 'spread'){
+    const g = coverageGaps(computeWeeklyCoverage(trial));
+    return ['fiber', 'satFat', 'freeSugars'].every(function(k){ return g[k].gap <= gaps0[k].gap + 1e-9; });
+  }
+  return weeklyObjectiveFor(worstKey, trial, fixedPerson) >= baseWeekly - 1e-9;
 }
 
 function dailyTotalsForPlan(plan){
@@ -3868,7 +3933,7 @@ function dailyBandState(plan){
   });
 }
 
-function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson){
+function sideCandidatesForUnit(plan, unit, mode, worstKey, gaps0, baseObjective, baseWeekly, fixedPerson){
   const m = plan.days[unit.dayIndex].meals[unit.slot];
   if(!canAutoMutateUnit(plan, unit)) return [];
   const currentEntry = unit.shared ? m.elena : m[unit.person];
@@ -3898,7 +3963,10 @@ function sideCandidatesForUnit(plan, unit, metricKey, baseObjective, fixedPerson
       return true;
     });
     if(!calorieSafe) return;
-    const improved = objectiveFor(metricKey, trial, fixedPerson) - baseObjective;
+    // Weekly-average guardrail (mode-aware): a side may improve per-day balance but never at
+    // the cost of a weekly target the button is contracted to protect.
+    if(!rebalanceModeHoldsWeekly(mode, worstKey, gaps0, baseWeekly, trial, fixedPerson)) return;
+    const improved = rebalanceModeObjective(mode, worstKey, trial, fixedPerson) - baseObjective;
     if(improved <= 1e-9) return;
     results.push({
       kind: 'addSide',
@@ -4437,14 +4505,23 @@ function proposeRebalanceSuggestions(weekStartDate){
   const worstKey = Object.keys(gaps0).reduce(function(a, b){ return gaps0[b].gap > gaps0[a].gap ? b : a; });
   const worst = gaps0[worstKey];
   const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
-  if(worst.gap <= 1e-9){
-    return {weekStartDate: plan.weekStartDate, metricKey: worstKey, gapInfo: worst, suggestions: [], before: cov0, after: cov0, resultPlan: plan};
+  const people = rebalanceTrackedPeople();
+  const spreadBefore = planImbalance(plan, people);
+  // 'gap' while any weekly target is missed; else 'spread' if the week is weekly-fine but the
+  // days are still uneven enough to be worth tidying; else nothing to do.
+  const mode = worst.gap > 1e-9 ? 'gap' : (spreadBefore > REBALANCE_SPREAD_TRIGGER ? 'spread' : 'none');
+  if(mode === 'none'){
+    return {weekStartDate: plan.weekStartDate, mode: mode, metricKey: worstKey, gapInfo: worst, suggestions: [], before: cov0, after: cov0, spreadBefore: spreadBefore, spreadAfter: spreadBefore, resultPlan: plan};
   }
   let planCopy = deepClone(plan);
   const applied = [];
   const fixedPerson = worst.person; // only meaningful for 'fiber'
   for(let round = 0; round < 2; round++){
-    const baseObjective = objectiveFor(worstKey, planCopy, fixedPerson);
+    const baseObjective = rebalanceModeObjective(mode, worstKey, planCopy, fixedPerson);
+    // Weekly average stays primary (panel guardrail): rebalanceModeHoldsWeekly is the gate that
+    // makes sure no move — swap or side — is ever accepted just because it evens the days if it
+    // would regress a weekly target the current mode is contracted to protect.
+    const baseWeekly = weeklyObjectiveFor(worstKey, planCopy, fixedPerson);
     const candidates = [];
     enumerateSwapUnits(planCopy).forEach(function(unit){
       const m = planCopy.days[unit.dayIndex].meals[unit.slot];
@@ -4454,12 +4531,13 @@ function proposeRebalanceSuggestions(weekStartDate){
       cands.forEach(function(candId){
         const trial = deepClone(planCopy);
         applySwapToPlan(trial, unit, candId);
-        const improvement = objectiveFor(worstKey, trial, fixedPerson) - baseObjective;
+        if(!rebalanceModeHoldsWeekly(mode, worstKey, gaps0, baseWeekly, trial, fixedPerson)) return;
+        const improvement = rebalanceModeObjective(mode, worstKey, trial, fixedPerson) - baseObjective;
         if(improvement > 1e-9){
           candidates.push({kind:'swap', unit: unit, candId: candId, improvement: improvement, trial: trial, fromRecipeId: currentId});
         }
       });
-      sideCandidatesForUnit(planCopy, unit, worstKey, baseObjective, fixedPerson).forEach(function(s){
+      sideCandidatesForUnit(planCopy, unit, mode, worstKey, gaps0, baseObjective, baseWeekly, fixedPerson).forEach(function(s){
         candidates.push(s);
       });
     });
@@ -4475,7 +4553,7 @@ function proposeRebalanceSuggestions(weekStartDate){
     if(best.kind === 'swap') applied.push({kind:'swap', unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement});
     else applied.push({kind:'addSide', unit: best.unit, sideRecipeId: best.sideRecipeId, improvement: best.improvement});
   }
-  return {weekStartDate: plan.weekStartDate, metricKey: worstKey, gapInfo: worst, suggestions: applied, before: cov0, after: computeWeeklyCoverage(planCopy), resultPlan: planCopy};
+  return {weekStartDate: plan.weekStartDate, mode: mode, metricKey: worstKey, gapInfo: worst, suggestions: applied, before: cov0, after: computeWeeklyCoverage(planCopy), spreadBefore: spreadBefore, spreadAfter: planImbalance(planCopy, people), resultPlan: planCopy};
 }
 
 function proposeRebalanceSwaps(){
