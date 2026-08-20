@@ -5057,6 +5057,47 @@ function testTodayKeystone(ctx){
   run(ctx, "MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; logHistory = {};");
 }
 
+/* ---------------- Phase 3 D2: end-of-week "week in review" moment ----------------
+   buildWeekReview() is the pure model behind the Week-screen review card. Pins the "moment"
+   window (current week, Friday on, at least one day SET) and the positive/quiet-reset framing
+   (leads with wins; a lighter week is never a failure). */
+function testWeekReview(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {};");
+  const plan = call(ctx, 'ensureWeekPlan', []);
+
+  // Window: nothing before Friday (dayIndex 4), and nothing on Friday+ without a set day.
+  [0, 1, 2, 3].forEach(function(di){
+    assert(call(ctx, 'buildWeekReview', [plan, 'elena', di, 3, 4]).show === false,
+      'week review: hidden before Friday (dayIndex ' + di + ')', '');
+  });
+  assert(call(ctx, 'buildWeekReview', [plan, 'elena', 4, 0, 4]).show === false,
+    'week review: hidden Friday+ when no day has been set (nothing to reflect on)', '');
+
+  // Friday with a set day: shows, "so far" headline, and echoes the set/balanced counts.
+  const fri = call(ctx, 'buildWeekReview', [plan, 'elena', 4, 4, 5]);
+  assert(fri.show === true && fri.headline === 'Your week so far'
+      && fri.adherence === '4 of 7 days set' && fri.balance === '5 of 7 days balanced'
+      && typeof fri.nutrition === 'string' && fri.nutrition.length > 0,
+    'week review: Friday with data shows "so far" + set/balanced/nutrition lines',
+    JSON.stringify(fri));
+
+  // Sunday flips the headline to the retrospective "in review".
+  const sun = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 6, 6]);
+  assert(sun.show === true && sun.headline === 'Your week in review',
+    'week review: Sunday reads "Your week in review"', 'headline=' + sun.headline);
+
+  // Quiet-reset framing: warmth scales with days set, and a light week is never a failure.
+  assert(call(ctx, 'buildWeekReview', [plan, 'elena', 6, 6, 3]).warm === 'a steady rhythm.',
+    'week review: 5+ set days reads "a steady rhythm."', '');
+  assert(call(ctx, 'buildWeekReview', [plan, 'elena', 6, 3, 3]).warm === 'nicely there.',
+    'week review: 3-4 set days reads "nicely there."', '');
+  const light = call(ctx, 'buildWeekReview', [plan, 'elena', 6, 1, 0]);
+  assert(light.warm.indexOf('fresh') !== -1 && light.warm.toLowerCase().indexOf('fail') === -1,
+    'week review: a lighter week is framed as a fresh start, never a failure', 'warm=' + light.warm);
+
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -10994,6 +11035,7 @@ function main(){
   runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });
+  runTest('Week review moment (Phase 3 D2)', function(){ testWeekReview(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });
   runTest('Insights per-day nutrient bands (task C1)', function(){ testInsightsNutrientBands(ctx); });

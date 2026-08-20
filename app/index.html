@@ -199,6 +199,12 @@
         <button style="flex:1" onclick="setWeekScreenMode('next',this)">Next week</button>
       </div>
 
+      <!-- Phase 3 D2: warm end-of-week "week in review" moment. Painted by
+           render-week.js:renderWeekReview() only on the CURRENT week, from Friday on, once
+           there's a closed day to reflect on. Reuses already-computed data; positive/plain
+           language, never pass/fail. Empty (hidden) otherwise. -->
+      <div id="weekReview" class="week-review"></div>
+
       <div class="week-toolbar" id="weekToolbar" aria-label="Planner actions">
         <button class="week-tool ghost" onclick="openShopping()"><span class="week-tool-icon" aria-hidden="true">🛒</span><span>Shopping</span></button>
         <button class="week-tool primary" id="rebalanceBtn" onclick="openRebalanceSheet()">Re-balance</button>

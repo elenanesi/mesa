@@ -321,6 +321,7 @@ function renderWeek(){
       day.classList.toggle('expanded', expanded);
     }
   };
+  renderWeekReview(plan, person, dayViews); // Phase 3 D2: end-of-week reflective moment (current week only)
   renderWeekQuality(plan, person, dayViews);
   renderWeekNutriCard(plan, person, dayViews);
 
@@ -375,6 +376,58 @@ function renderWeekNutriCard(plan, person, dayViews){
 // Paints a plain-language balance check into the Planner drawer. The visible signals make
 // clear that this is about the proposed week's variety and nutrition targets — not a grade
 // for how someone has eaten. The expanded metrics live below it in #weekNutriCard.
+/* ---------------- Phase 3 D2: end-of-week "week in review" moment ----------------
+   A once-a-week, warm, plain-language reflection surfaced on the CURRENT week from Friday on
+   (dayIndex >= 4), once at least one day has been fully SET (closed). It is a MOMENT, not
+   another dashboard: it reuses data Mesa already computes (summarizeWeekPlan + weekDaysSetCount
+   + the same dayBalanceOverall count the day rows use) and leads with what went well. Never
+   pass/fail — a lighter week gets a gentle "the next one starts fresh", never a failure note.
+   buildWeekReview() is pure (no DOM) so tools/check.js can pin the window + framing directly. */
+const WEEK_REVIEW_FROM_DAYINDEX = 4; // Friday (0=Mon .. 6=Sun)
+function buildWeekReview(plan, person, dayIndex, daysSet, balancedCount){
+  if(dayIndex < WEEK_REVIEW_FROM_DAYINDEX || daysSet <= 0) return {show: false};
+  const s = summarizeWeekPlan(plan, person);
+  const proteinOnTarget = s.targetProtein > 0 && s.avgProteinPerDay >= s.targetProtein;
+  const fiberOnTarget = s.avgFiberPerDay >= WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
+  const wins = [];
+  if(proteinOnTarget) wins.push('protein on target');
+  if(fiberOnTarget) wins.push('fibre steady');
+  let nutrition;
+  if(wins.length){
+    const j = wins.join(' & ');
+    nutrition = j.charAt(0).toUpperCase() + j.slice(1) + ' this week.';
+  } else {
+    nutrition = 'Protein ~' + Math.round(s.avgProteinPerDay) + 'g/day, fibre ~' + Math.round(s.avgFiberPerDay) + 'g/day.';
+  }
+  const warm = daysSet >= 5 ? 'a steady rhythm.'
+    : daysSet >= 3 ? 'nicely there.'
+    : 'a lighter week — the next one starts fresh.';
+  return {
+    show: true,
+    headline: dayIndex >= 6 ? 'Your week in review' : 'Your week so far',
+    adherence: daysSet + ' of 7 days set',
+    warm: warm,
+    nutrition: nutrition,
+    balance: balancedCount + ' of 7 days balanced'
+  };
+}
+
+function renderWeekReview(plan, person, dayViews){
+  const wrap = document.getElementById('weekReview');
+  if(!wrap) return;
+  if(weekScreenShowsNext){ wrap.innerHTML = ''; return; } // review is about the week you've lived
+  const dayIndex = diffDaysISO(todayISO(), mondayOfWeek(todayISO()));
+  const daysSet = typeof weekDaysSetCount === 'function' ? weekDaysSetCount(person) : 0;
+  const balancedCount = dayViews.filter(function(d){ return dayBalanceOverall(d.totals, person) === 'balanced'; }).length;
+  const r = buildWeekReview(plan, person, dayIndex, daysSet, balancedCount);
+  if(!r.show){ wrap.innerHTML = ''; return; }
+  wrap.innerHTML = '<div class="card week-review-card">'
+    + '<div class="wr-head"><span class="wr-leaf" aria-hidden="true">🌿</span>' + r.headline + '</div>'
+    + '<div class="wr-adh"><b>' + r.adherence + '</b> · ' + r.warm + '</div>'
+    + '<div class="wr-sub sub">' + r.nutrition + ' ' + r.balance + '.</div>'
+    + '</div>';
+}
+
 function renderWeekQuality(plan, person, dayViews){
   const row = document.getElementById('weekQuality');
   const toggle = document.getElementById('weekQualityToggle');
