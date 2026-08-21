@@ -158,5 +158,25 @@ later-phase roadmap items only:
     for two-person households: "You and <partner> shared N dinners together this week"
     (`weekSharedDinnersTogether` = shared dinners both confirmed). Aggregate only; per-person
     adherence stays private; no comparison/leaderboard. Solo households never see it.
-- Phase 4: **generation rewire** (make every pick balance-aware — highest risk), LLM-estimated
-  macros.
+- Phase 4: ✅ **CLOSED — both items declined by the owner after a scope check (2026-08-21).**
+  - ❌ **Generation rewire (balance-aware picks) — NOT BUILT.** The plan's design was a soft,
+    deterministic additive score nudge in `pickSoloMeal`/`pickSharedMeal` (sibling to the existing
+    `tuningBonus`/`goalTuningBonus` score terms; never eliminates candidates; count relaxations +
+    warn + fall back). Declined because the shipped **`autoBalancePlan` post-pass already evens
+    fiber/free-sugars/sat-fat across days deterministically** after generation, so the marginal
+    gain didn't justify destabilizing the core generator (byte-identical generation is a tested
+    invariant, `check.js`). If revisited: add the nudge as a new additive term at the score sites
+    (planner.js:2144-2145 shared, :2270 solo), threading each day's running per-day totals in, and
+    re-baseline the determinism + demo-week tests.
+  - ❌ **LLM-estimated macros — DEFERRED.** Declined for now: adds a provider/cost/network
+    dependency and a non-deterministic estimate, while the deterministic app + typed/estimated
+    quick-add already cover "log something without a recipe" (and the related reusable-estimated
+    recipe, Phase 2 Task 2, was likewise dropped). If revisited: Cloudflare Workers AI from the
+    existing worker is the on-platform fit; label everything *estimated, not verified* (never the
+    `chip-computed` "✓ computed" badge).
+
+---
+
+**Initiative status: all four phases resolved.** Phases 1–3 shipped; Phase 4 deliberately closed
+without new code because safer prior work (the auto-balance post-pass) and existing typed-estimate
+paths already cover its intent. Test harness 1484 → **1769 green**.
