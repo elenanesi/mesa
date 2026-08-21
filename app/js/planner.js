@@ -3436,6 +3436,11 @@ function onSwapRecipeSearch(value){
   swapCtx.searchQuery = value;
   const el = document.getElementById('swapSearchResults');
   if(el) el.innerHTML = buildSwapSearchResults();
+  // While a search is active, collapse the sticky auto "Best matches" so the search
+  // results sit near the top instead of below suggestions the user has already skipped.
+  const searching = String(value || '').trim().length >= 2;
+  const bm = document.getElementById('swapBestMatches');
+  if(bm) bm.style.display = searching ? 'none' : '';
 }
 
 function attachSwapSearchHandler(){

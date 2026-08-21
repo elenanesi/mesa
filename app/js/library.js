@@ -396,6 +396,16 @@ function safeIngredientIconAsset(v){
   return /^assets\/ingredients\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
+// A remote Open Food Facts PRODUCT PHOTO (from a barcode import) usable as an ingredient
+// icon. Domain-locked to openfoodfacts.org over https and must look like an image, so an
+// arbitrary or user-supplied URL can never be rendered. Anything else -> '' (falls back to
+// the curated/default watercolor icon). The <img onerror> already degrades to the default
+// if the remote image fails (e.g. offline).
+function safeProductImageUrl(v){
+  v = String(v || '').trim();
+  return /^https:\/\/([a-z0-9-]+\.)*openfoodfacts\.org\/[^\s"'<>]+\.(jpe?g|png|webp)(\?[^\s"'<>]*)?$/i.test(v) ? v : '';
+}
+
 function defaultFoodIconSrc(){
   return DEFAULT_FOOD_ICON_ASSET;
 }
@@ -436,11 +446,14 @@ function ingredientIconAssetForFood(food){
   const explicitAsset = safeIngredientIconAsset(food.iconAsset);
   if(explicitAsset) return explicitAsset;
   const iconKey = safeIngredientIconKey(food.iconKey);
-  return iconKey ? 'assets/ingredients/' + iconKey + '.png' : '';
+  if(iconKey) return 'assets/ingredients/' + iconKey + '.png';
+  const productImg = safeProductImageUrl(food.imageUrl);
+  if(productImg) return productImg;
+  return '';
 }
 
 function ingredientIconHtml(src){
-  src = safeIngredientIconAsset(src) || defaultFoodIconSrc();
+  src = safeIngredientIconAsset(src) || safeProductImageUrl(src) || defaultFoodIconSrc();
   return '<img class="ingredient-icon" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" onerror="this.onerror=null;this.src=defaultFoodIconSrc()">';
 }
 

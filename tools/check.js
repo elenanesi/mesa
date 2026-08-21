@@ -887,6 +887,21 @@ function testIconPicker(ctx){
   assert(typoAsset === 'assets/ingredients/not-a-real-icon-key.png', 'ingredientIconAssetForFood: a format-valid but nonexistent iconKey still builds a normal asset path (shape-only validation)', typoAsset);
   const typoHtml = call(ctx, 'ingredientIconHtml', [typoAsset]);
   assert(/onerror="this\.onerror=null;this\.src=defaultFoodIconSrc\(\)"/.test(typoHtml), 'ingredientIconHtml: every rendered icon wires an onerror fallback to the default icon (covers a nonexistent-but-well-formed key at the DOM level)', typoHtml);
+
+  // Bugfix (barcode product photo as icon): a barcode-imported food carries an Open Food Facts
+  // imageUrl; it should render as the ingredient icon instead of the default watercolor.
+  const offImg = 'https://images.openfoodfacts.org/images/products/800/050/003/7560/front_it.4.400.jpg';
+  assert(call(ctx, 'safeProductImageUrl', [offImg]) === offImg,
+    'safeProductImageUrl: accepts an Open Food Facts https product-image URL', '');
+  ['http://images.openfoodfacts.org/x.jpg', 'https://evil.com/x.jpg', 'https://openfoodfacts.org.evil.com/x.jpg', 'https://openfoodfacts.org/x.txt', 'assets/ingredients/apple.png', ''].forEach(function(bad){
+    assert(call(ctx, 'safeProductImageUrl', [bad]) === '', 'safeProductImageUrl: rejects non-OFF / non-image / insecure URL (' + bad + ')', '');
+  });
+  assert(call(ctx, 'ingredientIconAssetForFood', [{imageUrl: offImg}]) === offImg,
+    'ingredientIconAssetForFood: a barcode food (imageUrl, no icon pick) uses the product photo', '');
+  assert(call(ctx, 'ingredientIconAssetForFood', [{imageUrl: offImg, iconKey: 'apple'}]) === 'assets/ingredients/apple.png',
+    'ingredientIconAssetForFood: an explicit icon pick still wins over the product photo', '');
+  assert(call(ctx, 'ingredientIconHtml', [offImg]).indexOf('src="' + offImg + '"') !== -1,
+    'ingredientIconHtml: renders the OFF product photo through (not defaulted away)', '');
 }
 
 /* ---------------- render.js recipe-display helpers (compat-view removal) ----------------

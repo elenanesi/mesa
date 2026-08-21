@@ -2014,7 +2014,6 @@ function commitLogPickerAdd(){
     ? applyUnassignedLogPickerAdd(dateISO, ctx.kind, ctx.id, amount, currentProf)
     : applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
   if(!result){ toast('Could not add — try again'); return; }
-  const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
   refreshRingAndBars();
@@ -2025,7 +2024,10 @@ function commitLogPickerAdd(){
   persist();
   closeSheet();
   logPickerCtx = null;
-  toast('＋ Added ' + result.title + ' to ' + logDateLabel().toLowerCase() + '’s ' + slotLabel);
+  const dest = ctx.unassigned
+    ? 'without a meal'
+    : 'to ' + logDateLabel().toLowerCase() + '’s ' + (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
+  toast('＋ Added ' + result.title + ' ' + dest);
 }
 
 // Repaints the Log screen's search box/results plus the shared "so far"/coffee widgets —
