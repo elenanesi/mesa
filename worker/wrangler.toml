@@ -1,4 +1,7 @@
 # Mesa couple-sync worker (Phase 2, task S1).
+# ⚠️ KEEP IN SYNC WITH the repo-root ../wrangler.toml (a mirror of this file with a root-relative
+# `main`), which exists so the Workers Builds git-integration CI deploys this Worker on push.
+# tools/check.js:testRootWranglerMirrors() fails if the two drift on name/compat/bindings/vars.
 # Local verification: `npx --yes wrangler@latest dev --local --port 8787` (miniflare, no
 # Cloudflare auth needed). Real deploy is task S2 — blocked on the mesa-deploy API token
 # needing Workers Scripts:Edit + Workers KV Storage:Edit (see README.md / PHASE2-plan.md).

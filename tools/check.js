@@ -5144,6 +5144,34 @@ function testWeekReview(ctx){
   run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
 }
 
+/* ---------------- root wrangler.toml mirrors worker/wrangler.toml ----------------
+   The repo-root wrangler.toml exists ONLY so the Cloudflare Workers Builds CI (`npx wrangler
+   deploy` from root) deploys the REAL mesa-sync Worker instead of mis-detecting the repo as a
+   static site. A CI deploy from it MUST equal a manual deploy from worker/wrangler.toml, so this
+   guards that the two never drift on the fields that define the Worker: name, compatibility_date,
+   KV/D1 bindings, and vars. `main` differs by design (root-relative), and is checked as such. */
+function testRootWranglerMirrors(){
+  const rootPath = path.join(APP_DIR, '..', 'wrangler.toml');
+  const workerPath = path.join(APP_DIR, '..', 'worker', 'wrangler.toml');
+  assert(fs.existsSync(rootPath), 'root wrangler.toml exists (Workers Builds CI deploys the worker from it)', '');
+  const root = fs.readFileSync(rootPath, 'utf8');
+  const worker = fs.readFileSync(workerPath, 'utf8');
+  function field(src, key){ const m = src.match(new RegExp('^\\s*' + key + '\\s*=\\s*"?([^"\\n]*)"?', 'm')); return m ? m[1].trim() : null; }
+  ['name', 'compatibility_date', 'GOOGLE_CLIENT_ID', 'MAX_USERS', 'REQUIRE_SESSION', 'database_name', 'database_id'].forEach(function(key){
+    assert(field(root, key) !== null && field(root, key) === field(worker, key),
+      'root wrangler mirror: ' + key + ' matches worker/wrangler.toml', 'root=' + field(root, key) + ' worker=' + field(worker, key));
+  });
+  // KV binding id (inside the inline table) must match.
+  function kvId(src){ const m = src.match(/id\s*=\s*"([0-9a-f]{32})"/); return m ? m[1] : null; }
+  assert(kvId(root) && kvId(root) === kvId(worker), 'root wrangler mirror: KV namespace id matches', 'root=' + kvId(root) + ' worker=' + kvId(worker));
+  // main is root-relative by design: root "worker/<x>" must equal "worker/" + worker's main.
+  assert(field(root, 'main') === 'worker/' + field(worker, 'main'),
+    'root wrangler mirror: main is the root-relative form of the worker main', 'root=' + field(root, 'main') + ' worker=' + field(worker, 'main'));
+  // The root config must NOT declare static assets (that mis-detection is the whole bug).
+  assert(!/\[assets\]|assets\s*=|directory\s*=/.test(root),
+    'root wrangler mirror: declares no static-assets directory (deploys the Worker, not the repo)', '');
+}
+
 /* ---------------- Phase 3 D3: onboarding structure guard ----------------
    The onboarding wizard is boot code (app.js) the vm harness can't exercise as UI, so this is
    a structural guard on the markup + handlers: the dot count MUST equal the slide count (a
@@ -11177,6 +11205,7 @@ function main(){
   runTest('Week review moment (Phase 3 D2)', function(){ testWeekReview(ctx); });
   runTest('What do you feel like: diet-aware protein chips', function(){ testProteinCravings(ctx); });
   runTest('Onboarding structure (Phase 3 D3)', function(){ testOnboardingStructure(); });
+  runTest('root wrangler.toml mirrors worker/wrangler.toml', function(){ testRootWranglerMirrors(); });
   runTest('Basics estimate banner (Phase 3 D3b)', function(){ testBasicsBanner(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
   runTest('week extras on next-week meal (task B3)', function(){ testWeekExtrasNextWeek(ctx); });

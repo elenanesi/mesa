@@ -1,0 +1,40 @@
+# ROOT wrangler config — exists ONLY so the Cloudflare "Workers Builds" git-integration CI
+# (which runs `npx wrangler deploy` from the repo root) deploys the REAL mesa-sync Worker
+# instead of mis-detecting the repo as a static site and failing on the .git pack size.
+#
+# ⚠️ KEEP IN SYNC WITH worker/wrangler.toml — this is a byte-for-byte mirror of it EXCEPT
+# `main` is repo-root-relative ("worker/sync.js" vs "sync.js"). Manual deploys and the D1
+# seed still use `--config worker/wrangler.toml`; CI uses this one. A CI deploy from here must
+# produce the identical Worker a manual deploy does. tools/check.js:testRootWranglerMirrors()
+# guards that the two configs agree on name / compatibility_date / bindings / vars, so drift
+# fails the test suite rather than silently shipping a different Worker.
+#
+# The GOOGLE_CLIENT_SECRET is a Worker SECRET (set via `wrangler secret put`, NOT in any config
+# file) and PERSISTS across deploys — a `wrangler deploy` never removes it. The Worker lives on
+# its workers.dev subdomain (no routes declared), so a deploy from here touches neither secrets
+# nor custom domains.
+
+name = "mesa-sync"
+main = "worker/sync.js"
+compatibility_date = "2026-07-13"
+
+kv_namespaces = [
+  { binding = "MESA_KV", id = "2f868b0b17374dffaef6798410c0ab38" }
+]
+
+[[d1_databases]]
+binding = "MESA_DB"
+database_name = "mesa-library"
+database_id = "660c50ce-13b5-433f-a00b-68349ac5e851"
+
+[vars]
+GOOGLE_CLIENT_ID = "242945555602-09h5e3eofta1a9hb3123sa03k40drtp2.apps.googleusercontent.com"
+MAX_USERS = "20"
+REQUIRE_SESSION = "1"
+
+[observability]
+enabled = true
+
+[observability.logs]
+enabled = true
+invocation_logs = false
