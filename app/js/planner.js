@@ -3144,6 +3144,54 @@ function recipeContainsVeg(recipeId){
   });
 }
 
+/* ---------------- "What do you feel like?" — SPECIFIC proteins (panel: nutritionist + UX) ----
+   The generic "Protein" chip stays (protein-density re-rank); tapping it reveals a diet-filtered
+   sub-row of specific proteins (egg / chicken / fish / red meat / cheese / legumes), each a HARD
+   pool filter with the same never-empty fallback fruit/veg/quick already use. Backed by the
+   existing curated food-id lists (RED_MEAT/POULTRY/FISH/DAIRY_FOOD_IDS + a curated cheese subset
+   and a legume list) — NO new food tagging. Chip visibility is gated by the SAME
+   ingredientIdsViolateDiet the pool filter uses, so a vegetarian never sees Chicken/Fish/Red
+   meat, a vegan sees only Legumes, and a lactose-intolerant person never sees Cheese — the chip
+   set can never offer what the pool excludes. Bare food nouns only, no health framing (KB claims
+   policy). `bacon`/`prosciutto-cotto` are added to the red-meat CRAVING list (they're absent from
+   RED_MEAT_FOOD_IDS, which the diet filter uses — left untouched here to not change diet output).
+   The cheese CRAVING list is DAIRY_FOOD_IDS minus non-cheese items (milk/butter/etc). */
+function proteinCravingCheeseIds(){
+  const notCheese = {'butter': 1, 'milk': 1, 'semi-skimmed-milk': 1, 'cappuccino-unsweetened': 1, 'chocolate-hazelnut-spread': 1};
+  return (typeof DAIRY_FOOD_IDS !== 'undefined' ? DAIRY_FOOD_IDS : []).filter(function(id){ return !notCheese[id]; });
+}
+function proteinCravingOptions(){
+  return [
+    {key: 'egg', label: 'Egg', emoji: '🥚', ids: ['eggs'], rep: 'eggs'},
+    {key: 'chicken', label: 'Chicken', emoji: '🍗', ids: (typeof POULTRY_FOOD_IDS !== 'undefined' ? POULTRY_FOOD_IDS : []), rep: 'chicken-breast'},
+    {key: 'fish', label: 'Fish', emoji: '🐟', ids: (typeof FISH_FOOD_IDS !== 'undefined' ? FISH_FOOD_IDS : []), rep: 'salmon-fillet'},
+    {key: 'red', label: 'Red meat', emoji: '🥩', ids: (typeof RED_MEAT_FOOD_IDS !== 'undefined' ? RED_MEAT_FOOD_IDS : []).concat(['bacon', 'prosciutto-cotto']), rep: 'beef-mince-lean'},
+    {key: 'cheese', label: 'Cheese', emoji: '🧀', ids: proteinCravingCheeseIds(), rep: 'parmesan'},
+    {key: 'legume', label: 'Legumes', emoji: '🫘', ids: ['chickpeas', 'cannellini-beans', 'cooked-lentils'], rep: 'chickpeas'}
+  ];
+}
+function proteinCravingById(key){
+  return proteinCravingOptions().filter(function(o){ return o.key === key; })[0] || null;
+}
+// The proteins to OFFER a given person: hide any whose representative ingredient would violate
+// their diet (the exact rule the candidate pool is already filtered by).
+function proteinCravingOptionsForPerson(person){
+  const diet = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].diets) || [];
+  return proteinCravingOptions().filter(function(o){
+    return typeof ingredientIdsViolateDiet !== 'function' || !ingredientIdsViolateDiet([o.rep], diet);
+  });
+}
+// Does the recipe (as typically made — chosen-variant ingredients, composite-aware) contain a
+// food of this protein type? Mirrors recipeContainsFoodSub's effective-ingredient walk.
+function recipeContainsProteinType(recipeId, key){
+  const opt = proteinCravingById(key);
+  const r = RECIPES_DB[recipeId];
+  if(!opt || !r) return false;
+  return recipeEffectiveIngredients(r, {}).some(function(ing){
+    return foodOrComponentsMatch(ing[0], opt.ids);
+  });
+}
+
 // Alternatives = same slot, same style, avoid-respecting, excluding the current recipe
 // and anything already planned elsewhere today for this person; ranked by closest
 // computed kcal to what's currently planned (deterministic tie-break by id).
@@ -3211,6 +3259,18 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
       return !!(r && typeof r.time === 'number' && r.time <= 15);
     });
     if(cravingPool.length) pool = cravingPool;
+  }
+
+  // Specific-protein sub-filter (swapCtx.proteinType). A HARD pool filter with the same
+  // never-empty fallback as above; swapCtx.proteinFilterEmpty records whether the fallback
+  // fired so the sheet can show a calm "no chicken today — showing the closest" note.
+  const proteinType = swapCtx ? swapCtx.proteinType : null;
+  if(proteinType){
+    const ptPool = pool.filter(function(id){ return recipeContainsProteinType(id, proteinType); });
+    if(swapCtx) swapCtx.proteinFilterEmpty = (ptPool.length === 0);
+    if(ptPool.length) pool = ptPool;
+  } else if(swapCtx){
+    swapCtx.proteinFilterEmpty = false;
   }
 
   const anchor = PERSON_ANCHOR[person];
@@ -3520,7 +3580,29 @@ function swapCravingChipsHtml(){
   }).join('');
   return '<div class="shop-cat">What do you feel like?</div>'
     + '<div class="chiprow">' + chips + '</div>'
+    + '<div id="swapProteinSubrow">' + swapProteinSubrowHtml() + '</div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapCravingFreeText" placeholder="Or type what you feel like..." autocomplete="off" oninput="onSwapCravingFreeText(this.value)">';
+}
+
+// The diet-filtered specific-protein sub-row, revealed only under an active "Protein" chip
+// (progressive disclosure — UX panel). Empty string otherwise, so #swapProteinSubrow just
+// collapses. Single-select like the top row; a calm note when the filter emptied the pool.
+function swapProteinSubrowHtml(){
+  if(!swapCtx || swapCtx.craving !== 'protein') return '';
+  const opts = proteinCravingOptionsForPerson(swapCtx.person);
+  if(!opts.length) return '';
+  const proteinType = swapCtx.proteinType || null;
+  const sub = opts.map(function(o){
+    const on = proteinType === o.key;
+    return '<button type="button" class="pill ghost chip-preset' + (on ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="toggleSwapProteinType(\'' + o.key + '\')">' + o.emoji + ' ' + escapeHtml(o.label) + '</button>';
+  }).join('');
+  let html = '<div class="chiprow swap-protein-subrow">' + sub + '</div>';
+  if(proteinType && swapCtx.proteinFilterEmpty){
+    const opt = proteinCravingById(proteinType);
+    const slotLabel = (SLOT_LABEL[swapCtx.slot] || swapCtx.slot).toLowerCase();
+    html += '<p class="sub swap-protein-note">No ' + escapeHtml(opt ? opt.label.toLowerCase() : 'match') + ' ' + escapeHtml(slotLabel) + ' today — showing the closest matches instead.</p>';
+  }
+  return html;
 }
 
 // Shared by buildSwapSheet's initial render and toggleSwapCraving's re-render — same
@@ -3539,6 +3621,22 @@ function swapBestMatchesHtml(best){
 function toggleSwapCraving(key){
   if(!swapCtx) return;
   swapCtx.craving = (swapCtx.craving === key) ? null : key;
+  swapCtx.proteinType = null; // any top-row tap resets the specific-protein sub-selection
+  const best = buildSwapAlternatives(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, swapCtx.weekStartDate);
+  swapCtx.alts = best;
+  const chips = document.getElementById('swapCravingChips');
+  if(chips) chips.innerHTML = swapCravingChipsHtml();
+  const bm = document.getElementById('swapBestMatches');
+  if(bm) bm.innerHTML = swapBestMatchesHtml(best);
+}
+
+// Sub-row tap: pick/clear a specific protein under the active "Protein" chip. Single-select
+// (tapping the active one clears back to the generic protein re-rank). Keeps craving='protein'
+// so the sub-row stays open while the user tries different proteins.
+function toggleSwapProteinType(key){
+  if(!swapCtx) return;
+  swapCtx.craving = 'protein';
+  swapCtx.proteinType = (swapCtx.proteinType === key) ? null : key;
   const best = buildSwapAlternatives(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, swapCtx.weekStartDate);
   swapCtx.alts = best;
   const chips = document.getElementById('swapCravingChips');
@@ -3558,8 +3656,11 @@ function onSwapCravingFreeText(value){
   if(!swapCtx) return;
   if(swapCtx.craving){
     swapCtx.craving = null;
+    swapCtx.proteinType = null;
     const chips = document.getElementById('swapCravingChips');
     if(chips && chips.querySelectorAll) chips.querySelectorAll('.chip-preset').forEach(function(btn){ btn.classList.remove('chipsel'); });
+    const subrow = document.getElementById('swapProteinSubrow'); // collapse the protein sub-row without rebuilding the field being typed in
+    if(subrow) subrow.innerHTML = '';
     const best = buildSwapAlternatives(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, swapCtx.weekStartDate);
     swapCtx.alts = best;
     const bm = document.getElementById('swapBestMatches');
@@ -3577,6 +3678,8 @@ function buildSwapSheet(ctx){
     // one. Reset BEFORE computing `best` below so the very first render is always unfiltered.
     swapCtx.includeOtherMeals = false;
     swapCtx.craving = null;
+    swapCtx.proteinType = null;
+    swapCtx.proteinFilterEmpty = false;
   }
   const best = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
   if(swapCtx){

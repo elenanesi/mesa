@@ -5199,6 +5199,44 @@ function testBasicsBanner(ctx){
   run(ctx, 'onboarded = true; basicsConfirmed = true; basicsBannerDismissed = false;');
 }
 
+/* ---------------- "What do you feel like?" — specific diet-aware protein chips ----------------
+   Pins the panel design: the offered protein set is gated by the SAME ingredientIdsViolateDiet
+   the candidate pool uses (so a vegetarian never sees Chicken/Fish/Red meat, a vegan sees only
+   Legumes, a lactose-intolerant person never sees Cheese), and recipeContainsProteinType matches
+   a recipe by its actual protein ingredients. */
+function testProteinCravings(ctx){
+  const savedDiets = cloneJSON(get(ctx, 'PROF').elena.diets || []);
+  function keysFor(diets){
+    run(ctx, 'PROF.elena.diets = ' + JSON.stringify(diets) + ';');
+    return call(ctx, 'proteinCravingOptionsForPerson', ['elena']).map(function(o){ return o.key; });
+  }
+  const cases = {
+    omnivore: {diets: [], expect: ['egg', 'chicken', 'fish', 'red', 'cheese', 'legume']},
+    pescatarian: {diets: ['pescatarian'], expect: ['egg', 'fish', 'cheese', 'legume']},
+    vegetarian: {diets: ['vegetarian'], expect: ['egg', 'cheese', 'legume']},
+    vegan: {diets: ['vegan'], expect: ['legume']},
+    'lactose-intolerant': {diets: ['lactose-intolerant'], expect: ['egg', 'chicken', 'fish', 'red', 'legume']}
+  };
+  Object.keys(cases).forEach(function(name){
+    const got = keysFor(cases[name].diets);
+    assert(JSON.stringify(got) === JSON.stringify(cases[name].expect),
+      'protein cravings: ' + name + ' is offered ' + cases[name].expect.join('/'), 'got=' + got.join('/'));
+  });
+  // Legumes are always offered (violate no diet); meat/fish never offered to a vegetarian.
+  assert(keysFor(['vegetarian']).indexOf('legume') !== -1 && ['chicken', 'fish', 'red'].every(function(k){ return keysFor(['vegetarian']).indexOf(k) === -1; }),
+    'protein cravings: a vegetarian never sees meat or fish, always sees legumes', '');
+  run(ctx, 'PROF.elena.diets = ' + JSON.stringify(savedDiets) + ';');
+
+  // recipeContainsProteinType matches by actual protein ingredient (chosen-variant, composite-aware).
+  const chickenId = Object.keys(get(ctx, 'RECIPES_DB')).filter(function(id){ return call(ctx, 'recipeContainsProteinType', [id, 'chicken']); })[0];
+  assert(!!chickenId && call(ctx, 'recipeContainsProteinType', [chickenId, 'chicken']) === true && call(ctx, 'recipeContainsProteinType', [chickenId, 'fish']) === false,
+    'protein cravings: a chicken recipe matches "chicken" and not "fish"', 'id=' + chickenId);
+  ['egg', 'chicken', 'fish', 'red', 'cheese', 'legume'].forEach(function(k){
+    const n = Object.keys(get(ctx, 'RECIPES_DB')).filter(function(id){ return call(ctx, 'recipeContainsProteinType', [id, k]); }).length;
+    assert(n > 0, 'protein cravings: at least one recipe matches "' + k + '" (' + n + ')', '');
+  });
+}
+
 /* ---------------- task C3: Week screen must count quick-add LOGGED foods ----------------
    Confirmed bug: weekDayNutriViews (B4) summed ONLY the four slot views from
    displayedSlotViewForDate, so kind:'food' quick-add log entries (Log screen's cappuccino/
@@ -11137,6 +11175,7 @@ function main(){
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });
   runTest('Week review moment (Phase 3 D2)', function(){ testWeekReview(ctx); });
+  runTest('What do you feel like: diet-aware protein chips', function(){ testProteinCravings(ctx); });
   runTest('Onboarding structure (Phase 3 D3)', function(){ testOnboardingStructure(); });
   runTest('Basics estimate banner (Phase 3 D3b)', function(){ testBasicsBanner(ctx); });
   runTest('week quick-add logged foods counted (task C3)', function(){ testWeekQuickAddNutrition(ctx); });
