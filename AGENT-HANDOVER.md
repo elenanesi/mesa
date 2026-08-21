@@ -1,9 +1,8 @@
 # Mesa — agent handover
 
 How to develop, preview, verify, and deploy Mesa. Read this before touching the app.
-Companions: [IMPROVEMENTS-2026-08-plan-and-changes.md](IMPROVEMENTS-2026-08-plan-and-changes.md),
-[EXPERT-PANEL.md](EXPERT-PANEL.md), and the deep architecture notes in `README.md` +
-`KNOWLEDGE-BASE.md`.
+Companions: [STATUS.md](STATUS.md) (what's shipped / what's next), [EXPERT-PANEL.md](EXPERT-PANEL.md)
+(summon the design panel), and the deep architecture notes in `README.md` + `KNOWLEDGE-BASE.md`.
 
 ## What Mesa is
 
@@ -166,3 +165,22 @@ offline fallback to match your curated catalog. `check.js`'s catalog tests valid
 - Recipe `season` is **derived from ingredients** if not set explicitly — a recipe whose
   ingredients all map to one non-evergreen season becomes season-locked (excluded off-season).
   Set `season:'evergreen'` to keep a recipe always planner-eligible.
+- **Git-integration auto-deploys on push.** Pushing to `main` triggers BOTH a Cloudflare Pages
+  build (the app) AND a "Workers Builds" build (the `mesa-sync` worker) automatically. So a manual
+  `wrangler pages deploy` often reports "0 files uploaded — already uploaded": the push already
+  built it. Don't read that as a failed deploy — verify the **staged `sw.js` CACHE hash** is the
+  one you built, not the upload count. The Workers Build deploys the worker from the **repo-root
+  `wrangler.toml`** (a mirror of `worker/wrangler.toml`); keep them in sync (guarded by
+  `check.js:testRootWranglerMirrors`). A worker SECRET (`GOOGLE_CLIENT_SECRET`) persists across
+  deploys — `wrangler deploy` never removes it.
+- **`tools/check.js` runs every test in ONE shared `vm` context.** A test that mutates global
+  state and doesn't restore it corrupts later tests. Especially: calling `loadState()` /
+  `localStorage.clear()` mid-suite reloads the WHOLE app state (PROF, catalog merge, …) and has
+  broken a dozen downstream tests — snapshot-and-restore (see `testReplaceBuiltinRecipesFromCatalogRows`'s
+  `restore()`), or test the pure logic without touching the store. Also: `Date.now()`/`Math.random()`
+  are unavailable in the harness (determinism), and `applySwapToPlan` stamps `.t` (a `Date.now`
+  sync marker) onto entries — compare suggestion arrays, not whole result plans, for determinism.
+- **Preview sub-resource cache trap.** After you re-rsync the app copy, the browser's HTTP disk
+  cache keeps serving the OLD `js/*.js` even with a no-store server + SW unregister + hard reload.
+  The reliable fix is to serve from a **FRESH PORT** (new origin) each time — see the preview
+  section above.
