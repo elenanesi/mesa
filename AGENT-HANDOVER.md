@@ -115,6 +115,39 @@ account id `84766baa4ad939ee067626830dd2f8dc`; D1 db `mesa-library`.
      --command "SELECT COUNT(*) AS n FROM recipes WHERE scope='global' AND deleted_at IS NULL"
    ```
 
+## Recipes: the D1 catalog is the SOURCE OF TRUTH
+
+Built-in recipes are served from D1 (`GET /library/GLOBAL`, fetched `cache:'no-store'` at boot)
+and **fully replace** the bundled `data/recipes.js` catalog at runtime — deletions included.
+`data/recipes.js` is only the **offline / emergency fallback** (used when the fetch fails) and the
+initial seed source; it is NOT the master. So you can inspect/edit/**delete** recipes directly in
+D1 and the app reflects it on next open — no file edit or Pages deploy needed for a catalog change.
+
+The client rejects a D1 payload only if it has **fewer than `CATALOG_REPLACE_MIN_ABSOLUTE` (10)**
+valid recipes (a broken/near-empty response), so you can curate the catalog down freely above that
+floor (the old floor was 50 % of the bundled file's size, which made DB deletes below ~72 silently
+fall back to the file — fixed 2026-08-21).
+
+```bash
+TOK=$(security find-generic-password -a mesa -s cloudflare-token -w)
+D1="wrangler d1 execute mesa-library --remote --config worker/wrangler.toml"
+# inspect (id + title):
+CLOUDFLARE_API_TOKEN=$TOK CLOUDFLARE_ACCOUNT_ID=84766baa4ad939ee067626830dd2f8dc npx $D1 \
+  --command "SELECT id, json_extract(data,'\$.title') AS title FROM recipes WHERE scope='global' AND source='builtin' AND deleted_at IS NULL ORDER BY id"
+# soft-delete one recipe (honored by the client):
+CLOUDFLARE_API_TOKEN=$TOK CLOUDFLARE_ACCOUNT_ID=... npx $D1 \
+  --command "UPDATE recipes SET deleted_at=strftime('%s','now')*1000 WHERE id='<recipe-id>' AND scope='global'"
+# edit a field (e.g. title) in the JSON blob:
+CLOUDFLARE_API_TOKEN=$TOK CLOUDFLARE_ACCOUNT_ID=... npx $D1 \
+  --command "UPDATE recipes SET data=json_set(data,'\$.title','New title') WHERE id='<recipe-id>' AND scope='global'"
+```
+
+⚠️ **Once you curate the catalog directly in D1, do NOT re-run `tools/seed-d1.js`** — it
+regenerates the whole global catalog from `data/recipes.js` and would overwrite your DB edits/
+deletes. Treat the file as the fallback only; update it (and re-seed) solely if you want the
+offline fallback to match your curated catalog. `check.js`'s catalog tests validate `recipes.js`
+(the fallback), so keeping it a valid superset is fine.
+
 ## Gotchas (each has bitten before)
 
 - **Curly/smart quotes as JS string delimiters** silently kill the whole `<script>` block.

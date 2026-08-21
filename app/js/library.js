@@ -75,14 +75,17 @@ function normalizeRecipeRoleField(recipe){
   return recipe;
 }
 
-// Fraction of BUILTIN_RECIPE_COUNT (the bundled catalog's size, captured once above at
-// script-parse time — never ratchets down even if this function runs more than once) that an
-// incoming D1 payload's ACCEPTED rows must clear before replaceBuiltinRecipesFromCatalogRows()
-// will install it. Legitimate catalog edits add/remove a handful of recipes at a time (a
-// recent commit removed 4) — 0.5 is far below any real edit but still catches a truncated or
-// partially-seeded D1 response, which would otherwise silently shrink the planner's candidate
-// pool with no visible cause (README "The defect").
-const CATALOG_REPLACE_MIN_FRACTION = 0.5;
+// The D1 GLOBAL catalog is the SOURCE OF TRUTH for built-in recipes; data/recipes.js (the
+// bundled BUILTIN_RECIPES_DB) is only the offline/emergency fallback. So the owner must be able
+// to curate the catalog directly in D1 — add, edit, and DELETE recipes — and see it reflected
+// in the app, WITHOUT the deletes tripping a floor tied to the bundled file's size. The floor is
+// therefore an ABSOLUTE minimum, not a fraction of BUILTIN_RECIPE_COUNT: it exists only to reject
+// a truly-broken/near-empty D1 response (a bad migration, a partial write) that would otherwise
+// silently strand the planner with too few recipes to fill a week. A deliberately curated
+// catalog of a dozen-plus recipes installs normally; only a payload below this hard minimum
+// falls back to the bundled file. (Was `0.5 * BUILTIN_RECIPE_COUNT`, which blocked curating the
+// DB below ~72 recipes and made DB deletes look like they "didn't take".)
+const CATALOG_REPLACE_MIN_ABSOLUTE = 10;
 
 function replaceBuiltinRecipesFromCatalogRows(rows){
   if(!Array.isArray(rows)) return false;
@@ -111,13 +114,15 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
   const acceptedCount = Object.keys(nextRecipes).length;
   if(!acceptedCount) return false;
 
-  // Sanity floor — reject the WHOLE payload (bundled BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB
-  // left completely untouched) rather than installing a thin catalog silently.
-  const minAccepted = BUILTIN_RECIPE_COUNT * CATALOG_REPLACE_MIN_FRACTION;
-  if(acceptedCount < minAccepted){
+  // Sanity floor — reject a truly-broken/near-empty payload (bundled BUILTIN_RECIPES_DB/
+  // BUILTIN_RECIPE_SLOT_DB left completely untouched) rather than stranding the planner with too
+  // few recipes. An ABSOLUTE minimum (not a fraction of the bundled file) so the owner can curate
+  // the D1 catalog down freely — see CATALOG_REPLACE_MIN_ABSOLUTE's doc above.
+  if(acceptedCount < CATALOG_REPLACE_MIN_ABSOLUTE){
     console.error('replaceBuiltinRecipesFromCatalogRows: rejected D1 catalog payload — only ' +
-      acceptedCount + ' of ' + BUILTIN_RECIPE_COUNT + ' bundled recipes were accepted (floor is ' +
-      minAccepted + ', ' + (CATALOG_REPLACE_MIN_FRACTION * 100) + '% of bundled count). Keeping bundled fallback.');
+      acceptedCount + ' valid recipe row(s) accepted, below the hard minimum of ' +
+      CATALOG_REPLACE_MIN_ABSOLUTE + ' (looks broken/empty). Keeping bundled fallback (' +
+      BUILTIN_RECIPE_COUNT + ' recipes).');
     return false;
   }
 

@@ -1101,9 +1101,11 @@ function testRecipeCatalogCleanup(ctx){
 }
 
 // replaceBuiltinRecipesFromCatalogRows() (js/library.js) installs whatever the D1 catalog
-// mirror returned as the new BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB, guarded by a sanity
-// floor (CATALOG_REPLACE_MIN_FRACTION of BUILTIN_RECIPE_COUNT) so a truncated/partially-seeded
-// D1 response can't silently shrink the live catalog with no signal. CRITICAL: this function
+// mirror returned as the new BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB — D1 is the SOURCE OF
+// TRUTH, the bundled file is only the fallback — guarded by an ABSOLUTE sanity floor
+// (CATALOG_REPLACE_MIN_ABSOLUTE) so a truly-broken/near-empty D1 response can't strand the
+// planner, while a deliberately CURATED small catalog still installs (the owner can delete
+// recipes in D1 freely). CRITICAL: this function
 // mutates the module-level BUILTIN_RECIPES_DB/BUILTIN_RECIPE_SLOT_DB globals that every later
 // test in this shared vm context reads (applyCustomRecipes(), the D3 cleanup test's byte-
 // identical check, ...) — snapshot both before touching them and restore afterwards, even if
@@ -1146,11 +1148,25 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
     const truncatedRows = bundledIds.slice(0, 3).map(function(id){ return rowFor(id); });
     result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [truncatedRows]);
     assert(result === false,
-      'replaceBuiltinRecipesFromCatalogRows: a truncated payload (3 rows) returns false', String(result));
+      'replaceBuiltinRecipesFromCatalogRows: a broken/near-empty payload (3 rows, below the hard minimum) returns false', String(result));
     db = get(ctx, 'BUILTIN_RECIPES_DB');
     assert(Object.keys(db).length === bundledIds.length,
-      'replaceBuiltinRecipesFromCatalogRows: a rejected truncated payload leaves BUILTIN_RECIPES_DB holding the full bundled catalog',
+      'replaceBuiltinRecipesFromCatalogRows: a rejected near-empty payload leaves BUILTIN_RECIPES_DB holding the full bundled catalog',
       Object.keys(db).length + ' vs ' + bundledIds.length);
+
+    // -------- (2b) DB-as-source-of-truth: a DELIBERATELY CURATED small catalog (20 recipes —
+    // far below the OLD 50%-of-bundled floor of ~72, but comfortably above the new absolute
+    // minimum) now INSTALLS, so the owner can delete recipes in D1 and see it reflected. --------
+    restore();
+    const curatedIds = bundledIds.slice(0, 20);
+    const curatedRows = curatedIds.map(function(id){ return rowFor(id); });
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [curatedRows]);
+    assert(result === true,
+      'replaceBuiltinRecipesFromCatalogRows: a deliberately curated small catalog (20 recipes) installs (DB is the source of truth, curation is honored)', String(result));
+    db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(Object.keys(db).length === 20 && curatedIds.every(function(id){ return !!db[id]; }),
+      'replaceBuiltinRecipesFromCatalogRows: the curated catalog fully replaces the bundled one (deletes are honored, not resurrected from the file)',
+      Object.keys(db).length + ' installed');
 
     // -------- (3) a payload above the floor containing some invalid rows (bad slot, missing
     // ingredients, empty title) -> true, the invalid rows are absent from the result, valid ones present --------
