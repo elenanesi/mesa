@@ -375,6 +375,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .sv-stepper button{width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:#fff;font-size:16px;font-weight:700;color:var(--sage-deep);cursor:pointer;line-height:1;}
 .sv-stepper button:active{transform:scale(.9);}
 .sv-stepper .sv-val{font-size:14px;font-weight:700;min-width:34px;}
+.sv-stepper .sv-unit{font-size:12px;font-weight:600;color:var(--muted);margin:0 -4px;}
 /* FIX 2 (feedback): the stepper's value is now directly typeable (owner: "permetti di
    scrivere direttamente l'importo"). Same look as the plain .sv-val span it replaces
    (centered, bold, no chrome) except font-size is forced to >=16px — iPhone Safari

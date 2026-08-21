@@ -1878,12 +1878,16 @@ function buildLogPickerSheet(){
   const slotButtons = SLOT_ORDER.map(function(slot){
     return '<button class="' + (logPickerCtx.slot === slot ? 'on' : '') + '" data-log-picker-slot="' + slot + '">' + (SLOT_LABEL[slot] || slot) + '</button>';
   }).join('') + '<button class="' + (logPickerCtx.unassigned ? 'on' : '') + '" data-log-picker-unassigned="true">No meal</button>';
+  // Amount is TYPEABLE (parseDecimalInput) as well as steppable — the +/- buttons stay for
+  // quick nudges, but you can always type the exact grams/servings you want.
   const amountRow = isRecipe
     ? ('<div class="sv-stepper"><button data-log-picker-step="-0.5" aria-label="Fewer servings">-</button>'
-       + '<span class="sv-val">' + logPickerCtx.portion + 'x</span>'
+       + '<input class="sv-val" type="text" inputmode="decimal" value="' + logPickerCtx.portion + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitLogPickerPortion(this.value)" aria-label="Servings">'
+       + '<span class="sv-unit">×</span>'
        + '<button data-log-picker-step="0.5" aria-label="More servings">+</button></div>')
     : ('<div class="sv-stepper"><button data-log-picker-step="-10" aria-label="Decrease grams">-</button>'
-       + '<span class="sv-val">' + logPickerCtx.grams + 'g</span>'
+       + '<input class="sv-val" type="text" inputmode="decimal" value="' + logPickerCtx.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitLogPickerGrams(this.value)" aria-label="Grams">'
+       + '<span class="sv-unit">g</span>'
        + '<button data-log-picker-step="10" aria-label="Increase grams">+</button></div>');
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(title) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<p class="sub" style="margin-top:6px">Choose a meal, or log it without a meal, then set the amount.</p>'
@@ -1939,6 +1943,27 @@ function stepLogPickerAmount(delta){
   }
   document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
   attachLogPickerSheetHandler();
+}
+
+// Typed-amount commits for the log picker (parseDecimalInput accepts "150" / "1,5" etc). Same
+// clamp/round as the steppers above; an unparseable/empty value just re-renders the last good
+// value. Re-render + re-attach mirrors stepLogPickerAmount so nutrition + the CTA label refresh.
+function rerenderLogPickerSheet(){
+  const body = document.getElementById('sheetBody');
+  if(body) body.innerHTML = buildLogPickerSheet();
+  attachLogPickerSheetHandler();
+}
+function commitLogPickerGrams(raw){
+  if(!logPickerCtx) return;
+  const n = parseDecimalInput(raw);
+  if(n !== null && n > 0) logPickerCtx.grams = Math.max(1, Math.min(2000, Math.round(n)));
+  rerenderLogPickerSheet();
+}
+function commitLogPickerPortion(raw){
+  if(!logPickerCtx) return;
+  const n = parseDecimalInput(raw);
+  if(n !== null && n > 0) logPickerCtx.portion = Math.max(0.5, Math.min(4, Math.round(n * 2) / 2));
+  rerenderLogPickerSheet();
 }
 
 // The picker's one write path: addExtraRecipeToMeal()/addExtraFoodToMeal() (planner.js) —
