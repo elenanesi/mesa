@@ -51,6 +51,7 @@ Week workspace.
   `logHistory` newest-first), when still diet/avoid-allowed; else the diet-fit default. No ♡ UI, no
   synced state (owner chose implicit over an explicit pinned favourite). DISPLAY-only. Tests 1802
   green. **Task 1 (options recipes) is complete.**
+- **Recipe-of-recipes (2026-08-22)** -- new engine capability: a recipe can AGGREGATE sub-recipes via a `components` field (engine.js recipeEffectiveIngredients resolves them to sum-of-sub-recipes). First use: the Chinese dinner = spring-rolls + meat-gyozas + fried-rice + noodles + almond-chicken (5 standalone occasional recipes). See the roadmap memory for the wiring gotchas.
 - **Follow-up batch (2026-08-22, tests 1803 green, D1 reseeded).** (1) baked-fish gained a **Tuna
   steak** choice (5 fish now). (2) Deleted 3 standalone fish mains now covered elsewhere:
   baked-salmon-farro-broccoli, seared-tuna-lemon, sea-bass-cannellini-rocket. (3) **Yogurt bowl**
