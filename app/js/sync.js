@@ -132,6 +132,7 @@ function plansSectionData(){
     mealShareOverrides: clone(mealShareOverrides),
     mealRules: clone(mealRules),
     SHARED: {breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack},
+    planSnacks: planSnacks,
     householdStyle: householdStyle,
     householdSize: householdSize, // task B3 (solo households): household-level, LWW like householdStyle
     householdSizeManual: householdSizeManual,
@@ -259,6 +260,7 @@ function applyPlansSectionData(data){
   if(data.SHARED && typeof data.SHARED === 'object'){
     Object.keys(SHARED).forEach(function(k){ if(typeof data.SHARED[k] === 'boolean') SHARED[k] = data.SHARED[k]; });
   }
+  if(typeof data.planSnacks === 'boolean') planSnacks = data.planSnacks;
   if(typeof data.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(data.householdStyle) !== -1) householdStyle = data.householdStyle;
   // task B3 (solo households): same LWW rule as householdStyle above.
   if(data.householdSize === 1 || data.householdSize === 2) householdSize = data.householdSize;

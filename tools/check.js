@@ -2414,6 +2414,42 @@ function testPlannerDeterminism(ctx){
   }
 }
 
+// Snacks optional (owner request 2026-08-22): planSnacks=false plans breakfast/lunch/dinner only,
+// leaving the snack cell empty, and the day's calories redistribute across the three meals.
+function testPlanSnacksOff(ctx){
+  const savedSnacks = get(ctx, 'planSnacks');
+  try {
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; planSnacks = true;");
+    const withSnacks = call(ctx, 'ensureWeekPlan', []);
+    run(ctx, "weekPlans = {}; weekPlan = null; planSnacks = false;");
+    const noSnacks = call(ctx, 'ensureWeekPlan', []);
+    function dayKcal(plan, di, person){
+      return ['breakfast', 'lunch', 'dinner', 'snack'].reduce(function(s, slot){
+        return s + call(ctx, 'planEntryNutrition', [plan.days[di].meals[slot][person]]).kcal;
+      }, 0);
+    }
+    // (1) every day's snack cell is empty (recipeId null for BOTH people).
+    let allEmpty = true, anySnackWith = false;
+    withSnacks.days.forEach(function(day){ if(day.meals.snack.elena.recipeId) anySnackWith = true; });
+    noSnacks.days.forEach(function(day){
+      if(day.meals.snack.elena.recipeId !== null || day.meals.snack.partner.recipeId !== null) allEmpty = false;
+    });
+    assert(anySnackWith, 'planSnacks=true (baseline): the plan does contain a real snack', '');
+    assert(allEmpty, 'planSnacks=false: every day\'s snack cell is empty (recipeId null)', JSON.stringify(noSnacks.days[0].meals.snack));
+    // (2) the day is still fuelled — its calories redistributed across the 3 meals, not left ~10%
+    // short. day-0 elena total with snacks off is within ~8% of the with-snacks total.
+    const withK = dayKcal(withSnacks, 0, 'elena'), noK = dayKcal(noSnacks, 0, 'elena');
+    assert(noK >= withK * 0.92, 'planSnacks=false: the day still lands near its calorie target across 3 meals (redistributed, not ~10% short)',
+      'withSnacks=' + Math.round(withK) + ' noSnacks=' + Math.round(noK));
+    // (3) determinism holds with snacks off.
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const noSnacks2 = call(ctx, 'ensureWeekPlan', []);
+    assert(JSON.stringify(noSnacks) === JSON.stringify(noSnacks2), 'planSnacks=false: generation is byte-identical across two fresh runs', '');
+  } finally {
+    run(ctx, "planSnacks = " + (savedSnacks ? 'true' : 'false') + "; weekPlans = {}; weekPlan = null;");
+  }
+}
+
 /* ---------------- task C2 (2026-07-18): "Tune next week" ----------------
    nextWeekTuning (state.js) folds into computePlanSignature() and adds
    planner.js:tuningBonus() as a low-weight secondary term in pickSharedMeal/
@@ -11270,6 +11306,7 @@ function main(){
   runTest('re-balance appliers carry the pin guard', function(){ testRebalanceAppliersCarryPinGuard(); });
   runTest('preserveLoggedSlots/preservePinnedSlots one-sided dangling recipe (2026-07-19)', function(){ testPreserveSlotsOneSidedDangling(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
+  runTest('snacks optional (planSnacks off)', function(){ testPlanSnacksOff(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('nutrition-claims audit: guidance, estimates and retired rules', function(){ testNutritionClaimsAudit(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });

@@ -422,6 +422,10 @@ let svE = 1, svM = 1.5, svS = 1;
 
 /* ---------------- shared-meals model ---------------- */
 const SHARED = {breakfast:false, lunch:false, dinner:true, snack:false};
+// Household-level (like SHARED): plan a daily snack slot? Default true (unchanged behaviour).
+// When false, generateWeek fills only breakfast/lunch/dinner — the day's calorie target spreads
+// across those three meals and the snack cell is left empty (hidden in the plan views).
+let planSnacks = true;
 const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack', side:'Side'};
 
 /* ---------------- profile data ---------------- */
@@ -915,6 +919,7 @@ function buildSnapshot(){
     householdSizeManual: householdSizeManual,
     nextWeekTuning: nextWeekTuning,
     shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
+    planSnacks: planSnacks,
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
     // Per-week shopping-sheet state, keyed the same way weekPlans is (by that week's
@@ -1041,6 +1046,7 @@ function loadState(){
       if(typeof saved.shared[slot] === 'boolean') SHARED[slot] = saved.shared[slot];
     });
   }
+  if(typeof saved.planSnacks === 'boolean') planSnacks = saved.planSnacks;
 
   if(saved.servings && typeof saved.servings === 'object'){
     if(typeof saved.servings.svE === 'number') svE = saved.servings.svE;

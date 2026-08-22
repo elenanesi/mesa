@@ -723,6 +723,15 @@
       <p class="sub">Pick any that apply — Mesa will never plan a recipe that breaks one of these. Combining is fine (e.g. vegetarian + gluten-free).</p>
       <div id="dietList"></div>
 
+      <!-- Snacks: household-level "plan a daily snack?" toggle (owner request 2026-08-22).
+           Always visible (unlike "Meals we share", which is couple-only). Painted by
+           renderPlanSnacksToggle() (render-profile.js) from the planSnacks flag, toggled by
+           togglePlanSnacks(); planSnacks is a plan-signature input so the next ensureWeekPlan()
+           regenerates future days with breakfast/lunch/dinner only when it's off. -->
+      <h2 id="sec-snacks"><svg class="h2-ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Snacks</h2>
+      <p class="sub">Some days call for a snack, some don't. Turn this off and Mesa plans breakfast, lunch and dinner only — your daily calories spread across those three meals.</p>
+      <div class="opt sel" id="planSnacksOpt" onclick="togglePlanSnacks(this)"><div class="ck">✓</div><div><div class="ot">Plan a daily snack</div><div class="od" id="planSnacksState">On</div></div></div>
+
       <!-- Task B3: no meaning without a second person — applyHouseholdSizeVisibility()
            (render.js) hides this whole section for a one-person household. -->
       <div id="mealsShareSection">

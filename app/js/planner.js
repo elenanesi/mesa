@@ -1927,10 +1927,20 @@ function generateWeek(seed){
   for(let d = 0; d < 7; d++){
     const remainingKcal = {elena: dayTarget.elena.kcal, partner: dayTarget.partner.kcal};
     const remainingProtein = {elena: dayTarget.elena.protein, partner: dayTarget.partner.protein};
-    let remainingWeight = 1;
+    // When the household turned snacks off, the day's target spreads across breakfast/lunch/
+    // dinner only, so the running weight starts without the snack's share (each meal is sized a
+    // little larger to still hit the daily calories). Default (snacks on) starts at 1 -> unchanged.
+    const snacksOn = (typeof planSnacks === 'undefined') || planSnacks;
+    let remainingWeight = snacksOn ? 1 : (1 - SLOT_WEIGHT.snack);
     const dayMeals = {};
     SLOT_ORDER.forEach(function(slot, si){
       const w = SLOT_WEIGHT[slot];
+      // Snacks off: leave the snack cell empty (like a solo household's unused partner cell —
+      // hidden in the plan views, 0 kcal) and don't touch targets/history/weight for it.
+      if(slot === 'snack' && !snacksOn){
+        dayMeals.snack = {shared: false, elena: emptyPlanEntry(), partner: emptyPlanEntry()};
+        return;
+      }
       // Per-cell share override (2026-07-22): a specific day's meal can be split/merged
       // against the household SHARED[slot] default and that choice persists through
       // regeneration (mealShareOverrides), so this reads the EFFECTIVE state, not the raw
@@ -2381,6 +2391,7 @@ function computePlanSignature(){
     (a.diets || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
     SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
+    ((typeof planSnacks === 'undefined') || planSnacks) ? 1 : 0, // snacks on/off must regenerate future days
     nextWeekTuning, // task C2 (2026-07-18): changing the tuning goal must regenerate future
                     // (non-logged, non-pinned) days exactly like any other signature input —
                     // 'none' is just another value here, no special-cased branch.

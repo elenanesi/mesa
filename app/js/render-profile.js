@@ -452,6 +452,33 @@ function toggleGoal(profKey, goalKey, el){
 // pills. Renders removable pills from the persisted array, plus a picker of the
 // remaining AVOID_KEYS (state.js) behind the "＋ Add" field — free-text isn't supported
 // in MVP (cap-note in index.html says so), so there's nothing to validate/parse here.
+// Household-level "plan a daily snack?" toggle (owner request 2026-08-22). Mirrors toggleShared:
+// flips the flag, repaints the row, regenerates future days (planSnacks is a plan-signature input,
+// so the next ensureWeekPlan() picks it up), and refreshes every plan surface.
+function togglePlanSnacks(el){
+  planSnacks = !planSnacks;
+  renderPlanSnacksToggle();
+  if(typeof toast === 'function') toast(planSnacks ? 'Snacks are back in your plan' : 'Snacks off — breakfast, lunch and dinner only');
+  if(typeof ensureWeekPlan === 'function') ensureWeekPlan();
+  if(typeof recomputeConsumed === 'function') recomputeConsumed(currentProf);
+  if(typeof recomputeProf === 'function') recomputeProf(currentProf);
+  if(typeof refreshRingAndBars === 'function') refreshRingAndBars();
+  if(typeof renderTodayMeals === 'function') renderTodayMeals();
+  if(typeof renderLogScreen === 'function') renderLogScreen();
+  if(typeof renderWeek === 'function') renderWeek();
+  if(typeof persist === 'function') persist();
+}
+// Paints the #planSnacksOpt row from the current planSnacks flag — called by applyProf (so it's
+// in sync whenever the Profile renders) and by togglePlanSnacks. No-op if the markup isn't mounted.
+function renderPlanSnacksToggle(){
+  const el = document.getElementById('planSnacksOpt');
+  if(!el) return;
+  const on = (typeof planSnacks === 'undefined') || planSnacks;
+  el.classList.toggle('sel', on);
+  const ck = el.querySelector('.ck'); if(ck) ck.textContent = on ? '✓' : '';
+  const st = document.getElementById('planSnacksState'); if(st) st.textContent = on ? 'On' : 'Off';
+}
+
 function renderAvoidEditor(){
   const p = PROF[currentProf];
   const pillsEl = document.getElementById('avoidPills');
