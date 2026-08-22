@@ -46,11 +46,11 @@ Week workspace.
   to the first diet/avoid-allowed choice (`render-recipe.js dietAwareDefaultOpts`), not `choices[0]`;
   a lactose AVOIDER is treated as lactose-intolerant for this DISPLAY default. Dairy-detection fixes:
   `soy-yogurt` flagged `dairyFree`, `whipped-cream` added to `DAIRY_FOOD_IDS`. Tests 1799 green.
-- **OPEN — pinned favourite (part 2b, owner chose "diet-fit + pinned favourite")**: a ♡ on each
-  option chip + a synced `optionPrefs` store ({person: {recipeId::groupKey: choiceId}}, mirror the
-  `recipePrefs` persist/sync/merge wiring) so a pinned choice overrides the diet-fit default. The
-  resolver hook (`dietAwareDefaultOpts`) already reads `optionPrefs` (guarded); Part 2b adds the
-  state + UI + merge + tests. Not yet built.
+- **Implicit favourite (part 2b)** — the recipe-screen default now prefers the choice the person
+  most recently **logged** for that recipe/group (`render-recipe.js recentLoggedChoice`, read from
+  `logHistory` newest-first), when still diet/avoid-allowed; else the diet-fit default. No ♡ UI, no
+  synced state (owner chose implicit over an explicit pinned favourite). DISPLAY-only. Tests 1802
+  green. **Task 1 (options recipes) is complete.**
 
 **Post-initiative (2026-08-21).**
 - **Recipe DB = source of truth** — D1 GLOBAL fully replaces `data/recipes.js` at runtime (deletions
