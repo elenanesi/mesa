@@ -276,8 +276,11 @@ function validateData() {
                 errors.push(cPrefix + 'dietKeys must be an array of valid diet keys');
               }
             }
-            if (!Array.isArray(choice.ingredients) || !choice.ingredients.length) {
-              errors.push(cPrefix + 'needs a non-empty ingredients array');
+            // An EMPTY ingredients array is allowed: it is an explicit "none"/skip choice
+            // (e.g. skip the cereal or the fruit in the Yogurt bowl), contributing nothing to
+            // the recipe's effective ingredients. A non-array is still an error.
+            if (!Array.isArray(choice.ingredients)) {
+              errors.push(cPrefix + 'ingredients must be an array (may be empty for a "none"/skip choice)');
             } else {
               choice.ingredients.forEach(function (ing) {
                 if (!Array.isArray(ing) || ing.length !== 2 || typeof ing[0] !== 'string' || typeof ing[1] !== 'number' || ing[1] <= 0) {

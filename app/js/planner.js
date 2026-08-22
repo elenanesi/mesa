@@ -3369,11 +3369,12 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
       otherSlot: otherSlot ? primarySlotLabel(r) : null};
   });
   scored.sort(function(a, b){
-    // PERSONAL-PREFS: swap sort favorites the CURRENTLY ACTIVE person's own prefs
-    // (currentProf), same convention as the library recipe list/swap sheet elsewhere.
-    const aFav = recipePref(a.id, currentProf) === 'favorite';
-    const bFav = recipePref(b.id, currentProf) === 'favorite';
-    if(aFav !== bFav) return aFav ? -1 : 1;
+    // PERSONAL-PREFS: three tiers by the CURRENTLY ACTIVE person's own prefs (currentProf) —
+    // favorites first, thumbs-DOWN last — same convention as the library recipe list/add-meal
+    // list. (When downed recipes are filtered out upstream this is simply a no-op for them.)
+    const rank = function(id){ const p = recipePref(id, currentProf); return p === 'favorite' ? 0 : (p === 'down' ? 2 : 1); };
+    const ra = rank(a.id), rb = rank(b.id);
+    if(ra !== rb) return ra - rb;
     if(a.custom !== b.custom) return a.custom ? -1 : 1;
     if(a.avoidHit !== b.avoidHit) return a.avoidHit ? 1 : -1;
     if(a.title !== b.title) return a.title < b.title ? -1 : 1;

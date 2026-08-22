@@ -70,25 +70,27 @@ const RECIPES_DB = {
 
   /* ================= BREAKFAST (11) ================= */
 
-  // Generic "Yogurt & fruit bowl" (task: options recipes). Yogurt and fruit are picked via
-  // optionGroups; the base is granola + a little maple syrup + chia. Maple (not honey) is the
-  // base sweetener so the soy-yogurt choice stays viable for a vegan (honey trips the vegan
-  // filter, planner.js:245). Soy yogurt carries dietKeys ['vegan','lactose-intolerant'] so the
-  // planner offers it only to a diet that needs it (keeps generation for omnivores unchanged),
-  // and the dairy choices are excluded by diet/avoid for those people — leaving soy as the
-  // default by elimination. The recipe-screen default (render-recipe.js dietAwareDefaultOpts)
-  // additionally treats a lactose AVOIDER (avoid-key, not diet) as lactose-intolerant so their
-  // default lands on soy too. soy-yogurt is dairyFree (foods.js) so the lactose avoid-key never
-  // excludes it. Folds the former greek/skyr/soy/cereal yogurt bowls into one recipe ('yogurt' id).
+  // Generic "Yogurt bowl" (task: options recipes). Three optionGroups — Yogurt, Cereal, Fruit —
+  // let the eater build yogurt+fruit, yogurt+cereal, or yogurt+cereal+fruit. Cereal and Fruit
+  // each carry a "None" choice (empty ingredients = an explicit skip, validate.js). The base is
+  // just a little maple syrup + chia; maple (not honey) keeps the soy-yogurt choice viable for a
+  // vegan (honey trips the vegan filter, planner.js:245). Soy yogurt carries dietKeys
+  // ['vegan','lactose-intolerant'] so the planner offers it only to a diet that needs it (keeps
+  // generation for omnivores unchanged); the dairy choices are excluded by diet/avoid for those
+  // people, leaving soy as the default by elimination. The recipe-screen default (render-recipe.js
+  // dietAwareDefaultOpts) also treats a lactose AVOIDER as lactose-intolerant so their default is
+  // soy; soy-yogurt is dairyFree so the lactose avoid-key never excludes it. Cereal is a CHOICE (not
+  // the base) so recipe.avoid drops 'gluten' — a gluten avoider's cereal group filters down to
+  // "None" (granola/muesli are gluten) and they get a cereal-free bowl instead of losing the recipe.
   yogurt: {
-    title: 'Yogurt & fruit bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
+    title: 'Yogurt bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 8,
-    ingredients: [['granola', 25], ['maple-syrup', 8], ['chia-seeds', 6]],
+    ingredients: [['maple-syrup', 8], ['chia-seeds', 6]],
     toTaste: [],
-    steps: ['Spoon the yogurt into a bowl.', 'Top with the fruit, granola and chia seeds.', 'Finish with a drizzle of maple syrup.'],
+    steps: ['Spoon the yogurt into a bowl.', 'Add the cereal and fruit if using.', 'Finish with the chia seeds and a drizzle of maple syrup.'],
     tags: ['muscle'],
-    avoid: ['gluten'],
+    avoid: [],
     optionGroups: [
       {
         key: 'yogurt', label: 'Yogurt',
@@ -99,11 +101,20 @@ const RECIPES_DB = {
         ]
       },
       {
+        key: 'cereal', label: 'Cereal',
+        choices: [
+          {id: 'granola', label: 'Granola', ingredients: [['granola', 30]]},
+          {id: 'muesli', label: 'Muesli', ingredients: [['muesli', 30]]},
+          {id: 'none', label: 'No cereal', ingredients: []}
+        ]
+      },
+      {
         key: 'fruit', label: 'Fruit',
         choices: [
           {id: 'berries', label: 'Berries', ingredients: [['mixed-berries', 100]]},
           {id: 'banana', label: 'Banana', ingredients: [['bananas', 80]]},
-          {id: 'peach', label: 'Peach', ingredients: [['peaches', 100]]}
+          {id: 'peach', label: 'Peach', ingredients: [['peaches', 100]]},
+          {id: 'none', label: 'No fruit', ingredients: []}
         ]
       }
     ]
@@ -1074,7 +1085,8 @@ const RECIPES_DB = {
           {id: 'salmon', label: 'Salmon', ingredients: [['salmon-fillet', 180]]},
           {id: 'sea-bass', label: 'Sea bass', ingredients: [['sea-bass-fillet', 220]]},
           {id: 'sole', label: 'Sole', ingredients: [['sole-fish', 220]]},
-          {id: 'cod', label: 'Cod', ingredients: [['cod', 220]]}
+          {id: 'cod', label: 'Cod', ingredients: [['cod', 220]]},
+          {id: 'tuna', label: 'Tuna steak', ingredients: [['tuna-steak', 220]]}
         ]
       }
     ]
@@ -1159,17 +1171,6 @@ const RECIPES_DB = {
 
   /* ================= VARIETY-plan.md P3 — lunch mains (meatless/fish) ================= */
 
-  'seared-tuna-lemon': {
-    title: 'Seared tuna steak with lemon', emoji: '🐟', slot: 'lunch', role: 'main',
-    season: 'evergreen',
-    slots: ['lunch', 'dinner'],
-    styles: ['balanced', 'highprotein', 'lowcarb'], time: 12,
-    ingredients: [['tuna-steak', 200], ['olive-oil', 8], ['lemon-juice', 8]],
-    toTaste: ['black pepper', 'garlic'],
-    steps: ['Season the tuna steak with black pepper and garlic.', 'Sear in olive oil over high heat, 1-2 min per side for a pink centre.', 'Rest briefly, slice and finish with a squeeze of lemon.'],
-    tags: ['muscle', 'omega3', 'lowGI'],
-    avoid: []
-  },
   'chickpea-tomato-braise': {
     title: 'Braised chickpeas in tomato sauce', emoji: '🫘', slot: 'lunch', role: 'main',
     season: 'evergreen',
@@ -1529,26 +1530,6 @@ const RECIPES_DB = {
      a few naturally higher (bean/lentil/chickpea-based) and a couple lighter for variety, per
      recipeMacros(id) computed against the real food DB — see task report for the numbers. */
 
-  'baked-salmon-farro-broccoli': {
-    title: 'Baked salmon, farro & broccoli', emoji: '🐟', slot: 'dinner', role: 'full', season: 'evergreen',
-    slots: ['lunch', 'dinner'],
-    styles: ['balanced', 'highprotein'], time: 25,
-    ingredients: [['salmon-fillet', 150], ['farro-cooked', 130], ['broccoli', 120], ['cherry-tomatoes', 80], ['olive-oil', 8]],
-    toTaste: ['lemon', 'herbs', 'black pepper'],
-    steps: ['Rub the salmon with olive oil, lemon and black pepper.', 'Bake at 200C for 12-15 min until just cooked through.', 'Steam the broccoli until tender-crisp.', 'Warm the cooked farro and toss with halved cherry tomatoes and herbs.', 'Plate the farro and broccoli with the salmon on top.'],
-    tags: ['omega3', 'muscle', 'heart'],
-    avoid: []
-  },
-  'sea-bass-cannellini-rocket': {
-    title: 'Sea bass, cannellini beans & rocket', emoji: '🐟', slot: 'dinner', role: 'full', season: 'evergreen',
-    slots: ['lunch', 'dinner'],
-    styles: ['balanced', 'highprotein'], time: 22,
-    ingredients: [['sea-bass-fillet', 200], ['cannellini-beans', 150], ['rocket-arugula', 40], ['cherry-tomatoes', 100], ['olive-oil', 8], ['lemon-juice', 10]],
-    toTaste: ['garlic', 'black pepper'],
-    steps: ['Pan-sear or bake the sea bass fillets in olive oil until just cooked through.', 'Warm the cannellini beans with garlic and a splash of olive oil.', 'Toss rocket and cherry tomatoes with lemon juice.', 'Plate the beans and rocket salad with the sea bass on top.'],
-    tags: ['heart', 'highFiber', 'muscle'],
-    avoid: []
-  },
   'chicken-lentil-stew-broccoli': {
     title: 'Chicken & lentil stew with broccoli', emoji: '🍲', slot: 'dinner', role: 'full', season: 'evergreen',
     slots: ['lunch', 'dinner'],

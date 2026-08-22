@@ -534,6 +534,11 @@ const FOODS = {
 
   /* ---------------- Pantry ---------------- */
 
+  'muesli': {
+    name: 'Muesli, no added sugar', per: 100, unit: 'g',
+    kcal: 356, protein: 10.0, carbs: 61.0, fat: 8.0, satFat: 1.3, fiber: 8.0, sugars: 16.0, freeSugars: 5.0, sugarQuality: 'mixed',
+    flags: ['highFiber'], cat: 'Pantry', iconKey: 'granola', src: 'USDA FDC 173950-style (muesli, whole-grain, no added sugar); kcal per 4/4/9'
+  },
   'granola': {
     name: 'Granola, plain', per: 100, unit: 'g',
     kcal: 476, protein: 10.0, carbs: 64.0, fat: 20.0, satFat: 3.5, fiber: 7.0, sugars: 20.0, freeSugars: 10.0, sugarQuality: 'mixed',

@@ -201,7 +201,7 @@ const FISH_FOOD_IDS = [
 ];
 const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);
 // Per the task brief's exact list.
-const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'oats'];
+const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats'];
 const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds'];
 // Diet-filtering food-id lists (multi-select diets batch) — same hand-picked-by-real-
 // ingredient-content pattern as RED_MEAT_FOOD_IDS/POULTRY_FOOD_IDS/FISH_FOOD_IDS above,
@@ -2754,11 +2754,13 @@ function filteredRecipeIds(){
     if(libRecipeFilters.seasons.size && !libRecipeFilters.seasons.has(recipeSeason(r))) return false;
     return true;
   }).sort(function(a, b){
-    // PERSONAL-PREFS: sort favorites the CURRENTLY ACTIVE person's own prefs.
+    // PERSONAL-PREFS: sort by the CURRENTLY ACTIVE person's own prefs. Three tiers, each
+    // alphabetical by title: favorites first, thumbs-DOWN last (they stay searchable/pickable,
+    // they just sink to the bottom), everything else in between.
     const activePrefs = recipePrefs[currentProf] || {};
-    const aFav = activePrefs[a] === 'favorite';
-    const bFav = activePrefs[b] === 'favorite';
-    if(aFav !== bFav) return aFav ? -1 : 1;
+    const rank = function(id){ const p = activePrefs[id]; return p === 'favorite' ? 0 : (p === 'down' ? 2 : 1); };
+    const ra = rank(a), rb = rank(b);
+    if(ra !== rb) return ra - rb;
     return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
   });
 }

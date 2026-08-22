@@ -600,7 +600,7 @@ function testSlotCompositionBias(ctx){
   const bfIdx = SLOT_ORDER.indexOf('breakfast');
   const snackIdx = SLOT_ORDER.indexOf('snack');
   const CARB = 'pasta';            // ~69% kcal from carbs
-  const PROT = 'seared-tuna-lemon'; // ~70% kcal from protein
+  const PROT = 'lemon-herb-chicken-breast'; // protein-forward main
 
   // (1) Breakfast/snack are never biased.
   assert(call(ctx, 'slotCompositionBias', [CARB, bfIdx]) === 0 && call(ctx, 'slotCompositionBias', [PROT, snackIdx]) === 0,
@@ -2854,10 +2854,10 @@ function testMealShareOverride(ctx){
 function testLunchFishMeatExclusionAndSwapVariety(ctx){
   const saved = cloneJSON(get(ctx, 'weekPlans'));
   try{
-    // (A) A protein-forward fish/meat main (seared tuna) is dinner-only for auto-planning;
+    // (A) A protein-forward fish/meat main (lemon-herb chicken) is dinner-only for auto-planning;
     // a salad, a pasta dish, an egg dish, and a carb-forward veg main all stay lunch-eligible.
-    assert(call(ctx, 'isDinnerOnlyProteinMain', ['seared-tuna-lemon']) === true,
-      'isDinnerOnlyProteinMain: a plain seared tuna steak is dinner-only');
+    assert(call(ctx, 'isDinnerOnlyProteinMain', ['lemon-herb-chicken-breast']) === true,
+      'isDinnerOnlyProteinMain: a protein-forward chicken main is dinner-only');
     assert(call(ctx, 'isDinnerOnlyProteinMain', ['tuna-white-bean-salad']) === false,
       'isDinnerOnlyProteinMain: a tuna SALAD stays lunch-eligible (salad exemption)');
     assert(call(ctx, 'isDinnerOnlyProteinMain', ['pasta']) === false,
@@ -2871,8 +2871,8 @@ function testLunchFishMeatExclusionAndSwapVariety(ctx){
     run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
     const lunchPool = call(ctx, 'candidatesFor', ['lunch', 'balanced', [], ['elena']]);
     const dinnerPool = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena']]);
-    assert(lunchPool.indexOf('seared-tuna-lemon') === -1 && dinnerPool.indexOf('seared-tuna-lemon') !== -1,
-      'candidatesFor: seared tuna is out of the lunch auto-pool but in the dinner pool');
+    assert(lunchPool.indexOf('lemon-herb-chicken-breast') === -1 && dinnerPool.indexOf('lemon-herb-chicken-breast') !== -1,
+      'candidatesFor: a protein-forward chicken main is out of the lunch auto-pool but in the dinner pool');
     assert(lunchPool.length >= 8,
       'candidatesFor: the lunch pool stays healthy after the fish/meat exclusion', 'lunch pool=' + lunchPool.length);
 
@@ -3537,7 +3537,7 @@ function testFavorites(ctx){
     // (3)+(4): a week with SEVERAL favorites still respects P1's day-wide no-repeat rule and
     // does not collapse to only those favorites — the finite raised cap + day-wide rule
     // must still bound it (FAVORITES-EATENOUT-plan.md item 2's "risk" section).
-    const manyIds = ['chicken-couscous-salad', 'lemon-herb-chicken-breast', 'seared-tuna-lemon', 'carrots-over-hummus'];
+    const manyIds = ['chicken-couscous-salad', 'lemon-herb-chicken-breast', 'turkey-cutlets-sage', 'carrots-over-hummus'];
     const prefsObj = {};
     manyIds.forEach(function(id){ prefsObj[id] = 'favorite'; });
     // Both persons favorite the same recipes here (matches the pre-PERSONAL-PREFS flat
@@ -3691,9 +3691,9 @@ function testRecipePrefsLoadStateMigration(ctx){
 function testMergePersonalPrefs(ctx){
   // (a) independent per-person union.
   const local = {elena: {'chicken-couscous-salad': 'favorite'}, partner: {'carrots-over-hummus': 'down'}};
-  const remote = {elena: {'seared-tuna-lemon': 'favorite'}, partner: {}};
+  const remote = {elena: {'turkey-cutlets-sage': 'favorite'}, partner: {}};
   const merged = call(ctx, 'mergePersonalPrefs', [cloneJSON(local), cloneJSON(remote)]);
-  assert(merged.elena['chicken-couscous-salad'] === 'favorite' && merged.elena['seared-tuna-lemon'] === 'favorite',
+  assert(merged.elena['chicken-couscous-salad'] === 'favorite' && merged.elena['turkey-cutlets-sage'] === 'favorite',
     'mergePersonalPrefs: elena\'s map unions entries from both sides', JSON.stringify(merged.elena));
   assert(merged.partner['carrots-over-hummus'] === 'down',
     'mergePersonalPrefs: partner\'s map keeps a local-only entry (remote had nothing for partner)', JSON.stringify(merged.partner));
@@ -3814,6 +3814,15 @@ function testRecipePrefsUIScopedToCurrentProf(ctx){
     const asElena = call(ctx, 'filteredRecipeIds', []);
     assert(asElena[0] === 'carrots-over-hummus',
       'filteredRecipeIds: as elena (currentProf), the recipe she favorited sorts first', JSON.stringify(asElena.slice(0, 3)));
+
+    // Thumbs-DOWN sinks a recipe to the very bottom (three tiers: favorites -> normal -> down,
+    // each alphabetical). The downed recipe stays present/searchable, it just sorts last.
+    call(ctx, 'toggleRecipePref', ['chicken-couscous-salad', 'down']);
+    const withDown = call(ctx, 'filteredRecipeIds', []);
+    assert(withDown[0] === 'carrots-over-hummus' && withDown[withDown.length - 1] === 'chicken-couscous-salad',
+      'filteredRecipeIds: a favorite sorts FIRST and a thumbs-down sorts LAST',
+      'first=' + withDown[0] + ' last=' + withDown[withDown.length - 1]);
+    call(ctx, 'toggleRecipePref', ['chicken-couscous-salad', 'down']); // clear the down before the rest of the test
 
     // Switching currentProf to partner: partner never favorited it, so the sort order is
     // completely unaffected by elena's favorite — proves the read is currentProf-scoped,
@@ -8615,7 +8624,7 @@ function testD2SauceRoleAndCatalog(ctx){
     assert(!!r && r.role === 'main' && JSON.stringify(call(ctx, 'recipeSlotList', [r])) === JSON.stringify(['dinner']),
       'D2: baked-fish is role:"main", slots ["dinner"] (dinner-only)', JSON.stringify(r));
     const fishGroup = r.optionGroups.filter(function(g){ return g.key === 'fish'; })[0];
-    assert(!!fishGroup && fishGroup.choices.length === 4, 'D2: baked-fish has a 4-choice "fish" optionGroup', JSON.stringify(fishGroup));
+    assert(!!fishGroup && fishGroup.choices.length === 5, 'D2: baked-fish has a 5-choice "fish" optionGroup', JSON.stringify(fishGroup));
     const defaultKcal = call(ctx, 'recipeNutrition', ['baked-fish', 1]).totals.kcal;
     assert(defaultKcal >= band[0] && defaultKcal <= band[1],
       'D2: baked-fish default combo (salmon) kcal ' + Math.round(defaultKcal) + ' is within the main band ' + band.join('-'), defaultKcal);

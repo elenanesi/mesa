@@ -31,11 +31,12 @@ let saveComposedMealName = '';
 // (base + extras) so all three pick lists exclude what's already in — same resolution
 // openAddMealRecipeSheet already had.
 function mealTitleSort(a, b){
-  // PERSONAL-PREFS: sort favorites the CURRENTLY ACTIVE person's own prefs.
+  // PERSONAL-PREFS: three tiers by the CURRENTLY ACTIVE person's own prefs — favorites first,
+  // thumbs-DOWN last, everything else in between — each tier alphabetical by title.
   const activePrefs = recipePrefs[currentProf] || {};
-  const aFav = activePrefs[a] === 'favorite';
-  const bFav = activePrefs[b] === 'favorite';
-  if(aFav !== bFav) return aFav ? -1 : 1;
+  const rank = function(id){ const p = activePrefs[id]; return p === 'favorite' ? 0 : (p === 'down' ? 2 : 1); };
+  const ra = rank(a), rb = rank(b);
+  if(ra !== rb) return ra - rb;
   return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
 }
 function mealRecipeOptions(components){
