@@ -479,6 +479,57 @@ function renderPlanSnacksToggle(){
   const st = document.getElementById('planSnacksState'); if(st) st.textContent = on ? 'On' : 'Off';
 }
 
+// Avoid a SPECIFIC ingredient (owner request 2026-08-22) — the per-food avoid list
+// (PROF.avoidFoods). Pills + a live ingredient search; adding an id makes the planner drop any
+// recipe whose base ingredients contain it (and filters it out of any option-group choice).
+function countRecipesWithAvoidFood(id){
+  if(typeof RECIPES_DB === 'undefined' || typeof recipeHitsAvoid !== 'function') return 0;
+  return Object.keys(RECIPES_DB).filter(function(rid){ return recipeHitsAvoid(RECIPES_DB[rid], [id]); }).length;
+}
+function renderAvoidFoodEditor(){
+  const p = PROF[currentProf];
+  const pillsEl = document.getElementById('avoidFoodPills');
+  if(!pillsEl) return;
+  const list = (p.avoidFoods || []).slice().filter(function(id){ return typeof FOODS !== 'undefined' && FOODS[id]; });
+  list.sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : 1; });
+  pillsEl.innerHTML = list.length
+    ? list.map(function(id){ return '<span class="pill ghost" onclick="removeAvoidFood(\'' + id + '\')">' + escapeHtml(FOODS[id].name) + ' ✕</span>'; }).join('')
+    : '<span class="sub" style="margin:0">No specific ingredients avoided yet — search below to add one.</span>';
+}
+function renderAvoidFoodResults(q){
+  const el = document.getElementById('avoidFoodResults');
+  if(!el || typeof FOODS === 'undefined') return;
+  const query = (q || '').trim().toLowerCase();
+  if(query.length < 2){ el.innerHTML = ''; return; }
+  const already = {};
+  (PROF[currentProf].avoidFoods || []).forEach(function(id){ already[id] = true; });
+  const matches = Object.keys(FOODS).filter(function(id){
+    return !already[id] && FOODS[id].name && FOODS[id].name.toLowerCase().indexOf(query) !== -1;
+  }).sort(function(a, b){ return FOODS[a].name < FOODS[b].name ? -1 : 1; }).slice(0, 8);
+  el.innerHTML = matches.length
+    ? matches.map(function(id){ return '<span class="pill" onclick="addAvoidFood(\'' + id + '\')">＋ ' + escapeHtml(FOODS[id].name) + '</span>'; }).join('')
+    : '<span class="sub" style="margin:0">No ingredient matches “' + escapeHtml(q.trim()) + '”.</span>';
+}
+function addAvoidFood(id){
+  if(typeof FOODS === 'undefined' || !FOODS[id]) return;
+  const p = PROF[currentProf];
+  p.avoidFoods = p.avoidFoods || [];
+  if(p.avoidFoods.indexOf(id) === -1) p.avoidFoods.push(id);
+  const n = countRecipesWithAvoidFood(id);
+  const search = document.getElementById('avoidFoodSearch'); if(search) search.value = '';
+  const res = document.getElementById('avoidFoodResults'); if(res) res.innerHTML = '';
+  applyProf(currentProf);
+  if(typeof toast === 'function') toast(FOODS[id].name + ' avoided — ' + n + (n === 1 ? ' recipe' : ' recipes') + ' fewer available to you');
+}
+function removeAvoidFood(id){
+  const p = PROF[currentProf];
+  const idx = (p.avoidFoods || []).indexOf(id);
+  if(idx === -1) return;
+  p.avoidFoods.splice(idx, 1);
+  applyProf(currentProf);
+  if(typeof toast === 'function' && typeof FOODS !== 'undefined' && FOODS[id]) toast(FOODS[id].name + ' removed — more recipes available to you again');
+}
+
 function renderAvoidEditor(){
   const p = PROF[currentProf];
   const pillsEl = document.getElementById('avoidPills');

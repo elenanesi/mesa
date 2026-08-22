@@ -3357,6 +3357,37 @@ function testDominantIngredientVariety(ctx){
     'ingredientDiversityPenalty: per-person - partner has no carrots logged today, so no penalty for them');
 }
 
+// Avoid a SPECIFIC ingredient (owner request 2026-08-22): PROF.avoidFoods excludes recipes that
+// contain that ingredient id (base ingredients drop the whole recipe; an option-group choice is
+// filtered per-choice so the recipe stays viable on its other variants).
+function testAvoidSpecificFood(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  // (1) BASE ingredient: a recipe with the avoided food in its base ingredients is excluded.
+  assert(call(ctx, 'recipeHitsAvoid', [RECIPES_DB['oats-berries-walnuts'], ['mixed-berries']]) === true,
+    'recipeHitsAvoid: a recipe with the avoided food in its base ingredients is excluded');
+  assert(call(ctx, 'recipeHitsAvoid', [RECIPES_DB['oats-berries-walnuts'], ['bananas']]) === false,
+    'recipeHitsAvoid: a recipe WITHOUT the avoided food is not excluded');
+  // (2) an avoided food id is a direct hit for the option-choice / breakfast-pair path.
+  assert(call(ctx, 'foodHitsAvoid', ['mixed-berries', ['mixed-berries']]) === true,
+    'foodHitsAvoid: an avoided food id is a direct hit');
+  // (3) option recipe: avoiding ONE fish drops only that choice; the recipe stays viable on others.
+  const allowed = call(ctx, 'allowedChoicesForGroup', [RECIPES_DB['baked-fish'].optionGroups[0], ['salmon-fillet'], []]).map(function(c){ return c.id; });
+  assert(allowed.indexOf('salmon') === -1 && allowed.length >= 3,
+    'allowedChoicesForGroup: avoiding salmon-fillet removes the salmon choice but keeps the others', JSON.stringify(allowed));
+  assert(call(ctx, 'recipeOptionsViable', [RECIPES_DB['baked-fish'], ['salmon-fillet'], []]) === true,
+    'recipeOptionsViable: baked-fish stays viable when only one fish is avoided (its other fish remain)');
+  // (4) avoidFoodsList merges the avoid-KEY tags and the avoided food ids for a person.
+  const saved = get(ctx, "JSON.stringify(PROF.elena.avoidFoods||[])");
+  try {
+    run(ctx, "PROF.elena.avoidFoods = ['blueberries'];");
+    const list = JSON.parse(get(ctx, "JSON.stringify(avoidFoodsList('elena'))"));
+    assert(list.indexOf('blueberries') !== -1 && list.indexOf('lactose') !== -1,
+      'avoidFoodsList: merges the avoid-key tags and the avoided food ids', JSON.stringify(list));
+  } finally {
+    run(ctx, "PROF.elena.avoidFoods = " + saved + ";");
+  }
+}
+
 /* ---------------- VARIETY-plan.md P2: weekly repetition caps ----------------
    P1 stopped same-day repeats; this caps how often ONE recipe may appear in ONE person's
    week. The caps are tuned to MEASURED pool sizes (see WEEKLY_RECIPE_CAP's doc), so where a
@@ -11317,6 +11348,7 @@ function main(){
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
+  runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
   runTest('lunch/dinner main variety and meat balance', function(){ testLunchDinnerMainRules(ctx); });
   runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });

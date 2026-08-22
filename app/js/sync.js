@@ -186,7 +186,7 @@ function pantrySectionData(){ return {pantry: clone(pantry)}; }
 function profileSectionData(personKey){
   const p = PROF[personKey], out = {};
   PERSIST_PROFILE_FIELDS.forEach(function(f){
-    out[f] = (f === 'avoid' || f === 'diets') ? (p[f] || []).slice() : p[f];
+    out[f] = (f === 'avoid' || f === 'avoidFoods' || f === 'diets') ? (p[f] || []).slice() : p[f];
   });
   return out;
 }
@@ -215,7 +215,7 @@ function applyProfileSectionData(personKey, data){
       return;
     }
     if(!Object.prototype.hasOwnProperty.call(data, f)) return;
-    p[f] = (f === 'avoid' && Array.isArray(data[f])) ? data[f].slice() : data[f];
+    p[f] = ((f === 'avoid' || f === 'avoidFoods') && Array.isArray(data[f])) ? data[f].slice() : data[f];
   });
 }
 

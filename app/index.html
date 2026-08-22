@@ -747,8 +747,16 @@
       <p class="sub">Mesa will never suggest a recipe that contains these.</p>
       <div class="row" id="avoidPills" style="gap:7px;flex-wrap:wrap"></div>
       <div class="field"><div class="inp" onclick="toggleAvoidChooser()"><span style="color:var(--muted)">Choose from lactose, gluten, shellfish, nuts, raw onion, spicy…</span><b style="color:var(--sage-deep)">＋ Add</b></div></div>
-      <div class="cap-note">Free-text isn't supported yet — more coming with the AI phase.</div>
       <div class="row" id="avoidChooser" style="gap:7px;flex-wrap:wrap;margin-top:10px;display:none"></div>
+
+      <!-- Avoid a SPECIFIC ingredient (owner request 2026-08-22): search the ingredient list and
+           add any food id to PROF.avoidFoods — the planner then excludes any recipe whose base
+           ingredients contain it (and filters it out of an option-group choice). Painted by
+           renderAvoidFoodEditor()/renderAvoidFoodResults() (render-profile.js). -->
+      <div class="cap-note" style="margin-top:16px"><b>Avoid a specific ingredient</b> — e.g. blueberries. Mesa drops any recipe that contains it.</div>
+      <div class="row" id="avoidFoodPills" style="gap:7px;flex-wrap:wrap;margin-top:6px"></div>
+      <div class="field"><div class="inp" style="padding:0"><input id="avoidFoodSearch" type="text" placeholder="Search ingredients…" oninput="renderAvoidFoodResults(this.value)" style="width:100%;border:0;background:transparent;font-size:16px;padding:12px 14px" aria-label="Search ingredients to avoid"></div></div>
+      <div class="row" id="avoidFoodResults" style="gap:7px;flex-wrap:wrap"></div>
     </section>
 
     <section class="screen" id="profileAccountData">

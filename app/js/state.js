@@ -561,7 +561,7 @@ const PROF = {
             // derivation function is exactly the drift this batch removes.
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
             coachD:'Calories and macros are estimates from your profile and recipe portions. Tap a meal to see what Mesa considered.',
-            kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'],
+            kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'], avoidFoods:[],
             // consumed*/consumedKcal start at zero (task D1): they're overwritten by
             // planner.js:recomputeConsumed() from real logHistory entries before first
             // paint (applyProf() at boot always runs it first) — no demo numbers linger.
@@ -574,7 +574,7 @@ const PROF = {
             coachT:'Today is built for muscle 💪', hashi:false,
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
             coachD:'Higher protein and a small surplus. Same Mediterranean base, scaled up — shared cooking, two targets.',
-            kP:26, kC:43, kF:31, avoid:[],
+            kP:26, kC:43, kF:31, avoid:[], avoidFoods:[],
             consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
 };
 
@@ -881,14 +881,14 @@ function isEveningHour(){ return currentHour() >= 18; }
 // silently undoing the cleanup. Bug found and fixed while adding the multi-select diets
 // regression tests (tools/check.js testDietSyncLegacyPayloadAndLactoseCleanup /
 // testDietLoadStateMigration) — verify with those before ever reordering this again.
-const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'avoid', 'diets', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'goals'];
+const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'avoid', 'avoidFoods', 'diets', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'goals'];
 
 function buildSnapshot(){
   const profiles = {};
   Object.keys(PROF).forEach(function(key){
     const p = PROF[key], out = {};
     PERSIST_PROFILE_FIELDS.forEach(function(f){
-      out[f] = (f === 'avoid') ? (p.avoid || []).slice()
+      out[f] = (f === 'avoid' || f === 'avoidFoods') ? (p[f] || []).slice()
         : (f === 'diets') ? (p.diets || []).slice()
         : (f === 'goals') ? Object.assign({}, p.goals)
         : p[f];
@@ -1067,7 +1067,7 @@ function loadState(){
   const PROFILE_FIELD_TYPE = {
     displayName: 'string', sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
     activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
-    avoid: 'string[]', goals: 'object'
+    avoid: 'string[]', avoidFoods: 'string[]', goals: 'object'
     // 'diets' deliberately has no entry here — it needs BOTH the current array shape and
     // a legacy single-string shape (task D4's old `diet` field), so it's special-cased
     // below rather than fitting this table's one-type-per-field shape.

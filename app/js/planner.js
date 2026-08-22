@@ -430,9 +430,35 @@ function unionAvoid(a, b){
   (b || []).forEach(function(x){ set[x] = true; });
   return Object.keys(set);
 }
+// The full avoid list for a person: the avoid-KEY tags (lactose/gluten/...) PLUS any specific
+// ingredient ids they chose to avoid (PROF.avoidFoods — owner request 2026-08-22). Food ids never
+// collide with AVOID_KEYS (kebab ids vs the fixed key set), so they share one array safely.
+function avoidFoodsList(person){
+  const p = (typeof PROF !== 'undefined') && PROF[person];
+  if(!p) return [];
+  return (p.avoid || []).concat(p.avoidFoods || []);
+}
+// A specific INGREDIENT id the person avoids (PROF.avoidFoods, carried inside avoidList): true when
+// `foodId` is that id directly, or a composite that reaches it. Food-id membership ONLY — it never
+// re-applies avoid-KEY category rules, so adding this leaves avoid-key behaviour (and generation)
+// unchanged; it only adds exclusions for ingredient ids the user explicitly picked.
+function ingredientIdAvoided(foodId, avoidList){
+  if(!avoidList || !avoidList.length) return false;
+  if(avoidList.indexOf(foodId) !== -1) return true;
+  const food = (typeof FOODS !== 'undefined') && FOODS[foodId];
+  if(food && Array.isArray(food.components) && typeof compositeReachableFoodIds === 'function'){
+    return compositeReachableFoodIds(foodId).some(function(cId){ return avoidList.indexOf(cId) !== -1; });
+  }
+  return false;
+}
 function recipeHitsAvoid(recipe, avoidList){
   if(!avoidList || !avoidList.length) return false;
-  return recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; });
+  if(recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; })) return true;
+  // Avoided specific ingredients (PROF.avoidFoods): exclude a recipe whose BASE ingredients
+  // contain one. An option recipe's per-CHOICE ingredients are handled separately by
+  // choiceHitsAvoid/recipeOptionsViable, so a recipe with an avoided food in only one variant
+  // stays viable on its other variants rather than dropping entirely.
+  return (recipe.ingredients || []).some(function(ing){ return ingredientIdAvoided(ing[0], avoidList); });
 }
 
 // Real diet-filter semantics (multi-select diets batch, replacing the D4 mock — see
@@ -583,6 +609,9 @@ function foodHitsAvoid(foodId, avoidList){
   if(!avoidList || !avoidList.length) return false;
   const food = FOODS[foodId];
   if(!food) return false;
+  // A specific ingredient the person avoids (PROF.avoidFoods, carried in avoidList by id) — so an
+  // option-group choice or breakfast-pair food that IS that ingredient is filtered out.
+  if(avoidList.indexOf(foodId) !== -1) return true;
   // Explicit allergen list — a hand-authored escape hatch for a custom food whose real
   // ingredients Mesa has no other way to see (e.g. a trace-allergen warning with no
   // `components` behind it). A COMPOSITE (pesto-elena etc) no longer needs this: its
@@ -1878,8 +1907,8 @@ function generateWeek(seed){
     partner: {kcal: PROF.partner.calGoalNum, protein: PROF.partner.targetP}
   };
   const avoidList = {
-    elena: (PROF.elena.avoid || []).slice(),
-    partner: (PROF.partner.avoid || []).slice()
+    elena: (avoidFoodsList('elena')).slice(),
+    partner: (avoidFoodsList('partner')).slice()
   };
 
   weeklyCapRelaxations = 0; mainRepeatRelaxations = 0; meatRuleRelaxations = 0; emptyPoolPicks = 0;
@@ -2086,7 +2115,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   // task D1: hoisted above the slot branches below (breakfast/lunch/dinner already
   // computed this further down for the composed-pair pools) so the final opts-rotation
   // step after `best` is picked can use it regardless of slot, snack included.
-  const avoidBoth = unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []);
+  const avoidBoth = unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner'));
   // task (variant-fit planner): same reasoning as avoidBoth above — hoisted so every
   // combos lookup below (snack included) shares one computation.
   const dietBoth = unionDiets(['elena', 'partner']);
@@ -2269,7 +2298,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   pool = applyCrossWeekFilter(pool, excludePrevWeekId);
   pool = applyVarietyFilter(pool, history, person, slot, dayIndex);
   const maxPortion = SLOT_MAX_PORTION[slot];
-  const avoidP = PROF[person].avoid || [];
+  const avoidP = avoidFoodsList(person);
   // task (variant-fit planner): hoisted once, same reasoning as pickSharedMeal's dietBoth.
   const dietP = unionDiets([person]);
 
@@ -2380,8 +2409,8 @@ function computePlanSignature(){
   const e = PROF.elena, a = PROF.partner;
   return [
     householdStyle,
-    (e.avoid || []).slice().sort().join(','),
-    (a.avoid || []).slice().sort().join(','),
+    (e.avoid || []).concat(e.avoidFoods || []).slice().sort().join(','),
+    (a.avoid || []).concat(a.avoidFoods || []).slice().sort().join(','),
     // Multi-select diets batch: changing either person's diets must regenerate future
     // (non-logged, non-pinned) plan days exactly like an avoid-list edit does — diets are
     // a hard candidatesFor()/sidePoolFor() filter (recipeViolatesDiet), so a stale plan
@@ -3292,7 +3321,7 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   const currentNut = planEntryNutrition(m[person]);
   const currentKcal = currentNut.kcal, currentProtein = currentNut.protein;
   const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
-  const avoidL = shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[person].avoid || []);
+  const avoidL = shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(person));
   const plannedToday = {};
   SLOT_ORDER.forEach(function(s){
     if(s === slot) return;
@@ -3422,7 +3451,7 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const currentId = shared ? m.recipeId : m[person].recipeId;
   const currentNut = planEntryNutrition(m[person]);
   const currentKcal = currentNut.kcal, currentProtein = currentNut.protein;
-  const avoidL = shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[person].avoid || []);
+  const avoidL = shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(person));
   const q = String(query || '').trim().toLowerCase();
   if(q.length < 2) return [];
   const anchor = PERSON_ANCHOR[person];
@@ -4130,7 +4159,7 @@ function sideCandidatesForUnit(plan, unit, mode, worstKey, gaps0, baseObjective,
   if(!canAutoMutateUnit(plan, unit)) return [];
   const currentEntry = unit.shared ? m.elena : m[unit.person];
   const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
-  const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+  const avoidL = unit.shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(unit.person));
   const currentDaily = dailyBandState(plan)[unit.dayIndex];
   // task B2: re-balance's side suggestions now come from the same role:'side' pool the
   // generator composes with (sidePoolFor — avoid + season, deliberately not style-filtered),
@@ -4389,7 +4418,7 @@ function autoBalancePlan(plan){
     units.forEach(function(unit, unitIndex){
       if(dayImb[unit.dayIndex] <= 1e-9) return;
       const unitPeople = unit.shared ? ['elena', 'partner'] : [unit.person];
-      const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+      const avoidL = unit.shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(unit.person));
       const m = plan.days[unit.dayIndex].meals[unit.slot];
       const currentEntry = unit.shared ? m.elena : m[unit.person];
       const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
@@ -4590,7 +4619,7 @@ function todayRebalanceChangedSuggestionCount(beforePlan, afterPlan, suggestions
 
 function todayRebalanceCandidateIds(plan, unit, dateISO){
   const styleKey = STYLE_DB_KEY[householdStyle] || 'balanced';
-  const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+  const avoidL = unit.shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(unit.person));
   const currentId = todayRebalanceCurrentRecipeId(plan, unit);
   const plannedToday = {};
   const day = plan.days[unit.dayIndex];
@@ -4617,7 +4646,7 @@ function todayRebalanceSideCandidateIds(plan, unit){
   const meal = plan.days[unit.dayIndex].meals[unit.slot];
   const currentEntry = unit.shared ? meal.elena : meal[unit.person];
   const currentExtras = Array.isArray(currentEntry.extras) ? currentEntry.extras : [];
-  const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+  const avoidL = unit.shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(unit.person));
   return sidePoolFor(avoidL, [unit.person || currentProf]).filter(function(sideId){
     return sideId !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== sideId; });
   });
@@ -4718,7 +4747,7 @@ function proposeRebalanceSuggestions(weekStartDate){
     enumerateSwapUnits(planCopy).forEach(function(unit){
       const m = planCopy.days[unit.dayIndex].meals[unit.slot];
       const currentId = unit.shared ? m.recipeId : m[unit.person].recipeId;
-      const avoidL = unit.shared ? unionAvoid(PROF.elena.avoid || [], PROF.partner.avoid || []) : (PROF[unit.person].avoid || []);
+      const avoidL = unit.shared ? unionAvoid(avoidFoodsList('elena'), avoidFoodsList('partner')) : (avoidFoodsList(unit.person));
       const cands = candidatesFor(unit.slot, styleKey, avoidL, [unit.person || currentProf]).filter(function(id){ return id !== currentId; });
       cands.forEach(function(candId){
         const trial = deepClone(planCopy);
