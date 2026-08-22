@@ -51,6 +51,14 @@ Week workspace.
   `logHistory` newest-first), when still diet/avoid-allowed; else the diet-fit default. No ♡ UI, no
   synced state (owner chose implicit over an explicit pinned favourite). DISPLAY-only. Tests 1802
   green. **Task 1 (options recipes) is complete.**
+- **Follow-up batch (2026-08-22, tests 1803 green, D1 reseeded).** (1) baked-fish gained a **Tuna
+  steak** choice (5 fish now). (2) Deleted 3 standalone fish mains now covered elsewhere:
+  baked-salmon-farro-broccoli, seared-tuna-lemon, sea-bass-cannellini-rocket. (3) **Yogurt bowl**
+  (renamed) gained a **Cereal** group (Granola / Muesli / No cereal) + a "No fruit" choice → build
+  yogurt+fruit / +cereal / +both; new `muesli` food; cereal is a choice not the base so a gluten
+  avoider gets a cereal-free bowl; **empty-ingredient "none"/skip choices now allowed** (validate.js).
+  (4) **Thumbs-down recipes sort to the bottom** of every recipe list (favourites → normal → down,
+  each alphabetical): `filteredRecipeIds`, `mealTitleSort`, swap `scored.sort`.
 
 **Post-initiative (2026-08-21).**
 - **Recipe DB = source of truth** — D1 GLOBAL fully replaces `data/recipes.js` at runtime (deletions
