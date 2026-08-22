@@ -6836,6 +6836,32 @@ function testRecipeOptions(ctx){
     }
   })();
 
+  // -------- implicit favourite (options recipes, part 2b): dietAwareDefaultOpts prefers the
+  // choice the person most recently LOGGED for this recipe/group, when it is still allowed —
+  // "Mesa remembered what you usually pick", learned from logHistory, no new stored pref/UI. --------
+  (function(){
+    const savedLog = get(ctx, "JSON.stringify(logHistory||{})");
+    const savedDiets = get(ctx, "JSON.stringify(PROF.elena.diets||[])");
+    const savedAvoid = get(ctx, "JSON.stringify(PROF.elena.avoid||[])");
+    try {
+      run(ctx, "PROF.elena.diets = []; PROF.elena.avoid = [];");
+      run(ctx, "logHistory = {'2026-08-10': {elena: [{kind:'plan', ref:'yogurt', slot:'breakfast', components:[{recipeId:'yogurt', portion:1, opts:{yogurt:'skyr', fruit:'banana'}}]}]}};");
+      const d1 = JSON.parse(get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))"));
+      assert(d1.yogurt === 'skyr' && d1.fruit === 'banana',
+        'dietAwareDefaultOpts: defaults to the most-recently-logged choice (skyr, banana)', JSON.stringify(d1));
+      run(ctx, "logHistory['2026-08-12'] = {elena: [{kind:'plan', ref:'yogurt', slot:'breakfast', components:[{recipeId:'yogurt', portion:1, opts:{yogurt:'greek', fruit:'peach'}}]}]};");
+      const d2 = JSON.parse(get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))"));
+      assert(d2.yogurt === 'greek' && d2.fruit === 'peach',
+        'dietAwareDefaultOpts: a newer logged choice (greek, peach) supersedes the older one', JSON.stringify(d2));
+      run(ctx, "PROF.elena.diets = ['vegan'];");
+      const d3 = JSON.parse(get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))"));
+      assert(d3.yogurt === 'soy',
+        'dietAwareDefaultOpts: a favourite that violates the current diet (greek for a vegan) is skipped for the diet-fit default (soy)', JSON.stringify(d3));
+    } finally {
+      run(ctx, "logHistory = " + savedLog + "; PROF.elena.diets = " + savedDiets + "; PROF.elena.avoid = " + savedAvoid + ";");
+    }
+  })();
+
   // -------- cleanup: leave RECIPES_DB/weekPlans/logHistory exactly as every other test
   // expects them. --------
   run(ctx, "delete RECIPES_DB['" + FIXTURE_ID + "']; weekPlans = {}; weekPlan = null; logHistory = {};");

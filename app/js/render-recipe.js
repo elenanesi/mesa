@@ -182,13 +182,37 @@ function safeRecipeImageAsset(v){
 
 const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish'];
 
+// task (options recipes, part 2b): the IMPLICIT favourite — the choice this person most
+// recently LOGGED for `recipeKey`'s `groupKey`, read from logHistory (newest date first, and
+// newest entry within a day). No new stored preference and no UI: "Mesa remembered what you
+// usually pick." Returns null if they have never logged a variant of this recipe. DISPLAY-only
+// (feeds dietAwareDefaultOpts), so it never touches planner determinism.
+function recentLoggedChoice(recipeKey, groupKey, person){
+  if(typeof logHistory === 'undefined' || !logHistory || typeof logHistory !== 'object') return null;
+  const dates = Object.keys(logHistory).sort().reverse(); // ISO date strings: lexical order = chronological
+  for(let di = 0; di < dates.length; di++){
+    const day = logHistory[dates[di]];
+    const entries = day && day[person];
+    if(!Array.isArray(entries)) continue;
+    for(let ei = entries.length - 1; ei >= 0; ei--){
+      const e = entries[ei];
+      if(!e || e.kind !== 'plan' || !Array.isArray(e.components)) continue;
+      for(let ci = 0; ci < e.components.length; ci++){
+        const c = e.components[ci];
+        if(c && c.recipeId === recipeKey && c.opts && typeof c.opts[groupKey] === 'string') return c.opts[groupKey];
+      }
+    }
+  }
+  return null;
+}
+
 // task (options recipes, part 2): the DISPLAY default combo for the recipe screen when it is
 // opened WITHOUT a planned/logged opts context (i.e. from the library). For each optionGroup
-// it picks, in AUTHORED order, the first choice that the viewer's own diet/avoid allows — so a
+// it picks: the IMPLICIT favourite (recentLoggedChoice) if that choice is still diet/avoid-
+// allowed, else — in AUTHORED order — the first choice the viewer's diet/avoid allows, so a
 // vegan/lactose person opening "Yogurt & fruit bowl" lands on Soy yogurt instead of the dairy
-// choices[0]. Part 2b lets a pinned favourite (optionPrefs) override this per group. This is a
-// DISPLAY-ONLY default: the planner keeps its own deterministic combo scoring
-// (viableRecipeOptionCombos), so generation stays byte-identical — this never runs there.
+// choices[0]. This is a DISPLAY-ONLY default: the planner keeps its own deterministic combo
+// scoring (viableRecipeOptionCombos), so generation stays byte-identical — this never runs there.
 function dietAwareDefaultOpts(recipe, recipeKey, person){
   const out = {};
   if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return out;
@@ -203,8 +227,9 @@ function dietAwareDefaultOpts(recipe, recipeKey, person){
     if(!group || typeof group.key !== 'string') return;
     const choices = Array.isArray(group.choices) ? group.choices : [];
     if(!choices.length) return;
-    // Part 2b: a pinned favourite wins if it is still an allowed choice for this viewer.
-    const favId = (typeof optionPrefs !== 'undefined' && optionPrefs[person] && optionPrefs[person][recipeKey + '::' + group.key]) || null;
+    // Part 2b: the implicit favourite (most-recently-logged choice) wins if it is still an
+    // allowed choice for this viewer; otherwise the first diet/avoid-allowed authored choice.
+    const favId = recentLoggedChoice(recipeKey, group.key, person);
     let pick = null;
     for(let i = 0; i < choices.length; i++){
       const c = choices[i];
