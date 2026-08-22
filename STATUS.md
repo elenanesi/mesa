@@ -32,6 +32,26 @@ Week workspace.
   already evens days deterministically) and LLM-estimated macros were both declined by the owner
   after a scope check.
 
+**Recipe/ingredient corrections + options recipes (2026-08-22).**
+- **Ingredient corrections** — added `tuna-steak` (fresh; `seared-tuna-lemon` repointed off canned
+  tuna) and `whipped-cream`; removed the `brownie` food.
+- **Recipe corrections** — apple recipes → autumn/winter; removed the duplicate "Baked sea bass
+  with lemon"; added a Mushroom (+ vegan) pasta condiment; `brownie-dessert` is now a real
+  from-scratch recipe (choc/butter/sugar/eggs/flour, 12 servings).
+- **Generic "options" recipes (task 1)** — `yogurt` repurposed into a generic **Yogurt & fruit
+  bowl** (Yogurt × Fruit optionGroups) and a new **Yogurt & fruit** snack (Yogurt × Topping);
+  folded/deleted 5 near-duplicate yogurt recipes. Soy yogurt is a `dietKeys`-gated variant so
+  vegan/lactose diets get it by elimination (omnivore generation unchanged).
+- **Diet-fit default (part 2a)** — the recipe screen (library open) now defaults each optionGroup
+  to the first diet/avoid-allowed choice (`render-recipe.js dietAwareDefaultOpts`), not `choices[0]`;
+  a lactose AVOIDER is treated as lactose-intolerant for this DISPLAY default. Dairy-detection fixes:
+  `soy-yogurt` flagged `dairyFree`, `whipped-cream` added to `DAIRY_FOOD_IDS`. Tests 1799 green.
+- **OPEN — pinned favourite (part 2b, owner chose "diet-fit + pinned favourite")**: a ♡ on each
+  option chip + a synced `optionPrefs` store ({person: {recipeId::groupKey: choiceId}}, mirror the
+  `recipePrefs` persist/sync/merge wiring) so a pinned choice overrides the diet-fit default. The
+  resolver hook (`dietAwareDefaultOpts`) already reads `optionPrefs` (guarded); Part 2b adds the
+  state + UI + merge + tests. Not yet built.
+
 **Post-initiative (2026-08-21).**
 - **Recipe DB = source of truth** — D1 GLOBAL fully replaces `data/recipes.js` at runtime (deletions
   honored); the "sanity floor" is now an absolute minimum, so the owner can curate/delete recipes in
