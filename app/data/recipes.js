@@ -70,14 +70,39 @@ const RECIPES_DB = {
 
   /* ================= BREAKFAST (11) ================= */
 
+  // Generic "Yogurt & fruit bowl" (task: options recipes). Yogurt and fruit are picked via
+  // optionGroups; the base is granola + a little maple syrup + chia. Maple (not honey) is the
+  // base sweetener so the soy-yogurt choice stays a viable VEGAN default (honey trips the vegan
+  // filter, planner.js:245). Soy yogurt carries dietKeys so a vegan/lactose person defaults to
+  // it by elimination once the dairy choices are filtered out. Folds the former separate
+  // greek/skyr/soy/cereal yogurt bowls into one flexible recipe (kept the 'yogurt' id).
   yogurt: {
-    title: 'Greek yogurt & berry bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
+    title: 'Yogurt & fruit bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 8,
-    ingredients: [['greek-yogurt', 150], ['mixed-berries', 80], ['granola', 20], ['honey', 8], ['chia-seeds', 6]],
+    ingredients: [['granola', 25], ['maple-syrup', 8], ['chia-seeds', 6]],
     toTaste: [],
-    steps: ['Spoon yogurt into a bowl.', 'Top with berries, granola and chia seeds.', 'Finish with a drizzle of honey.'],
-    tags: ['lowGI', 'skin', 'muscle'],
-    avoid: ['lactose']
+    steps: ['Spoon the yogurt into a bowl.', 'Top with the fruit, granola and chia seeds.', 'Finish with a drizzle of maple syrup.'],
+    tags: ['muscle'],
+    avoid: ['gluten'],
+    optionGroups: [
+      {
+        key: 'yogurt', label: 'Yogurt',
+        choices: [
+          {id: 'greek', label: 'Greek yogurt', ingredients: [['greek-yogurt', 150]]},
+          {id: 'skyr', label: 'Skyr', ingredients: [['skyr', 150]]},
+          {id: 'soy', label: 'Soy yogurt', dietKeys: ['vegan', 'lactose-intolerant'], ingredients: [['soy-yogurt', 180]]}
+        ]
+      },
+      {
+        key: 'fruit', label: 'Fruit',
+        choices: [
+          {id: 'berries', label: 'Berries', ingredients: [['mixed-berries', 100]]},
+          {id: 'banana', label: 'Banana', ingredients: [['bananas', 80]]},
+          {id: 'peach', label: 'Peach', ingredients: [['peaches', 100]]}
+        ]
+      }
+    ]
   },
   omelette: {
     title: 'Veggie omelette & rye toast', emoji: '🍳', slot: 'breakfast', role: 'full',
@@ -87,15 +112,6 @@ const RECIPES_DB = {
     steps: ['Whisk eggs; saute peppers and spinach in olive oil.', 'Pour eggs over the veg and cook gently until just set.', 'Toast the rye bread and plate alongside the omelette.'],
     tags: ['muscle', 'thyroid'],
     avoid: ['gluten']
-  },
-  skyrbowl: {
-    title: 'Skyr bowl, berries & seeds', emoji: '🥣', slot: 'breakfast', role: 'full',
-    styles: ['highprotein'], time: 6,
-    ingredients: [['skyr', 200], ['mixed-berries', 80], ['pumpkin-chia-seeds', 25], ['honey', 8]],
-    toTaste: [],
-    steps: ['Spoon skyr into a bowl.', 'Top with berries and a generous scatter of pumpkin & chia seeds.', 'Finish with a light drizzle of honey.'],
-    tags: ['muscle', 'lowGI', 'skin'],
-    avoid: ['lactose']
   },
   eggsturkey: {
     title: 'Eggs, turkey, cheese & bread', emoji: '🍳', slot: 'breakfast', role: 'full',
@@ -214,16 +230,6 @@ const RECIPES_DB = {
      breakfast. These six bring the vegan breakfast pool to 7 (target: >=6), all
      'evergreen' season so they count toward every season, Mediterranean-leaning
      ingredients, kcal computed from data/foods.js ingredients per the ground rule. */
-  'soy-yogurt-berry-bowl': {
-    title: 'Soy yogurt & berry bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
-    season: 'evergreen',
-    styles: ['balanced', 'highprotein'], time: 5,
-    ingredients: [['soy-yogurt', 180], ['mixed-berries', 80], ['chia-seeds', 10], ['walnuts', 12], ['maple-syrup', 10]],
-    toTaste: [],
-    steps: ['Spoon soy yogurt into a bowl.', 'Top with berries, chia seeds and walnuts.', 'Finish with a drizzle of maple syrup.'],
-    tags: ['lowGI', 'veggie', 'omega3'],
-    avoid: ['nuts']
-  },
   'tofu-scramble-spinach-tomato': {
     title: 'Tofu scramble, spinach & tomatoes', emoji: '🍳', slot: 'breakfast', role: 'full',
     season: 'evergreen',
@@ -447,15 +453,6 @@ const RECIPES_DB = {
         ]
       }
     ]
-  },
-  'yogurt-cereali-frutta': {
-    title: 'Yogurt, cereal & fruit', emoji: '🥣', slot: 'breakfast', role: 'full',
-    styles: ['balanced'], time: 5,
-    ingredients: [['greek-yogurt', 170], ['granola', 35], ['bananas', 60], ['mixed-berries', 60], ['honey', 8]],
-    toTaste: [],
-    steps: ['Spoon yogurt into a bowl.', 'Add cereal, banana and berries.', 'Finish with honey if wanted.'],
-    tags: ['quick', 'muscle'],
-    avoid: ['gluten', 'lactose']
   },
   pancakes: {
     title: 'Pancakes', emoji: '🥞', slot: 'breakfast', role: 'full',
@@ -1315,15 +1312,6 @@ const RECIPES_DB = {
     tags: ['veggie', 'highFiber'],
     avoid: []
   },
-  'greek-yogurt-honey-walnuts': {
-    title: 'Snack: Greek yogurt, honey & walnuts', emoji: '🥣', slot: 'snack', role: 'full',
-    styles: ['highprotein', 'balanced'], time: 3,
-    ingredients: [['greek-yogurt', 120], ['honey', 10], ['walnuts', 15]],
-    toTaste: [],
-    steps: ['Spoon yogurt into a bowl.', 'Drizzle with honey.', 'Scatter walnuts on top.'],
-    tags: ['muscle', 'omega3'],
-    avoid: ['lactose', 'nuts']
-  },
   'boiled-eggs-veg-sticks': {
     title: 'Snack: Boiled eggs & veg sticks', emoji: '🥚', slot: 'snack', role: 'full',
     styles: ['highprotein', 'balanced'], time: 10,
@@ -1336,15 +1324,37 @@ const RECIPES_DB = {
 
   /* ================= VARIETY-plan.md P3 — snacks ================= */
 
-  'banana-yogurt-honey-snack': {
-    title: 'Snack: Greek yogurt, banana & honey', emoji: '🍌', slot: 'snack', role: 'full',
+  // Generic "Yogurt & fruit" snack (task: options recipes). Yogurt + a fruit/nut topping via
+  // optionGroups; maple base keeps the soy choice a viable vegan default (honey trips the vegan
+  // filter). Folds the former Greek-yogurt+banana+honey and Greek-yogurt+honey+walnuts snacks.
+  'yogurt-fruit-snack': {
+    title: 'Yogurt & fruit', emoji: '🥣', slot: 'snack', role: 'full',
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 3,
-    ingredients: [['greek-yogurt', 150], ['bananas', 90], ['honey', 8]],
+    ingredients: [['maple-syrup', 8], ['chia-seeds', 4]],
     toTaste: [],
-    steps: ['Spoon yogurt into a bowl.', 'Slice the banana on top.', 'Finish with a drizzle of honey.'],
-    tags: ['muscle', 'lowGI'],
-    avoid: ['lactose']
+    steps: ['Spoon the yogurt into a bowl.', 'Add the fruit or topping.', 'Finish with a drizzle of maple syrup.'],
+    tags: ['muscle'],
+    avoid: [],
+    optionGroups: [
+      {
+        key: 'yogurt', label: 'Yogurt',
+        choices: [
+          {id: 'greek', label: 'Greek yogurt', ingredients: [['greek-yogurt', 150]]},
+          {id: 'skyr', label: 'Skyr', ingredients: [['skyr', 150]]},
+          {id: 'soy', label: 'Soy yogurt', dietKeys: ['vegan', 'lactose-intolerant'], ingredients: [['soy-yogurt', 170]]}
+        ]
+      },
+      {
+        key: 'topping', label: 'Topping',
+        choices: [
+          {id: 'banana', label: 'Banana', ingredients: [['bananas', 90]]},
+          {id: 'berries', label: 'Berries', ingredients: [['mixed-berries', 100]]},
+          {id: 'peach', label: 'Peach', ingredients: [['peaches', 100]]},
+          {id: 'walnuts', label: 'Walnuts', ingredients: [['walnuts', 15]]}
+        ]
+      }
+    ]
   },
   'olives-feta-snack': {
     title: 'Snack: Marinated olives & feta', emoji: '🫒', slot: 'snack', role: 'full',

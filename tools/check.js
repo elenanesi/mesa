@@ -1076,8 +1076,6 @@ function testRecipeCatalogCleanup(ctx){
     'recipe catalog cleanup: removes the duplicate white-bean tuna salad', '');
   assert(RECIPES_DB['tuna-white-bean-salad'] && RECIPES_DB['tuna-white-bean-salad'].title === 'Tuna & white bean salad',
     'recipe catalog cleanup: keeps the canonical tuna & white bean salad', JSON.stringify(RECIPES_DB['tuna-white-bean-salad']));
-  assert(RECIPES_DB['yogurt-cereali-frutta'].title === 'Yogurt, cereal & fruit',
-    'recipe catalog cleanup: default wishlist breakfast title is English', RECIPES_DB['yogurt-cereali-frutta'].title);
   assert(RECIPES_DB['cena-cinese'].title === 'Chinese-style dinner' && RECIPES_DB['cena-cinese'].imageKey === 'chinese-dinner',
     'recipe catalog cleanup: Chinese dinner title/imageKey are explicit', JSON.stringify(RECIPES_DB['cena-cinese']));
   assert(!RECIPES_DB['pasta-pomodorini-funghi-broccoli'],
@@ -6395,7 +6393,7 @@ function testRecipeOptions(ctx){
   (function(){
     // eggsturkey joined the optionGroups set later (bread choice: wholegrain/white) — kept
     // in this list alphabetically alongside the original D2 four.
-    const expectedOptionGroupIds = ['baked-fish', 'eggsturkey', 'french-toast-fruit-maple', 'pasta', 'pizza'];
+    const expectedOptionGroupIds = ['baked-fish', 'eggsturkey', 'french-toast-fruit-maple', 'pasta', 'pizza', 'yogurt', 'yogurt-fruit-snack'];
     const actualOptionGroupIds = Object.keys(RECIPES_DB).filter(function(id){
       return Array.isArray(RECIPES_DB[id].optionGroups) && RECIPES_DB[id].optionGroups.length;
     }).sort();
@@ -6476,7 +6474,7 @@ function testRecipeOptions(ctx){
     assert(JSON.stringify(normPartial) === JSON.stringify({protein: 'salmon', carb: 'potato'}),
       'normalizeRecipeOpts: a partial opts object fills in only the missing group(s) with their default', JSON.stringify(normPartial));
 
-    const normNoGroups = call(ctx, 'normalizeRecipeOpts', [RECIPES_DB.yogurt, {anything: 'x'}]);
+    const normNoGroups = call(ctx, 'normalizeRecipeOpts', [RECIPES_DB.omelette, {anything: 'x'}]);
     assert(JSON.stringify(normNoGroups) === '{}',
       'normalizeRecipeOpts: a recipe without optionGroups always resolves to {}', JSON.stringify(normNoGroups));
   })();
@@ -6634,7 +6632,7 @@ function testRecipeOptions(ctx){
       'viableRecipeOptionCombos: an avoid-list drops the excluded choice from every combo it would have appeared in (shellfish -> no "prawns" protein, 2x2=4 combos left)',
       JSON.stringify(combosShellfishAvoid));
 
-    const combosNoOptions = call(ctx, 'viableRecipeOptionCombos', ['yogurt', [], []]);
+    const combosNoOptions = call(ctx, 'viableRecipeOptionCombos', ['omelette', [], []]);
     assert(JSON.stringify(combosNoOptions) === JSON.stringify([{}]),
       'viableRecipeOptionCombos: a recipe without optionGroups always resolves to exactly one combo, {} — unchanged, so it stays the sole "default" candidate pickSharedMeal/pickSoloMeal score it against',
       JSON.stringify(combosNoOptions));
@@ -6789,8 +6787,8 @@ function testRecipeOptions(ctx){
     assert(titleBadOpts === titleDefault,
       'recipeDisplayTitle: bad opts falls back to the default-combo title', titleBadOpts);
 
-    const plainTitle = call(ctx, 'recipeDisplayTitle', ['yogurt', null]);
-    assert(plainTitle === RECIPES_DB.yogurt.title,
+    const plainTitle = call(ctx, 'recipeDisplayTitle', ['omelette', null]);
+    assert(plainTitle === RECIPES_DB.omelette.title,
       'recipeDisplayTitle: a recipe without optionGroups is identical to the bare title (byte-for-byte, no parens)', plainTitle);
 
     const mtwe = call(ctx, 'mealTitleWithExtras', [{recipe: {title: 'ignored'}, recipeId: FIXTURE_ID, opts: {protein: 'cod', carb: 'potato'}, extras: []}]);
@@ -9171,7 +9169,7 @@ function testSaveComposedMealAsRecipe(ctx){
   // the saved recipe must end up with ONE mixed-berries row (80+40=120g), not two, and its
   // own recipeNutrition() must reproduce the composed meal's kcal. --------
   (function(){
-    run(ctx, "var __scmEntry = {recipeId: 'yogurt', portion: 1, extras: [{foodId: 'mixed-berries', grams: 40}]};");
+    run(ctx, "var __scmEntry = {recipeId: 'oats-berries-walnuts', portion: 1, extras: [{foodId: 'mixed-berries', grams: 40}]};");
     run(ctx, "var __scmExpected = planEntryNutrition(__scmEntry);");
     const expectedKcal = get(ctx, '__scmExpected').kcal;
 
@@ -9189,11 +9187,11 @@ function testSaveComposedMealAsRecipe(ctx){
     assert(saved.title === 'Test combo', 'saveComposedMealAsRecipe: saved recipe carries the given name', saved.title);
 
     const berries = saved.ingredients.filter(function(ing){ return ing[0] === 'mixed-berries'; });
-    assert(berries.length === 1 && berries[0][1] === 120,
-      'flattenComponentsToIngredientRows: shared foodId (mixed-berries, base 80g + extra 40g) merges into ONE 120g row, not two',
+    assert(berries.length === 1 && berries[0][1] === 90,
+      'flattenComponentsToIngredientRows: shared foodId (mixed-berries, base 50g + extra 40g) merges into ONE 90g row, not two',
       JSON.stringify(saved.ingredients));
     assert(saved.ingredients.length === 5,
-      'flattenComponentsToIngredientRows: 5 distinct foodIds total (greek-yogurt, mixed-berries merged, granola, honey, chia-seeds)',
+      'flattenComponentsToIngredientRows: 5 distinct foodIds total (oats, milk, walnuts, mixed-berries merged, honey)',
       JSON.stringify(saved.ingredients));
 
     const savedKcal = call(ctx, 'recipeNutrition', [newId, 1]).totals.kcal;
@@ -9249,27 +9247,27 @@ function testSaveComposedMealAsRecipe(ctx){
 function testMealBuilder(ctx){
   run(ctx, "var __mbStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount, closeSheet: closeSheet}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){}; closeSheet = function(){};");
 
-  // -------- (a) seeding from a recipe explodes its ingredients into rows. 'yogurt' (data/
-  // recipes.js) has 5 ingredients and no `servings` field (batchYield 1), same fixture the
-  // composed-meal test above already relies on. --------
+  // -------- (a) seeding from a recipe explodes its ingredients into rows. 'oats-berries-
+  // walnuts' (data/recipes.js) has 5 ingredients and no `servings` field (batchYield 1), an
+  // options-less recipe so the row set stays stable independent of optionGroups defaults. --------
   (function(){
     run(ctx, "mealBuilder = {rows: [], name: '', ctx: null, mode: 'plan', pickerQuery: '', recipeQuery: ''};");
-    const ok = call(ctx, 'addRecipeToMealBuilder', ['yogurt']);
-    assert(ok === true, 'addRecipeToMealBuilder: seeding from "yogurt" reports success', String(ok));
+    const ok = call(ctx, 'addRecipeToMealBuilder', ['oats-berries-walnuts']);
+    assert(ok === true, 'addRecipeToMealBuilder: seeding from "oats-berries-walnuts" reports success', String(ok));
     const rows = get(ctx, 'mealBuilder.rows');
-    assert(rows.length === 5, 'addRecipeToMealBuilder: "yogurt" (5 ingredients, batchYield 1) explodes into 5 rows', JSON.stringify(rows));
+    assert(rows.length === 5, 'addRecipeToMealBuilder: "oats-berries-walnuts" (5 ingredients, batchYield 1) explodes into 5 rows', JSON.stringify(rows));
     const berries = rows.filter(function(r){ return r.foodId === 'mixed-berries'; })[0];
-    assert(!!berries && berries.grams === 80, 'addRecipeToMealBuilder: a seeded row carries the recipe\'s own gram amount (mixed-berries: 80g)', JSON.stringify(berries));
+    assert(!!berries && berries.grams === 50, 'addRecipeToMealBuilder: a seeded row carries the recipe\'s own gram amount (mixed-berries: 50g)', JSON.stringify(berries));
   })();
 
   // -------- (b) adding a recipe merges by foodId into EXISTING rows, not a duplicate --------
   (function(){
     run(ctx, "mealBuilder = {rows: [{foodId: 'mixed-berries', grams: 40}], name: '', ctx: null, mode: 'plan', pickerQuery: '', recipeQuery: ''};");
-    call(ctx, 'addRecipeToMealBuilder', ['yogurt']); // yogurt itself contains mixed-berries: 80g
+    call(ctx, 'addRecipeToMealBuilder', ['oats-berries-walnuts']); // contains mixed-berries: 50g
     const rows = get(ctx, 'mealBuilder.rows');
-    assert(rows.length === 5, 'addRecipeToMealBuilder: merging "yogurt" into an existing mixed-berries row still yields 5 rows total (no duplicate)', JSON.stringify(rows));
+    assert(rows.length === 5, 'addRecipeToMealBuilder: merging "oats-berries-walnuts" into an existing mixed-berries row still yields 5 rows total (no duplicate)', JSON.stringify(rows));
     const berries = rows.filter(function(r){ return r.foodId === 'mixed-berries'; });
-    assert(berries.length === 1 && berries[0].grams === 120, 'addRecipeToMealBuilder: shared foodId merges by SUM (40 existing + 80 from the recipe = 120g), not duplicated', JSON.stringify(berries));
+    assert(berries.length === 1 && berries[0].grams === 90, 'addRecipeToMealBuilder: shared foodId merges by SUM (40 existing + 50 from the recipe = 90g), not duplicated', JSON.stringify(berries));
   })();
 
   // -------- (c) "Save to My recipes" creates a normal cr- (no occasional/oneTime) --------
