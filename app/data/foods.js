@@ -297,6 +297,11 @@ const FOODS = {
     kcal: 112, protein: 26.2, carbs: 0, fat: 0.8, satFat: 0.2, fiber: 0,
     flags: ['selenium', 'omega3'], cat: 'Protein', iconKey: 'tuna', src: 'USDA FDC 175160-style (tuna, canned in water, drained)'
   },
+  'tuna-steak': {
+    name: 'Tuna steak, fresh (yellowfin), raw', per: 100, unit: 'g',
+    kcal: 103, protein: 24.4, carbs: 0, fat: 0.6, satFat: 0.2, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['omega3', 'selenium'], cat: 'Protein', iconKey: 'tuna', src: 'USDA FDC 175158-style (fish, tuna, yellowfin, fresh, raw); kcal per 4/4/9'
+  },
   'cod': {
     name: 'Cod / white fish, raw', per: 100, unit: 'g',
     kcal: 78, protein: 17.8, carbs: 0, fat: 0.7, satFat: 0.1, fiber: 0,
@@ -424,6 +429,11 @@ const FOODS = {
     name: 'Cream cheese', per: 100, unit: 'g',
     kcal: 352, protein: 6.0, carbs: 5.5, fat: 34.0, satFat: 19.0, fiber: 0, sugars: 3.2, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Dairy', iconKey: 'robiola', src: 'USDA FDC 173419-style (cheese, cream); kcal per 4/4/9'
+  },
+  'whipped-cream': {
+    name: 'Whipped cream, sweetened', per: 100, unit: 'g',
+    kcal: 346, protein: 2.0, carbs: 8.0, fat: 34.0, satFat: 22.0, fiber: 0, sugars: 7.0, freeSugars: 6.0, sugarQuality: 'added/free',
+    flags: [], cat: 'Dairy', src: 'Sweetened dairy whipped cream (heavy cream + a little sugar); USDA FDC 170859-style base; kcal per 4/4/9'
   },
   'provola': {
     name: 'Provola cheese', per: 100, unit: 'g',
@@ -723,11 +733,6 @@ const FOODS = {
     name: 'Cola', per: 100, unit: 'ml',
     kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0, sugars: 10.6, freeSugars: 10.6, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'cola', src: 'USDA FDC 174819-style cola soft drink'
-  },
-  'brownie': {
-    name: 'Brownie', per: 100, unit: 'g',
-    kcal: 417, protein: 5.0, carbs: 52.0, fat: 21.0, satFat: 8.0, fiber: 2.2, sugars: 37.0, freeSugars: 30.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Bakery', iconKey: 'brownie', src: 'USDA FDC 167982-style brownie, commercial'
   },
   'capers': {
     name: 'Capers, brined, drained', per: 100, unit: 'g',

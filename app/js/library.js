@@ -196,7 +196,7 @@ const AUTO_STYLE_THRESHOLDS = {
 const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck'];
 const POULTRY_FOOD_IDS = ['turkey-breast', 'chicken-breast', 'chicken-thigh'];
 const FISH_FOOD_IDS = [
-  'salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'clams', 'mussels',
+  'salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'clams', 'mussels',
   'cod', 'sole-fish', 'sea-bass-fillet', 'prawns'
 ];
 const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);

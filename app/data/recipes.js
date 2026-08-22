@@ -142,7 +142,7 @@ const RECIPES_DB = {
   // and 'balanced' so they refill that rotation year-round.
   'porridge-banana-almond': {
     title: 'Porridge with banana & almonds', emoji: '🥣', slot: 'breakfast', role: 'full',
-    season: 'evergreen',
+    season: 'winter/autumn',
     styles: ['balanced'], time: 8,
     ingredients: [['oats', 50], ['bananas', 100], ['apples', 60], ['almonds', 12], ['honey', 6]],
     toTaste: ['cinnamon'],
@@ -256,7 +256,7 @@ const RECIPES_DB = {
   },
   'quinoa-breakfast-bowl-apple-walnut': {
     title: 'Quinoa breakfast bowl, apple & walnuts', emoji: '🥣', slot: 'breakfast', role: 'full',
-    season: 'evergreen',
+    season: 'winter/autumn',
     styles: ['balanced'], time: 15,
     ingredients: [['quinoa-dry', 45], ['soy-milk', 150], ['apples', 100], ['walnuts', 15], ['maple-syrup', 8]],
     toTaste: ['cinnamon'],
@@ -592,6 +592,7 @@ const RECIPES_DB = {
   },
   'insalata-noci-mele-senape': {
     title: 'Apple, walnut & mustard salad', emoji: '🥗', slot: 'lunch', role: 'full',
+    season: 'winter/autumn',
     slots: ['lunch', 'side'],
     styles: ['balanced'], time: 10,
     ingredients: [['lettuce', 90], ['apples', 140], ['walnuts', 30], ['mustard', 8], ['olive-oil', 14], ['wholewheat-bread', 35]],
@@ -1083,7 +1084,7 @@ const RECIPES_DB = {
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 20,
     ingredients: [['pasta', 100], ['olive-oil', 8]],
-    toTaste: ['salt', 'black pepper', 'garlic'],
+    toTaste: ['salt', 'black pepper', 'garlic', 'parsley'],
     steps: ['Bring a pot of salted water to the boil and cook the pasta until al dente.', 'While the pasta cooks, warm the chosen condiment through in a pan with the olive oil.', 'Drain the pasta, reserving a splash of cooking water.', 'Toss the pasta with the condiment, loosening with the reserved water if needed.'],
     tags: [],
     avoid: ['gluten'],
@@ -1095,7 +1096,9 @@ const RECIPES_DB = {
           {id: 'pesto', label: 'Pesto Elena', ingredients: [['pesto-elena', 60]]},
           {id: 'pesto-vegan', label: 'Pesto Elena (vegan)', dietKeys: ['vegan', 'lactose-intolerant'], ingredients: [['pesto-elena', 60]]},
           {id: 'tuna-olives', label: 'Tuna & olives', ingredients: [['tuna-in-olive-oil', 90], ['olives', 30]]},
-          {id: 'courgette-ricotta', label: 'Courgette & ricotta', ingredients: [['courgette', 150], ['ricotta', 100]]}
+          {id: 'courgette-ricotta', label: 'Courgette & ricotta', ingredients: [['courgette', 150], ['ricotta', 100]]},
+          {id: 'mushroom', label: 'Mushroom', ingredients: [['mushrooms', 130], ['parmesan', 20]]},
+          {id: 'mushroom-vegan', label: 'Mushroom (vegan)', dietKeys: ['vegan', 'lactose-intolerant'], ingredients: [['mushrooms', 140]]}
         ]
       }
     ]
@@ -1155,23 +1158,12 @@ const RECIPES_DB = {
 
   /* ================= VARIETY-plan.md P3 — lunch mains (meatless/fish) ================= */
 
-  'baked-sea-bass-lemon': {
-    title: 'Baked sea bass with lemon', emoji: '🐟', slot: 'dinner', role: 'main',
-    season: 'evergreen',
-    slots: ['dinner'],
-    styles: ['balanced', 'highprotein', 'lowcarb'], time: 18,
-    ingredients: [['sea-bass-fillet', 220], ['olive-oil', 8], ['lemon-juice', 10]],
-    toTaste: ['herbs', 'garlic', 'black pepper'],
-    steps: ['Rub the sea bass fillet with olive oil, lemon juice and herbs.', 'Bake at 200C for 12-14 min until just cooked through.', 'Rest briefly, then finish with an extra squeeze of lemon.'],
-    tags: ['muscle', 'thyroid', 'lowGI'],
-    avoid: []
-  },
   'seared-tuna-lemon': {
     title: 'Seared tuna steak with lemon', emoji: '🐟', slot: 'lunch', role: 'main',
     season: 'evergreen',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 12,
-    ingredients: [['tuna', 200], ['olive-oil', 8], ['lemon-juice', 8]],
+    ingredients: [['tuna-steak', 200], ['olive-oil', 8], ['lemon-juice', 8]],
     toTaste: ['black pepper', 'garlic'],
     steps: ['Season the tuna steak with black pepper and garlic.', 'Sear in olive oil over high heat, 1-2 min per side for a pink centre.', 'Rest briefly, slice and finish with a squeeze of lemon.'],
     tags: ['muscle', 'omega3', 'lowGI'],
@@ -1274,6 +1266,7 @@ const RECIPES_DB = {
 
   'brazil-nuts-apple': {
     title: 'Snack: 2 Brazil nuts + apple', emoji: '🌰', slot: 'snack', role: 'full',
+    season: 'winter/autumn',
     styles: ['balanced'], time: 2,
     ingredients: [['brazil-nuts', 10], ['apples', 150]],
     toTaste: [],
@@ -1412,7 +1405,7 @@ const RECIPES_DB = {
   },
   'apple-almonds-snack': {
     title: 'Snack: Apple & almonds', emoji: '🍎', slot: 'snack', role: 'full',
-    season: 'evergreen',
+    season: 'winter/autumn',
     styles: ['balanced', 'lowcarb'], time: 2,
     ingredients: [['apples', 150], ['almonds', 20]],
     toTaste: [],
@@ -1478,11 +1471,12 @@ const RECIPES_DB = {
   'brownie-dessert': {
     title: 'Brownie', emoji: '🍫', slot: 'snack', role: 'full',
     imageKey: 'dessert-sweets',
+    season: 'evergreen',
     occasional: true,
-    styles: ['balanced'], time: 2,
-    ingredients: [['brownie', 80], ['milk', 80]],
-    toTaste: [],
-    steps: ['Cut one brownie portion.', 'Serve with a small glass of milk if wanted.', 'Log it without making a moral drama out of it.'],
+    styles: ['balanced'], time: 45, servings: 12,
+    ingredients: [['dark-chocolate-85', 200], ['butter', 150], ['granulated-sugar', 200], ['eggs', 150], ['00-flour', 120]],
+    toTaste: ['vanilla', 'salt'],
+    steps: ['Melt the dark chocolate with the butter over a gentle heat, then let it cool slightly.', 'Whisk the eggs with the sugar until pale, then stir in the melted chocolate and butter.', 'Fold in the flour and a pinch of salt until just combined.', 'Pour into a lined tin and bake at 180C for 20-25 min until set with a slight fudgy wobble.', 'Cool, cut into 12 squares, and serve with a small glass of milk if wanted. Log it without making a moral drama out of it.'],
     tags: [],
     avoid: ['gluten', 'lactose']
   },

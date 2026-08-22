@@ -180,7 +180,7 @@ function safeRecipeImageAsset(v){
   return /^assets\/recipes\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
-const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish'];
+const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish'];
 
 function recipeHasFishIngredient(recipe){
   if(!recipe || !Array.isArray(recipe.ingredients)) return false;
