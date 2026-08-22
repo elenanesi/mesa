@@ -72,10 +72,14 @@ const RECIPES_DB = {
 
   // Generic "Yogurt & fruit bowl" (task: options recipes). Yogurt and fruit are picked via
   // optionGroups; the base is granola + a little maple syrup + chia. Maple (not honey) is the
-  // base sweetener so the soy-yogurt choice stays a viable VEGAN default (honey trips the vegan
-  // filter, planner.js:245). Soy yogurt carries dietKeys so a vegan/lactose person defaults to
-  // it by elimination once the dairy choices are filtered out. Folds the former separate
-  // greek/skyr/soy/cereal yogurt bowls into one flexible recipe (kept the 'yogurt' id).
+  // base sweetener so the soy-yogurt choice stays viable for a vegan (honey trips the vegan
+  // filter, planner.js:245). Soy yogurt carries dietKeys ['vegan','lactose-intolerant'] so the
+  // planner offers it only to a diet that needs it (keeps generation for omnivores unchanged),
+  // and the dairy choices are excluded by diet/avoid for those people — leaving soy as the
+  // default by elimination. The recipe-screen default (render-recipe.js dietAwareDefaultOpts)
+  // additionally treats a lactose AVOIDER (avoid-key, not diet) as lactose-intolerant so their
+  // default lands on soy too. soy-yogurt is dairyFree (foods.js) so the lactose avoid-key never
+  // excludes it. Folds the former greek/skyr/soy/cereal yogurt bowls into one recipe ('yogurt' id).
   yogurt: {
     title: 'Yogurt & fruit bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
     season: 'evergreen',
@@ -1325,8 +1329,11 @@ const RECIPES_DB = {
   /* ================= VARIETY-plan.md P3 — snacks ================= */
 
   // Generic "Yogurt & fruit" snack (task: options recipes). Yogurt + a fruit/nut topping via
-  // optionGroups; maple base keeps the soy choice a viable vegan default (honey trips the vegan
-  // filter). Folds the former Greek-yogurt+banana+honey and Greek-yogurt+honey+walnuts snacks.
+  // optionGroups; maple base keeps the soy choice viable for a vegan (honey trips the vegan
+  // filter). Soy carries dietKeys ['vegan','lactose-intolerant'] (planner offers it only to a
+  // diet that needs it, so omnivore generation is unchanged); the recipe-screen default also
+  // treats a lactose AVOIDER as lactose-intolerant so soy is their default too. Folds the former
+  // Greek-yogurt+banana+honey and Greek-yogurt+honey+walnuts snacks.
   'yogurt-fruit-snack': {
     title: 'Yogurt & fruit', emoji: '🥣', slot: 'snack', role: 'full',
     season: 'evergreen',

@@ -182,6 +182,46 @@ function safeRecipeImageAsset(v){
 
 const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish'];
 
+// task (options recipes, part 2): the DISPLAY default combo for the recipe screen when it is
+// opened WITHOUT a planned/logged opts context (i.e. from the library). For each optionGroup
+// it picks, in AUTHORED order, the first choice that the viewer's own diet/avoid allows — so a
+// vegan/lactose person opening "Yogurt & fruit bowl" lands on Soy yogurt instead of the dairy
+// choices[0]. Part 2b lets a pinned favourite (optionPrefs) override this per group. This is a
+// DISPLAY-ONLY default: the planner keeps its own deterministic combo scoring
+// (viableRecipeOptionCombos), so generation stays byte-identical — this never runs there.
+function dietAwareDefaultOpts(recipe, recipeKey, person){
+  const out = {};
+  if(!recipe || !Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return out;
+  const avoidList = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].avoid) || [];
+  // Display-only: a person who AVOIDS lactose is treated as lactose-intolerant here so the
+  // recipe screen defaults them to a dairy-free variant (e.g. the Soy yogurt choice, whose
+  // dietKeys gate it to vegan/lactose-intolerant). Scoped to this DISPLAY default — NOT folded
+  // into unionDiets/the planner, so generation and composite variant selection stay unchanged.
+  const dietList = ((typeof unionDiets === 'function') ? unionDiets([person]) : []).slice();
+  if(avoidList.indexOf('lactose') !== -1 && dietList.indexOf('lactose-intolerant') === -1) dietList.push('lactose-intolerant');
+  recipe.optionGroups.forEach(function(group){
+    if(!group || typeof group.key !== 'string') return;
+    const choices = Array.isArray(group.choices) ? group.choices : [];
+    if(!choices.length) return;
+    // Part 2b: a pinned favourite wins if it is still an allowed choice for this viewer.
+    const favId = (typeof optionPrefs !== 'undefined' && optionPrefs[person] && optionPrefs[person][recipeKey + '::' + group.key]) || null;
+    let pick = null;
+    for(let i = 0; i < choices.length; i++){
+      const c = choices[i];
+      if(!c || typeof c.id !== 'string') continue;
+      const dietOk = (typeof choiceMatchesDietKeys !== 'function') || choiceMatchesDietKeys(c, dietList);
+      const avoidOk = (typeof choiceHitsAvoid !== 'function') || !choiceHitsAvoid(c, avoidList);
+      const violOk = (typeof choiceViolatesDiet !== 'function') || !choiceViolatesDiet(c, dietList);
+      if(dietOk && avoidOk && violOk){
+        if(favId && c.id === favId){ pick = c.id; break; }  // favourite (if allowed) wins outright
+        if(pick === null) pick = c.id;                        // else remember the first allowed
+      }
+    }
+    out[group.key] = pick || choices[0].id;
+  });
+  return out;
+}
+
 function recipeHasFishIngredient(recipe){
   if(!recipe || !Array.isArray(recipe.ingredients)) return false;
   return recipe.ingredients.some(function(ing){
@@ -265,7 +305,10 @@ function renderRecipe(key){
   // with (recipeServingCtx.opts), falling back to the deterministic default combo when
   // opened from the library (no plan/log context) or for a recipe without optionGroups —
   // normalizeRecipeOpts handles both (bad/missing opts -> default, {} when no groups).
-  recipeOptsCtx = normalizeRecipeOpts(r, recipeServingCtx && recipeServingCtx.opts);
+  // Planned/logged slots keep their exact stored opts; a library open (no context) falls back
+  // to the diet-aware (and, part 2b, favourite-aware) default instead of the bare choices[0].
+  const defaultOpts = (recipeServingCtx && recipeServingCtx.opts) ? recipeServingCtx.opts : dietAwareDefaultOpts(r, currentRecipeKey, currentProf);
+  recipeOptsCtx = normalizeRecipeOpts(r, defaultOpts);
   const base = recipeNutrition(currentRecipeKey, 1, recipeOptsCtx).totals; // one serving, same scale the old compat view used
   document.getElementById('recipeHero').innerHTML = recipeHeroHtml(r, currentRecipeKey);
   document.getElementById('recipeTitle').textContent = recipeDisplayTitle(currentRecipeKey, recipeOptsCtx);

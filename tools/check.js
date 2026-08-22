@@ -6800,6 +6800,42 @@ function testRecipeOptions(ctx){
       'logEntryTitleWithComponents: reads the base title through recipeDisplayTitle(entry.ref, components[0].opts)', letc);
   })();
 
+  // -------- dietAwareDefaultOpts (options recipes, part 2): the RECIPE-SCREEN display default
+  // combo picks the first AUTHORED choice the viewer's diet/avoid allows — a vegan/lactose
+  // person lands on Soy yogurt, an omnivore on the dairy choices[0]. Display-only: never runs
+  // in the planner (viableRecipeOptionCombos), so generation stays byte-identical. --------
+  (function(){
+    const savedDiets = get(ctx, "JSON.stringify(PROF.elena.diets||[])");
+    const savedAvoid = get(ctx, "JSON.stringify(PROF.elena.avoid||[])");
+    try {
+      run(ctx, "PROF.elena.diets = []; PROF.elena.avoid = [];");
+      const omni = get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))");
+      assert(JSON.parse(omni).yogurt === 'greek' && JSON.parse(omni).fruit === 'berries',
+        'dietAwareDefaultOpts: an omnivore defaults to the authored first choices (greek yogurt, berries)', omni);
+      run(ctx, "PROF.elena.diets = ['vegan'];");
+      const vegan = JSON.parse(get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))"));
+      assert(vegan.yogurt === 'soy',
+        'dietAwareDefaultOpts: a vegan defaults to soy yogurt (dairy choices skipped)', JSON.stringify(vegan));
+      run(ctx, "PROF.elena.diets = ['lactose-intolerant'];");
+      const lac = JSON.parse(get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))"));
+      assert(lac.yogurt === 'soy',
+        'dietAwareDefaultOpts: a lactose-intolerant viewer defaults to soy yogurt', JSON.stringify(lac));
+      // The avoid-LIST 'lactose' (not the diet) must ALSO route the recipe-screen default to
+      // soy: dietAwareDefaultOpts treats a lactose avoider as lactose-intolerant (display-only),
+      // so the soy choice (dietKeys-gated) becomes their default. This is scoped to the display
+      // default; the planner keeps soy dietKeys-gated by DIET, so generation is unaffected.
+      run(ctx, "PROF.elena.diets = []; PROF.elena.avoid = ['lactose'];");
+      const lacAvoid = JSON.parse(get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['yogurt'],'yogurt','elena'))"));
+      assert(lacAvoid.yogurt === 'soy',
+        'dietAwareDefaultOpts: a lactose AVOIDER (avoid-key, not diet) also defaults to soy yogurt', JSON.stringify(lacAvoid));
+      const none = get(ctx, "JSON.stringify(dietAwareDefaultOpts(RECIPES_DB['omelette'],'omelette','elena'))");
+      assert(none === '{}',
+        'dietAwareDefaultOpts: a recipe without optionGroups resolves to {}', none);
+    } finally {
+      run(ctx, "PROF.elena.diets = " + savedDiets + "; PROF.elena.avoid = " + savedAvoid + ";");
+    }
+  })();
+
   // -------- cleanup: leave RECIPES_DB/weekPlans/logHistory exactly as every other test
   // expects them. --------
   run(ctx, "delete RECIPES_DB['" + FIXTURE_ID + "']; weekPlans = {}; weekPlan = null; logHistory = {};");

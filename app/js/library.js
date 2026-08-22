@@ -221,7 +221,7 @@ const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pum
 // (nutritional yeast, no dairy at all) automatically.
 const DAIRY_FOOD_IDS = [
   'greek-yogurt', 'skyr', 'feta-cheese', 'parmesan', 'pecorino', 'mozzarella', 'robiola',
-  'cream-cheese', 'provola', 'scamorza', 'ricotta', 'butter', 'gorgonzola', 'milk',
+  'cream-cheese', 'whipped-cream', 'provola', 'scamorza', 'ricotta', 'butter', 'gorgonzola', 'milk',
   'semi-skimmed-milk', 'cappuccino-unsweetened',
   // 'Nutella' (real-world chocolate-hazelnut spread) contains skimmed milk powder, unlike
   // the plain dark-chocolate-85 entry — a correctness fix noticed while building this list,

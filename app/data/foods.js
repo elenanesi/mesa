@@ -491,7 +491,7 @@ const FOODS = {
   'soy-yogurt': {
     name: 'Soy yogurt, plain, unsweetened', per: 100, unit: 'g',
     kcal: 57, protein: 3.5, carbs: 4.0, fat: 3.0, satFat: 0.5, fiber: 0.8, sugars: 2.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Dairy', iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
+    flags: ['lowGI'], cat: 'Dairy', dairyFree: true, iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
   },
   'espresso-unsweetened': {
     name: 'Coffee / espresso, no sugar', per: 1, unit: 'piece', avgG: 1,

@@ -591,7 +591,11 @@ function foodHitsAvoid(foodId, avoidList){
   // ingredients engine) — the recursion finds parmesan (Dairy) and almonds (NUT_FOOD_IDS)
   // on its own.
   if(Array.isArray(food.containsAvoid) && food.containsAvoid.some(function(k){ return avoidList.indexOf(k) !== -1; })) return true;
-  if(avoidList.indexOf('lactose') !== -1 && food.cat === 'Dairy') return true;
+  // Lactose avoid is category-based, EXCEPT a food may opt out with `dairyFree:true` — a
+  // dairy-AISLE plant item (soy-yogurt) is cat:'Dairy' for library grouping but contains no
+  // lactose, so it must not be excluded from a lactose avoider's plan. (Diet vegan/lactose-
+  // intolerant is handled separately by DAIRY_FOOD_IDS membership, which already omits it.)
+  if(avoidList.indexOf('lactose') !== -1 && food.cat === 'Dairy' && !food.dairyFree) return true;
   if(avoidList.indexOf('gluten') !== -1 && typeof GLUTEN_FOOD_IDS !== 'undefined' && GLUTEN_FOOD_IDS.indexOf(foodId) !== -1) return true;
   if(avoidList.indexOf('shellfish') !== -1 && foodId === 'prawns') return true;
   if(avoidList.indexOf('nuts') !== -1 && typeof NUT_FOOD_IDS !== 'undefined' && NUT_FOOD_IDS.indexOf(foodId) !== -1) return true;
