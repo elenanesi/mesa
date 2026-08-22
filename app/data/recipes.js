@@ -1053,15 +1053,19 @@ const RECIPES_DB = {
     tags: ['muscle'],
     avoid: ['gluten', 'lactose']
   },
+  // The household's usual Chinese takeaway-style spread (owner, 2026-08-22): 2 spring rolls +
+  // meat gyozas + half fried rice + half stir-fried noodles + almond chicken. Built from the
+  // closest catalog foods (pasta-filo = spring-roll wrappers, ravioli = dumplings, beef mince =
+  // the dumpling meat). occasional:true, so it's loggable/searchable but never auto-planned.
   'cena-cinese': {
-    title: 'Chinese-style dinner', emoji: '🥡', slot: 'dinner', role: 'full',
+    title: 'Chinese dinner', emoji: '🥡', slot: 'dinner', role: 'full',
     imageKey: 'chinese-dinner',
     slots: ['dinner', 'lunch'],
     occasional: true,
-    styles: ['balanced'], time: 35,
-    ingredients: [['spaghetti', 70], ['chicken-breast', 150], ['almonds', 18], ['soy-sauce', 16], ['pak-choy', 140], ['ravioli', 80], ['pasta-filo', 35], ['cabbage', 60], ['carrots', 35], ['olive-oil', 12]],
-    toTaste: ['ginger', 'garlic'],
-    steps: ['Cook the spaghetti and toss with a little soy sauce.', 'Stir-fry the chicken with almonds until golden, then add pak choy.', 'Pan-crisp the ravioli and prepare small cabbage-carrot spring rolls.', 'Serve everything together as one mixed dinner.'],
+    styles: ['balanced'], time: 40,
+    ingredients: [['pasta-filo', 30], ['cabbage', 50], ['carrots', 30], ['ravioli', 70], ['beef-mince-lean', 35], ['rice', 45], ['eggs', 25], ['pak-choy', 60], ['egg-noodles', 45], ['chicken-breast', 110], ['almonds', 15], ['soy-sauce', 20], ['olive-oil', 12]],
+    toTaste: ['ginger', 'garlic', 'sesame oil'],
+    steps: ['Spring rolls: wrap cabbage and carrot in the filo and pan-crisp or bake until golden — about 2 each.', 'Gyozas: pan-fry the meat dumplings until browned underneath, then steam-finish with a splash of water, 3-4 each.', 'Fried rice: stir-fry the rice with the egg, pak choy and a little soy until hot through — half a portion.', 'Stir-fried noodles: toss the egg noodles in the wok with cabbage and soy — half a portion.', 'Almond chicken: stir-fry the chicken with the almonds and soy sauce until glazed.', 'Serve everything together as one shared spread.'],
     tags: ['muscle'],
     avoid: ['gluten', 'nuts']
   },

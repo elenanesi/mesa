@@ -1076,7 +1076,7 @@ function testRecipeCatalogCleanup(ctx){
     'recipe catalog cleanup: removes the duplicate white-bean tuna salad', '');
   assert(RECIPES_DB['tuna-white-bean-salad'] && RECIPES_DB['tuna-white-bean-salad'].title === 'Tuna & white bean salad',
     'recipe catalog cleanup: keeps the canonical tuna & white bean salad', JSON.stringify(RECIPES_DB['tuna-white-bean-salad']));
-  assert(RECIPES_DB['cena-cinese'].title === 'Chinese-style dinner' && RECIPES_DB['cena-cinese'].imageKey === 'chinese-dinner',
+  assert(RECIPES_DB['cena-cinese'].title === 'Chinese dinner' && RECIPES_DB['cena-cinese'].imageKey === 'chinese-dinner',
     'recipe catalog cleanup: Chinese dinner title/imageKey are explicit', JSON.stringify(RECIPES_DB['cena-cinese']));
   assert(!RECIPES_DB['pasta-pomodorini-funghi-broccoli'],
     'recipe catalog cleanup: removes cherry tomato, mushroom & broccoli pasta', '');
