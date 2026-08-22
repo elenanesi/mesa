@@ -59,6 +59,17 @@ Week workspace.
   avoider gets a cereal-free bowl; **empty-ingredient "none"/skip choices now allowed** (validate.js).
   (4) **Thumbs-down recipes sort to the bottom** of every recipe list (favourites → normal → down,
   each alphabetical): `filteredRecipeIds`, `mealTitleSort`, swap `scored.sort`.
+- **Planner + Profile batch (2026-08-22, tests 1820 green).** (a) **Same-day ingredient variety** —
+  a soft, deterministic scoring nudge (`ingredientDiversityPenalty`, −7 per repeated dominant
+  Produce/Dairy key, ≥40g; yogurts share `sub:'yogurt'`) that stops e.g. carrots ×3 / skyr ×2 in a
+  day. Never a hard filter (can't starve a slot), never outvotes kcal/protein; 7 is the ceiling that
+  keeps the `lowSugar` tuning invariant. Panel-designed. (b) **Snacks optional** — household
+  `planSnacks` flag + a "Plan a daily snack" toggle (Profile > Food preferences); off = breakfast/
+  lunch/dinner only, calories redistributed across the 3 meals. Default on = generation unchanged.
+  (c) **Avoid a specific ingredient** — per-person `avoidFoods` (food ids) with an ingredient search
+  in "Foods to avoid"; base-ingredient recipes drop entirely, option-choice ingredients filter
+  per-choice (recipe stays viable). Note: recipes use the **"Mixed berries"** blend, not standalone
+  "Blueberries" — avoid the blend to drop those recipes.
 
 **Post-initiative (2026-08-21).**
 - **Recipe DB = source of truth** — D1 GLOBAL fully replaces `data/recipes.js` at runtime (deletions
