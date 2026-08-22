@@ -347,6 +347,11 @@ const FOODS = {
     kcal: 127, protein: 21.5, carbs: 0, fat: 4.5, satFat: 1.6, fiber: 0,
     flags: ['selenium'], cat: 'Protein', iconKey: 'pork-loin', src: 'USDA FDC 167907-style (pork loin, lean, raw)'
   },
+  'pork-mince': {
+    name: 'Pork mince, raw', per: 100, unit: 'g',
+    kcal: 211, protein: 18.9, carbs: 0, fat: 15.0, satFat: 5.5, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['selenium'], cat: 'Protein', iconKey: 'pork-loin', src: 'USDA FDC 167903-style (pork, ground, raw); kcal per 4/4/9'
+  },
   'pork-sausage': {
     name: 'Pork sausage, raw', per: 100, unit: 'g',
     kcal: 315, protein: 16.0, carbs: 1.5, fat: 27.0, satFat: 9.0, fiber: 0, sugars: 0.5, freeSugars: 0.5, sugarQuality: 'added/free',
@@ -530,6 +535,11 @@ const FOODS = {
     name: 'Pasta filo', per: 100, unit: 'g',
     kcal: 315, protein: 9.0, carbs: 59.0, fat: 4.0, satFat: 0.8, fiber: 2.0,
     flags: [], cat: 'Bakery', iconKey: 'pasta-filo', src: 'USDA FDC-style phyllo dough average; kcal per 4/4/9'
+  },
+  'wheat-wrapper': {
+    name: 'Wheat wrapper (spring roll / gyoza)', per: 100, unit: 'g',
+    kcal: 278, protein: 8.0, carbs: 58.0, fat: 1.5, satFat: 0.3, fiber: 2.0, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Bakery', iconKey: 'pasta-filo', src: 'Thin wheat-flour wrapper (spring roll / gyoza skins) label average; kcal per 4/4/9'
   },
 
   /* ---------------- Pantry ---------------- */

@@ -1053,19 +1053,72 @@ const RECIPES_DB = {
     tags: ['muscle'],
     avoid: ['gluten', 'lactose']
   },
-  // The household's usual Chinese takeaway-style spread (owner, 2026-08-22): 2 spring rolls +
-  // meat gyozas + half fried rice + half stir-fried noodles + almond chicken. Built from the
-  // closest catalog foods (pasta-filo = spring-roll wrappers, ravioli = dumplings, beef mince =
-  // the dumpling meat). occasional:true, so it's loggable/searchable but never auto-planned.
+  // The household's usual Chinese spread (owner, 2026-08-22), built as an AGGREGATE of five
+  // singular sub-recipes (engine.js recipeEffectiveIngredients resolves a recipe's `components`
+  // -> the sum of its sub-recipes). Each sub-dish below is a real, browsable recipe on its own;
+  // the Chinese dinner is spring-rolls + meat-gyozas + fried-rice + stir-fried-noodles +
+  // almond-chicken. All occasional (loggable/searchable, not auto-planned).
+  'spring-rolls': {
+    title: 'Spring rolls', emoji: '🥢', slot: 'snack', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced'], time: 20,
+    ingredients: [['wheat-wrapper', 30], ['cabbage', 45], ['carrots', 25], ['olive-oil', 5]],
+    toTaste: ['ginger', 'garlic', 'soy sauce'],
+    steps: ['Shred the cabbage and carrot and toss with a little soy and ginger.', 'Roll tight in the wheat wrappers.', 'Pan-crisp or bake at 200C until golden, turning once — about 2 rolls per portion.'],
+    tags: [], avoid: ['gluten']
+  },
+  'meat-gyozas': {
+    title: 'Meat gyozas', emoji: '🥟', slot: 'snack', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['wheat-wrapper', 40], ['pork-mince', 45], ['cabbage', 20], ['olive-oil', 3]],
+    toTaste: ['ginger', 'garlic', 'soy sauce', 'spring onion'],
+    steps: ['Mix the pork mince with finely chopped cabbage, ginger, garlic and a splash of soy.', 'Spoon into the wrappers, pleat and seal.', 'Pan-fry base-down until browned, then add a splash of water and cover to steam through — 3-4 per portion.'],
+    tags: ['muscle'], avoid: ['gluten']
+  },
+  'fried-rice-veg': {
+    title: 'Vegetable fried rice', emoji: '🍚', slot: 'side', role: 'side',
+    slots: ['side'], season: 'evergreen', occasional: true,
+    styles: ['balanced'], time: 15,
+    ingredients: [['rice', 70], ['eggs', 25], ['pak-choy', 40], ['carrots', 20], ['soy-sauce', 8], ['olive-oil', 5]],
+    toTaste: ['ginger', 'garlic', 'spring onion'],
+    steps: ['Cook and cool the rice (day-old is best).', 'Scramble the egg in a hot wok, then push aside.', 'Stir-fry the pak choy and carrot, add the rice and soy and toss until hot through.'],
+    tags: [], avoid: ['gluten']
+  },
+  'stir-fried-noodles': {
+    title: 'Stir-fried noodles', emoji: '🍜', slot: 'side', role: 'side',
+    slots: ['side'], season: 'evergreen', occasional: true,
+    styles: ['balanced'], time: 15,
+    ingredients: [['egg-noodles', 70], ['cabbage', 40], ['carrots', 20], ['soy-sauce', 8], ['olive-oil', 5]],
+    toTaste: ['ginger', 'garlic', 'sesame oil'],
+    steps: ['Cook the egg noodles and drain.', 'Stir-fry the cabbage and carrot in a hot wok.', 'Add the noodles and soy and toss until glossy and hot through.'],
+    tags: [], avoid: ['gluten']
+  },
+  'almond-chicken': {
+    title: 'Almond chicken', emoji: '🍗', slot: 'dinner', role: 'main',
+    slots: ['dinner', 'lunch'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 18,
+    ingredients: [['chicken-breast', 150], ['almonds', 20], ['soy-sauce', 10], ['olive-oil', 5]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Slice the chicken and stir-fry in a hot wok until golden.', 'Add the almonds and toast briefly.', 'Splash in the soy sauce and toss until the chicken is glazed.'],
+    tags: ['muscle'], avoid: ['nuts', 'gluten']
+  },
   'cena-cinese': {
     title: 'Chinese dinner', emoji: '🥡', slot: 'dinner', role: 'full',
     imageKey: 'chinese-dinner',
     slots: ['dinner', 'lunch'],
     occasional: true,
-    styles: ['balanced'], time: 40,
-    ingredients: [['pasta-filo', 30], ['cabbage', 50], ['carrots', 30], ['ravioli', 70], ['beef-mince-lean', 35], ['rice', 45], ['eggs', 25], ['pak-choy', 60], ['egg-noodles', 45], ['chicken-breast', 110], ['almonds', 15], ['soy-sauce', 20], ['olive-oil', 12]],
+    styles: ['balanced'], time: 45,
+    ingredients: [],
+    components: [
+      {recipeId: 'spring-rolls', portion: 1},
+      {recipeId: 'meat-gyozas', portion: 1},
+      {recipeId: 'fried-rice-veg', portion: 0.5},
+      {recipeId: 'stir-fried-noodles', portion: 0.5},
+      {recipeId: 'almond-chicken', portion: 1}
+    ],
     toTaste: ['ginger', 'garlic', 'sesame oil'],
-    steps: ['Spring rolls: wrap cabbage and carrot in the filo and pan-crisp or bake until golden — about 2 each.', 'Gyozas: pan-fry the meat dumplings until browned underneath, then steam-finish with a splash of water, 3-4 each.', 'Fried rice: stir-fry the rice with the egg, pak choy and a little soy until hot through — half a portion.', 'Stir-fried noodles: toss the egg noodles in the wok with cabbage and soy — half a portion.', 'Almond chicken: stir-fry the chicken with the almonds and soy sauce until glazed.', 'Serve everything together as one shared spread.'],
+    steps: ['Make the five sub-dishes: spring rolls, meat gyozas, vegetable fried rice, stir-fried noodles and almond chicken.', 'Plate 2 spring rolls and 3-4 gyozas each, with half a portion of fried rice and half of noodles.', 'Add the almond chicken and serve everything together as one shared spread.'],
     tags: ['muscle'],
     avoid: ['gluten', 'nuts']
   },

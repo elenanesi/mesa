@@ -644,6 +644,33 @@ function updateServings(){
     document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' ' + label;
     nutHeader = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
   }
+  // Recipe-of-recipes (aggregate dinner): list the sub-dishes it's made of, each tappable to
+  // open its own recipe. Hidden for a normal recipe. The flattened ingredient list below still
+  // shows every raw ingredient (for shopping/detail).
+  const recipeForMadeOf = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[currentRecipeKey] : null;
+  const madeOfSection = document.getElementById('madeOfSection');
+  const madeOfList = document.getElementById('madeOfList');
+  const isComponentsRecipe = !!(recipeForMadeOf && Array.isArray(recipeForMadeOf.components) && recipeForMadeOf.components.length);
+  // For an aggregate recipe the "Made of" list (with tap-through to each sub-dish) replaces the
+  // flat raw-ingredient list, which would otherwise repeat shared items (cabbage, soy, oil).
+  const ingSection = document.getElementById('ingredientsSection');
+  if(ingSection) ingSection.style.display = isComponentsRecipe ? 'none' : '';
+  if(madeOfSection && madeOfList){
+    if(isComponentsRecipe){
+      madeOfSection.style.display = '';
+      madeOfList.innerHTML = recipeForMadeOf.components.map(function(c){
+        const sub = RECIPES_DB[c && c.recipeId];
+        if(!sub) return '';
+        const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
+        const subKcal = Math.round(recipeNutrition(c.recipeId, portion, c.opts).totals.kcal);
+        const portionLabel = portion === 1 ? '' : ' · ' + portion + '×';
+        return '<li class="madeof-row" style="cursor:pointer" onclick="openRecipe(\'' + c.recipeId + '\',\'libraryRecipes\')"><span>' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + portionLabel + '</span><span>' + subKcal + ' kcal ›</span></li>';
+      }).join('');
+    } else {
+      madeOfSection.style.display = 'none';
+      madeOfList.innerHTML = '';
+    }
+  }
   const ingredients = recipeDisplayIngredients(currentRecipeKey, recipeOptsCtx);
   document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
     const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));

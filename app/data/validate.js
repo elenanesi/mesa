@@ -225,9 +225,16 @@ function validateData() {
       errors.push(prefix + 'avoid is not an array');
     }
 
-    if (!Array.isArray(r.ingredients) || r.ingredients.length < 2) {
-      errors.push(prefix + 'needs at least 2 ingredients');
+    // A recipe-of-recipes aggregates sub-recipes via `components` (engine.js:
+    // recipeEffectiveIngredients) instead of a >=2 raw ingredient list — its own `ingredients`
+    // may be empty then. Base ingredient entries, when present, are still validated.
+    const hasComponents = Array.isArray(r.components) && r.components.length > 0;
+    if (!Array.isArray(r.ingredients)) {
+      errors.push(prefix + 'ingredients must be an array');
     } else {
+      if (!hasComponents && r.ingredients.length < 2) {
+        errors.push(prefix + 'needs at least 2 ingredients (or a components list of sub-recipes)');
+      }
       r.ingredients.forEach(function (ing) {
         if (!Array.isArray(ing) || ing.length !== 2 || typeof ing[0] !== 'string' || typeof ing[1] !== 'number' || ing[1] <= 0) {
           errors.push(prefix + 'malformed ingredient entry ' + JSON.stringify(ing));
@@ -235,6 +242,20 @@ function validateData() {
         }
         if (foodsLoaded && !FOODS[ing[0]]) errors.push(prefix + 'ingredient id "' + ing[0] + '" not found in FOODS');
       });
+    }
+    // components (recipe-of-recipes): [{recipeId, portion?, opts?}], each recipeId must resolve to
+    // another recipe (checked against RECIPES_DB), portion (if present) positive.
+    if ('components' in r) {
+      if (!Array.isArray(r.components) || !r.components.length) {
+        errors.push(prefix + 'components must be a non-empty array when present');
+      } else {
+        r.components.forEach(function (c) {
+          if (!c || typeof c.recipeId !== 'string') { errors.push(prefix + 'component missing a valid recipeId'); return; }
+          if (!RECIPES_DB[c.recipeId]) errors.push(prefix + 'component recipeId "' + c.recipeId + '" not found in RECIPES_DB');
+          if (c.recipeId === id) errors.push(prefix + 'component cannot reference its own recipe');
+          if ('portion' in c && (typeof c.portion !== 'number' || c.portion <= 0)) errors.push(prefix + 'component portion must be a positive number');
+        });
+      }
     }
 
     // task D1: optionGroups structural checks — ERROR level (a malformed combo can break

@@ -293,7 +293,14 @@
         </div>
       </section>
 
-      <section class="recipe-section">
+      <!-- Recipe-of-recipes (aggregate dinner): the sub-dishes this recipe is made of, each
+           tappable to open. Hidden for a normal recipe. Painted by render-recipe.js. -->
+      <section class="recipe-section" id="madeOfSection" style="display:none">
+        <h2>Made of</h2>
+        <ul class="ing" id="madeOfList"></ul>
+      </section>
+
+      <section class="recipe-section" id="ingredientsSection">
         <h2 id="ingHeader">Ingredients · scaled for 2.5 servings</h2>
         <ul class="ing" id="ingList"></ul>
       </section>

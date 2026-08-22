@@ -182,13 +182,23 @@ function recipeProteinKind(recipeId, opts){
 // "could this contain X under ANY variant" conservatism, for the exact same reason: the
 // candidate pool is filtered BEFORE chosenOptsForRecipe() rotates which choice actually
 // gets planned.
-function recipeAllPossibleIngredientIds(recipe){
+function recipeAllPossibleIngredientIds(recipe, depth){
+  depth = depth || 0;
   const ids = (recipe.ingredients || []).map(function(ing){ return ing[0]; });
   (recipe.optionGroups || []).forEach(function(g){
     (g.choices || []).forEach(function(c){
       (c.ingredients || []).forEach(function(ing){ ids.push(ing[0]); });
     });
   });
+  // Recipe-of-recipes: fold in every sub-recipe's possible ingredient ids (recursively), so
+  // diet/protein checks see e.g. the meat inside the Chinese dinner's gyoza component.
+  if(depth < 5){
+    (recipe.components || []).forEach(function(c){
+      if(c && c.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId]){
+        recipeAllPossibleIngredientIds(RECIPES_DB[c.recipeId], depth + 1).forEach(function(fid){ ids.push(fid); });
+      }
+    });
+  }
   return ids;
 }
 
@@ -454,11 +464,17 @@ function ingredientIdAvoided(foodId, avoidList){
 function recipeHitsAvoid(recipe, avoidList){
   if(!avoidList || !avoidList.length) return false;
   if(recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; })) return true;
-  // Avoided specific ingredients (PROF.avoidFoods): exclude a recipe whose BASE ingredients
-  // contain one. An option recipe's per-CHOICE ingredients are handled separately by
-  // choiceHitsAvoid/recipeOptionsViable, so a recipe with an avoided food in only one variant
-  // stays viable on its other variants rather than dropping entirely.
-  return (recipe.ingredients || []).some(function(ing){ return ingredientIdAvoided(ing[0], avoidList); });
+  // Avoided specific ingredients (PROF.avoidFoods): exclude a recipe whose BASE ingredients — or
+  // any sub-recipe it aggregates via `components` (a component ALWAYS contributes) — contain one.
+  // An option recipe's per-CHOICE ingredients are handled separately by choiceHitsAvoid/
+  // recipeOptionsViable, so a recipe with an avoided food in only one variant stays viable.
+  const ids = (recipe.ingredients || []).map(function(ing){ return ing[0]; });
+  (recipe.components || []).forEach(function(c){
+    if(c && c.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId] && typeof recipeEffectiveIngredients === 'function'){
+      recipeEffectiveIngredients(RECIPES_DB[c.recipeId], c.opts).forEach(function(ing){ ids.push(ing[0]); });
+    }
+  });
+  return ids.some(function(fid){ return ingredientIdAvoided(fid, avoidList); });
 }
 
 // Real diet-filter semantics (multi-select diets batch, replacing the D4 mock — see

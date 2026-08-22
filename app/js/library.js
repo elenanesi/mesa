@@ -102,7 +102,10 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
     const recipe = normalizeRecipeRoleField(deepClone(data));
     const titleValid = typeof recipe.title === 'string' && !!recipe.title;
     const slotValid = typeof recipe.slot === 'string' && VALID_SLOTS.indexOf(recipe.slot) !== -1;
-    const ingredientsValid = Array.isArray(recipe.ingredients) && recipe.ingredients.length > 0;
+    // A recipe-of-recipes (engine.js recipeEffectiveIngredients) aggregates sub-recipes via
+    // `components` and legitimately carries an empty `ingredients` list — accept it too.
+    const ingredientsValid = Array.isArray(recipe.ingredients)
+      && (recipe.ingredients.length > 0 || (Array.isArray(recipe.components) && recipe.components.length > 0));
     if(!titleValid || !slotValid || !ingredientsValid){
       rejectedCount++;
       if(rejectedIds.length < 10) rejectedIds.push(id);
@@ -201,7 +204,7 @@ const FISH_FOOD_IDS = [
 ];
 const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);
 // Per the task brief's exact list.
-const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats'];
+const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats', 'wheat-wrapper'];
 const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds'];
 // Diet-filtering food-id lists (multi-select diets batch) — same hand-picked-by-real-
 // ingredient-content pattern as RED_MEAT_FOOD_IDS/POULTRY_FOOD_IDS/FISH_FOOD_IDS above,

@@ -3388,6 +3388,38 @@ function testAvoidSpecificFood(ctx){
   }
 }
 
+// Recipe-of-recipes (owner request 2026-08-22): a recipe may aggregate SUB-recipes via a
+// `components` field; its nutrition/ingredients/avoid resolve as the sum of its sub-recipes.
+function testRecipeComponents(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  // (1) the Chinese dinner is a 5-way aggregate with no base ingredients.
+  assert(Array.isArray(RECIPES_DB['cena-cinese'].components) && RECIPES_DB['cena-cinese'].components.length === 5,
+    'cena-cinese is an aggregate of 5 sub-recipes (components), with an empty base ingredients list');
+  // (2) recipeNutrition of the aggregate == the sum of its sub-recipes at their portions.
+  const subs = [['spring-rolls', 1], ['meat-gyozas', 1], ['fried-rice-veg', 0.5], ['stir-fried-noodles', 0.5], ['almond-chicken', 1]];
+  let sumK = 0;
+  subs.forEach(function(s){ sumK += call(ctx, 'recipeNutrition', [s[0], s[1]]).totals.kcal; });
+  const dinnerK = call(ctx, 'recipeNutrition', ['cena-cinese', 1]).totals.kcal;
+  assert(Math.abs(sumK - dinnerK) < 0.01,
+    'recipeNutrition: the aggregate dinner equals the sum of its 5 sub-recipes', 'sum=' + Math.round(sumK) + ' dinner=' + Math.round(dinnerK));
+  // (3) effective ingredients flatten to the sub-recipes' raw ingredients.
+  const eff = call(ctx, 'recipeEffectiveIngredients', [RECIPES_DB['cena-cinese'], {}]);
+  const effIds = eff.map(function(i){ return i[0]; });
+  assert(eff.length > 10 && effIds.indexOf('pork-mince') !== -1 && effIds.indexOf('chicken-breast') !== -1,
+    'recipeEffectiveIngredients: a components recipe flattens to its sub-recipes\' ingredients', JSON.stringify(effIds));
+  // (4) avoid: avoiding a food that lives INSIDE a sub-recipe (pork-mince) drops the aggregate.
+  assert(call(ctx, 'recipeHitsAvoid', [RECIPES_DB['cena-cinese'], ['pork-mince']]) === true,
+    'recipeHitsAvoid: avoiding a food inside a sub-recipe excludes the aggregate recipe');
+  // (5) diet: recipeAllPossibleIngredientIds folds in the sub-recipes' ingredients.
+  const allIds = call(ctx, 'recipeAllPossibleIngredientIds', [RECIPES_DB['cena-cinese']]);
+  assert(allIds.indexOf('pork-mince') !== -1 && allIds.indexOf('chicken-breast') !== -1,
+    'recipeAllPossibleIngredientIds: folds in the sub-recipes\' ingredients (diet checks see the meat)');
+  // (6) the five sub-recipes exist as real recipes.
+  ['spring-rolls', 'meat-gyozas', 'fried-rice-veg', 'stir-fried-noodles', 'almond-chicken'].forEach(function(id){
+    assert(!!RECIPES_DB[id], 'sub-recipe "' + id + '" exists as a standalone recipe', id);
+  });
+}
+
 /* ---------------- VARIETY-plan.md P2: weekly repetition caps ----------------
    P1 stopped same-day repeats; this caps how often ONE recipe may appear in ONE person's
    week. The caps are tuned to MEASURED pool sizes (see WEEKLY_RECIPE_CAP's doc), so where a
@@ -11349,6 +11381,7 @@ function main(){
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
+  runTest('recipe-of-recipes (components aggregate)', function(){ testRecipeComponents(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
   runTest('lunch/dinner main variety and meat balance', function(){ testLunchDinnerMainRules(ctx); });
   runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });

@@ -173,6 +173,9 @@ function recomputeProf(key){
    VARIANT SELECTION is HOUSEHOLD-WIDE, not per-meal or per-person — see
    householdDietListForComposites()'s doc immediately below for why. */
 const COMPOSITE_MAX_DEPTH = 6;
+// Recipe-of-recipes (task: aggregate dinner) — a recipe may aggregate sub-recipes via a
+// `components` field. Bounded recursion depth guards against a cyclic/over-nested data bug.
+const COMPONENT_MAX_DEPTH = 5;
 
 // Every diet active ANYWHERE in the household right now: both PROF slots, unioned via
 // planner.js:unionDiets (that file loads after this one; forward-referenced by name at call
@@ -348,12 +351,32 @@ function normalizeRecipeOpts(recipe, opts){
 // this so nutrition/shopping/display/validation can never disagree about what a chosen
 // variant actually contains. Recipes without optionGroups return `ingredients` unchanged
 // (same array contents, so options-less recipes stay byte-identical).
-function recipeEffectiveIngredients(recipe, opts){
+function recipeEffectiveIngredients(recipe, opts, depth){
   if(!recipe) return [];
-  const base = Array.isArray(recipe.ingredients) ? recipe.ingredients.slice() : [];
-  if(!Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return base;
+  depth = depth || 0;
+  const effective = Array.isArray(recipe.ingredients) ? recipe.ingredients.slice() : [];
+  // Recipe-of-recipes (task: aggregate dinner): a recipe may aggregate sub-recipes via a
+  // `components` field [{recipeId, portion, opts?}]. Its effective ingredients include each
+  // sub-recipe's OWN effective ingredients (recursively — optionGroups/nested components and
+  // all), scaled to `portion` servings of that sub-recipe (portion / sub.servings, since a
+  // sub-recipe's ingredient list is its batch and sub.servings says how many servings that
+  // batch yields). Depth-guarded. Every downstream reader (recipeNutrition, the shopping list,
+  // recipeDisplayIngredients, validate's recipeMacros) flows through here, so a components
+  // recipe's nutrition/shopping/validation is always exactly the sum of its sub-recipes.
+  if(Array.isArray(recipe.components) && recipe.components.length && depth < COMPONENT_MAX_DEPTH){
+    recipe.components.forEach(function(c){
+      if(!c || typeof c.recipeId !== 'string' || typeof RECIPES_DB === 'undefined' || !RECIPES_DB[c.recipeId]) return;
+      const sub = RECIPES_DB[c.recipeId];
+      const subServings = (typeof sub.servings === 'number' && sub.servings > 0) ? sub.servings : 1;
+      const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
+      const factor = portion / subServings;
+      recipeEffectiveIngredients(sub, c.opts, depth + 1).forEach(function(ing){
+        effective.push([ing[0], ing[1] * factor]);
+      });
+    });
+  }
+  if(!Array.isArray(recipe.optionGroups) || !recipe.optionGroups.length) return effective;
   const normalized = normalizeRecipeOpts(recipe, opts);
-  const effective = base;
   recipe.optionGroups.forEach(function(group){
     if(!group || typeof group.key !== 'string') return;
     const choices = Array.isArray(group.choices) ? group.choices : [];
