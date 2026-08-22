@@ -393,12 +393,12 @@ const FOODS = {
   'greek-yogurt': {
     name: 'Greek yogurt, plain (2%)', per: 100, unit: 'g',
     kcal: 72, protein: 9.9, carbs: 3.9, fat: 1.9, satFat: 1.2, fiber: 0, sugars: 3.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI', 'fermented'], cat: 'Dairy', iconKey: 'greek-yogurt', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', sub: 'yogurt', iconKey: 'greek-yogurt', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
   },
   'skyr': {
     name: 'Skyr, plain', per: 100, unit: 'g',
     kcal: 62, protein: 11.0, carbs: 4.0, fat: 0.2, satFat: 0.1, fiber: 0, sugars: 4.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI', 'fermented'], cat: 'Dairy', iconKey: 'skyr', src: 'Icelandic dairy standard table (skyr, plain)'
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', sub: 'yogurt', iconKey: 'skyr', src: 'Icelandic dairy standard table (skyr, plain)'
   },
   'feta-cheese': {
     name: 'Feta cheese', per: 100, unit: 'g',
@@ -491,7 +491,7 @@ const FOODS = {
   'soy-yogurt': {
     name: 'Soy yogurt, plain, unsweetened', per: 100, unit: 'g',
     kcal: 57, protein: 3.5, carbs: 4.0, fat: 3.0, satFat: 0.5, fiber: 0.8, sugars: 2.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Dairy', dairyFree: true, iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
+    flags: ['lowGI'], cat: 'Dairy', sub: 'yogurt', dairyFree: true, iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
   },
   'espresso-unsweetened': {
     name: 'Coffee / espresso, no sugar', per: 1, unit: 'piece', avgG: 1,

@@ -836,6 +836,15 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
       history[person].dayUseRecipe[dayIndex].push(c.recipeId);
       // VARIETY-plan.md P2: same walk feeds the whole-week tally the cap reads.
       history[person].weekUse[c.recipeId] = (history[person].weekUse[c.recipeId] || 0) + 1;
+      // Same-day ingredient variety: record this dish's dominant Produce/Dairy key so a later
+      // slot the same day is nudged away from repeating it (ingredientDiversityPenalty).
+      if(history[person].dayUseIngredientKey){
+        const ik = dominantIngredientKey(RECIPES_DB[c.recipeId], c.opts);
+        if(ik){
+          if(!history[person].dayUseIngredientKey[dayIndex]) history[person].dayUseIngredientKey[dayIndex] = [];
+          history[person].dayUseIngredientKey[dayIndex].push(ik);
+        }
+      }
     } else if(c.foodId){
       if(!history[person].dayUseFood[dayIndex]) history[person].dayUseFood[dayIndex] = [];
       history[person].dayUseFood[dayIndex].push(c.foodId);
@@ -1652,6 +1661,62 @@ function mealScore(actualKcal, desiredKcal, actualProtein, desiredProtein, dayIn
   return -(kcalErr * 1000) - (proteinShort * 100) + prefBoost + slotCompositionBias(recipeId, slotIndex) + rotation * 0.5;
 }
 
+// Same-day ingredient variety (owner request 2026-08-22, panel-designed): a SOFT deterministic
+// penalty so the planner doesn't put the same vegetable/dairy on the plate multiple times in one
+// day (e.g. three carrot dishes, or skyr at breakfast AND a skyr snack). A dish's "dominant
+// ingredient" is the single Produce/Dairy ingredient with the most grams (>= a 40g floor, so a 2g
+// garlic clove never counts); the key is FOODS[id].sub when set (all yogurts share sub:'yogurt',
+// so Greek/Skyr/Soy collide as one family) else the food id (so two carrot dishes collide by id).
+// Reads recipeEffectiveIngredients so an optionGroups variant's REAL chosen ingredient is seen
+// (the yogurt/cereal live in a choice, not the base list). Returns null for a dish with no
+// Produce/Dairy ingredient over the floor — it simply never participates. This is a Mesa taste/
+// variety rule, NOT a health claim.
+const MIN_DOMINANT_GRAMS = 40;
+function dominantIngredientKey(recipe, opts){
+  if(!recipe || typeof recipeEffectiveIngredients !== 'function') return null;
+  let best = null;
+  recipeEffectiveIngredients(recipe, opts).forEach(function(ing){
+    const food = (typeof FOODS !== 'undefined') && FOODS[ing[0]];
+    if(!food || (food.cat !== 'Produce' && food.cat !== 'Dairy')) return;
+    const grams = Number(ing[1]) || 0;
+    if(grams < MIN_DOMINANT_GRAMS) return;
+    if(!best || grams > best.grams) best = {key: food.sub || ing[0], grams: grams};
+  });
+  return best ? best.key : null;
+}
+// The distinct dominant-ingredient keys of a whole composed unit: the main (through its chosen
+// opts) plus every recipe extra (a composed carb/veg side, or a snack). Pure + deterministic.
+function unitDominantKeys(mainId, opts, extras){
+  const keys = {};
+  if(mainId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[mainId]){
+    const k = dominantIngredientKey(RECIPES_DB[mainId], opts);
+    if(k) keys[k] = true;
+  }
+  (extras || []).forEach(function(e){
+    if(e && e.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[e.recipeId]){
+      const k = dominantIngredientKey(RECIPES_DB[e.recipeId], e.opts);
+      if(k) keys[k] = true;
+    }
+  });
+  return Object.keys(keys);
+}
+// Additive score term (sibling to tuningBonus): -12 per dominant key already placed for this
+// person earlier TODAY. Magnitude sits in the tuningBonus band (well above rotation's 0-0.5 so it
+// reliably breaks otherwise-close ties, well below kcalErr*1000 / proteinShort*100 / prefBoost=90
+// so it NEVER outvotes the calorie/protein promise or a genuine favorite — a favorited carrot dish
+// can still repeat). Purely additive: it can only re-rank candidates that already survived every
+// filter, so it can never empty a pool / starve a slot.
+const INGREDIENT_DIVERSITY_PENALTY = 7;
+function ingredientDiversityPenalty(mainId, opts, extras, history, person, dayIndex){
+  const usedArr = (history && history[person] && history[person].dayUseIngredientKey && history[person].dayUseIngredientKey[dayIndex]) || [];
+  if(!usedArr.length) return 0;
+  const used = {};
+  usedArr.forEach(function(k){ used[k] = true; });
+  let penalty = 0;
+  unitDominantKeys(mainId, opts, extras).forEach(function(k){ if(used[k]) penalty += INGREDIENT_DIVERSITY_PENALTY; });
+  return -penalty;
+}
+
 /* ---------------- task C2 (2026-07-18): next-week tuning bonus ----------------
    tuningBonus(totals, tuningKey) is a small deterministic secondary term ADDED to
    mealScore's result (both pickSharedMeal and pickSoloMeal, below) for the candidate
@@ -1832,6 +1897,9 @@ function generateWeek(seed){
   // (recipe pools for sides, food pools for breakfast pairs).
   history.elena.dayUseRecipe = {}; history.partner.dayUseRecipe = {};
   history.elena.dayUseFood = {}; history.partner.dayUseFood = {};
+  // Same-day ingredient-variety log (owner request 2026-08-22): the dominant Produce/Dairy key
+  // of every dish placed that day, per person — read by ingredientDiversityPenalty at scoring.
+  history.elena.dayUseIngredientKey = {}; history.partner.dayUseIngredientKey = {};
   // VARIETY-plan.md P2: per-person WEEK totals per recipe id (main dish + every composed
   // extra), read by applyWeeklyCapFilter. Not keyed by day — this is the whole-week count.
   history.elena.weekUse = {}; history.partner.weekUse = {};
@@ -2145,8 +2213,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // never the composite tieId — so a composed unit's score treats "which main" exactly
     // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
     // ONLY for the final deterministic tie-break below.
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena');
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner');
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex);
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex);
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
@@ -2271,7 +2339,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   let best = null;
   candidates.forEach(function(c){
     // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
   });

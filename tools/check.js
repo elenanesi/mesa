@@ -3296,6 +3296,31 @@ function testDayWideVariety(ctx){
   }
 }
 
+// Same-day ingredient variety (owner request 2026-08-22): the SOFT dominant-ingredient nudge that
+// stops e.g. three carrot dishes or skyr-breakfast + skyr-snack in one day. Unit-tests the pure
+// helpers rather than pinning plan-emergent counts (testFavorites' "no golden-number trap" note).
+function testDominantIngredientVariety(ctx){
+  // (1) dominantIngredientKey: the largest Produce/Dairy ingredient >= 40g; key = FOODS.sub || id.
+  assert(call(ctx, 'dominantIngredientKey', [{ingredients: [['carrots', 200], ['olive-oil', 10]]}, {}]) === 'carrots',
+    'dominantIngredientKey: a carrot side resolves to the "carrots" key');
+  assert(call(ctx, 'dominantIngredientKey', [{ingredients: [['skyr', 150], ['maple-syrup', 8]]}, {}]) === 'yogurt',
+    'dominantIngredientKey: a skyr dish resolves to the shared "yogurt" family key (FOODS.sub)');
+  assert(call(ctx, 'dominantIngredientKey', [{ingredients: [['greek-yogurt', 150]]}, {}]) === 'yogurt',
+    'dominantIngredientKey: greek yogurt shares the same "yogurt" key as skyr (they collide as one family)');
+  assert(call(ctx, 'dominantIngredientKey', [{ingredients: [['garlic', 2], ['olive-oil', 10]]}, {}]) === null,
+    'dominantIngredientKey: a 2g garlic clove is below the 40g floor -> null (a dish with no dominant produce/dairy never collides)');
+
+  // (2) ingredientDiversityPenalty: negative per dominant key already used today; 0 otherwise;
+  // per-person (a shared-day key on elena does not penalize partner).
+  const history = {elena: {dayUseIngredientKey: {0: ['carrots']}}, partner: {dayUseIngredientKey: {}}};
+  assert(call(ctx, 'ingredientDiversityPenalty', ['cumin-roasted-carrots', {}, [], history, 'elena', 0]) < 0,
+    'ingredientDiversityPenalty: a carrot dish is penalized when carrots are already on today\'s plate');
+  assert(call(ctx, 'ingredientDiversityPenalty', ['steamed-green-beans', {}, [], history, 'elena', 0]) === 0,
+    'ingredientDiversityPenalty: a different-vegetable dish is NOT penalized');
+  assert(call(ctx, 'ingredientDiversityPenalty', ['cumin-roasted-carrots', {}, [], history, 'partner', 0]) === 0,
+    'ingredientDiversityPenalty: per-person - partner has no carrots logged today, so no penalty for them');
+}
+
 /* ---------------- VARIETY-plan.md P2: weekly repetition caps ----------------
    P1 stopped same-day repeats; this caps how often ONE recipe may appear in ONE person's
    week. The caps are tuned to MEASURED pool sizes (see WEEKLY_RECIPE_CAP's doc), so where a
@@ -11254,6 +11279,7 @@ function main(){
   runTest('swap sheet: "what do you feel like?" craving filter (fruit/veg/protein/light/quick)', function(){ testSwapCravingFilter(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
+  runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });
   runTest('lunch/dinner main variety and meat balance', function(){ testLunchDinnerMainRules(ctx); });
   runTest('stronger favorites: cap +1 + FAVORITE_SCORE_BOOST (FAVORITES-EATENOUT-plan.md item 2)', function(){ testFavorites(ctx); });
