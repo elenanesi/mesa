@@ -3396,11 +3396,36 @@ function testRegenerateWeekPreservingLocks(ctx){
       'regenerateWeekPreservingLocks: produces a complete 7-day plan with no empty slots',
       'days=' + plan.days.length + ' slots=' + slots + ' nulls=' + nulls);
 
-    // Deterministic: regenerating again yields an identical plan.
+    // RESHUFFLE (owner 2026-08-23): a manual Regenerate must produce a genuinely DIFFERENT week
+    // (generation is deterministic on (weekStartDate, signature), so without the variant nonce a
+    // repeat regenerate was byte-identical — the "Regenerate does nothing" bug). Each call bumps
+    // plan.regenVariant and reshuffles the un-locked slots.
     const first = get(ctx, "JSON.stringify(weekPlans['" + monday + "'])");
+    const variantAfterFirst = get(ctx, "weekPlans['" + monday + "'].regenVariant");
     call(ctx, 'regenerateWeekPreservingLocks', [monday]);
     const second = get(ctx, "JSON.stringify(weekPlans['" + monday + "'])");
-    assert(first === second, 'regenerateWeekPreservingLocks: deterministic (same result on a repeat regeneration)');
+    const variantAfterSecond = get(ctx, "weekPlans['" + monday + "'].regenVariant");
+    assert(first !== second, 'regenerateWeekPreservingLocks: a repeat Regenerate reshuffles to a DIFFERENT week (not a no-op)');
+    assert(variantAfterFirst === 1 && variantAfterSecond === 2,
+      'regenerateWeekPreservingLocks: each tap advances the reshuffle variant (1, then 2)', 'first=' + variantAfterFirst + ' second=' + variantAfterSecond);
+    // The pinned dinner and logged lunch STILL survive the reshuffle (locks hold across variants).
+    const pinnedStill = get(ctx, "JSON.stringify(weekPlans['" + monday + "'].days[2].meals.dinner)");
+    assert(pinnedStill === pinnedBefore, 'regenerateWeekPreservingLocks: a pin still holds after a second reshuffle');
+    const loggedStill = get(ctx, "(function(){var e=weekPlans['" + monday + "'].days[1].meals.lunch; var x=e.shared?e.elena:e.elena; return x && x.recipeId;})()");
+    assert(loggedStill === loggedRecipe, 'regenerateWeekPreservingLocks: a logged slot still holds after a second reshuffle', 'logged=' + loggedRecipe + ' after=' + loggedStill);
+
+    // Determinism is PRESERVED at the seed level: generateWeek with a FIXED variant is byte-
+    // identical across two independent calls (the guarantee that actually matters — a stored
+    // reshuffle reproduces exactly on reload, and variant 0 stays identical to pre-fix output).
+    run(ctx, "__sig = computePlanSignature();");
+    const genA = get(ctx, "JSON.stringify(generateWeek({weekStartDate:'" + monday + "', signature:__sig, variant:5}))");
+    const genB = get(ctx, "JSON.stringify(generateWeek({weekStartDate:'" + monday + "', signature:__sig, variant:5}))");
+    assert(genA === genB, 'generateWeek: a FIXED variant is deterministic (byte-identical across two calls)');
+    const gen0A = get(ctx, "JSON.stringify(generateWeek({weekStartDate:'" + monday + "', signature:__sig}))");
+    const gen0B = get(ctx, "JSON.stringify(generateWeek({weekStartDate:'" + monday + "', signature:__sig, variant:0}))");
+    assert(gen0A === gen0B && gen0A.indexOf('regenVariant') === -1,
+      'generateWeek: variant 0 (and omitted) stay byte-identical and carry no regenVariant key (no reshuffle of existing plans on deploy)');
+    run(ctx, "delete globalThis.__sig;");
   } finally {
     ctx.weekPlans = saved; ctx.mealPins = savedPins; ctx.logHistory = savedLog;
     run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null;");

@@ -1492,7 +1492,12 @@ function mealRuleApplies(rule, dateISO, dayIndex, slot, person){
 function regenerateWeekPreservingLocks(monday){
   const sig = computePlanSignature();
   const prev = weekPlans[monday] ? deepClone(weekPlans[monday]) : null;
-  const plan = generateWeek({weekStartDate: monday, signature: sig});
+  // Manual Regenerate must give a genuinely DIFFERENT week — generation is deterministic on
+  // (weekStartDate, signature), so without bumping this nonce the "fresh" plan would be
+  // byte-identical to the current one (the "Regenerate does nothing" bug). Each tap advances
+  // the variant; ensureWeekPlan preserves it so the reshuffle survives reloads/auto-regens.
+  const nextVariant = ((prev && prev.regenVariant) || 0) + 1;
+  const plan = generateWeek({weekStartDate: monday, signature: sig, variant: nextVariant, reshuffleFrom: prev});
   applyMealRulesToPlan(plan);
   preserveLoggedSlots(prev, plan);
   preservePinnedSlots(prev, plan);
@@ -1639,9 +1644,15 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons
 // week is pruned on load), the filter is skipped. Deterministic: the previous week's
 // stored plan is itself a deterministic input, so same inputs -> same exclusions ->
 // byte-identical output.
-function applyCrossWeekFilter(pool, excludeId){
-  if(!excludeId) return pool;
-  const filtered = pool.filter(function(id){ return id !== excludeId; });
+// `exclude` is a recipe id, or an array of ids (manual Regenerate passes both last week's
+// same-slot pick AND the being-replaced plan's same-slot pick). Falls back to the full pool
+// if excluding everything would empty it — a thin slot still gets filled, just without variety.
+function applyCrossWeekFilter(pool, exclude){
+  const ids = Array.isArray(exclude) ? exclude.filter(Boolean) : (exclude ? [exclude] : []);
+  if(!ids.length) return pool;
+  const drop = {};
+  ids.forEach(function(id){ drop[id] = true; });
+  const filtered = pool.filter(function(id){ return !drop[id]; });
   return filtered.length ? filtered : pool;
 }
 
@@ -1974,17 +1985,33 @@ function generateWeek(seed){
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
-  const weekSeed = stableHash(weekStartDate);
+  // `variant` (owner 2026-08-23) is the manual-Regenerate reshuffle nonce: it's 0 for every
+  // automatic generation (so this stays byte-identical to before — no existing plan reshuffles
+  // on deploy, determinism tests unaffected), and 1,2,3… each time the user taps Regenerate,
+  // which shifts weekSeed to a genuinely different-but-still-deterministic arrangement. Stored
+  // on the plan (below) so a reload / auto-regen reproduces the same reshuffle, not variant 0.
+  const variant = (typeof seed.variant === 'number' && seed.variant > 0) ? Math.floor(seed.variant) : 0;
+  const weekSeed = variant ? stableHash(weekStartDate + '#' + variant) : stableHash(weekStartDate);
   // Cross-week variety filter input: the PREVIOUS week's stored plan, if any (see
   // applyCrossWeekFilter doc). prevRecipeId(d, slot, person) is what that person ate at
   // the same (day, slot) last week — null when there's no stored previous week, which
   // disables the filter for that pick.
   const prevPlan = weekPlans[addDaysISO(weekStartDate, -7)] || null;
-  function prevRecipeId(dayIndex, slot, person){
-    if(!prevPlan || !prevPlan.days || !prevPlan.days[dayIndex]) return null;
-    const m = prevPlan.days[dayIndex].meals && prevPlan.days[dayIndex].meals[slot];
+  function slotRecipeIdIn(plan, dayIndex, slot, person){
+    if(!plan || !plan.days || !plan.days[dayIndex]) return null;
+    const m = plan.days[dayIndex].meals && plan.days[dayIndex].meals[slot];
     if(!m) return null;
     return m.shared ? m.recipeId : ((m[person] && m[person].recipeId) || null);
+  }
+  function prevRecipeId(dayIndex, slot, person){ return slotRecipeIdIn(prevPlan, dayIndex, slot, person); }
+  // Manual Regenerate reshuffle (owner 2026-08-23): the plan being REPLACED, so each slot avoids
+  // the recipe it currently holds and picks its next-best alternative — a genuinely different
+  // week, not the byte-identical output a deterministic re-generation would otherwise give. Only
+  // set for a manual regenerate (variant>0); every automatic generation leaves it null. Combined
+  // with last week's exclusion below and applied through applyCrossWeekFilter's graceful fallback.
+  const reshuffleFrom = (variant && seed.reshuffleFrom && seed.reshuffleFrom.days) ? seed.reshuffleFrom : null;
+  function excludeIdsFor(dayIndex, slot, person){
+    return [prevRecipeId(dayIndex, slot, person), slotRecipeIdIn(reshuffleFrom, dayIndex, slot, person)];
   }
 
   const days = [];
@@ -2031,7 +2058,7 @@ function generateWeek(seed){
         // intentionally empty placeholder (emptyPlanEntry(), NOT ghost-planned) — no pool
         // lookup, no history recording, no target deduction happens for 'partner' at all.
         const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
-        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
         dayMeals[slot] = {shared: false, elena: chE, partner: emptyPlanEntry()};
         const soloNutE = planEntryNutrition(chE);
         remainingKcal.elena -= soloNutE.kcal;
@@ -2044,7 +2071,7 @@ function generateWeek(seed){
         const pool = candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner']);
         // For shared slots both people ate the same dish last week — Elena's entry stands
         // for both (same convention as the variety filter's history handling).
-        const chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner'], {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner'], {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
         dayMeals[slot] = chosen;
         // Deduct the WHOLE unit (main + any composed extra) via planEntryNutrition, not the
         // raw entry.kcal/protein cache (which — like every existing manual meal-extra —
@@ -2069,11 +2096,11 @@ function generateWeek(seed){
         let chE = emptyPlanEntry(), chA = emptyPlanEntry();
         if(eOn){
           const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
-          chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+          chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
         }
         if(aOn){
           const poolA = candidatesFor(slot, styleKey, avoidList.partner, ['partner']);
-          chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight.partner, history, weekSeed, prevRecipeId(d, slot, 'partner'));
+          chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight.partner, history, weekSeed, excludeIdsFor(d, slot, 'partner'));
         }
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
         if(eOn){
@@ -2119,6 +2146,9 @@ function generateWeek(seed){
       ' slot(s) with NO candidate at all — likely diet/avoid filters too strict for this catalog/season.');
   }
   const plan = {v: 1, weekStartDate: weekStartDate, signature: signature, days: days, emptyPoolCount: emptyPoolPicks};
+  // Only stamp regenVariant when it's a real reshuffle (>0): a variant-0 plan keeps the exact
+  // shape every stored/compared plan already has, so nothing existing changes.
+  if(variant) plan.regenVariant = variant;
   // Post-generation balancing pass (see autoBalancePlan's doc, below) — deterministic and
   // bounded, so this stays a pure function of the same inputs generateWeek already is.
   autoBalancePlan(plan);
@@ -2595,7 +2625,10 @@ function ensureWeekPlan(mondayISO){
     const previousPlan = plan ? deepClone(plan) : null;
     const stale = !plan || !planSignatureMatches(plan.signature, sig) || plan.weekStartDate !== monday || planReferencesMissingRecipe(plan);
     if(stale){
-      plan = generateWeek({weekStartDate: monday, signature: sig});
+      // Preserve a manual-Regenerate reshuffle across an automatic regeneration (a profile/
+      // signature change) — otherwise an unrelated auto-regen would silently snap the week back
+      // to variant 0's arrangement. previousPlan carries the last variant (0 if never reshuffled).
+      plan = generateWeek({weekStartDate: monday, signature: sig, variant: (previousPlan && previousPlan.regenVariant) || 0});
       applyMealRulesToPlan(plan);
       preserveLoggedSlots(previousPlan, plan);
       preservePinnedSlots(previousPlan, plan);
