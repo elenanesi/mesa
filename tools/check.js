@@ -2573,6 +2573,53 @@ function testPlanSnacksOff(ctx){
   }
 }
 
+// REGRESSION (2026-08-23): "swap doesn't work". In a TWO-person household where a person turned
+// snacks off, that person's snack cells are the intentionally-empty {recipeId:null} placeholder.
+// planReferencesMissingRecipe() used to treat RECIPES_DB[null] as a MISSING recipe (it only
+// skipped the empty half for SOLO households), so the plan read "stale" on every ensureWeekPlan()
+// call, regenerated the whole week, and silently reverted any un-pinned/un-logged manual swap.
+// This pins: (a) an empty snack cell in a two-person plan is NOT flagged missing, (b) ensureWeekPlan
+// is idempotent (no every-call regen loop), (c) a manual swap survives the next ensureWeekPlan().
+function testSwapSurvivesEmptySnackCell(ctx){
+  const savedE = get(ctx, "PROF.elena.planSnacks");
+  const savedA = get(ctx, "PROF.partner.planSnacks");
+  const savedSize = get(ctx, 'householdSize');
+  const savedManual = get(ctx, 'householdSizeManual');
+  try {
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;" +
+      "householdSize = 2; householdSizeManual = true;" +               // force a two-person household
+      "PROF.elena.planSnacks = false; PROF.partner.planSnacks = true;"); // elena's snack cells go empty
+    const plan = call(ctx, 'ensureWeekPlan', []);
+    // (a) elena's snack cells really are the empty placeholder, and the checker does NOT flag them.
+    const snack0 = plan.days[0].meals.snack;
+    assert(snack0.elena.recipeId === null && snack0.partner.recipeId !== null,
+      'setup: two-person + elena snacks-off leaves elena\'s snack cell empty, partner\'s filled', JSON.stringify({e: snack0.elena.recipeId, p: snack0.partner.recipeId}));
+    assert(call(ctx, 'planReferencesMissingRecipe', [plan]) === false,
+      'planReferencesMissingRecipe: a two-person plan\'s empty (snacks-off) snack cell is NOT a missing recipe', '');
+    // (b) idempotent: re-calling ensureWeekPlan does not regenerate (the every-call regen loop).
+    const planAgain = call(ctx, 'ensureWeekPlan', []);
+    assert(JSON.stringify(planAgain) === JSON.stringify(plan),
+      'ensureWeekPlan: a two-person snacks-off plan does not regenerate on a repeat call (no every-call regen loop)', '');
+    // (c) a manual swap of elena's breakfast persists across the next ensureWeekPlan() call.
+    const mon = plan.weekStartDate;
+    const origBreakfast = get(ctx, "weekPlans['" + mon + "'].days[0].meals.breakfast.elena.recipeId");
+    const alts = call(ctx, 'buildSwapAlternatives', [0, 'breakfast', 'elena', mon]);
+    const target = (alts || []).filter(function(a){ return a.id !== origBreakfast; })[0];
+    assert(target && target.id, 'setup: a breakfast swap alternative exists', JSON.stringify((alts || []).slice(0, 3)));
+    call(ctx, 'applySwap', [0, 'breakfast', 'elena', target.id, mon]);
+    const afterSwap = get(ctx, "weekPlans['" + mon + "'].days[0].meals.breakfast.elena.recipeId");
+    assert(afterSwap === target.id, 'applySwap: elena\'s breakfast is set to the chosen recipe', 'orig=' + origBreakfast + ' got=' + afterSwap);
+    call(ctx, 'ensureWeekPlan', []); // the render path calls this repeatedly; the swap must NOT revert
+    const afterEnsure = get(ctx, "weekPlans['" + mon + "'].days[0].meals.breakfast.elena.recipeId");
+    assert(afterEnsure === target.id,
+      'THE REGRESSION: a manual swap survives the next ensureWeekPlan() (was reverted because empty snack cells forced constant regeneration)',
+      'expected=' + target.id + ' got=' + afterEnsure);
+  } finally {
+    run(ctx, "PROF.elena.planSnacks = " + (savedE === false ? 'false' : 'true') + "; PROF.partner.planSnacks = " + (savedA === false ? 'false' : 'true') + ";" +
+      "householdSize = " + JSON.stringify(savedSize) + "; householdSizeManual = " + (savedManual ? 'true' : 'false') + "; weekPlans = {}; weekPlan = null;");
+  }
+}
+
 /* ---------------- task C2 (2026-07-18): "Tune next week" ----------------
    nextWeekTuning (state.js) folds into computePlanSignature() and adds
    planner.js:tuningBonus() as a low-weight secondary term in pickSharedMeal/
@@ -11582,6 +11629,7 @@ function main(){
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('snacks optional (planSnacks off)', function(){ testPlanSnacksOff(ctx); });
   runTest('planSnacks: per-person persistence, legacy migration + sync', function(){ testPlanSnacksPersistenceAndSync(ctx); });
+  runTest('swap survives an empty snack cell (two-person snacks-off regen bug)', function(){ testSwapSurvivesEmptySnackCell(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('nutrition-claims audit: guidance, estimates and retired rules', function(){ testNutritionClaimsAudit(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });

@@ -2540,9 +2540,16 @@ function planReferencesMissingRecipe(plan){
       const slot = SLOT_ORDER[s];
       const m = meals[slot];
       if(!m || !m.elena || !m.partner) return true;
+      // A null recipeId is an INTENTIONALLY EMPTY cell (emptyPlanEntry()), not a dangling
+      // reference: the solo partner half (above) AND a snack cell for a person who turned
+      // snacks off (state.js PROF.planSnacks, per-person since 2026-08-23; household-level
+      // before that) both legitimately carry recipeId:null. Only a NON-null id that's absent
+      // from RECIPES_DB is a genuinely missing recipe. Without the null guard, any such empty
+      // cell reads as "missing" forever, so ensureWeekPlan() regenerates on EVERY call and
+      // silently reverts every un-pinned/un-logged swap (the "swap doesn't work" bug).
       if(m.shared && m.recipeId && !RECIPES_DB[m.recipeId]) return true;
-      if(!RECIPES_DB[m.elena.recipeId]) return true;
-      if(!soloHousehold && !RECIPES_DB[m.partner.recipeId]) return true;
+      if(m.elena.recipeId != null && !RECIPES_DB[m.elena.recipeId]) return true;
+      if(!soloHousehold && m.partner.recipeId != null && !RECIPES_DB[m.partner.recipeId]) return true;
     }
   }
   return false;
