@@ -597,7 +597,18 @@ function sidePoolFor(avoidList, persons){
    is complete for every selectable variant. */
 function mealStructureForRecipe(recipe){
   const parts = {protein: 0, carbs: 0, vegG: 0};
-  (recipe && recipe.ingredients || []).forEach(function(ing){
+  // A recipe-of-recipes ("Meal": ingredients:[] + components:[{recipeId,portion}]) carries its
+  // protein/carb/veg inside its SUB-recipes, so read its EFFECTIVE ingredients (engine.js
+  // resolves + scales each component, recursively) — otherwise a composite Meal always reads as
+  // protein:false/carbs:false/veg:false and can never pass the lunch/dinner completeness contract
+  // (isCompleteLunchDinnerRecipe) to be auto-planned. Scoped to recipes that ACTUALLY have
+  // components: a plain recipe still reads its own `ingredients` verbatim, so no existing
+  // recipe's classification (and no generated plan) shifts. recipeHitsAvoid/recipeViolatesDiet
+  // already resolve components the same way — this brings the composition contract in line.
+  const list = (recipe && Array.isArray(recipe.components) && recipe.components.length && typeof recipeEffectiveIngredients === 'function')
+    ? recipeEffectiveIngredients(recipe)
+    : (recipe && recipe.ingredients || []);
+  list.forEach(function(ing){
     const food = FOODS[ing[0]];
     if(!food) return;
     const grams = Number(ing[1]) || 0;

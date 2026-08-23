@@ -3541,6 +3541,34 @@ function testRecipeComponents(ctx){
   ['spring-rolls', 'meat-gyozas', 'fried-rice-veg', 'stir-fried-noodles', 'almond-chicken'].forEach(function(id){
     assert(!!RECIPES_DB[id], 'sub-recipe "' + id + '" exists as a standalone recipe', id);
   });
+
+  // (7) "Meal" plannability (2026-08-23): mealStructureForRecipe now resolves a composite's
+  // components, so a recipe-of-recipes passes the lunch/dinner completeness contract instead of
+  // reading as empty. The Chinese dinner has real protein (chicken/pork), carbs (rice/noodles)
+  // and >=80g veg across its sub-recipes, so it's a COMPLETE meal the planner could auto-plan
+  // (were it not flagged occasional) or accept as a swap target.
+  assert(call(ctx, 'isCompleteLunchDinnerRecipe', ['cena-cinese']) === true,
+    'isCompleteLunchDinnerRecipe: a composite Meal resolves its sub-recipes and reads as a complete meal', '');
+  const struct = call(ctx, 'mealStructureForRecipe', [RECIPES_DB['cena-cinese']]);
+  assert(struct.protein === true && struct.carbs === true && struct.veg === true,
+    'mealStructureForRecipe: a composite Meal has protein+carbs+veg from its components', JSON.stringify(struct));
+
+  // (8) a NON-occasional composite is actually included by candidatesFor for its slots (proves
+  // the whole eligibility path, not just the contract helper). Snapshot/restore RECIPES_DB so
+  // this synthetic Meal never leaks into another test's plan.
+  const savedOccasional = RECIPES_DB['cena-cinese'].occasional;
+  try {
+    run(ctx, "RECIPES_DB['cena-cinese'].occasional = false;");
+    const pool = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena', 'partner']]);
+    assert(pool.indexOf('cena-cinese') !== -1,
+      'candidatesFor: a non-occasional composite Meal enters the dinner candidate pool', JSON.stringify(pool.slice(0, 8)));
+    run(ctx, "RECIPES_DB['cena-cinese'].occasional = true;");
+    const poolOcc = call(ctx, 'candidatesFor', ['dinner', 'balanced', [], ['elena', 'partner']]);
+    assert(poolOcc.indexOf('cena-cinese') === -1,
+      'candidatesFor: an occasional Meal stays OUT of the auto-plan pool (still selectable via swap)', '');
+  } finally {
+    run(ctx, "RECIPES_DB['cena-cinese'].occasional = " + (savedOccasional ? 'true' : 'false') + ";");
+  }
 }
 
 /* ---------------- VARIETY-plan.md P2: weekly repetition caps ----------------
