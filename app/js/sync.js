@@ -497,7 +497,12 @@ function detectDirtySections(){
 // connection yet, and a fresh boot needs to catch up on whatever the other phone did while
 // this one was closed.
 let lastSyncedRev = {};
-let lastMirroredCatalogSignature = null;
+// Per-row content signatures of the last SUCCESSFULLY mirrored library push (foods/recipes/
+// prefs/tombstones) — see diffLibraryCatalogPayload's doc block. Persisted (state.js's
+// buildSnapshot/loadState, alongside syncState.sync) so a SW-forced reload after a deploy
+// does NOT re-push the whole library: unlike the old in-memory-only whole-catalog signature,
+// this survives the reload and mirrorLibraryCatalogToD1 sees "nothing changed" correctly.
+let mirroredRowSignatures = {foods: {}, recipes: {}, recipePrefs: {}, deletedFoods: {}, deletedRecipes: {}};
 
 // state.js:persist() hooks — see that function's doc for why before/after matters.
 function onMesaBeforePersist(){ detectDirtySections(); }
@@ -595,17 +600,76 @@ function buildLibraryCatalogPayload(){
   };
 }
 
-function catalogPayloadSignature(payload){
-  return JSON.stringify({
-    foods: payload.foods.map(function(f){
-      const d = f.data || {};
-      return [f.id, f.source, f.updatedAt, f.season, d.name, d.iconKey, d.iconAsset, d.cat, d.sugarQuality, d.components, d.yieldG, d.bought, d.variants, d.flags];
-    }),
-    recipes: payload.recipes.map(function(r){ return [r.id, r.source, r.updatedAt, r.season, r.data && r.data.title, r.data && r.data.imageKey, r.data && r.data.imageUri]; }),
-    recipePrefs: payload.recipePrefs,
-    deletedFoods: payload.deletedFoods,
-    deletedRecipes: payload.deletedRecipes
+// Per-row content signature — SAME shallow field set the old whole-catalog signature used
+// (see git history), just computed per-row instead of over the whole payload, so a single
+// food/recipe edit only marks THAT row dirty instead of invalidating everything.
+function foodRowSignature(f){
+  const d = f.data || {};
+  return JSON.stringify([f.source, f.updatedAt, f.season, d.name, d.iconKey, d.iconAsset, d.cat, d.sugarQuality, d.components, d.yieldG, d.bought, d.variants, d.flags]);
+}
+function recipeRowSignature(r){
+  return JSON.stringify([r.source, r.updatedAt, r.season, r.data && r.data.title, r.data && r.data.imageKey, r.data && r.data.imageUri]);
+}
+
+// Diffs a (builtin-stripped) library catalog payload against the last-successfully-mirrored
+// per-row signatures and returns only what actually changed, plus the full next-signature
+// map (mirrorLibraryCatalogToD1 below persists this ONLY after a successful push — see its
+// doc block for why the write budget blew through 100k rows/day without this: the old code
+// tracked a single whole-catalog signature IN MEMORY ONLY, so any SW-forced reload (every
+// deploy) re-pushed all ~170 rows even when nothing had changed, and any single edit
+// invalidated that one signature and re-pushed everything else too).
+function diffLibraryCatalogPayload(payload, prevSigs){
+  prevSigs = prevSigs || {};
+  const prevFoods = prevSigs.foods || {};
+  const prevRecipes = prevSigs.recipes || {};
+  const prevPrefs = prevSigs.recipePrefs || {};
+  const prevDeletedFoods = prevSigs.deletedFoods || {};
+  const prevDeletedRecipes = prevSigs.deletedRecipes || {};
+
+  const nextFoods = {};
+  const changedFoods = payload.foods.filter(function(f){
+    const sig = foodRowSignature(f);
+    nextFoods[f.id] = sig;
+    return prevFoods[f.id] !== sig;
   });
+  const nextRecipes = {};
+  const changedRecipes = payload.recipes.filter(function(r){
+    const sig = recipeRowSignature(r);
+    nextRecipes[r.id] = sig;
+    return prevRecipes[r.id] !== sig;
+  });
+  const changedPrefs = {};
+  Object.keys(payload.recipePrefs).forEach(function(id){
+    if(prevPrefs[id] !== payload.recipePrefs[id]) changedPrefs[id] = payload.recipePrefs[id];
+  });
+  const changedDeletedFoods = {};
+  Object.keys(payload.deletedFoods).forEach(function(id){
+    if(prevDeletedFoods[id] !== payload.deletedFoods[id]) changedDeletedFoods[id] = payload.deletedFoods[id];
+  });
+  const changedDeletedRecipes = {};
+  Object.keys(payload.deletedRecipes).forEach(function(id){
+    if(prevDeletedRecipes[id] !== payload.deletedRecipes[id]) changedDeletedRecipes[id] = payload.deletedRecipes[id];
+  });
+
+  return {
+    changed: {
+      foods: changedFoods,
+      recipes: changedRecipes,
+      recipePrefs: changedPrefs,
+      deletedFoods: changedDeletedFoods,
+      deletedRecipes: changedDeletedRecipes
+    },
+    // Replaces (not merges into) prevSigs — a row that dropped out of the payload (e.g. a
+    // custom food reverted to builtin) drops out of the tracked map too, so it doesn't grow
+    // unboundedly with dead ids.
+    nextSigs: {
+      foods: nextFoods,
+      recipes: nextRecipes,
+      recipePrefs: clone(payload.recipePrefs),
+      deletedFoods: clone(payload.deletedFoods),
+      deletedRecipes: clone(payload.deletedRecipes)
+    }
+  };
 }
 
 function mirrorLibraryCatalogToD1(){
@@ -615,7 +679,7 @@ function mirrorLibraryCatalogToD1(){
   // through this HTTP path — and the worker now rejects scope='global' writes from
   // /library/:code regardless. Mirror only this household's own data (custom/override
   // rows); sending builtin rows would just be rejected server-side, so strip them here
-  // and sign/POST the same filtered payload to keep the "unchanged" short-circuit correct.
+  // and diff/POST the same filtered payload to keep the "unchanged" short-circuit correct.
   const payload = {
     foods: fullPayload.foods.filter(function(f){ return f.source !== 'builtin'; }),
     recipes: fullPayload.recipes.filter(function(r){ return r.source !== 'builtin'; }),
@@ -623,22 +687,31 @@ function mirrorLibraryCatalogToD1(){
     deletedFoods: fullPayload.deletedFoods,
     deletedRecipes: fullPayload.deletedRecipes
   };
-  const sig = catalogPayloadSignature(payload);
-  if(sig === lastMirroredCatalogSignature) return;
-  lastMirroredCatalogSignature = sig;
+  const diff = diffLibraryCatalogPayload(payload, mirroredRowSignatures);
+  const changed = diff.changed;
+  const nothingChanged = changed.foods.length === 0 && changed.recipes.length === 0 &&
+    Object.keys(changed.recipePrefs).length === 0 && Object.keys(changed.deletedFoods).length === 0 &&
+    Object.keys(changed.deletedRecipes).length === 0;
+  if(nothingChanged) return;
   fetch(SYNC_URL + '/library/' + encodeURIComponent(syncState.code), {
     method: 'POST',
     // Phase 3B: authHeader() (auth.js) rides along whenever a session is signed in; sync.js
     // must not hard-depend on auth.js being loaded, hence the typeof guard.
     headers: Object.assign({'Content-Type': 'application/json'}, (typeof authHeader === 'function' ? authHeader() : {})),
-    body: JSON.stringify(payload)
+    body: JSON.stringify(changed)
   }).then(function(res){
     // Session died server-side (REQUIRE_SESSION mode) — clear it and show the login gate.
     // Only a 401 with a token actually stored means this; any other status is untouched,
     // existing error handling below (this call never checked status before 3B).
     if(res.status === 401 && typeof authToken === 'function' && authToken() && typeof authSessionExpired === 'function') authSessionExpired();
+    // Only commit the new signatures — and persist them past this reload — once the push
+    // actually succeeded; a network error (below) or a non-2xx response must leave
+    // mirroredRowSignatures untouched so the same rows are retried next time.
+    if(res.ok){
+      mirroredRowSignatures = diff.nextSigs;
+      persist();
+    }
   }).catch(function(err){
-    lastMirroredCatalogSignature = null;
     console.warn('Mesa sync: D1 library mirror failed, will retry later', err);
   });
 }
@@ -1139,6 +1212,9 @@ function createHousehold(){
   const code = generateHouseholdCode();
   syncState.code = code;
   syncState.lastSyncedAt = null;
+  // Fresh household, nothing on the server yet — any signatures left over from a previous
+  // household must not make this device think its rows are already mirrored.
+  mirroredRowSignatures = {foods: {}, recipes: {}, recipePrefs: {}, deletedFoods: {}, deletedRecipes: {}};
   const now = Date.now();
   SYNC_SECTIONS.forEach(function(sec){
     syncState.sectionRevs[sec] = 1;
@@ -1170,6 +1246,9 @@ function joinHousehold(){
   if(code.length < 8){ toast('Enter the code your partner shared'); return; }
   syncState.code = code;
   syncState.lastSyncedAt = null;
+  // Same reasoning as createHousehold above — joining a different household's server-side
+  // state means this device's rows must be treated as un-mirrored again.
+  mirroredRowSignatures = {foods: {}, recipes: {}, recipePrefs: {}, deletedFoods: {}, deletedRecipes: {}};
   // Start every section's rev at 1 with "now" — this device's current local content
   // (whatever it is: fresh-install defaults, or its own prior solo use) becomes what it
   // offers into the merge. For LWW sections it will almost always lose to an

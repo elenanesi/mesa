@@ -99,6 +99,24 @@ Week workspace.
   stored). Curate the gram-per-unit weights carefully from standard references — a tbsp of oil ≠ a
   tbsp of flour. Built-in FOODS are file-based, so adding food fields is a Pages deploy (no D1 seed).
 
+**D1 mirror sync now writes a per-row diff, not the whole library (FIXED 2026-08-23).**
+`mirrorLibraryCatalogToD1()` (`app/js/sync.js`) used to rewrite the household's ENTIRE custom
+library (foods + recipes + prefs, ~170 rows) on every couple-sync — not just what changed — and
+each deploy forced every open client to reload (new SW → fresh boot → fresh full mirror push).
+That blew through the D1 free-tier write budget (100k rows/day) on 2026-08-22 — 144,008 rows
+written, triggering a Cloudflare usage-limit warning email (root cause confirmed via Cloudflare
+GraphQL Analytics `d1AnalyticsAdaptiveGroups`; Workers requests and D1 reads were far under their
+limits, only D1 writes exceeded). **Fix shipped:** `diffLibraryCatalogPayload()` computes a
+per-row content signature (foods/recipes/prefs/tombstones) and the mirror POSTs ONLY the rows
+whose signature changed since the last successful push; if nothing changed it makes zero network
+calls. The signature map (`mirroredRowSignatures`) is now persisted (state.js
+`buildSnapshot`/`loadState`, `libraryMirror` field) so a SW-forced reload after a deploy no longer
+re-pushes an unchanged library. Signatures commit only on a successful (`res.ok`) push, so a
+failed push retries the same rows. Worker (`worker/sync.js handleLibraryPost`) needed no change —
+it already does per-row `INSERT...ON CONFLICT`, so fewer rows in = fewer D1 writes. Regression
+tests in `tools/check.js` (`diffLibraryCatalogPayload` per-row diffing + `mirrorLibraryCatalogToD1`
+sends-only-changed-rows). Merge invariants (`mergeLibrarySection`, tombstones) unchanged.
+
 **UX-review residuals** (from the retired `UX-REVIEW-plan.md`):
 - **Log ⇄ tab bar (P1).** Log is reachable only via the centre ＋ FAB and no tab highlights while on
   it (`app/js/app.js`, `go('log')` finds no matching `.tab`). Options: give Log a real tab, fold the

@@ -1387,6 +1387,108 @@ function emptyLibrarySection(){
   return {customFoods: {}, foodOverrides: {}, customRecipes: {}, recipeOverrides: {}, deletedRecipes: {}, deletedFoods: {}, recipePrefs: {elena: {}, partner: {}}};
 }
 
+// D1 mirror write-efficiency fix (2026-08-23, see STATUS.md/AGENT-HANDOVER.md): pure-function
+// coverage of diffLibraryCatalogPayload (js/sync.js), the per-row signature diff that replaced
+// the old whole-catalog signature. Covers: (a) a repeated call with the SAME payload against the
+// signatures it just produced yields an empty diff (no re-push of unchanged rows — this is what
+// makes a SW-forced reload after a deploy a no-op instead of a full re-mirror), (b) editing one
+// row's signature-relevant fields marks ONLY that row changed, and (c) a row that drops out of
+// the payload entirely (e.g. reverted from custom back to builtin) is dropped from the tracked
+// signature map too, instead of accumulating dead ids forever.
+function libraryMirrorTestPayload(){
+  return {
+    foods: [
+      {id: 'cf-a', source: 'custom', name: 'Food A', category: 'produce', season: 'evergreen', updatedAt: 1000, data: {name: 'Food A', cat: 'produce'}},
+      {id: 'cf-b', source: 'custom', name: 'Food B', category: 'produce', season: 'evergreen', updatedAt: 1000, data: {name: 'Food B', cat: 'produce'}}
+    ],
+    recipes: [
+      {id: 'cr-a', source: 'custom', title: 'Recipe A', primarySlot: 'dinner', season: 'evergreen', updatedAt: 1000, data: {title: 'Recipe A'}}
+    ],
+    recipePrefs: {'cr-a': 'favorite'},
+    deletedFoods: {},
+    deletedRecipes: {}
+  };
+}
+function testDiffLibraryCatalogPayload(ctx){
+  const payload = libraryMirrorTestPayload();
+
+  // (0) Nothing synced yet (prevSigs = {}): every row is "changed" — a fresh mirror push
+  // (matching the old always-push-everything behavior) sends the whole thing once.
+  const first = call(ctx, 'diffLibraryCatalogPayload', [cloneJSON(payload), {}]);
+  assert(first.changed.foods.length === 2 && first.changed.recipes.length === 1 && Object.keys(first.changed.recipePrefs).length === 1,
+    'diffLibraryCatalogPayload: with no prior signatures, every row is treated as changed', JSON.stringify(first.changed));
+
+  // (a) Same payload again, diffed against the signatures the first call produced: nothing
+  // changed, so nothing would be sent (zero D1 writes on a repeated sync of an unchanged library).
+  const second = call(ctx, 'diffLibraryCatalogPayload', [cloneJSON(payload), first.nextSigs]);
+  assert(second.changed.foods.length === 0 && second.changed.recipes.length === 0 &&
+    Object.keys(second.changed.recipePrefs).length === 0 && Object.keys(second.changed.deletedFoods).length === 0 &&
+    Object.keys(second.changed.deletedRecipes).length === 0,
+    'diffLibraryCatalogPayload: an unchanged payload diffs to nothing changed', JSON.stringify(second.changed));
+
+  // (b) Edit ONE food's updatedAt (what every real save bumps) — only that food is reported
+  // changed, not the whole catalog.
+  const edited = cloneJSON(payload);
+  edited.foods[0].updatedAt = 2000;
+  const third = call(ctx, 'diffLibraryCatalogPayload', [edited, first.nextSigs]);
+  assert(third.changed.foods.length === 1 && third.changed.foods[0].id === 'cf-a',
+    'diffLibraryCatalogPayload: editing one food only marks that food changed', JSON.stringify(third.changed.foods));
+  assert(third.changed.recipes.length === 0 && Object.keys(third.changed.recipePrefs).length === 0,
+    'diffLibraryCatalogPayload: editing one food leaves unrelated recipes/prefs unchanged', JSON.stringify(third.changed));
+
+  // (c) A row that disappears from the payload (e.g. reverted to builtin) is dropped from the
+  // next signature map, not carried forward forever.
+  const shrunk = cloneJSON(payload);
+  shrunk.foods = shrunk.foods.filter(function(f){ return f.id !== 'cf-b'; });
+  const fourth = call(ctx, 'diffLibraryCatalogPayload', [shrunk, first.nextSigs]);
+  assert(!('cf-b' in fourth.nextSigs.foods), 'diffLibraryCatalogPayload: a row dropped from the payload is dropped from the tracked signatures',
+    JSON.stringify(fourth.nextSigs.foods));
+}
+
+// End-to-end (still synchronous — see mirrorLibraryCatalogToD1's early "nothing changed" return,
+// which happens before any fetch()) coverage of mirrorLibraryCatalogToD1 itself: a fully-synced
+// library makes ZERO fetch calls, and editing one food sends a payload containing ONLY that food.
+function testMirrorLibraryCatalogToD1SendsOnlyChangedRows(ctx){
+  ctx.__restoreMirrorCustomFoods = get(ctx, 'customFoods');
+  ctx.__restoreMirrorFoodOverrides = get(ctx, 'foodOverrides');
+  ctx.__restoreMirrorSyncCode = get(ctx, 'syncState').code;
+  ctx.__restoreMirrorSigs = get(ctx, 'mirroredRowSignatures');
+  const savedFetch = ctx.fetch;
+  try{
+    run(ctx, "customFoods = {'cf-mirror-a': {name:'Mirror A', cat:'produce', kcal:50, protein:1, carbs:10, fat:0, u:1000}, 'cf-mirror-b': {name:'Mirror B', cat:'produce', kcal:60, protein:1, carbs:10, fat:0, u:1000}}; applyCustomFoods();");
+    run(ctx, "syncState.code = 'MIRRORTESTHOUSEHOLD1';");
+    // Prime mirroredRowSignatures as "already fully synced" using the SAME production helpers
+    // mirrorLibraryCatalogToD1 itself calls, so this test tracks real behavior rather than a
+    // re-implementation of the filtering logic.
+    run(ctx,
+      "var __full = buildLibraryCatalogPayload();" +
+      "var __filtered = {foods: __full.foods.filter(function(f){return f.source!=='builtin';}), recipes: __full.recipes.filter(function(r){return r.source!=='builtin';}), recipePrefs: __full.recipePrefs, deletedFoods: __full.deletedFoods, deletedRecipes: __full.deletedRecipes};" +
+      "mirroredRowSignatures = diffLibraryCatalogPayload(__filtered, {}).nextSigs;"
+    );
+
+    const callsBefore = [];
+    ctx.fetch = function(url, opts){ callsBefore.push({url: url, body: JSON.parse(opts.body)}); return Promise.resolve({ok: true, status: 200}); };
+    call(ctx, 'mirrorLibraryCatalogToD1', []);
+    assert(callsBefore.length === 0, 'mirrorLibraryCatalogToD1: a fully-synced library makes zero fetch calls on a repeated sync', JSON.stringify(callsBefore));
+
+    run(ctx, "customFoods['cf-mirror-a'].u = 2000; applyCustomFoods();");
+    const callsAfter = [];
+    ctx.fetch = function(url, opts){ callsAfter.push({url: url, body: JSON.parse(opts.body)}); return Promise.resolve({ok: true, status: 200}); };
+    call(ctx, 'mirrorLibraryCatalogToD1', []);
+    assert(callsAfter.length === 1, 'mirrorLibraryCatalogToD1: editing one food triggers exactly one push', JSON.stringify(callsAfter));
+    const sentFoods = callsAfter[0] && callsAfter[0].body && callsAfter[0].body.foods;
+    assert(Array.isArray(sentFoods) && sentFoods.length === 1 && sentFoods[0].id === 'cf-mirror-a',
+      'mirrorLibraryCatalogToD1: the push contains ONLY the changed food, not the whole library', JSON.stringify(sentFoods));
+  } finally {
+    ctx.fetch = savedFetch;
+    run(ctx,
+      "customFoods = __restoreMirrorCustomFoods; foodOverrides = __restoreMirrorFoodOverrides; applyCustomFoods();" +
+      "syncState.code = __restoreMirrorSyncCode; mirroredRowSignatures = __restoreMirrorSigs;" +
+      "delete __restoreMirrorCustomFoods; delete __restoreMirrorFoodOverrides; delete __restoreMirrorSyncCode; delete __restoreMirrorSigs;"
+    );
+  }
+}
+
 // mergeLibrarySection case (a): same id edited on both sides with different `u`
 // stamps — the newer wins regardless of which side is passed as `local`.
 function testMergeLibraryNewerWins(ctx){
@@ -11338,6 +11440,8 @@ function main(){
   runTest('recipe image picker', function(){ testRecipeImagePicker(ctx); });
   runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
+  runTest('D1 library mirror: diffLibraryCatalogPayload per-row diffing', function(){ testDiffLibraryCatalogPayload(ctx); });
+  runTest('D1 library mirror: mirrorLibraryCatalogToD1 sends only changed rows', function(){ testMirrorLibraryCatalogToD1SendsOnlyChangedRows(ctx); });
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });

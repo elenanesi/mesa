@@ -963,7 +963,12 @@ function buildSnapshot(){
       lastSyncedAt: syncState.lastSyncedAt,
       sectionRevs: syncState.sectionRevs,
       sectionUpdatedAt: syncState.sectionUpdatedAt
-    }
+    },
+    // D1 library mirror write-efficiency fix (2026-08-23): per-row signatures of the last
+    // SUCCESSFULLY mirrored push (js/sync.js: mirroredRowSignatures / diffLibraryCatalogPayload).
+    // Persisted (not just in-memory) so a SW-forced reload after a deploy doesn't re-push the
+    // whole household library when nothing actually changed — see js/sync.js's doc block.
+    libraryMirror: mirroredRowSignatures
   };
 }
 
@@ -1395,5 +1400,33 @@ function loadState(){
         if(typeof v === 'number' && isFinite(v)) syncState.sectionUpdatedAt[k] = v;
       });
     }
+  }
+
+  // D1 library mirror write-efficiency fix (2026-08-23) — see buildSnapshot's libraryMirror
+  // doc above. Absent on any pre-fix store (or a fresh install), in which case it stays the
+  // in-code empty default: mirrorLibraryCatalogToD1's diff then treats every row as unmirrored
+  // and pushes the whole library once, same as the old behavior always did.
+  mirroredRowSignatures = {foods: {}, recipes: {}, recipePrefs: {}, deletedFoods: {}, deletedRecipes: {}};
+  if(saved.libraryMirror && typeof saved.libraryMirror === 'object'){
+    ['foods', 'recipes'].forEach(function(kind){
+      const src = saved.libraryMirror[kind];
+      if(!src || typeof src !== 'object') return;
+      Object.keys(src).forEach(function(id){
+        if(typeof src[id] === 'string') mirroredRowSignatures[kind][id] = src[id];
+      });
+    });
+    if(saved.libraryMirror.recipePrefs && typeof saved.libraryMirror.recipePrefs === 'object'){
+      Object.keys(saved.libraryMirror.recipePrefs).forEach(function(id){
+        const v = saved.libraryMirror.recipePrefs[id];
+        if(v === 'favorite' || v === 'down') mirroredRowSignatures.recipePrefs[id] = v;
+      });
+    }
+    ['deletedFoods', 'deletedRecipes'].forEach(function(kind){
+      const src = saved.libraryMirror[kind];
+      if(!src || typeof src !== 'object') return;
+      Object.keys(src).forEach(function(id){
+        if(typeof src[id] === 'number' && isFinite(src[id])) mirroredRowSignatures[kind][id] = src[id];
+      });
+    });
   }
 }

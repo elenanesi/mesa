@@ -184,3 +184,13 @@ offline fallback to match your curated catalog. `check.js`'s catalog tests valid
   cache keeps serving the OLD `js/*.js` even with a no-store server + SW unregister + hard reload.
   The reliable fix is to serve from a **FRESH PORT** (new origin) each time — see the preview
   section above.
+- **D1 free-tier write budget (100k rows/day) — the mirror now writes a per-row diff (fixed
+  2026-08-23), but deploys still cost writes.** `mirrorLibraryCatalogToD1()` (`app/js/sync.js`)
+  used to push the household's **entire** custom library (~170 rows) on every couple-sync; on
+  2026-08-22 a day of ~20 rapid-fire deploys hit **144,008** rows and tripped Cloudflare's
+  usage-limit email. It now POSTs only rows whose per-row signature changed
+  (`diffLibraryCatalogPayload`), and the signature map is persisted (`mirroredRowSignatures` →
+  state.js `libraryMirror`) so a SW-forced reload after a deploy no longer re-pushes an unchanged
+  library. A genuinely unchanged library now costs **zero** D1 writes per sync. Real edits still
+  write their changed rows, so batching several content changes into one deploy is still the
+  polite default, but the old whole-library-every-reload amplification is gone.
