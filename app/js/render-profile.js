@@ -452,13 +452,15 @@ function toggleGoal(profKey, goalKey, el){
 // pills. Renders removable pills from the persisted array, plus a picker of the
 // remaining AVOID_KEYS (state.js) behind the "＋ Add" field — free-text isn't supported
 // in MVP (cap-note in index.html says so), so there's nothing to validate/parse here.
-// Household-level "plan a daily snack?" toggle (owner request 2026-08-22). Mirrors toggleShared:
-// flips the flag, repaints the row, regenerates future days (planSnacks is a plan-signature input,
-// so the next ensureWeekPlan() picks it up), and refreshes every plan surface.
+// PER-PERSON "plan a daily snack?" toggle (owner request: 2026-08-22 as a household toggle,
+// changed 2026-08-23 to per-person). Flips ONLY the current person's PROF.planSnacks, repaints
+// the row, regenerates future days (it's a plan-signature input, so the next ensureWeekPlan()
+// picks it up — the signature reads BOTH people's flags), and refreshes every plan surface.
 function togglePlanSnacks(el){
-  planSnacks = !planSnacks;
+  const p = PROF[currentProf];
+  p.planSnacks = (p.planSnacks === false); // was off -> on; was on/undefined -> off
   renderPlanSnacksToggle();
-  if(typeof toast === 'function') toast(planSnacks ? 'Snacks are back in your plan' : 'Snacks off — breakfast, lunch and dinner only');
+  if(typeof toast === 'function') toast(p.planSnacks ? 'Snacks are back in your plan' : 'Snacks off — breakfast, lunch and dinner only');
   if(typeof ensureWeekPlan === 'function') ensureWeekPlan();
   if(typeof recomputeConsumed === 'function') recomputeConsumed(currentProf);
   if(typeof recomputeProf === 'function') recomputeProf(currentProf);
@@ -468,12 +470,14 @@ function togglePlanSnacks(el){
   if(typeof renderWeek === 'function') renderWeek();
   if(typeof persist === 'function') persist();
 }
-// Paints the #planSnacksOpt row from the current planSnacks flag — called by applyProf (so it's
-// in sync whenever the Profile renders) and by togglePlanSnacks. No-op if the markup isn't mounted.
+// Paints the #planSnacksOpt row from the CURRENT person's PROF.planSnacks — called by applyProf
+// (so it's in sync whenever the Profile renders, including after switching person) and by
+// togglePlanSnacks. Defaults to on for any value other than explicit false. No-op if unmounted.
 function renderPlanSnacksToggle(){
   const el = document.getElementById('planSnacksOpt');
   if(!el) return;
-  const on = (typeof planSnacks === 'undefined') || planSnacks;
+  const p = PROF[currentProf];
+  const on = !p || p.planSnacks !== false;
   el.classList.toggle('sel', on);
   const ck = el.querySelector('.ck'); if(ck) ck.textContent = on ? '✓' : '';
   const st = document.getElementById('planSnacksState'); if(st) st.textContent = on ? 'On' : 'Off';

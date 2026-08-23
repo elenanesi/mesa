@@ -2516,39 +2516,60 @@ function testPlannerDeterminism(ctx){
   }
 }
 
-// Snacks optional (owner request 2026-08-22): planSnacks=false plans breakfast/lunch/dinner only,
-// leaving the snack cell empty, and the day's calories redistribute across the three meals.
+// Snacks optional (owner request 2026-08-22; made PER-PERSON 2026-08-23): PROF[person].planSnacks
+// =false plans breakfast/lunch/dinner only for THAT person, leaving their snack cell empty, and
+// their day's calories redistribute across the three meals. The other person is unaffected.
 function testPlanSnacksOff(ctx){
-  const savedSnacks = get(ctx, 'planSnacks');
+  const savedE = get(ctx, "PROF.elena.planSnacks");
+  const savedA = get(ctx, "PROF.partner.planSnacks");
   try {
-    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; planSnacks = true;");
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; PROF.elena.planSnacks = true; PROF.partner.planSnacks = true;");
     const withSnacks = call(ctx, 'ensureWeekPlan', []);
-    run(ctx, "weekPlans = {}; weekPlan = null; planSnacks = false;");
+    run(ctx, "weekPlans = {}; weekPlan = null; PROF.elena.planSnacks = false; PROF.partner.planSnacks = false;");
     const noSnacks = call(ctx, 'ensureWeekPlan', []);
     function dayKcal(plan, di, person){
       return ['breakfast', 'lunch', 'dinner', 'snack'].reduce(function(s, slot){
         return s + call(ctx, 'planEntryNutrition', [plan.days[di].meals[slot][person]]).kcal;
       }, 0);
     }
-    // (1) every day's snack cell is empty (recipeId null for BOTH people).
+    // (1) with both off, every day's snack cell is empty (recipeId null for BOTH people).
     let allEmpty = true, anySnackWith = false;
     withSnacks.days.forEach(function(day){ if(day.meals.snack.elena.recipeId) anySnackWith = true; });
     noSnacks.days.forEach(function(day){
       if(day.meals.snack.elena.recipeId !== null || day.meals.snack.partner.recipeId !== null) allEmpty = false;
     });
-    assert(anySnackWith, 'planSnacks=true (baseline): the plan does contain a real snack', '');
-    assert(allEmpty, 'planSnacks=false: every day\'s snack cell is empty (recipeId null)', JSON.stringify(noSnacks.days[0].meals.snack));
+    assert(anySnackWith, 'planSnacks (both on) baseline: the plan does contain a real snack', '');
+    assert(allEmpty, 'planSnacks (both off): every day\'s snack cell is empty (recipeId null)', JSON.stringify(noSnacks.days[0].meals.snack));
     // (2) the day is still fuelled — its calories redistributed across the 3 meals, not left ~10%
     // short. day-0 elena total with snacks off is within ~8% of the with-snacks total.
     const withK = dayKcal(withSnacks, 0, 'elena'), noK = dayKcal(noSnacks, 0, 'elena');
-    assert(noK >= withK * 0.92, 'planSnacks=false: the day still lands near its calorie target across 3 meals (redistributed, not ~10% short)',
+    assert(noK >= withK * 0.92, 'planSnacks (both off): the day still lands near its calorie target across 3 meals (redistributed, not ~10% short)',
       'withSnacks=' + Math.round(withK) + ' noSnacks=' + Math.round(noK));
     // (3) determinism holds with snacks off.
     run(ctx, "weekPlans = {}; weekPlan = null;");
     const noSnacks2 = call(ctx, 'ensureWeekPlan', []);
-    assert(JSON.stringify(noSnacks) === JSON.stringify(noSnacks2), 'planSnacks=false: generation is byte-identical across two fresh runs', '');
+    assert(JSON.stringify(noSnacks) === JSON.stringify(noSnacks2), 'planSnacks (both off): generation is byte-identical across two fresh runs', '');
+
+    // (4) PER-PERSON: elena OFF, partner ON — only elena's snack cells empty; partner keeps a snack.
+    run(ctx, "weekPlans = {}; weekPlan = null; PROF.elena.planSnacks = false; PROF.partner.planSnacks = true;");
+    const mixed = call(ctx, 'ensureWeekPlan', []);
+    let elenaAllEmpty = true, partnerAnySnack = false;
+    mixed.days.forEach(function(day){
+      if(day.meals.snack.elena.recipeId !== null) elenaAllEmpty = false;
+      if(day.meals.snack.partner.recipeId) partnerAnySnack = true;
+    });
+    assert(elenaAllEmpty, 'planSnacks per-person (elena off, partner on): elena\'s snack cells are all empty', JSON.stringify(mixed.days[0].meals.snack.elena));
+    assert(partnerAnySnack, 'planSnacks per-person (elena off, partner on): partner still gets a real snack', JSON.stringify(mixed.days[0].meals.snack.partner));
+    // elena's day still lands near target across her 3 meals; partner's across his 4 (snack included).
+    const mixedElenaK = dayKcal(mixed, 0, 'elena');
+    assert(mixedElenaK >= withK * 0.92, 'planSnacks per-person: elena\'s snack-off day still lands near target across 3 meals',
+      'withSnacks=' + Math.round(withK) + ' mixed=' + Math.round(mixedElenaK));
+    // (5) determinism holds for the mixed case too.
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    const mixed2 = call(ctx, 'ensureWeekPlan', []);
+    assert(JSON.stringify(mixed) === JSON.stringify(mixed2), 'planSnacks per-person (mixed): generation is byte-identical across two fresh runs', '');
   } finally {
-    run(ctx, "planSnacks = " + (savedSnacks ? 'true' : 'false') + "; weekPlans = {}; weekPlan = null;");
+    run(ctx, "PROF.elena.planSnacks = " + (savedE === false ? 'false' : 'true') + "; PROF.partner.planSnacks = " + (savedA === false ? 'false' : 'true') + "; weekPlans = {}; weekPlan = null;");
   }
 }
 
@@ -3906,6 +3927,64 @@ function testRecipePrefsLoadStateMigration(ctx){
   } finally {
     ctx.__savedRecipePrefs__ = savedRecipePrefs;
     run(ctx, 'recipePrefs = __savedRecipePrefs__; delete __savedRecipePrefs__;');
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+  }
+}
+
+// planSnacks is a PER-PERSON profile field (owner 2026-08-23): persists per-person via
+// PERSIST_PROFILE_FIELDS, rides the profile:elena/profile:partner sync sections, and a store
+// saved before the split (single household-level top-level `planSnacks`) migrates onto BOTH
+// people — but a person that already carries its own value keeps it.
+function testPlanSnacksPersistenceAndSync(ctx){
+  const savedE = get(ctx, "PROF.elena.planSnacks");
+  const savedA = get(ctx, "PROF.partner.planSnacks");
+  try{
+    // (a) per-person persist/load round-trip: elena off, partner on survives a reload.
+    run(ctx, "PROF.elena.planSnacks = false; PROF.partner.planSnacks = true;");
+    run(ctx, "localStorage.setItem(STORE_KEY, JSON.stringify(buildSnapshot()));");
+    run(ctx, "PROF.elena.planSnacks = true; PROF.partner.planSnacks = true;"); // scramble in-memory
+    run(ctx, 'loadState();');
+    assert(get(ctx, 'PROF.elena.planSnacks') === false && get(ctx, 'PROF.partner.planSnacks') === true,
+      'loadState(): per-person planSnacks round-trips (elena off, partner on)',
+      'elena=' + get(ctx, 'PROF.elena.planSnacks') + ' partner=' + get(ctx, 'PROF.partner.planSnacks'));
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+
+    // (b) LEGACY migration: a pre-split store had a single top-level planSnacks and no per-person
+    // value — it seeds BOTH people.
+    run(ctx, "PROF.elena.planSnacks = true; PROF.partner.planSnacks = true;");
+    run(ctx,
+      "var __b = buildSnapshot(); delete __b.profiles.elena.planSnacks; delete __b.profiles.partner.planSnacks;" +
+      "__b.planSnacks = false; localStorage.setItem(STORE_KEY, JSON.stringify(__b));");
+    run(ctx, 'loadState();');
+    assert(get(ctx, 'PROF.elena.planSnacks') === false && get(ctx, 'PROF.partner.planSnacks') === false,
+      'loadState(): a legacy household-level planSnacks=false migrates onto BOTH people',
+      'elena=' + get(ctx, 'PROF.elena.planSnacks') + ' partner=' + get(ctx, 'PROF.partner.planSnacks'));
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+
+    // (c) legacy migration must NOT override a person that already carries its own value.
+    run(ctx, "PROF.elena.planSnacks = true; PROF.partner.planSnacks = true;");
+    run(ctx,
+      "var __c = buildSnapshot();" +               // elena keeps planSnacks:true in its profile
+      "delete __c.profiles.partner.planSnacks;" +  // only partner is missing a per-person value
+      "__c.planSnacks = false; localStorage.setItem(STORE_KEY, JSON.stringify(__c));");
+    run(ctx, "PROF.elena.planSnacks = true; PROF.partner.planSnacks = true;");
+    run(ctx, 'loadState();');
+    assert(get(ctx, 'PROF.elena.planSnacks') === true && get(ctx, 'PROF.partner.planSnacks') === false,
+      'loadState(): legacy migration seeds only the person lacking an own value (elena keeps true, partner->false)',
+      'elena=' + get(ctx, 'PROF.elena.planSnacks') + ' partner=' + get(ctx, 'PROF.partner.planSnacks'));
+    run(ctx, "localStorage.removeItem(STORE_KEY);");
+
+    // (d) sync: planSnacks rides the per-person profile section, applied independently per person.
+    run(ctx, "PROF.elena.planSnacks = true;");
+    const sectionE = call(ctx, 'profileSectionData', ['elena']);
+    assert(sectionE.planSnacks === true, 'profileSectionData: carries the person\'s planSnacks', JSON.stringify(sectionE.planSnacks));
+    run(ctx, "PROF.partner.planSnacks = true;"); // ensure a change is observable
+    call(ctx, 'applyProfileSectionData', ['partner', {planSnacks: false}]);
+    assert(get(ctx, 'PROF.partner.planSnacks') === false && get(ctx, 'PROF.elena.planSnacks') === true,
+      'applyProfileSectionData: a synced planSnacks applies to ONLY that person (partner off, elena untouched)',
+      'elena=' + get(ctx, 'PROF.elena.planSnacks') + ' partner=' + get(ctx, 'PROF.partner.planSnacks'));
+  } finally {
+    run(ctx, "PROF.elena.planSnacks = " + (savedE === false ? 'false' : 'true') + "; PROF.partner.planSnacks = " + (savedA === false ? 'false' : 'true') + ";");
     run(ctx, "localStorage.removeItem(STORE_KEY);");
   }
 }
@@ -11474,6 +11553,7 @@ function main(){
   runTest('preserveLoggedSlots/preservePinnedSlots one-sided dangling recipe (2026-07-19)', function(){ testPreserveSlotsOneSidedDangling(ctx); });
   runTest('planner determinism', function(){ testPlannerDeterminism(ctx); });
   runTest('snacks optional (planSnacks off)', function(){ testPlanSnacksOff(ctx); });
+  runTest('planSnacks: per-person persistence, legacy migration + sync', function(){ testPlanSnacksPersistenceAndSync(ctx); });
   runTest('next-week tuning (task C2)', function(){ testNextWeekTuning(ctx); });
   runTest('nutrition-claims audit: guidance, estimates and retired rules', function(){ testNutritionClaimsAudit(ctx); });
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });

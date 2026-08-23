@@ -422,10 +422,14 @@ let svE = 1, svM = 1.5, svS = 1;
 
 /* ---------------- shared-meals model ---------------- */
 const SHARED = {breakfast:false, lunch:false, dinner:true, snack:false};
-// Household-level (like SHARED): plan a daily snack slot? Default true (unchanged behaviour).
-// When false, generateWeek fills only breakfast/lunch/dinner — the day's calorie target spreads
-// across those three meals and the snack cell is left empty (hidden in the plan views).
-let planSnacks = true;
+// "Plan a daily snack slot?" is a PER-PERSON preference (owner request 2026-08-23): each person
+// sets it on their own Profile and it only affects THEIR half of the plan. It lives on PROF[person]
+// .planSnacks (a PERSIST_PROFILE_FIELDS field, so it persists + syncs per-person via the
+// profile:elena/profile:partner sections, and one person's choice can never clobber the other's).
+// It used to be a single household-level `planSnacks` boolean; loadState() migrates that legacy
+// top-level flag onto both people. Read it anywhere via snacksOnFor(person) (planner.js).
+// When off for a person, generateWeek fills only their breakfast/lunch/dinner — their day's
+// calorie target spreads across those three meals and their snack cell is left empty.
 const SLOT_LABEL = {breakfast:'Breakfast', lunch:'Lunch', dinner:'Dinner', snack:'Snack', side:'Side'};
 
 /* ---------------- profile data ---------------- */
@@ -561,6 +565,7 @@ const PROF = {
             // derivation function is exactly the drift this batch removes.
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
             coachD:'Calories and macros are estimates from your profile and recipe portions. Tap a meal to see what Mesa considered.',
+            planSnacks:true, // per-person "plan a daily snack?" (owner 2026-08-23) — see SHARED's doc above
             kP:26, kC:41, kF:33, avoid:['lactose','raw-onion','spicy'], avoidFoods:[],
             // consumed*/consumedKcal start at zero (task D1): they're overwritten by
             // planner.js:recomputeConsumed() from real logHistory entries before first
@@ -574,6 +579,7 @@ const PROF = {
             coachT:'Today is built for muscle 💪', hashi:false,
             goals: {fatLoss:false, muscleGain:false, muscle:false, heart:false, skin:false, hashi:false},
             coachD:'Higher protein and a small surplus. Same Mediterranean base, scaled up — shared cooking, two targets.',
+            planSnacks:true, // per-person "plan a daily snack?" (owner 2026-08-23) — see SHARED's doc above
             kP:26, kC:43, kF:31, avoid:[], avoidFoods:[],
             consumedKcal:0, consumed:{p:0,c:0,f:0,satFat:0,fiber:0}, defaultSplit:{P:26,C:43,F:31}, splitNote:'', coachOverrideT:null, coachOverrideD:null}
 };
@@ -881,7 +887,7 @@ function isEveningHour(){ return currentHour() >= 18; }
 // silently undoing the cleanup. Bug found and fixed while adding the multi-select diets
 // regression tests (tools/check.js testDietSyncLegacyPayloadAndLactoseCleanup /
 // testDietLoadStateMigration) — verify with those before ever reordering this again.
-const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'avoid', 'avoidFoods', 'diets', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'goals'];
+const PERSIST_PROFILE_FIELDS = ['displayName', 'sex', 'dobY', 'dobM', 'heightCm', 'weightKg', 'activity', 'avoid', 'avoidFoods', 'diets', 'calCustom', 'calNote', 'kP', 'kC', 'kF', 'goals', 'planSnacks'];
 
 function buildSnapshot(){
   const profiles = {};
@@ -919,7 +925,9 @@ function buildSnapshot(){
     householdSizeManual: householdSizeManual,
     nextWeekTuning: nextWeekTuning,
     shared: { breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack },
-    planSnacks: planSnacks,
+    // planSnacks is per-person now (PROF[person].planSnacks, written inside `profiles` below via
+    // PERSIST_PROFILE_FIELDS) — no household-level field here anymore. loadState() still reads a
+    // legacy top-level `planSnacks` from pre-2026-08-23 stores to migrate it onto both people.
     servings: { svE: svE, svM: svM, svS: svS },
     profiles: profiles,
     // Per-week shopping-sheet state, keyed the same way weekPlans is (by that week's
@@ -1051,7 +1059,12 @@ function loadState(){
       if(typeof saved.shared[slot] === 'boolean') SHARED[slot] = saved.shared[slot];
     });
   }
-  if(typeof saved.planSnacks === 'boolean') planSnacks = saved.planSnacks;
+  // planSnacks migration (owner 2026-08-23): moved from a single household-level flag to a
+  // per-person profile field (PROF[person].planSnacks, loaded in the profiles block below).
+  // A store saved before this carries a top-level `saved.planSnacks` and no per-person value —
+  // seed BOTH people from it (only where they don't already carry their own), so a household
+  // that had turned snacks off doesn't silently get them back on after the upgrade. Applied
+  // AFTER the profiles block so any genuine per-person value already on the store wins.
 
   if(saved.servings && typeof saved.servings === 'object'){
     if(typeof saved.servings.svE === 'number') svE = saved.servings.svE;
@@ -1072,7 +1085,7 @@ function loadState(){
   const PROFILE_FIELD_TYPE = {
     displayName: 'string', sex: 'string', dobY: 'number', dobM: 'number', heightCm: 'number', weightKg: 'number',
     activity: 'number', calCustom: 'number|null', calNote: 'string', kP: 'number', kC: 'number', kF: 'number',
-    avoid: 'string[]', avoidFoods: 'string[]', goals: 'object'
+    avoid: 'string[]', avoidFoods: 'string[]', goals: 'object', planSnacks: 'boolean'
     // 'diets' deliberately has no entry here — it needs BOTH the current array shape and
     // a legacy single-string shape (task D4's old `diet` field), so it's special-cased
     // below rather than fitting this table's one-type-per-field shape.
@@ -1139,6 +1152,18 @@ function loadState(){
           p[f] = want === 'string[]' ? v.slice() : v;
         }
       });
+    });
+  }
+
+  // planSnacks legacy migration (see the note above where saved.planSnacks used to load) —
+  // a pre-2026-08-23 store had one household-level flag and no per-person value; seed both
+  // people from it, but only where the just-loaded profile didn't already carry its own
+  // planSnacks (a newer store, or a synced peer, wins over the legacy household value).
+  if(typeof saved.planSnacks === 'boolean'){
+    Object.keys(PROF).forEach(function(key){
+      const sp = saved.profiles && saved.profiles[key];
+      const hadOwn = sp && typeof sp === 'object' && Object.prototype.hasOwnProperty.call(sp, 'planSnacks');
+      if(!hadOwn) PROF[key].planSnacks = saved.planSnacks;
     });
   }
 

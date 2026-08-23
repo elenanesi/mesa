@@ -45,6 +45,14 @@ const SLOT_ORDER = ['breakfast', 'lunch', 'dinner', 'snack'];
 // person's remaining daily kcal/protein budget across the slots still to come, so an
 // earlier slot's over/undershoot is compensated by later slots rather than compounding.
 const SLOT_WEIGHT = {breakfast: 0.28, lunch: 0.32, dinner: 0.30, snack: 0.10};
+// Per-person "plan a daily snack?" (owner 2026-08-23) — stored on PROF[person].planSnacks
+// (state.js). Defaults ON: any value other than an explicit false (including a legacy store
+// that predates the field, or a person object missing it) counts as snacks-on, so the planner
+// never silently drops a snack slot because of a missing flag.
+function snacksOnFor(person){
+  const p = PROF[person];
+  return !p || p.planSnacks !== false;
+}
 const PERSON_ANCHOR = {elena: 1, partner: 1.5}; // matches the old svE/svM defaults
 const PORTION_STEPS = [0.5, 1, 1.5, 2, 2.5, 3];
 // Task C3 item 3 ("snack realism"): breakfast/snack portions are capped at 1.5x so a
@@ -1972,25 +1980,37 @@ function generateWeek(seed){
   for(let d = 0; d < 7; d++){
     const remainingKcal = {elena: dayTarget.elena.kcal, partner: dayTarget.partner.kcal};
     const remainingProtein = {elena: dayTarget.elena.protein, partner: dayTarget.partner.protein};
-    // When the household turned snacks off, the day's target spreads across breakfast/lunch/
-    // dinner only, so the running weight starts without the snack's share (each meal is sized a
-    // little larger to still hit the daily calories). Default (snacks on) starts at 1 -> unchanged.
-    const snacksOn = (typeof planSnacks === 'undefined') || planSnacks;
-    let remainingWeight = snacksOn ? 1 : (1 - SLOT_WEIGHT.snack);
+    // Snacks are a PER-PERSON choice now (owner 2026-08-23). When a person turned snacks off,
+    // THEIR day's target spreads across breakfast/lunch/dinner only, so their running weight
+    // starts without the snack's share (each of their meals is sized a little larger to still
+    // hit their daily calories). Kept per-person so Elena can keep a daily snack while Andrea
+    // drops it (or vice-versa) — the two never share a snack cell in that case (see below).
+    const snacksOnE = snacksOnFor('elena');
+    const snacksOnA = soloHousehold ? false : snacksOnFor('partner');
+    const remainingWeight = {
+      elena: snacksOnE ? 1 : (1 - SLOT_WEIGHT.snack),
+      partner: snacksOnA ? 1 : (1 - SLOT_WEIGHT.snack)
+    };
     const dayMeals = {};
     SLOT_ORDER.forEach(function(slot, si){
       const w = SLOT_WEIGHT[slot];
-      // Snacks off: leave the snack cell empty (like a solo household's unused partner cell —
-      // hidden in the plan views, 0 kcal) and don't touch targets/history/weight for it.
-      if(slot === 'snack' && !snacksOn){
-        dayMeals.snack = {shared: false, elena: emptyPlanEntry(), partner: emptyPlanEntry()};
+      // Who participates in THIS slot? Everyone eats breakfast/lunch/dinner; the snack slot is
+      // only filled for whoever kept snacks on. (partner never participates in a solo household.)
+      const isSnack = (slot === 'snack');
+      const eOn = !isSnack || snacksOnE;
+      const aOn = !soloHousehold && (!isSnack || snacksOnA);
+      // Snack that nobody keeps: leave the cell empty (0 kcal, hidden in the plan views) and
+      // don't touch targets/history/weight — same shape a solo household's unused partner cell has.
+      if(!eOn && !aOn){
+        dayMeals[slot] = {shared: false, elena: emptyPlanEntry(), partner: emptyPlanEntry()};
         return;
       }
       // Per-cell share override (2026-07-22): a specific day's meal can be split/merged
       // against the household SHARED[slot] default and that choice persists through
       // regeneration (mealShareOverrides), so this reads the EFFECTIVE state, not the raw
-      // household toggle.
-      const shared = !soloHousehold && effectiveMealShared(weekStartDate, d, slot);
+      // household toggle. A slot can only be SHARED when BOTH people actually eat it — a snack
+      // only one person keeps is forced onto the split path below (one dish, one empty cell).
+      const shared = eOn && aOn && effectiveMealShared(weekStartDate, d, slot);
       if(soloHousehold){
         // Task B3 (solo households): plan/keep ONLY elena's portion — reuses the exact same
         // pickSoloMeal() call the two-person "else" branch below already makes for elena's
@@ -2000,7 +2020,7 @@ function generateWeek(seed){
         // intentionally empty placeholder (emptyPlanEntry(), NOT ghost-planned) — no pool
         // lookup, no history recording, no target deduction happens for 'partner' at all.
         const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
-        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, prevRecipeId(d, slot, 'elena'));
         dayMeals[slot] = {shared: false, elena: chE, partner: emptyPlanEntry()};
         const soloNutE = planEntryNutrition(chE);
         remainingKcal.elena -= soloNutE.kcal;
@@ -2032,21 +2052,40 @@ function generateWeek(seed){
         recordDayUsage(history, chosen.elena, 'elena', d, slot);
         recordDayUsage(history, chosen.partner, 'partner', d, slot);
       } else {
-        const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
-        const poolA = candidatesFor(slot, styleKey, avoidList.partner, ['partner']);
-        const chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'elena'));
-        const chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight, history, weekSeed, prevRecipeId(d, slot, 'partner'));
+        // Split path — also the forced path for a snack only ONE person keeps: the participant
+        // gets a real solo pick, the other keeps an empty cell (no pool lookup / deduction /
+        // history), exactly like a solo household's unused partner cell.
+        let chE = emptyPlanEntry(), chA = emptyPlanEntry();
+        if(eOn){
+          const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
+          chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, prevRecipeId(d, slot, 'elena'));
+        }
+        if(aOn){
+          const poolA = candidatesFor(slot, styleKey, avoidList.partner, ['partner']);
+          chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight.partner, history, weekSeed, prevRecipeId(d, slot, 'partner'));
+        }
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
-        const soloNutE = planEntryNutrition(chE), soloNutA = planEntryNutrition(chA);
-        remainingKcal.elena -= soloNutE.kcal; remainingKcal.partner -= soloNutA.kcal;
-        remainingProtein.elena -= soloNutE.protein; remainingProtein.partner -= soloNutA.protein;
-        history.elena[slot][d] = chE.recipeId; history.partner[slot][d] = chA.recipeId;
-        recordCompositionUsage(history, chE, 'elena', slot, d);
-        recordCompositionUsage(history, chA, 'partner', slot, d);
-        recordDayUsage(history, chE, 'elena', d, slot);
-        recordDayUsage(history, chA, 'partner', d, slot);
+        if(eOn){
+          const soloNutE = planEntryNutrition(chE);
+          remainingKcal.elena -= soloNutE.kcal;
+          remainingProtein.elena -= soloNutE.protein;
+          history.elena[slot][d] = chE.recipeId;
+          recordCompositionUsage(history, chE, 'elena', slot, d);
+          recordDayUsage(history, chE, 'elena', d, slot);
+        }
+        if(aOn){
+          const soloNutA = planEntryNutrition(chA);
+          remainingKcal.partner -= soloNutA.kcal;
+          remainingProtein.partner -= soloNutA.protein;
+          history.partner[slot][d] = chA.recipeId;
+          recordCompositionUsage(history, chA, 'partner', slot, d);
+          recordDayUsage(history, chA, 'partner', d, slot);
+        }
       }
-      remainingWeight -= w;
+      // Only subtract a slot's weight from a person who actually ate it — the off-person's
+      // snack weight was already excluded from their starting remainingWeight above.
+      if(eOn) remainingWeight.elena -= w;
+      if(aOn) remainingWeight.partner -= w;
     });
     days.push({date: addDaysISO(weekStartDate, d), meals: dayMeals});
   }
@@ -2114,12 +2153,16 @@ function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, max
   }); });
 }
 
+// remainingWeight is a per-person object {elena, partner} (owner 2026-08-23): the two can differ
+// on a shared breakfast/lunch/dinner when one person dropped their daily snack, so each person's
+// desired kcal/protein for this slot scales by THEIR own remaining fraction of the day. A shared
+// slot is only ever chosen when both people actually eat it, so both weights are always defined.
 function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludePrevWeekId){
   const w = SLOT_WEIGHT[slot];
-  const desiredE = remainingKcal.elena * (w / remainingWeight);
-  const desiredA = remainingKcal.partner * (w / remainingWeight);
-  const desiredProtE = remainingProtein.elena * (w / remainingWeight);
-  const desiredProtA = remainingProtein.partner * (w / remainingWeight);
+  const desiredE = remainingKcal.elena * (w / remainingWeight.elena);
+  const desiredA = remainingKcal.partner * (w / remainingWeight.partner);
+  const desiredProtE = remainingProtein.elena * (w / remainingWeight.elena);
+  const desiredProtA = remainingProtein.partner * (w / remainingWeight.partner);
   // Cross-week filter first (falls back to the full pool if it would empty it), then the
   // within-week variety filter over Elena's history — for shared slots both histories are
   // written in sync, so hers stands for both.
@@ -2436,7 +2479,10 @@ function computePlanSignature(){
     (a.diets || []).slice().sort().join(','),
     e.calGoalNum, a.calGoalNum, e.targetP, a.targetP,
     SHARED.breakfast ? 1 : 0, SHARED.lunch ? 1 : 0, SHARED.dinner ? 1 : 0, SHARED.snack ? 1 : 0,
-    ((typeof planSnacks === 'undefined') || planSnacks) ? 1 : 0, // snacks on/off must regenerate future days
+    // Per-person "plan a daily snack?" (owner 2026-08-23): EITHER person flipping their snack
+    // toggle must regenerate future days — it changes their slot count and how their day's
+    // calories spread across meals. Two flags now, was one household-level flag.
+    snacksOnFor('elena') ? 1 : 0, snacksOnFor('partner') ? 1 : 0,
     nextWeekTuning, // task C2 (2026-07-18): changing the tuning goal must regenerate future
                     // (non-logged, non-pinned) days exactly like any other signature input —
                     // 'none' is just another value here, no special-cased branch.

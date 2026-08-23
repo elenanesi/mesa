@@ -132,7 +132,9 @@ function plansSectionData(){
     mealShareOverrides: clone(mealShareOverrides),
     mealRules: clone(mealRules),
     SHARED: {breakfast: SHARED.breakfast, lunch: SHARED.lunch, dinner: SHARED.dinner, snack: SHARED.snack},
-    planSnacks: planSnacks,
+    // planSnacks moved to a per-person profile field (owner 2026-08-23) — it now rides the
+    // profile:elena/profile:partner sections via PERSIST_PROFILE_FIELDS, NOT this household-level
+    // plans section, so one person's snack choice can't clobber the other's on merge.
     householdStyle: householdStyle,
     householdSize: householdSize, // task B3 (solo households): household-level, LWW like householdStyle
     householdSizeManual: householdSizeManual,
@@ -260,7 +262,12 @@ function applyPlansSectionData(data){
   if(data.SHARED && typeof data.SHARED === 'object'){
     Object.keys(SHARED).forEach(function(k){ if(typeof data.SHARED[k] === 'boolean') SHARED[k] = data.SHARED[k]; });
   }
-  if(typeof data.planSnacks === 'boolean') planSnacks = data.planSnacks;
+  // planSnacks is no longer a plans-section field (owner 2026-08-23: it's per-person now, applied
+  // via applyProfileSectionData). We intentionally do NOT read a legacy household-level
+  // data.planSnacks here: it was household-level and identical on both phones before the split, so
+  // each device's own localStorage migration (state.js:loadState) already seeded both people
+  // correctly — reading it back off an old peer's plans section could only clobber a per-person
+  // choice made on this device during the brief upgrade window.
   if(typeof data.householdStyle === 'string' && HOUSEHOLD_STYLES.indexOf(data.householdStyle) !== -1) householdStyle = data.householdStyle;
   // task B3 (solo households): same LWW rule as householdStyle above.
   if(data.householdSize === 1 || data.householdSize === 2) householdSize = data.householdSize;
