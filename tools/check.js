@@ -3433,6 +3433,54 @@ function testRegenerateWeekPreservingLocks(ctx){
   }
 }
 
+// REGRESSION (owner 2026-08-24): a logged/pinned meal must be KEPT through a Regenerate AND
+// CONSIDERED when building the rest of the week — before this fix, generateWeek built fresh picks
+// for all days and preserveLoggedSlots patched the logged slot in afterwards, so the logged meal
+// never entered the variety history and could be re-planned on an adjacent day. This logs day-0
+// lunch, regenerates, and asserts the logged recipe is kept on day 0 AND is not re-planned within
+// the variety-gap window (days 1-3) for that person.
+function testRegenerateConsidersLoggedMeals(ctx){
+  const saved = cloneJSON(get(ctx, 'weekPlans'));
+  const savedPins = cloneJSON(get(ctx, 'mealPins'));
+  const savedLog = cloneJSON(get(ctx, 'logHistory'));
+  const savedPrefs = cloneJSON(get(ctx, 'recipePrefs'));
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; logHistory = {}; recipePrefs = {elena:{}, partner:{}};");
+    const monday = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+    call(ctx, 'ensureWeekPlan', [monday]);
+    // Pick a complete lunch recipe that is NOT elena's natural day-0 lunch — so if generateWeek
+    // ever picks it for day 0 it can ONLY be because the lock placed it, never coincidence.
+    const pool = call(ctx, 'candidatesFor', ['lunch', 'balanced', [], ['elena']]);
+    const complete = (pool || []).filter(function(id){ return call(ctx, 'isCompleteLunchDinnerRecipe', [id]); });
+    const day0Lunch = get(ctx, "weekPlans['" + monday + "'].days[0].meals.lunch.elena.recipeId");
+    const X = complete.filter(function(id){ return id !== day0Lunch; })[0];
+    assert(!!X && X !== day0Lunch, 'setup: a complete lunch recipe distinct from day-0\'s natural pick exists', 'X=' + X + ' day0=' + day0Lunch);
+    // Put X into the being-replaced plan's day-0 lunch (the lock source) and LOG it for today.
+    run(ctx, "weekPlans['" + monday + "'].days[0].meals.lunch = {shared:false, elena: makePlanEntry('" + X + "', 1), partner: weekPlans['" + monday + "'].days[0].meals.lunch.partner};");
+    const date0 = get(ctx, "weekPlans['" + monday + "'].days[0].date");
+    call(ctx, 'logPlanEntry', [date0, 'elena', 'lunch', X, 1, [{recipeId: X, portion: 1}]]);
+
+    // Assert against generateWeek DIRECTLY (not regenerateWeekPreservingLocks, whose
+    // preserveLoggedSlots would patch day 0 either way): generateWeek only lands X on day 0 via
+    // the new in-line lock path — so this fails if the lock isn't considered during generation.
+    run(ctx, "__prev = deepClone(weekPlans['" + monday + "']); __sig = computePlanSignature();");
+    const gen = get(ctx, "generateWeek({weekStartDate:'" + monday + "', signature:__sig, previousPlan: __prev})");
+    assert(gen.days[0].meals.lunch.elena.recipeId === X,
+      'generateWeek places a logged day-0 lunch IN-LINE (lock considered during generation, not patched after)',
+      'want=' + X + ' got=' + gen.days[0].meals.lunch.elena.recipeId);
+    // And because the lock is now in the variety history, the just-logged recipe is NOT re-planned
+    // on the following days within the gap window — the reported "same meal planned the day after".
+    const repeats = [1, 2, 3].filter(function(d){ return gen.days[d].meals.lunch.elena.recipeId === X; });
+    assert(repeats.length === 0,
+      'generateWeek does NOT re-plan a just-logged meal on the next days — it is considered for variety',
+      'X=' + X + ' repeated on days ' + JSON.stringify(repeats));
+    run(ctx, "delete globalThis.__prev; delete globalThis.__sig;");
+  } finally {
+    ctx.weekPlans = saved; ctx.mealPins = savedPins; ctx.logHistory = savedLog; ctx.recipePrefs = savedPrefs;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; recipePrefs = " + JSON.stringify(get(ctx, 'recipePrefs')) + ";");
+  }
+}
+
 function testDayWideVariety(ctx){
   const savedWeekPlans = get(ctx, 'weekPlans');
   const savedWeekPlan = get(ctx, 'weekPlan');
@@ -11663,6 +11711,7 @@ function main(){
   runTest('swap sheet: complete-meal-only pool + same-slot-first with other-meals toggle', function(){ testSwapCompleteMealPoolAndOtherMealsToggle(ctx); });
   runTest('swap sheet: "what do you feel like?" craving filter (fruit/veg/protein/light/quick)', function(){ testSwapCravingFilter(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
+  runTest('regenerate considers logged meals for variety (no next-day repeat)', function(){ testRegenerateConsidersLoggedMeals(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
