@@ -65,7 +65,9 @@ function componentNutrition(c){
 function defaultMealFoodGrams(foodId){
   const food = FOODS[foodId];
   if(!food) return 100;
-  if(food.unit === 'piece') return food.avgG || 50;
+  // A per-item weight (avgG) means "one" is the natural default amount — for a unit:'piece'
+  // food and for a per-100g food that declares avgG (owner 2026-08-24: editable item weight).
+  if(Number(food.avgG) > 0) return Number(food.avgG);
   if(food.unit === 'ml') return 200;
   return 100;
 }
@@ -1271,12 +1273,13 @@ function renderBeverageCounts(){
 
 function foodAmountLabel(food, grams){
   if(!food) return grams + 'g';
-  const safeGrams = Number.isFinite(Number(grams)) ? Number(grams) : (food.unit === 'piece' ? (Number(food.avgG) || 1) : 0);
-  if(food.unit === 'piece' && Number(food.avgG) > 0){
+  const hasItem = Number(food.avgG) > 0; // per-item weight (unit:'piece' OR per-100g + avgG)
+  const safeGrams = Number.isFinite(Number(grams)) ? Number(grams) : (hasItem ? Number(food.avgG) : 0);
+  if(hasItem){
     const count = Math.max(1, Math.round(safeGrams / Number(food.avgG)));
     return count + 'x';
   }
-  return Math.round(safeGrams) + (food.unit || 'g');
+  return Math.round(safeGrams) + (food.unit === 'piece' ? 'g' : (food.unit || 'g'));
 }
 
 function foodGroupTitle(food, grams){

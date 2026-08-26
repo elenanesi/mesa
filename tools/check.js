@@ -505,6 +505,54 @@ function testFoodMeasureUnits(ctx){
   }
 }
 
+// Editable amounts & measures (owner 2026-08-24): the food editor can set a per-item weight
+// (avgG) + tbsp/tsp/cup gram map, they SURVIVE a save (avgG was previously dropped, stripping a
+// food's per-item logging on any edit), and a per-100g food that gains avgG then offers item
+// logging. Also: editing a unit:'piece' food keeps 1-item nutrition correct through the round-trip.
+function testEditableFoodMeasures(ctx){
+  const savedCF = cloneJSON(get(ctx, 'customFoods'));
+  const savedFO = cloneJSON(get(ctx, 'foodOverrides'));
+  try{
+    run(ctx, "var __measStub={toast:toast,applyProf:applyProf,returnToFoodLibrary:returnToFoodLibrary,renderFoodLibraryCount:renderFoodLibraryCount,openFoodLibrary:openFoodLibrary}; toast=function(){}; applyProf=function(){}; returnToFoodLibrary=function(){}; renderFoodLibraryCount=function(){}; openFoodLibrary=function(){};");
+
+    // (a) a per-100g food (apples: no avgG) gains an item weight + a cup measure, saved + kept.
+    call(ctx, 'openEditFoodForm', ['apples']);
+    run(ctx, "newFoodForm.avgG = 182; newFoodForm.measures = {cup: 125};");
+    call(ctx, 'saveNewFood', []);
+    const apple = get(ctx, 'FOODS')['apples'];
+    assert(apple.avgG === 182 && apple.measures && apple.measures.cup === 125,
+      'saveNewFood: an edited per-item weight + measures are preserved (avgG no longer dropped)', JSON.stringify({avgG: apple.avgG, measures: apple.measures}));
+    const appleUnits = call(ctx, 'foodMeasureOptions', ['apples']).map(function(o){ return o.unit; });
+    assert(appleUnits.indexOf('item') !== -1 && appleUnits.indexOf('cup') !== -1,
+      'foodMeasureOptions: a per-100g food that gains avgG + cup now offers item and cup logging', JSON.stringify(appleUnits));
+    // 1 apple nutrition == foodMacros(apples, 182) — item logging reads the edited weight.
+    const perApple = call(ctx, 'foodMacros', ['apples', 182]);
+    assert(perApple.kcal > 0, 'foodMacros: 1 apple (182 g) resolves nutrition through the edited item weight', String(perApple.kcal));
+
+    // (b) editing a unit:'piece' food (eggs) KEEPS its per-item weight (was previously deleted),
+    // and 1-egg nutrition stays correct across the per-100g<->per-item round-trip.
+    call(ctx, 'openEditFoodForm', ['eggs']);
+    call(ctx, 'saveNewFood', []); // save without changing anything
+    const eggs = get(ctx, 'FOODS')['eggs'];
+    assert(Number(eggs.avgG) > 0, 'saveNewFood: editing a piece food keeps its per-item weight', JSON.stringify({avgG: eggs.avgG, unit: eggs.unit}));
+    const perEgg = call(ctx, 'foodMacros', ['eggs', Number(eggs.avgG)]);
+    assert(Math.abs(perEgg.protein - 6.3) < 0.3, 'foodMacros: 1 egg is still ~6.3 g protein after editing (macro round-trip correct)', String(perEgg.protein));
+
+    // (c) clearing a measure removes it.
+    call(ctx, 'openEditFoodForm', ['apples']);
+    run(ctx, "newFoodForm.avgG = null; newFoodForm.measures = {};");
+    call(ctx, 'saveNewFood', []);
+    const apple2 = get(ctx, 'FOODS')['apples'];
+    assert(apple2.avgG === undefined && apple2.measures === undefined,
+      'saveNewFood: clearing the item weight + measures removes them (unit no longer offered)', JSON.stringify({avgG: apple2.avgG, measures: apple2.measures}));
+  } finally {
+    ctx.__restoreMeasCF = savedCF; ctx.__restoreMeasFO = savedFO;
+    run(ctx, "customFoods = __restoreMeasCF; foodOverrides = __restoreMeasFO; applyCustomFoods(); newFoodForm = null;" +
+      "if(typeof __measStub !== 'undefined'){ toast=__measStub.toast; applyProf=__measStub.applyProf; returnToFoodLibrary=__measStub.returnToFoodLibrary; renderFoodLibraryCount=__measStub.renderFoodLibraryCount; openFoodLibrary=__measStub.openFoodLibrary; delete __measStub; }" +
+      "delete __restoreMeasCF; delete __restoreMeasFO; localStorage.removeItem(STORE_KEY);");
+  }
+}
+
 /* ---------------- "Add to pantry" on ingredient cards ----------------
    The button lives on both ingredient surfaces (the Library > Ingredients rows and the
    ingredient detail page) and routes through openPantryAddForFood(), which reuses P2's
@@ -11696,6 +11744,7 @@ function main(){
   runTest('nutrition perServing non-numeric fields', function(){ testNutritionPerServingNonNumericFields(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('food measure units (item/tbsp/tsp/cup resolver)', function(){ testFoodMeasureUnits(ctx); });
+  runTest('editable food amounts & measures (avgG + tbsp/tsp/cup survive save)', function(){ testEditableFoodMeasures(ctx); });
   runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
   runTest('soft lunch=carbs / dinner=protein bias', function(){ testSlotCompositionBias(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });

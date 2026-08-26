@@ -612,7 +612,9 @@ function buildLibraryCatalogPayload(){
 // food/recipe edit only marks THAT row dirty instead of invalidating everything.
 function foodRowSignature(f){
   const d = f.data || {};
-  return JSON.stringify([f.source, f.updatedAt, f.season, d.name, d.iconKey, d.iconAsset, d.cat, d.sugarQuality, d.components, d.yieldG, d.bought, d.variants, d.flags]);
+  // avgG + measures (owner 2026-08-24: editable per-item / tbsp / tsp / cup weights) are part of
+  // a food's content, so a change to only those must still re-mirror the row to D1.
+  return JSON.stringify([f.source, f.updatedAt, f.season, d.name, d.iconKey, d.iconAsset, d.cat, d.sugarQuality, d.components, d.yieldG, d.bought, d.variants, d.flags, d.avgG, d.measures]);
 }
 function recipeRowSignature(r){
   return JSON.stringify([r.source, r.updatedAt, r.season, r.data && r.data.title, r.data && r.data.imageKey, r.data && r.data.imageUri]);

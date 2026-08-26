@@ -340,7 +340,11 @@ function foodMeasureOptions(foodId){
   const baseUnit = foodBaseWeightUnit(food);
   if(!food) return [{unit: 'g', grams: 1, label: 'g'}];
   const opts = [];
-  if(food.unit === 'piece' && Number(food.avgG) > 0) opts.push({unit: 'item', grams: Number(food.avgG), label: 'item'});
+  // "item" logging is available whenever the food declares a per-item weight (avgG > 0),
+  // whether it's stored unit:'piece' (per-piece macros) or unit:'g'/'ml' (per-100 macros +
+  // avgG as pure "grams per item" metadata). foodMacros returns correct nutrition for
+  // avgG grams in both representations, so item = avgG grams works uniformly.
+  if(Number(food.avgG) > 0) opts.push({unit: 'item', grams: Number(food.avgG), label: 'item'});
   if(food.measures && typeof food.measures === 'object'){
     MEASURE_UNIT_ORDER.forEach(function(u){
       const g = Number(food.measures[u]);
@@ -361,7 +365,7 @@ function foodGramsPerUnit(foodId, unit){
 // "12 tbsp of flour" would be odd; the user switches to the unit that suits what they're doing.
 function foodDefaultLogUnit(foodId){
   const food = (typeof FOODS !== 'undefined') ? FOODS[foodId] : null;
-  if(food && food.unit === 'piece' && Number(food.avgG) > 0) return 'item';
+  if(food && Number(food.avgG) > 0) return 'item';
   return foodBaseWeightUnit(food);
 }
 // Step size for the amount stepper in a given unit: whole grams/ml by 10, items by 1, spoons/

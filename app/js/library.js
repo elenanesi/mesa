@@ -1367,7 +1367,7 @@ let newFoodComponentPickerReturnScroll = null;
 
 function openNewFoodForm(){
   rememberFoodListReturn();
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: []};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: [], avgG: null, measures: {}};
   renderNewFoodFormSheet(false);
 }
 
@@ -1399,6 +1399,13 @@ function openEditFoodForm(id){
     components: normalizeComponentRows(f.components),
     yieldG: (typeof f.yieldG === 'number' && f.yieldG > 0) ? f.yieldG : 100,
     bought: f.bought === true,
+    // Amounts & measures (owner 2026-08-24): the food's per-item weight and volume gram map,
+    // editable in the form. avgG covers BOTH a unit:'piece' food (its piece weight) and a
+    // per-100g food that declares an item weight — both surface item logging (foodMeasureOptions).
+    avgG: (typeof f.avgG === 'number' && f.avgG > 0) ? f.avgG : null,
+    measures: (f.measures && typeof f.measures === 'object')
+      ? ['tbsp', 'tsp', 'cup'].reduce(function(acc, u){ if(Number(f.measures[u]) > 0) acc[u] = Number(f.measures[u]); return acc; }, {})
+      : {},
     variants: (Array.isArray(f.variants) ? f.variants : []).map(function(v){
       return {
         key: v.key || '',
@@ -1526,6 +1533,31 @@ function buildNewFoodFormSheet(){
       + '<div class="opt' + (f.breakfastPair ? ' sel' : '') + '" onclick="toggleNewFoodBreakfastPair()">'
       + '<div class="ck">' + (f.breakfastPair ? '✓' : '') + '</div>'
       + '<div><div class="ot">Can pair with a light breakfast</div><div class="od">Lets the planner combine this food (bread or fruit) with a plain protein breakfast main.</div></div></div></div>';
+    html += '</div></details>';
+
+    // Amounts & measures (owner 2026-08-24): transparent, editable gram weight for logging this
+    // ingredient by the item / tablespoon / teaspoon / cup. Grams stay the deterministic anchor
+    // for all nutrition; these just define how many grams each unit is. Blank = that unit isn't
+    // offered. Saved on the food (per-household, synced) so a fix flows everywhere it's logged.
+    const nm = (f.name || '').trim();
+    const measureRow = function(key, label, unitWord){
+      const cur = key === 'avgG' ? f.avgG : (f.measures && f.measures[key]);
+      const val = (typeof cur === 'number' && cur > 0) ? cur : '';
+      return '<div class="field"><label>' + escapeHtml(label) + '</label><div class="inp">'
+        + '<span>' + escapeHtml(unitWord) + '</span>'
+        + '<span class="sv-stepper" style="margin:0">'
+        + '<button onclick="stepNewFoodMeasure(\'' + key + '\',-1)" aria-label="Decrease ' + escapeHtml(unitWord) + '">–</button>'
+        + '<input class="sv-val" type="text" inputmode="decimal" value="' + val + '" placeholder="—" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitNewFoodMeasure(\'' + key + '\',this.value)" aria-label="Grams per ' + escapeHtml(unitWord) + '">'
+        + '<span class="sv-unit">g</span>'
+        + '<button onclick="stepNewFoodMeasure(\'' + key + '\',1)" aria-label="Increase ' + escapeHtml(unitWord) + '">+</button>'
+        + '</span></div></div>';
+    };
+    html += '<details class="food-builder-panel"' + foodFormPanelAttrs('measures', false) + '><summary>Amounts &amp; measures <span>optional · item / tbsp / tsp / cup</span></summary><div class="food-builder-panel-body">';
+    html += '<div class="cap-note" style="margin-top:0">Log this ingredient by the item or by spoon/cup, not only grams. Set how much one of each weighs — grams stay the exact amount Mesa counts. Leave a unit blank to hide it. Shared with your household.</div>';
+    html += measureRow('avgG', 'Weight of one ' + (nm || 'item'), '1 item');
+    html += measureRow('tbsp', '1 tablespoon', '1 tbsp');
+    html += measureRow('tsp', '1 teaspoon', '1 tsp');
+    html += measureRow('cup', '1 cup', '1 cup');
     html += '</div></details>';
   }
 
@@ -1697,6 +1729,29 @@ function commitNewFoodField(key, raw){
   if(n === null || n < 0){ toast('Enter a number, e.g. 7.4 or 7,4'); renderNewFoodFormSheet(); return; }
   newFoodForm[key] = Math.max(0, Math.min(100, +n.toFixed(1)));
   renderNewFoodFormSheet();
+}
+
+// Amounts & measures (owner 2026-08-24): per-item weight (avgG) and volume grams (tbsp/tsp/cup),
+// each optional. A blank / zero / unparseable value CLEARS that unit (removes it as a logging
+// option) rather than storing a bad conversion. Grams stay the anchor; these are pure metadata.
+function commitNewFoodMeasure(key, raw){
+  if(!newFoodForm) return;
+  const n = parseDecimalInput(raw);
+  const val = (n !== null && n > 0) ? Math.round(n * 10) / 10 : null;
+  if(key === 'avgG'){
+    if(val) newFoodForm.avgG = val; else newFoodForm.avgG = null;
+  } else {
+    if(!newFoodForm.measures || typeof newFoodForm.measures !== 'object') newFoodForm.measures = {};
+    if(val) newFoodForm.measures[key] = val; else delete newFoodForm.measures[key];
+  }
+  renderNewFoodFormSheet(true);
+}
+function stepNewFoodMeasure(key, delta){
+  if(!newFoodForm) return;
+  const cur = key === 'avgG' ? (Number(newFoodForm.avgG) || 0) : (Number(newFoodForm.measures && newFoodForm.measures[key]) || 0);
+  const step = key === 'avgG' ? 5 : 1; // an item weight nudges by 5 g, a spoon/cup by 1 g
+  const next = Math.max(0, Math.round((cur + delta * step) * 10) / 10);
+  commitNewFoodMeasure(key, next > 0 ? String(next) : '');
 }
 
 function commitNewFoodYield(raw){
@@ -1936,8 +1991,15 @@ function saveNewFood(){
     breakfastPair: !!f.breakfastPair,
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   });
-  delete saved.avgG;
   delete saved.components; delete saved.yieldG; delete saved.bought; delete saved.variants;
+  // Amounts & measures (owner 2026-08-24): preserve an edited per-item weight + volume gram map
+  // (were previously dropped — `delete saved.avgG` — which stripped a food's per-item logging on
+  // any edit). Stored per-100g nutrition + avgG-as-item-grams is the unified representation the
+  // log picker reads (foodMeasureOptions); an empty value removes the unit. Grams stay the anchor.
+  if(Number(f.avgG) > 0) saved.avgG = Number(f.avgG); else delete saved.avgG;
+  const cleanMeasures = {};
+  ['tbsp', 'tsp', 'cup'].forEach(function(u){ const g = Number(f.measures && f.measures[u]); if(isFinite(g) && g > 0) cleanMeasures[u] = g; });
+  if(Object.keys(cleanMeasures).length) saved.measures = cleanMeasures; else delete saved.measures;
   // task C5: iconKey only persists when the user picked one — Default (null) removes any
   // previously-saved key on edit rather than writing an empty string, so a cleared custom
   // food falls back to the generic default icon exactly like a food that never had one.
