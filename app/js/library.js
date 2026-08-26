@@ -1544,8 +1544,12 @@ function buildNewFoodFormSheet(){
     + (f.iconPickerOpen ? buildNewFoodIconGrid(currentIconKey) : '')
     + '</div></div></details>';
 
-  html += '<button class="cta" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
-    + '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>';
+  // Sticky Save/Cancel bar (pinned above the tab bar) — same reachable-without-scrolling
+  // treatment as the recipe builder (owner: save-only-at-the-bottom is confusing).
+  html += '<div class="editor-actionbar">'
+    + '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>'
+    + '<button class="cta editor-save" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
+    + '</div>';
   return html;
 }
 
@@ -3068,8 +3072,27 @@ function openRecipeImageForm(id){
 }
 
 function renderRecipeBuilderSheet(preserveScroll){
+  rememberRecipeBuilderPanels();
   setRecipesScreenHtml(buildRecipeBuilderSheet(), preserveScroll !== false);
   attachRecipeImageGridHandler();
+}
+
+// A slot/season/role tap redraws this form so the chip and computed nutrition update at once.
+// Native <details> open state is otherwise lost with innerHTML — the panel holding the tag you
+// just tapped would collapse under you. Mirror the food form (rememberNewFoodFormPanels): stash
+// each panel's open state on the draft before the redraw and restore it via recipeBuilderPanelAttrs.
+function rememberRecipeBuilderPanels(){
+  if(!recipeBuilder || typeof document === 'undefined' || typeof document.querySelectorAll !== 'function') return;
+  if(!recipeBuilder.panelOpen) recipeBuilder.panelOpen = {};
+  document.querySelectorAll('[data-recipe-panel]').forEach(function(panel){
+    const key = panel.getAttribute('data-recipe-panel');
+    if(key) recipeBuilder.panelOpen[key] = !!panel.open;
+  });
+}
+function recipeBuilderPanelAttrs(key, defaultOpen){
+  const has = recipeBuilder && recipeBuilder.panelOpen && Object.prototype.hasOwnProperty.call(recipeBuilder.panelOpen, key);
+  const isOpen = has ? recipeBuilder.panelOpen[key] : defaultOpen;
+  return ' data-recipe-panel="' + key + '"' + (isOpen ? ' open' : '');
 }
 
 // task D3: base `ingredients` rows PLUS, for every draft option group, its DEFAULT choice's
@@ -3169,7 +3192,7 @@ function buildRecipeBuilderSheet(){
     + (rb.imagePickerOpen ? buildRecipeImageGrid(currentImageKey) : '')
     + '</div>';
 
-  html += '<details class="recipe-builder-panel"><summary>Planning settings <span>slot · season · role · availability</span></summary><div class="recipe-builder-panel-body">';
+  html += '<details class="recipe-builder-panel"' + recipeBuilderPanelAttrs('planning', false) + '><summary>Planning settings <span>slot · season · role · availability</span></summary><div class="recipe-builder-panel-body">';
   html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
     + '</div><div class="sub" style="margin-top:4px">Pick every meal this recipe can work for. The first selected slot stays primary for old plans.</div></div>';
@@ -3215,15 +3238,15 @@ function buildRecipeBuilderSheet(){
   });
   html += '<button class="cta ghostbtn" style="margin-top:2px" onclick="openAddIngredientToRecipe()">＋ Add ingredient</button>';
 
-  html += '<details class="recipe-builder-panel"' + ((rb.optionGroups || []).length ? ' open' : '') + '><summary>Options <span>' + ((rb.optionGroups || []).length ? rb.optionGroups.length + ' variant group' + (rb.optionGroups.length === 1 ? '' : 's') : 'optional variants') + '</span></summary><div class="recipe-builder-panel-body">'
+  html += '<details class="recipe-builder-panel"' + recipeBuilderPanelAttrs('options', (rb.optionGroups || []).length > 0) + '><summary>Options <span>' + ((rb.optionGroups || []).length ? rb.optionGroups.length + ' variant group' + (rb.optionGroups.length === 1 ? '' : 's') : 'optional variants') + '</span></summary><div class="recipe-builder-panel-body">'
     + buildRecipeOptionsSection(rb) + '</div></details>';
 
-  html += '<details class="recipe-builder-panel"><summary>Method <span>' + ((rb.stepsText || '').trim() ? 'instructions added' : 'optional') + '</span></summary><div class="recipe-builder-panel-body">'
+  html += '<details class="recipe-builder-panel"' + recipeBuilderPanelAttrs('method', false) + '><summary>Method <span>' + ((rb.stepsText || '').trim() ? 'instructions added' : 'optional') + '</span></summary><div class="recipe-builder-panel-body">'
     + '<div class="field" style="margin-top:0"><label>Steps (one per line, optional)</label>'
     + '<textarea class="inp" style="width:100%;box-sizing:border-box;min-height:90px;border:1px solid var(--line);margin-top:6px;display:block;resize:vertical;font:inherit" oninput="recipeBuilder.stepsText=this.value" placeholder="Combine and enjoy.">' + escapeHtml(rb.stepsText) + '</textarea></div>';
   html += '</div></details>';
 
-  html += '<details class="recipe-builder-panel"><summary>Nutrition preview <span>computed per serving</span></summary><div class="recipe-builder-panel-body">'
+  html += '<details class="recipe-builder-panel"' + recipeBuilderPanelAttrs('nutrition', false) + '><summary>Nutrition preview <span>computed per serving</span></summary><div class="recipe-builder-panel-body">'
     + '<div class="card" style="padding:14px;margin-top:0">'
     + '<div class="row between"><b style="font-size:13px">Per serving' + (rb.servings > 1 ? ' <span class="sub" style="font-weight:400">(makes ' + rb.servings + ')</span>' : '') + '</b><span class="chip-computed">✓ computed</span></div>'
     + '<div class="nutri" style="margin-top:8px">'
@@ -3242,16 +3265,21 @@ function buildRecipeBuilderSheet(){
     if(warn) html += '<div class="cap-note" style="color:#b25e35;margin-top:8px">' + warn + '</div>';
   }
 
-  html += '<button class="cta" style="margin-top:16px" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
-    + '<button class="cta ghostbtn" onclick="returnToMyRecipes()">Cancel</button>';
   // task D3: a built-in recipe with a saved household override (recipeOverrides[id] —
   // "edited" badge in the Recipes list) can be reset back to its shipped defaults,
   // optionGroups included, mirroring the ingredient library's existing resetFoodOverride
   // action (Ingredients list's ↺ button) which this feature otherwise had no recipe-side
-  // equivalent for.
+  // equivalent for. Kept ABOVE the sticky Save/Cancel bar (a rare, secondary action) so the
+  // bar stays the last element and pins cleanly.
   if(editing && BUILTIN_RECIPES_DB[rb.editingId] && recipeOverrides[rb.editingId]){
-    html += '<button class="cta ghostbtn" onclick="resetRecipeBuilderOverride()">↺ Reset to default</button>';
+    html += '<button class="cta ghostbtn" style="margin-top:16px" onclick="resetRecipeBuilderOverride()">↺ Reset to default</button>';
   }
+  // Save/Cancel live in a sticky bar pinned above the tab bar so they're reachable without
+  // scrolling to the end of a long form (owner: save-only-at-the-bottom is confusing).
+  html += '<div class="editor-actionbar">'
+    + '<button class="cta ghostbtn" onclick="returnToMyRecipes()">Cancel</button>'
+    + '<button class="cta editor-save" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
+    + '</div>';
   return html;
 }
 

@@ -631,7 +631,7 @@ const FOODS = {
   },
   'granulated-sugar': {
     name: 'Sugar, granulated', per: 100, unit: 'g',
-    kcal: 400, protein: 0, carbs: 100, fat: 0, satFat: 0, fiber: 0, sugars: 100, freeSugars: 100, sugarQuality: 'free',
+    kcal: 400, protein: 0, carbs: 100, fat: 0, satFat: 0, fiber: 0, sugars: 100, freeSugars: 100, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'sugar', src: 'USDA FDC 169655 (sugars, granulated)'
   },
   '0-flour': {
