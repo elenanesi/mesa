@@ -1581,7 +1581,7 @@ function buildNewFoodFormSheet(){
   html += '<div class="editor-actionbar">'
     + '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>'
     + '<button class="cta editor-save" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
-    + '</div>';
+    + '</div><div class="editor-actionbar-spacer"></div>';
   return html;
 }
 
@@ -3341,7 +3341,7 @@ function buildRecipeBuilderSheet(){
   html += '<div class="editor-actionbar">'
     + '<button class="cta ghostbtn" onclick="returnToMyRecipes()">Cancel</button>'
     + '<button class="cta editor-save" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
-    + '</div>';
+    + '</div><div class="editor-actionbar-spacer"></div>';
   return html;
 }
 
