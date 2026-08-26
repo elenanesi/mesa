@@ -91,18 +91,19 @@ Week workspace.
   inputs — the remaining stepper-only `<span class="sv-val">` spots (e.g. `stepMealExtraFoodGrams`,
   the meal builder, recipe/composite grams). Convert to the typeable `input.sv-val` + `parseDecimalInput`
   pattern, keeping the +/- buttons.
-- **Ingredient UNIT PICKER** — LOG-PICKER HALF SHIPPED 2026-08-24 (`b1b24de`). engine.js
-  `foodMeasureOptions`/`foodGramsPerUnit`/`foodDefaultLogUnit`/`foodUnitStep` resolve a food's
-  loggable units; the log picker (render-today.js `buildLogPickerSheet` + `selectLogPickerUnit`/
-  `commitLogPickerAmount`) shows a unit selector (item / tbsp / tsp / cup / g-ml) with a live
-  "= N g". Grams stay the stored anchor; the chosen unit is NOT stored. `measures:{tbsp,tsp,cup}`
-  gram maps added to ~26 curated foods so far (oils, honey, syrup, sugar, flours, grains, spreads,
-  soy sauce, dairy liquids) — extend toward the full ~40–80 as needed (built-in FOODS are
-  file-based → Pages deploy, no D1 seed). **STILL TO DO:** (1) editing those weights IN the
-  ingredient editor ("1 apple = N g", "1 tbsp = N g") — blocked on the food editor's save path,
-  which flattens every edit to `per:100, unit:'g'` and `delete`s `avgG` (saveNewFood ~L1932/1939),
-  so it must be reworked to preserve/allow per-piece + `measures` before editing is safe; (2) the
-  meal/recipe ingredient grams inputs still stepper-only (the "type amounts everywhere" remainder).
+- **Ingredient UNIT PICKER** — SHIPPED 2026-08-24 (`b1b24de` log picker, `6d26095` editor).
+  engine.js `foodMeasureOptions`/`foodGramsPerUnit`/`foodDefaultLogUnit`/`foodUnitStep` resolve a
+  food's loggable units; the log picker (render-today.js) shows a unit selector (item / tbsp / tsp /
+  cup / g-ml) with a live "= N g". Grams stay the stored anchor; the chosen unit is NOT stored.
+  The ingredient editor's "Amounts & measures" panel (library.js) edits the per-item weight (`avgG`)
+  + `measures:{tbsp,tsp,cup}`, saved per-food (per-household, couple-synced) — saveNewFood now
+  PRESERVES avgG (was dropped) and item logging is avgG-based (not unit:'piece'), so a per-100g
+  food can gain "1 apple = N g". `measures` seeded on ~26 curated foods (oils/honey/syrup/sugar/
+  flours/grains/spreads/soy/dairy liquids) — extend toward the full ~40–80 as desired (built-in
+  FOODS are file-based → Pages deploy, no D1 seed). **STILL TO DO (smaller):** the meal/recipe
+  ingredient grams inputs are still stepper-only (the "type amounts everywhere" remainder — the log
+  picker + food editor are done); and the unit picker isn't yet surfaced in those recipe-ingredient
+  inputs (only in the log picker).
 
 **D1 mirror sync now writes a per-row diff, not the whole library (FIXED 2026-08-23).**
 `mirrorLibraryCatalogToD1()` (`app/js/sync.js`) used to rewrite the household's ENTIRE custom
