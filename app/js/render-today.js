@@ -1855,7 +1855,7 @@ function attachLogSearchHandler(){
 function openLogPickerSheet(kind, id){
   if(kind === 'recipe' && !RECIPES_DB[id]) return;
   if(kind === 'food' && !FOODS[id]) return;
-  logPickerCtx = {kind: kind, id: id, slot: null, unassigned: false, portion: 1, grams: kind === 'food' ? defaultMealFoodGrams(id) : null};
+  logPickerCtx = {kind: kind, id: id, slot: null, unassigned: false, portion: 1, grams: kind === 'food' ? defaultMealFoodGrams(id) : null, unit: kind === 'food' ? foodDefaultLogUnit(id) : null};
   document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
   attachLogPickerSheetHandler();
   document.getElementById('sheet').classList.remove('tall');
@@ -1870,6 +1870,22 @@ function logPickerNutrition(){
     : roundedNutritionTotals(foodMacros(logPickerCtx.id, logPickerCtx.grams));
 }
 
+// Display label for a measure unit. 'item' reads best as "item"; everything else is its own
+// short kitchen word. Kept tiny + pure so both the picker and any caption use one source.
+function logUnitLabel(unit){ return unit === 'item' ? 'item' : unit; }
+// A measure count for display: whole numbers show plain, fractions show up to 2 decimals with
+// trailing zeros trimmed (2, 1.5, 0.25) — never "2.00" or a long float from grams/gpu.
+function formatLogCount(n){
+  if(!isFinite(n)) return '0';
+  const r = Math.round(n * 100) / 100;
+  return (Math.abs(r - Math.round(r)) < 1e-9) ? String(Math.round(r)) : String(r);
+}
+// Clamp a grams value to the loggable range; whole grams for a weight unit, one decimal for a
+// converted volume/item amount so e.g. 0.5 tbsp (6.75 g) keeps its count exact on redisplay.
+function clampLogGrams(grams, isWeight){
+  let g = Math.max(1, Math.min(2000, grams));
+  return isWeight ? Math.round(g) : Math.round(g * 10) / 10;
+}
 function buildLogPickerSheet(){
   if(!logPickerCtx) return '';
   const isRecipe = logPickerCtx.kind === 'recipe';
@@ -1880,24 +1896,46 @@ function buildLogPickerSheet(){
     return '<button class="' + (logPickerCtx.slot === slot ? 'on' : '') + '" data-log-picker-slot="' + slot + '">' + (SLOT_LABEL[slot] || slot) + '</button>';
   }).join('') + '<button class="' + (logPickerCtx.unassigned ? 'on' : '') + '" data-log-picker-unassigned="true">No meal</button>';
   // Amount is TYPEABLE (parseDecimalInput) as well as steppable — the +/- buttons stay for
-  // quick nudges, but you can always type the exact grams/servings you want.
-  const amountRow = isRecipe
-    ? ('<div class="sv-stepper"><button data-log-picker-step="-0.5" aria-label="Fewer servings">-</button>'
+  // quick nudges, but you can always type the exact amount you want.
+  let amountRow, unitRow = '', gramsCaption = '';
+  if(isRecipe){
+    amountRow = '<div class="sv-stepper"><button data-log-picker-step="-0.5" aria-label="Fewer servings">-</button>'
        + '<input class="sv-val" type="text" inputmode="decimal" value="' + logPickerCtx.portion + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitLogPickerPortion(this.value)" aria-label="Servings">'
        + '<span class="sv-unit">×</span>'
-       + '<button data-log-picker-step="0.5" aria-label="More servings">+</button></div>')
-    : ('<div class="sv-stepper"><button data-log-picker-step="-10" aria-label="Decrease grams">-</button>'
-       + '<input class="sv-val" type="text" inputmode="decimal" value="' + logPickerCtx.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitLogPickerGrams(this.value)" aria-label="Grams">'
-       + '<span class="sv-unit">g</span>'
-       + '<button data-log-picker-step="10" aria-label="Increase grams">+</button></div>');
+       + '<button data-log-picker-step="0.5" aria-label="More servings">+</button></div>';
+  } else {
+    // Per-food unit selector (owner 2026-08-24): log in items / tbsp / tsp / cup / g depending
+    // on what the food supports (engine.js:foodMeasureOptions). Grams stay the stored anchor —
+    // the amount is entered in the chosen unit and converted; a live "= N g" makes it transparent.
+    const opts = foodMeasureOptions(logPickerCtx.id);
+    if(!opts.some(function(o){ return o.unit === logPickerCtx.unit; })) logPickerCtx.unit = foodDefaultLogUnit(logPickerCtx.id);
+    const unit = logPickerCtx.unit;
+    const gpu = foodGramsPerUnit(logPickerCtx.id, unit);
+    const count = logPickerCtx.grams / gpu;
+    const step = foodUnitStep(unit);
+    const isWeight = (unit === 'g' || unit === 'ml');
+    if(opts.length > 1){
+      unitRow = '<div class="quick log-picker-units" style="margin-top:8px">'
+        + opts.map(function(o){ return '<button class="' + (o.unit === unit ? 'on' : '') + '" data-log-picker-unit="' + o.unit + '">' + logUnitLabel(o.unit) + '</button>'; }).join('')
+        + '</div>';
+    }
+    amountRow = '<div class="sv-stepper"><button data-log-picker-step="' + (-step) + '" aria-label="Less">-</button>'
+       + '<input class="sv-val" type="text" inputmode="decimal" value="' + formatLogCount(count) + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitLogPickerAmount(this.value)" aria-label="Amount">'
+       + '<span class="sv-unit">' + logUnitLabel(unit) + '</span>'
+       + '<button data-log-picker-step="' + step + '" aria-label="More">+</button></div>';
+    // Show the gram equivalent whenever the chosen unit isn't already grams, so the conversion
+    // Mesa is using (and can be edited on the ingredient) is always visible.
+    if(!isWeight) gramsCaption = '<div class="sub" style="margin-top:6px;text-align:center">= ' + Math.round(logPickerCtx.grams) + ' g</div>';
+  }
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + escapeHtml(title) + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<p class="sub" style="margin-top:6px">Choose a meal, or log it without a meal, then set the amount.</p>'
     + '<div class="shop-cat">Meal</div>'
     + '<div class="quick">' + slotButtons + '</div>'
     + '<div class="shop-cat">Amount</div>'
+    + unitRow
     + '<div class="serve-row" style="margin-top:8px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">' + emoji + ' ' + escapeHtml(title) + '</div>'
-    + amountRow + '</div></div>'
+    + amountRow + gramsCaption + '</div></div>'
     + '<div class="nutri" style="margin-top:14px">'
     + '<div class="n"><div class="nt"><span>Calories</span><b>' + nut.kcal + ' kcal</b></div></div>'
     + '<div class="n"><div class="nt"><span>Protein</span><b>' + nut.protein + ' g</b></div></div>'
@@ -1914,6 +1952,8 @@ function attachLogPickerSheetHandler(){
     if(unassignedBtn && el.contains(unassignedBtn)){ selectLogPickerUnassigned(); return; }
     const slotBtn = e.target.closest('button[data-log-picker-slot]');
     if(slotBtn && el.contains(slotBtn)){ selectLogPickerSlot(slotBtn.getAttribute('data-log-picker-slot')); return; }
+    const unitBtn = e.target.closest('button[data-log-picker-unit]');
+    if(unitBtn && el.contains(unitBtn)){ selectLogPickerUnit(unitBtn.getAttribute('data-log-picker-unit')); return; }
     const stepBtn = e.target.closest('button[data-log-picker-step]');
     if(stepBtn && el.contains(stepBtn)) stepLogPickerAmount(parseFloat(stepBtn.getAttribute('data-log-picker-step')));
   };
@@ -1940,10 +1980,34 @@ function stepLogPickerAmount(delta){
   if(logPickerCtx.kind === 'recipe'){
     logPickerCtx.portion = Math.min(4, Math.max(0.5, +(logPickerCtx.portion + delta).toFixed(1)));
   } else {
-    logPickerCtx.grams = Math.max(1, Math.min(2000, Math.round(logPickerCtx.grams + delta)));
+    // delta is in the CURRENT unit's step; convert to grams (the stored anchor) via gpu.
+    const gpu = foodGramsPerUnit(logPickerCtx.id, logPickerCtx.unit);
+    const isWeight = logPickerCtx.unit === 'g' || logPickerCtx.unit === 'ml';
+    const minCount = isWeight ? 1 : 0.5;
+    const count = Math.max(minCount, (logPickerCtx.grams / gpu) + delta);
+    logPickerCtx.grams = clampLogGrams(count * gpu, isWeight);
   }
   document.getElementById('sheetBody').innerHTML = buildLogPickerSheet();
   attachLogPickerSheetHandler();
+}
+// Amount typed in the currently-selected unit → grams (the stored anchor).
+function commitLogPickerAmount(raw){
+  if(!logPickerCtx) return;
+  const n = parseDecimalInput(raw);
+  if(n !== null && n > 0){
+    const gpu = foodGramsPerUnit(logPickerCtx.id, logPickerCtx.unit);
+    const isWeight = logPickerCtx.unit === 'g' || logPickerCtx.unit === 'ml';
+    logPickerCtx.grams = clampLogGrams(n * gpu, isWeight);
+  }
+  rerenderLogPickerSheet();
+}
+// Switch the logging unit (item/tbsp/tsp/cup/g) — grams (the anchor) is kept, so the shown
+// count just re-expresses the same amount in the new unit, with the "= N g" caption to match.
+function selectLogPickerUnit(unit){
+  if(!logPickerCtx || logPickerCtx.kind !== 'food') return;
+  if(!foodMeasureOptions(logPickerCtx.id).some(function(o){ return o.unit === unit; })) return;
+  logPickerCtx.unit = unit;
+  rerenderLogPickerSheet();
 }
 
 // Typed-amount commits for the log picker (parseDecimalInput accepts "150" / "1,5" etc). Same

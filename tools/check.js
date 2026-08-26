@@ -461,6 +461,50 @@ function testFoodMacrosLinearity(ctx){
     'fields failing: ' + bad.join(', '));
 }
 
+// Measure units (owner 2026-08-24): foodMeasureOptions/foodGramsPerUnit/foodDefaultLogUnit —
+// grams stay the anchor; these translate to items / tbsp / tsp / cup for the log picker.
+function testFoodMeasureUnits(ctx){
+  const FOODS = get(ctx, 'FOODS');
+  const unitsOf = function(id){ return call(ctx, 'foodMeasureOptions', [id]).map(function(o){ return o.unit; }); };
+
+  // (a) a piece food offers 'item' first (grams per item = avgG), then its base weight unit.
+  if(FOODS['eggs']){
+    const eggOpts = call(ctx, 'foodMeasureOptions', ['eggs']);
+    assert(eggOpts[0].unit === 'item' && Math.abs(eggOpts[0].grams - FOODS['eggs'].avgG) < 1e-9,
+      'foodMeasureOptions: a piece food leads with item = avgG grams', JSON.stringify(eggOpts));
+    assert(call(ctx, 'foodDefaultLogUnit', ['eggs']) === 'item', 'foodDefaultLogUnit: piece food defaults to item');
+  }
+
+  // (b) a curated volume food (olive oil) offers tbsp/tsp at the declared grams + its base unit,
+  //     and defaults to the base weight unit (never a volume unit).
+  if(FOODS['olive-oil']){
+    assert(Math.abs(call(ctx, 'foodGramsPerUnit', ['olive-oil', 'tbsp']) - 13.5) < 1e-9,
+      'foodGramsPerUnit: olive oil tbsp is 13.5 g', String(call(ctx, 'foodGramsPerUnit', ['olive-oil', 'tbsp'])));
+    assert(unitsOf('olive-oil').indexOf('tbsp') !== -1 && unitsOf('olive-oil').indexOf('ml') !== -1,
+      'foodMeasureOptions: olive oil offers tbsp and its base ml', JSON.stringify(unitsOf('olive-oil')));
+    assert(call(ctx, 'foodDefaultLogUnit', ['olive-oil']) === 'ml',
+      'foodDefaultLogUnit: a volume food defaults to its base weight unit, not tbsp');
+  }
+  if(FOODS['honey']) assert(Math.abs(call(ctx, 'foodGramsPerUnit', ['honey', 'tbsp']) - 21) < 1e-9, 'foodGramsPerUnit: honey tbsp is 21 g');
+
+  // (c) a plain bulk food with no measures + not piece → only its base weight unit.
+  if(FOODS['chicken-breast']){
+    assert(JSON.stringify(unitsOf('chicken-breast')) === JSON.stringify(['g']),
+      'foodMeasureOptions: a plain food offers only grams', JSON.stringify(unitsOf('chicken-breast')));
+  }
+
+  // (d) unknown unit falls back to 1 g/unit (can never produce a bad conversion).
+  assert(call(ctx, 'foodGramsPerUnit', ['olive-oil', 'nonsense']) === 1, 'foodGramsPerUnit: unknown unit falls back to 1');
+
+  // (e) conversion parity: 2 tbsp of honey (2 x 21 = 42 g) nutrition == foodMacros(honey, 42).
+  if(FOODS['honey']){
+    const gpu = call(ctx, 'foodGramsPerUnit', ['honey', 'tbsp']);
+    const viaUnit = call(ctx, 'foodMacros', ['honey', 2 * gpu]);
+    const viaGrams = call(ctx, 'foodMacros', ['honey', 42]);
+    assert(Math.abs(viaUnit.kcal - viaGrams.kcal) < 1e-9, 'measure conversion: 2 tbsp honey == 42 g honey nutritionally', viaUnit.kcal + ' vs ' + viaGrams.kcal);
+  }
+}
+
 /* ---------------- "Add to pantry" on ingredient cards ----------------
    The button lives on both ingredient surfaces (the Library > Ingredients rows and the
    ingredient detail page) and routes through openPantryAddForFood(), which reuses P2's
@@ -11651,6 +11695,7 @@ function main(){
   runTest('nutrition determinism', function(){ testNutritionDeterminism(ctx); });
   runTest('nutrition perServing non-numeric fields', function(){ testNutritionPerServingNonNumericFields(ctx); });
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
+  runTest('food measure units (item/tbsp/tsp/cup resolver)', function(){ testFoodMeasureUnits(ctx); });
   runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
   runTest('soft lunch=carbs / dinner=protein bias', function(){ testSlotCompositionBias(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });

@@ -398,7 +398,7 @@ const FOODS = {
   'greek-yogurt': {
     name: 'Greek yogurt, plain (2%)', per: 100, unit: 'g',
     kcal: 72, protein: 9.9, carbs: 3.9, fat: 1.9, satFat: 1.2, fiber: 0, sugars: 3.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI', 'fermented'], cat: 'Dairy', sub: 'yogurt', iconKey: 'greek-yogurt', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
+    flags: ['lowGI', 'fermented'], cat: 'Dairy', sub: 'yogurt', measures: {tbsp:18, cup:245}, iconKey: 'greek-yogurt', src: 'USDA FDC 171304 (yogurt, Greek, plain, 2% fat)'
   },
   'skyr': {
     name: 'Skyr, plain', per: 100, unit: 'g',
@@ -458,7 +458,7 @@ const FOODS = {
   'butter': {
     name: 'Butter, salted', per: 100, unit: 'g',
     kcal: 717, protein: 0.9, carbs: 0.1, fat: 81.0, satFat: 51.4, fiber: 0, sugars: 0.1, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', iconKey: 'butter', iconAsset: 'assets/ingredients/butter.png', src: 'USDA FDC 173410-style (butter, salted)'
+    flags: [], cat: 'Dairy', measures: {tbsp:14, tsp:4.7}, iconKey: 'butter', iconAsset: 'assets/ingredients/butter.png', src: 'USDA FDC 173410-style (butter, salted)'
   },
   'gorgonzola': {
     name: 'Gorgonzola / blue cheese', per: 100, unit: 'g',
@@ -468,27 +468,27 @@ const FOODS = {
   'milk': {
     name: 'Milk, whole (3.5% fat)', per: 100, unit: 'ml',
     kcal: 65, protein: 3.3, carbs: 4.8, fat: 3.6, satFat: 2.3, fiber: 0, sugars: 4.8, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'USDA FDC 746782 (milk, whole, 3.25-3.5% fat)'
+    flags: [], cat: 'Dairy', measures: {tbsp:15, cup:240}, iconKey: 'milk', src: 'USDA FDC 746782 (milk, whole, 3.25-3.5% fat)'
   },
   'semi-skimmed-milk': {
     name: 'Milk, semi-skimmed (1.5-2% fat)', per: 100, unit: 'ml',
     kcal: 47, protein: 3.4, carbs: 4.8, fat: 1.6, satFat: 1.0, fiber: 0, sugars: 4.8, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'USDA FDC-style / EU semi-skimmed milk label average; kcal per 4/4/9'
+    flags: [], cat: 'Dairy', measures: {tbsp:15, cup:240}, iconKey: 'milk', src: 'USDA FDC-style / EU semi-skimmed milk label average; kcal per 4/4/9'
   },
   'oat-milk': {
     name: 'Oat milk, unsweetened', per: 100, unit: 'ml',
     kcal: 43, protein: 0.6, carbs: 6.7, fat: 1.5, satFat: 0.2, fiber: 0.8, sugars: 3.3, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic oat milk, unsweetened, manufacturer label average'
+    flags: [], cat: 'Dairy', measures: {tbsp:15, cup:240}, iconKey: 'milk', src: 'Generic oat milk, unsweetened, manufacturer label average'
   },
   'soy-milk': {
     name: 'Soy milk, unsweetened', per: 100, unit: 'ml',
     kcal: 36, protein: 3.3, carbs: 1.7, fat: 1.8, satFat: 0.3, fiber: 0.6, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic unsweetened soy milk label average; kcal per 4/4/9'
+    flags: [], cat: 'Dairy', measures: {tbsp:15, cup:240}, iconKey: 'milk', src: 'Generic unsweetened soy milk label average; kcal per 4/4/9'
   },
   'almond-milk': {
     name: 'Almond milk, unsweetened', per: 100, unit: 'ml',
     kcal: 13, protein: 0.4, carbs: 0.3, fat: 1.1, satFat: 0.1, fiber: 0.3, sugars: 0.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', iconKey: 'milk', src: 'Generic unsweetened almond milk label average; kcal per 4/4/9'
+    flags: [], cat: 'Dairy', measures: {tbsp:15, cup:240}, iconKey: 'milk', src: 'Generic unsweetened almond milk label average; kcal per 4/4/9'
   },
   // Multi-select diets batch: sourced for the new vegan breakfast recipes below — same
   // "Generic label average" convention as soy-milk/oat-milk/almond-milk right above (no
@@ -496,7 +496,7 @@ const FOODS = {
   'soy-yogurt': {
     name: 'Soy yogurt, plain, unsweetened', per: 100, unit: 'g',
     kcal: 57, protein: 3.5, carbs: 4.0, fat: 3.0, satFat: 0.5, fiber: 0.8, sugars: 2.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['lowGI'], cat: 'Dairy', sub: 'yogurt', dairyFree: true, iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
+    flags: ['lowGI'], cat: 'Dairy', sub: 'yogurt', dairyFree: true, measures: {tbsp:18, cup:245}, iconKey: 'greek-yogurt', src: 'Generic plain unsweetened soy yogurt label average; kcal per 4/4/9'
   },
   'espresso-unsweetened': {
     name: 'Coffee / espresso, no sugar', per: 1, unit: 'piece', avgG: 1,
@@ -557,27 +557,27 @@ const FOODS = {
   'honey': {
     name: 'Honey', per: 100, unit: 'g',
     kcal: 331, protein: 0.3, carbs: 82.4, fat: 0, satFat: 0, fiber: 0.2, sugars: 82.1, freeSugars: 82.1, sugarQuality: 'added/free',
-    flags: [], cat: 'Pantry', iconKey: 'honey', src: 'USDA FDC 169640 (honey)'
+    flags: [], cat: 'Pantry', measures: {tbsp:21, tsp:7}, iconKey: 'honey', src: 'USDA FDC 169640 (honey)'
   },
   'maple-syrup': {
     name: 'Maple syrup', per: 100, unit: 'ml',
     kcal: 276, protein: 0.0, carbs: 67.0, fat: 0.1, satFat: 0.0, fiber: 0, sugars: 60.5, freeSugars: 60.5, sugarQuality: 'added/free',
-    flags: [], cat: 'Pantry', iconKey: 'maple-syrup', src: 'USDA FDC 169661-style (maple syrup); kcal per 4/4/9'
+    flags: [], cat: 'Pantry', measures: {tbsp:20, tsp:6.7}, iconKey: 'maple-syrup', src: 'USDA FDC 169661-style (maple syrup); kcal per 4/4/9'
   },
   'fruit-jam': {
     name: 'Fruit jam', per: 100, unit: 'g',
     kcal: 250, protein: 0.4, carbs: 65.0, fat: 0.1, satFat: 0.0, fiber: 1.0, sugars: 48.0, freeSugars: 42.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Pantry', iconKey: 'fruit-jam', src: 'Generic fruit jam label average; kcal per 4/4/9'
+    flags: [], cat: 'Pantry', measures: {tbsp:20, tsp:6.7}, iconKey: 'fruit-jam', src: 'Generic fruit jam label average; kcal per 4/4/9'
   },
   'chia-seeds': {
     name: 'Chia seeds', per: 100, unit: 'g',
     kcal: 511, protein: 16.5, carbs: 42.1, fat: 30.7, satFat: 3.3, fiber: 34.4,
-    flags: ['omega3', 'highFiber', 'glutenFree'], cat: 'Pantry', iconKey: 'chia-seeds', src: 'USDA FDC 170554 (chia seeds, dried)'
+    flags: ['omega3', 'highFiber', 'glutenFree'], cat: 'Pantry', measures: {tbsp:12, tsp:4}, iconKey: 'chia-seeds', src: 'USDA FDC 170554 (chia seeds, dried)'
   },
   'quinoa-dry': {
     name: 'Quinoa, dry (uncooked)', per: 100, unit: 'g',
     kcal: 368, protein: 14.1, carbs: 64.2, fat: 6.1, satFat: 0.7, fiber: 7.0,
-    flags: ['lowGI', 'glutenFree', 'highFiber'], cat: 'Pantry', iconKey: 'quinoa-dry', src: 'USDA FDC 168917 (quinoa, uncooked)'
+    flags: ['lowGI', 'glutenFree', 'highFiber'], cat: 'Pantry', measures: {tbsp:11.5, cup:170}, iconKey: 'quinoa-dry', src: 'USDA FDC 168917 (quinoa, uncooked)'
   },
   'cooked-lentils': {
     name: 'Lentils, cooked', per: 100, unit: 'g',
@@ -627,32 +627,32 @@ const FOODS = {
   '00-flour': {
     name: 'Flour, type 00 (soft wheat)', per: 100, unit: 'g',
     kcal: 353, protein: 10.0, carbs: 74.5, fat: 1.2, satFat: 0.2, fiber: 2.2, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 168911-style (wheat flour, white, all-purpose)'
+    flags: [], cat: 'Pantry', measures: {tbsp:8, tsp:2.6, cup:125}, iconKey: 'flour', src: 'USDA FDC 168911-style (wheat flour, white, all-purpose)'
   },
   'granulated-sugar': {
     name: 'Sugar, granulated', per: 100, unit: 'g',
     kcal: 400, protein: 0, carbs: 100, fat: 0, satFat: 0, fiber: 0, sugars: 100, freeSugars: 100, sugarQuality: 'added/free',
-    flags: [], cat: 'Pantry', iconKey: 'sugar', src: 'USDA FDC 169655 (sugars, granulated)'
+    flags: [], cat: 'Pantry', measures: {tbsp:12.5, tsp:4.2, cup:200}, iconKey: 'sugar', src: 'USDA FDC 169655 (sugars, granulated)'
   },
   '0-flour': {
     name: 'Flour, type 0 (soft wheat)', per: 100, unit: 'g',
     kcal: 348, protein: 11.0, carbs: 72.0, fat: 1.4, satFat: 0.2, fiber: 2.8, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Pantry', iconKey: 'flour', src: 'CREA-style Italian food table (farina tipo 0)'
+    flags: [], cat: 'Pantry', measures: {tbsp:8, tsp:2.6, cup:125}, iconKey: 'flour', src: 'CREA-style Italian food table (farina tipo 0)'
   },
   'oat-flour': {
     name: 'Oat flour', per: 100, unit: 'g',
     kcal: 404, protein: 14.7, carbs: 65.7, fat: 9.1, satFat: 1.6, fiber: 6.5, sugars: 0.9, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber', 'glutenFree'], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 173904-style (oats, ground); milled from rolled oats'
+    flags: ['highFiber', 'glutenFree'], cat: 'Pantry', measures: {tbsp:8, tsp:2.6, cup:125}, iconKey: 'flour', src: 'USDA FDC 173904-style (oats, ground); milled from rolled oats'
   },
   'wholewheat-flour': {
     name: 'Flour, whole wheat', per: 100, unit: 'g',
     kcal: 340, protein: 13.2, carbs: 72.0, fat: 2.5, satFat: 0.4, fiber: 10.7, sugars: 0.4, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Pantry', iconKey: 'flour', src: 'USDA FDC 168897 (wheat flour, whole-grain)'
+    flags: ['highFiber'], cat: 'Pantry', measures: {tbsp:8, tsp:2.6, cup:125}, iconKey: 'flour', src: 'USDA FDC 168897 (wheat flour, whole-grain)'
   },
   'rice': {
     name: 'Rice, white, dry', per: 100, unit: 'g',
     kcal: 355, protein: 7.1, carbs: 80.0, fat: 0.7, satFat: 0.2, fiber: 1.3,
-    flags: ['glutenFree'], cat: 'Pantry', iconKey: 'rice', src: 'USDA FDC 169756 (rice, white, long-grain, dry)'
+    flags: ['glutenFree'], cat: 'Pantry', measures: {tbsp:12.5, cup:185}, iconKey: 'rice', src: 'USDA FDC 169756 (rice, white, long-grain, dry)'
   },
   'tortilla-chips': {
     name: 'Tortilla chips, plain', per: 100, unit: 'g',
@@ -662,7 +662,7 @@ const FOODS = {
   'couscous': {
     name: 'Couscous, dry', per: 100, unit: 'g',
     kcal: 346, protein: 12.8, carbs: 72.4, fat: 0.6, satFat: 0.1, fiber: 5.0,
-    flags: [], cat: 'Pantry', iconKey: 'couscous', src: 'USDA FDC 169736 (couscous, dry)'
+    flags: [], cat: 'Pantry', measures: {tbsp:11, cup:175}, iconKey: 'couscous', src: 'USDA FDC 169736 (couscous, dry)'
   },
   'barley': {
     name: 'Barley, pearled, dry', per: 100, unit: 'g',
@@ -682,17 +682,17 @@ const FOODS = {
   'olive-oil': {
     name: 'Olive oil, extra virgin', per: 100, unit: 'ml',
     kcal: 900, protein: 0, carbs: 0, fat: 100, satFat: 13.8, fiber: 0,
-    flags: [], cat: 'Pantry', iconKey: 'olive-oil', src: 'USDA FDC 171413 (oil, olive)'
+    flags: [], cat: 'Pantry', measures: {tbsp:13.5, tsp:4.5}, iconKey: 'olive-oil', src: 'USDA FDC 171413 (oil, olive)'
   },
   'balsamic-vinegar': {
     name: 'Balsamic vinegar', per: 100, unit: 'ml',
     kcal: 90, protein: 0.5, carbs: 22.0, fat: 0, satFat: 0, fiber: 0, sugars: 15.0, freeSugars: 15.0, sugarQuality: 'added/free',
-    flags: [], cat: 'Pantry', iconKey: 'balsamic-vinegar', src: 'USDA FDC 172387-style (vinegar, balsamic); kcal per 4/4/9'
+    flags: [], cat: 'Pantry', measures: {tbsp:16, tsp:5.3}, iconKey: 'balsamic-vinegar', src: 'USDA FDC 172387-style (vinegar, balsamic); kcal per 4/4/9'
   },
   'soy-sauce': {
     name: 'Soy sauce', per: 100, unit: 'ml',
     kcal: 57, protein: 8.1, carbs: 4.9, fat: 0.1, satFat: 0.0, fiber: 0.8,
-    flags: [], cat: 'Pantry', iconKey: 'soy-sauce', src: 'USDA FDC 174277-style (soy sauce); kcal per 4/4/9'
+    flags: [], cat: 'Pantry', measures: {tbsp:16, tsp:5.3}, iconKey: 'soy-sauce', src: 'USDA FDC 174277-style (soy sauce); kcal per 4/4/9'
   },
   // COMPOSITE, but BOUGHT (composite-ingredients task): `components` exists so allergen/
   // diet derivation can see the real egg inside it (engine.js:foodOrComponentsMatch,
@@ -712,7 +712,7 @@ const FOODS = {
   'peanut-butter': {
     name: 'Peanut butter, smooth', per: 100, unit: 'g',
     kcal: 628, protein: 25.0, carbs: 20.0, fat: 50.0, satFat: 10.0, fiber: 6.0, sugars: 9.0, freeSugars: 4.0, sugarQuality: 'mixed',
-    flags: ['highFiber'], cat: 'Pantry', iconKey: 'peanut-butter', src: 'USDA FDC 172470-style (peanut butter, smooth); kcal per 4/4/9'
+    flags: ['highFiber'], cat: 'Pantry', measures: {tbsp:16, tsp:5.3}, iconKey: 'peanut-butter', src: 'USDA FDC 172470-style (peanut butter, smooth); kcal per 4/4/9'
   },
   'ginger': {
     name: 'Ginger, fresh', per: 100, unit: 'g',
@@ -722,7 +722,7 @@ const FOODS = {
   'mustard': {
     name: 'Mustard', per: 100, unit: 'g',
     kcal: 76, protein: 4.4, carbs: 5.8, fat: 4.0, satFat: 0.2, fiber: 4.0,
-    flags: [], cat: 'Pantry', iconKey: 'mustard', src: 'USDA FDC 172234-style (mustard, prepared); kcal per 4/4/9'
+    flags: [], cat: 'Pantry', measures: {tbsp:15, tsp:5}, iconKey: 'mustard', src: 'USDA FDC 172234-style (mustard, prepared); kcal per 4/4/9'
   },
   'dark-chocolate-85': {
     name: 'Dark chocolate, 85% cocoa', per: 100, unit: 'g',
@@ -817,7 +817,7 @@ const FOODS = {
   'oats': {
     name: 'Oats, rolled, dry', per: 100, unit: 'g',
     kcal: 395, protein: 16.9, carbs: 66.3, fat: 6.9, satFat: 1.2, fiber: 10.6,
-    flags: ['highFiber'], cat: 'Pantry', iconKey: 'oats', src: 'USDA FDC 173904 (oats, rolled, dry)'
+    flags: ['highFiber'], cat: 'Pantry', measures: {tbsp:6, cup:90}, iconKey: 'oats', src: 'USDA FDC 173904 (oats, rolled, dry)'
   },
   'pumpkin-seeds': {
     name: 'Pumpkin seeds, hulled, raw', per: 100, unit: 'g',

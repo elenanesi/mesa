@@ -317,6 +317,61 @@ function foodMacros(foodId, grams){
   };
 }
 
+/* ---------------- measure units (owner 2026-08-24) ----------------
+   Grams stay the deterministic anchor for every stored amount and all nutrition math
+   (foodMacros above). These helpers only translate BETWEEN grams and the units a food is
+   naturally logged/edited in, for the log picker's unit selector and the food editor's
+   transparent "1 tbsp = N g" rows. A food supports:
+     - its base weight unit ALWAYS (g, or ml for a liquid: unit:'ml'),
+     - "item" when it's a piece food (unit:'piece' + avgG > 0) — grams per item = avgG,
+     - tbsp / tsp / cup when it carries a `measures:{tbsp,tsp,cup}` gram map (curated
+       high-value subset — oils, flour, sugar, honey, spreads, grains, liquids…).
+   avgG and measures are per-food fields, so a per-household edit (foodOverrides / customFoods,
+   already merged into FOODS and couple-synced) changes them everywhere at once — which is
+   exactly the "editable, one source of truth" the owner asked for. Reading FOODS[id] here
+   picks up that override automatically. */
+const MEASURE_UNIT_ORDER = ['tbsp', 'tsp', 'cup'];
+function foodBaseWeightUnit(food){ return (food && food.unit === 'ml') ? 'ml' : 'g'; }
+// Ordered list of {unit, grams, label} a food can be logged in — the natural unit first
+// (item for a piece food, else the first volume unit if curated, else the base weight unit),
+// with the base weight unit always available last so grams is never unreachable.
+function foodMeasureOptions(foodId){
+  const food = (typeof FOODS !== 'undefined') ? FOODS[foodId] : null;
+  const baseUnit = foodBaseWeightUnit(food);
+  if(!food) return [{unit: 'g', grams: 1, label: 'g'}];
+  const opts = [];
+  if(food.unit === 'piece' && Number(food.avgG) > 0) opts.push({unit: 'item', grams: Number(food.avgG), label: 'item'});
+  if(food.measures && typeof food.measures === 'object'){
+    MEASURE_UNIT_ORDER.forEach(function(u){
+      const g = Number(food.measures[u]);
+      if(isFinite(g) && g > 0) opts.push({unit: u, grams: g, label: u});
+    });
+  }
+  opts.push({unit: baseUnit, grams: 1, label: baseUnit});
+  return opts;
+}
+// Grams for ONE of `unit` for this food (1 for the base weight unit). Falls back to grams
+// if the food doesn't actually support the unit, so callers can't produce a bad conversion.
+function foodGramsPerUnit(foodId, unit){
+  const opt = foodMeasureOptions(foodId).filter(function(o){ return o.unit === unit; })[0];
+  return opt ? opt.grams : 1;
+}
+// The default unit to log a food in: an item for a piece food, else its base weight unit
+// (g/ml). Volume units (tbsp/tsp/cup) are offered but never the default — a default of
+// "12 tbsp of flour" would be odd; the user switches to the unit that suits what they're doing.
+function foodDefaultLogUnit(foodId){
+  const food = (typeof FOODS !== 'undefined') ? FOODS[foodId] : null;
+  if(food && food.unit === 'piece' && Number(food.avgG) > 0) return 'item';
+  return foodBaseWeightUnit(food);
+}
+// Step size for the amount stepper in a given unit: whole grams/ml by 10, items by 1, spoons/
+// cups by a half (a half-tablespoon is a real kitchen amount; half a cup too).
+function foodUnitStep(unit){
+  if(unit === 'g' || unit === 'ml') return 10;
+  if(unit === 'item') return 1;
+  return 0.5;
+}
+
 // task D1 (recipe options/variants): resolves an `opts` object ({groupKey: choiceId})
 // against `recipe.optionGroups` into a COMPLETE, valid combo — every group gets exactly
 // one entry. Missing keys, unknown group keys in `opts`, and choice ids that don't
