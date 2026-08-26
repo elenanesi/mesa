@@ -91,13 +91,18 @@ Week workspace.
   inputs — the remaining stepper-only `<span class="sv-val">` spots (e.g. `stepMealExtraFoodGrams`,
   the meal builder, recipe/composite grams). Convert to the typeable `input.sv-val` + `parseDecimalInput`
   pattern, keeping the +/- buttons.
-- **Ingredient UNIT PICKER** (tbsp / tsp / cup / piece / g → grams). Owner chose a **curated
-  high-value subset** (~40–80 foods where volume matters — oils, flours, sugar, honey, rice/grains,
-  spreads, spices, liquids — get a per-food `measures:{tbsp,tsp,cup}` gram map; every food keeps
-  typeable grams + `piece` where `avgG`/`unit:'piece'` is set) and **convert-&-store-grams** (grams
-  stay the deterministic anchor; the input shows the live "2 tbsp = 27 g"; the chosen unit is NOT
-  stored). Curate the gram-per-unit weights carefully from standard references — a tbsp of oil ≠ a
-  tbsp of flour. Built-in FOODS are file-based, so adding food fields is a Pages deploy (no D1 seed).
+- **Ingredient UNIT PICKER** — LOG-PICKER HALF SHIPPED 2026-08-24 (`b1b24de`). engine.js
+  `foodMeasureOptions`/`foodGramsPerUnit`/`foodDefaultLogUnit`/`foodUnitStep` resolve a food's
+  loggable units; the log picker (render-today.js `buildLogPickerSheet` + `selectLogPickerUnit`/
+  `commitLogPickerAmount`) shows a unit selector (item / tbsp / tsp / cup / g-ml) with a live
+  "= N g". Grams stay the stored anchor; the chosen unit is NOT stored. `measures:{tbsp,tsp,cup}`
+  gram maps added to ~26 curated foods so far (oils, honey, syrup, sugar, flours, grains, spreads,
+  soy sauce, dairy liquids) — extend toward the full ~40–80 as needed (built-in FOODS are
+  file-based → Pages deploy, no D1 seed). **STILL TO DO:** (1) editing those weights IN the
+  ingredient editor ("1 apple = N g", "1 tbsp = N g") — blocked on the food editor's save path,
+  which flattens every edit to `per:100, unit:'g'` and `delete`s `avgG` (saveNewFood ~L1932/1939),
+  so it must be reworked to preserve/allow per-piece + `measures` before editing is safe; (2) the
+  meal/recipe ingredient grams inputs still stepper-only (the "type amounts everywhere" remainder).
 
 **D1 mirror sync now writes a per-row diff, not the whole library (FIXED 2026-08-23).**
 `mirrorLibraryCatalogToD1()` (`app/js/sync.js`) used to rewrite the household's ENTIRE custom
