@@ -6,12 +6,33 @@ The one "where things stand" doc. Companions: **README.md** (what Mesa is + arch
 and **KNOWLEDGE-BASE.md** as its backbone. Full history is in `git log`; this is the summary a
 next agent needs to pick up cold.
 
-Prod: **https://mesa-9y5.pages.dev/app/** (Google sign-in + Cloudflare Access). Tests: **1795 green**
+Prod: **https://mesa-9y5.pages.dev/app/** (invite-only Google sign-in; Cloudflare Access was REMOVED — see README). Tests: **1938 green**
 (`node tools/check.js`, was 1484).
 
 ---
 
 ## Shipped
+
+**Recipe Market + UX batch (2026-08-27–29, all deployed).** Panel-driven; see the memory
+`project-recipe-market.md` for the full detail.
+- **Recipe Market** — a household starts with a small, diet-appropriate **starter book** (positive
+  `recipeBook` include-set in state.js; new households seeded at onboarding from their diet/avoid);
+  a browsable **Market** (My book / Market segment on the Recipes screen) to add/remove; removal is
+  calm + **reversible** (re-add anytime); **Duplicate → "make it mine"** forks any recipe. Existing
+  households are untouched (`recipeBookInit === 0` ⇒ full catalog). Merge via the existing
+  `(entryMap, tombstone)` trio; kept OUT of the per-row D1 mirror.
+- **Navigation** — the centre ＋ FAB now goes **straight to Log** in one tap (was a 4-item menu;
+  authoring lives in the Library hub); **Profile & settings** is now a Library-hub row (was a
+  dead-end from every non-Today tab).
+- **Meal Builder (capture-only)** — on a plan slot with ≥2 recipe dishes, "Save as a Meal" stores a
+  recipe-of-recipes that KEEPS its dishes as `components`; cards show a "Meal" pill + the dish names.
+  Captured Meals are `occasional` (reach for them, not auto-inserted). `saveSlotAsMeal` (library.js).
+- **Foods** — replaced the `lemon-juice`/`lime-juice` ingredients with whole **lemon** + **lime**
+  (lemon reuses the watercolor icon; lime uses the default icon for now); added per-item weights
+  (`avgG`) to 16 fruit/veg so they log by "item" (apple 182 g, banana 118 g, …).
+- **Sync hardening** — `recipeRowSignature` (sync.js) now hashes real recipe content
+  (ingredients/components/…), not just title/season/image (a stale-nutrition-sync hazard the Meal
+  Builder would have tripped).
 
 **Foundation (2026-07).** PWA MVP (vanilla JS, no build step); deterministic week planner
 (recipe nutrition = sum(ingredients), kcal = 4·p+4·c+9·f, byte-identical regeneration); ~900 foods
@@ -87,10 +108,12 @@ Week workspace.
 ## Open / next
 
 **Measurement workstream — amounts & units (owner decisions LOCKED 2026-08-21):**
-- **Type amounts everywhere.** Done in the log picker; STILL TO DO in the meal/recipe ingredient
-  inputs — the remaining stepper-only `<span class="sv-val">` spots (e.g. `stepMealExtraFoodGrams`,
-  the meal builder, recipe/composite grams). Convert to the typeable `input.sv-val` + `parseDecimalInput`
-  pattern, keeping the +/- buttons.
+- **Type amounts everywhere.** DONE 2026-08-29 — the last stepper-only `sv-val` spots (meal-builder
+  rows, edit-today-food, add-meal food extras — render-today.js) are now typeable
+  (`input.sv-val` + `parseDecimalInput` + a shared `applyMealExtraFoodGrams`), keeping the +/-. The
+  recipe-builder grams were already typeable. **STILL TO DO (smaller):** surface the tbsp/tsp/cup
+  unit picker in those recipe/meal-builder inputs (it's only in the log picker) — best folded into
+  future Meal Builder work.
 - **Ingredient UNIT PICKER** — SHIPPED 2026-08-24 (`b1b24de` log picker, `6d26095` editor).
   engine.js `foodMeasureOptions`/`foodGramsPerUnit`/`foodDefaultLogUnit`/`foodUnitStep` resolve a
   food's loggable units; the log picker (render-today.js) shows a unit selector (item / tbsp / tsp /
@@ -124,16 +147,37 @@ tests in `tools/check.js` (`diffLibraryCatalogPayload` per-row diffing + `mirror
 sends-only-changed-rows). Merge invariants (`mergeLibrarySection`, tombstones) unchanged.
 
 **UX-review residuals** (from the retired `UX-REVIEW-plan.md`):
-- **Log ⇄ tab bar (P1).** Log is reachable only via the centre ＋ FAB and no tab highlights while on
-  it (`app/js/app.js`, `go('log')` finds no matching `.tab`). Options: give Log a real tab, fold the
-  picker into Today as a sheet, or fix the highlight state.
-- **Long display names clip in the `.seg` person switcher (P2).** The `.seg` component has no
-  `max-width`/ellipsis; a name near the 24-char cap clips on all five mounts. Fix is a `.seg` CSS pass.
-- **Diet + avoid-list combos can starve a slot (P3).** vegetarian + gluten-free + the default avoid
-  list starves day-6 lunch (degrades honestly with a "no meal fits your filters" card). Fix = widen
-  the lunch pool — needs a **D1 re-seed**.
+- ~~**Log ⇄ tab bar (P1).**~~ RESOLVED 2026-08-29 — the ＋ FAB IS the Log destination now and lights
+  correctly there.
+- ~~**Long display names clip in the `.seg` switcher (P2).**~~ RESOLVED — `.seg`/`.seg button` already
+  carry `max-width`/`text-overflow:ellipsis` in mesa.css.
+- **Diet + avoid-list combos can starve a slot (P3).** Honest-degrade + a book-aware "browse the
+  Market" card shipped (only points at the Market when it holds a diet-valid recipe; else routes to
+  Profile). The starter-sufficiency test now covers gluten-free/lactose/vegan+GF stacks. STILL OPEN:
+  widening the GLOBAL pool for very strict combos — a **D1 re-seed**, decoupled as its own reviewed
+  content release.
+
+**Open follow-ups (from the 2026-08-29 batch):**
+- **Keystone/days-set counts a structurally-empty slot as unfinished.** A strict-diet household that
+  hits a `no-candidates` slot can never reach 4/4 accounted, so `todayKeystoneState` never settles to
+  "complete" and `weekDaysSetCount`/`accountedSlotCount` (render.js) never counts the day — the user
+  must manually SKIP the impossible slot. Fix = exclude `no-candidates` slots from the keystone total
+  + days-set denominator (the completion logic must consult the plan's `reason`). Deliberately
+  deferred — it touches the core habit, so do it with honesty tests, not a rushed edit.
+- **Lime has no bespoke icon** — it uses the default ingredient icon. Drop a green watercolor
+  `app/assets/ingredients/lime.png` (via the `watercolor-ingredient-icons` skill + an image tool) and
+  set the `lime` food's `iconKey: 'lime'`; `build-sw` picks up the asset.
+- **Unmerged fix on `origin/claude/codebase-review-improvements-ictw46`** — one commit "remove
+  duplicate Swap button on the Today snack card" never merged; verify whether it's still needed in
+  `main` and cherry-pick if so.
 
 ## Later-phase levers (deferred, not scheduled)
+- **Always-on fibre nudge — TRIED then DROPPED (2026-08-29).** Built a small always-on fibre term in
+  the `tuningBonus` class (deterministic, no starvation, tests green) but verification showed the
+  default Mediterranean plans already deliver **~51 g fibre/day — 2× the WHO 25 g floor** — so the
+  lift was ~+5 g/week, not worth it. The more relevant fibre question is TYPE/variety (a weekly
+  distinct-plant count), not quantity — and even that needs checking whether variety is actually low
+  before building. Reverted; don't re-attempt fibre-quantity steering.
 - **Generation rewire** (balance-aware picks) — a soft, deterministic additive score term at the pick
   sites (`planner.js` `pickSoloMeal`/`pickSharedMeal`, sibling to `tuningBonus`), threading per-day
   running totals in. Declined once (the post-pass suffices); revisit only with fresh determinism +
