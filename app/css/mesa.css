@@ -410,6 +410,12 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 /* log picker: selected meal-slot button (buildLogPickerSheet, render-today.js) — same
    sage "selected" language as .seg button.on/.pill.chipsel elsewhere in the app. */
 .quick button.on{border-color:var(--sage);background:var(--sage-tint);color:var(--sage-deep);}
+/* Inline unit picker on the add-meal food extras (item / tbsp / tsp / cup / g) — small chips under
+   the row's macros, plus the live "= N g" so grams (the anchor) stay visible. */
+.meal-extra-units{display:flex;flex-wrap:wrap;gap:5px;margin-top:5px;align-items:center;}
+.meal-extra-units button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:3px 9px;font:inherit;font-size:10.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;min-height:0;}
+.meal-extra-units button.on{border-color:var(--sage);background:var(--sage-tint);color:var(--sage-deep);}
+.meal-extra-units .meal-extra-grams{font-size:10.5px;color:var(--muted);margin-left:2px;}
 .logitem{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);}
 #todaySoFar .logitem:last-child,#todayRecordsList .logitem:last-child{border-bottom:0;}
 .logitem .li-i{width:42px;height:42px;border-radius:12px;background:var(--terra-tint);display:grid;place-items:center;font-size:20px;flex:0 0 42px;}

@@ -195,9 +195,25 @@ function openAddMealSheetForContext(ctx){
     // extra gets a typeable grams input (anchor) with the +/- kept. The input carries data-act +
     // the row's data-food-id, so the delegated change handler commits without interpolating the
     // user-authored id into inline JS (onfocus/Enter-blur are static, id-free).
-    const valPart = isRecipe
-      ? '<span class="sv-val">' + (((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x') + '</span>'
-      : '<input class="sv-val" type="text" inputmode="decimal" data-act="setgrams" value="' + c.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" aria-label="Grams of ' + htmlAttr(title) + '"><span class="sv-unit">g</span>';
+    // A food extra's amount is entered in the food's OWN units (item / tbsp / tsp / cup / g — engine.js
+    // foodMeasureOptions), with a live "= N g"; grams stay the stored anchor. Same UI the log picker
+    // uses. A food with only grams shows just grams (no picker). Recipe extras step by 0.5 servings.
+    let valPart, unitPicker = '';
+    if(isRecipe){
+      valPart = '<span class="sv-val">' + (((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x') + '</span>';
+    } else {
+      const opts = foodMeasureOptions(c.foodId);
+      const unit = mealExtraFoodUnitFor(c.foodId);
+      const gpu = foodGramsPerUnit(c.foodId, unit);
+      const count = c.grams / gpu;
+      valPart = '<input class="sv-val" type="text" inputmode="decimal" data-act="setamount" value="' + formatLogCount(count) + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" aria-label="Amount of ' + htmlAttr(title) + '"><span class="sv-unit">' + logUnitLabel(unit) + '</span>';
+      if(opts.length > 1){
+        unitPicker = '<div class="meal-extra-units">'
+          + opts.map(function(o){ return '<button data-act="setunit" data-unit="' + o.unit + '" class="' + (o.unit === unit ? 'on' : '') + '">' + logUnitLabel(o.unit) + '</button>'; }).join('')
+          + ((unit !== 'g' && unit !== 'ml') ? '<span class="meal-extra-grams">= ' + Math.round(c.grams) + ' g</span>' : '')
+          + '</div>';
+      }
+    }
     const stepper = isBase ? '' : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
       + '<button data-act="minus" aria-label="' + (isRecipe ? 'Fewer servings of ' : 'Less ') + htmlAttr(title) + '">-</button>'
       + valPart
@@ -206,7 +222,8 @@ function openAddMealSheetForContext(ctx){
     html += '<div class="altrow" style="cursor:default" ' + (isRecipe ? 'data-recipe-id="' + htmlAttr(c.recipeId) + '"' : 'data-food-id="' + htmlAttr(c.foodId) + '"') + '>'
       + '<div class="ae">' + emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
-      + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+      + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div>'
+      + unitPicker + '</div>'
       + stepper
       + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" data-act="remove">✕ Remove</button>')
       + '</div>';
@@ -545,10 +562,12 @@ function attachAddMealSheetHandler(){
       if(act === 'remove'){
         if(recipeId) removeMealExtraRecipe(recipeId);
         else if(foodId) removeMealExtraFood(foodId);
+      } else if(act === 'setunit'){
+        if(foodId) setMealExtraFoodUnit(foodId, btn.getAttribute('data-unit'));
       } else if(act === 'minus' || act === 'plus'){
         const dir = act === 'plus' ? 1 : -1;
         if(recipeId) stepMealExtraPortion(recipeId, dir * 0.5);
-        else if(foodId) stepMealExtraFoodGrams(foodId, dir * 10);
+        else if(foodId) stepMealExtraFoodGrams(foodId, dir * mealExtraFoodStepGrams(foodId));
       }
       return;
     }
@@ -557,14 +576,14 @@ function attachAddMealSheetHandler(){
     const addFoodRow = e.target.closest('.altrow[data-add-food-id]');
     if(addFoodRow && el.contains(addFoodRow)) chooseMealExtraFood(addFoodRow.getAttribute('data-add-food-id'));
   };
-  // Typeable grams on a food extra (data-act="setgrams") — commits on blur/change, reading the
-  // food id from the row so no user-authored id is interpolated into inline JS.
+  // Typeable amount on a food extra (data-act="setamount") — in the food's chosen unit; commits on
+  // blur/change, reading the food id from the row so no user-authored id is interpolated into inline JS.
   el.onchange = function(e){
-    const input = e.target.closest('input[data-act="setgrams"]');
+    const input = e.target.closest('input[data-act="setamount"]');
     if(!input || !el.contains(input)) return;
     const row = input.closest('.altrow[data-food-id]');
     if(!row) return;
-    commitMealExtraFoodGrams(row.getAttribute('data-food-id'), input.value);
+    commitMealExtraFoodAmount(row.getAttribute('data-food-id'), input.value);
   };
 }
 
@@ -893,6 +912,34 @@ function commitMealExtraFoodGrams(foodId, raw){
   const v = parseDecimalInput(raw);
   if(v !== null && v > 0) applyMealExtraFoodGrams(foodId, v);
   else if(addMealCtx) openAddMealRecipeSheet(addMealCtx.slot, addDaysISO(addMealCtx.weekStartDate, addMealCtx.dayIndex));
+}
+
+// UNIT PICKER on the add-meal food extras (owner 2026-08-30): enter the amount in the food's own
+// units (item / tbsp / tsp / cup / g), grams stay the anchor. mealExtraFoodUnits holds the chosen
+// DISPLAY unit per food (transient, not persisted — only grams are stored on the plan entry).
+let mealExtraFoodUnits = {};
+function mealExtraFoodUnitFor(foodId){
+  const opts = foodMeasureOptions(foodId);
+  const chosen = mealExtraFoodUnits[foodId];
+  if(chosen && opts.some(function(o){ return o.unit === chosen; })) return chosen;
+  return foodDefaultLogUnit(foodId);
+}
+function setMealExtraFoodUnit(foodId, unit){
+  if(!foodMeasureOptions(foodId).some(function(o){ return o.unit === unit; })) return;
+  mealExtraFoodUnits[foodId] = unit;
+  if(addMealCtx) openAddMealRecipeSheet(addMealCtx.slot, addDaysISO(addMealCtx.weekStartDate, addMealCtx.dayIndex));
+}
+// One +/- step in the current display unit, expressed in grams (the stored anchor).
+function mealExtraFoodStepGrams(foodId){
+  const unit = mealExtraFoodUnitFor(foodId);
+  return Math.max(1, Math.round(foodUnitStep(unit) * foodGramsPerUnit(foodId, unit)));
+}
+// Commit a typed amount that's in the chosen unit → convert to grams and store.
+function commitMealExtraFoodAmount(foodId, raw){
+  if(!addMealCtx) return;
+  const v = parseDecimalInput(raw);
+  if(v !== null && v > 0) applyMealExtraFoodGrams(foodId, v * foodGramsPerUnit(foodId, mealExtraFoodUnitFor(foodId)));
+  else openAddMealRecipeSheet(addMealCtx.slot, addDaysISO(addMealCtx.weekStartDate, addMealCtx.dayIndex));
 }
 
 /* ---------------- MEAL BUILDER: compose a one-time meal from ingredients + recipes ----------------
