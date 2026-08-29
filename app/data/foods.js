@@ -102,15 +102,15 @@ const FOODS = {
     kcal: 43, protein: 1.1, carbs: 9.3, fat: 0.1, satFat: 0.0, fiber: 1.7,
     flags: [], cat: 'Produce', iconKey: 'red-onion', src: 'USDA FDC 170000-style (onion, red, raw)'
   },
-  'lemon-juice': {
-    name: 'Lemon juice, raw', per: 100, unit: 'ml',
-    kcal: 31, protein: 0.4, carbs: 6.9, fat: 0.2, satFat: 0.0, fiber: 0.3,
-    flags: [], cat: 'Produce', iconKey: 'lemon-juice', src: 'USDA FDC 167747 (lemon juice, raw); kcal per 4/4/9'
+  'lemon': {
+    name: 'Lemon, raw', per: 100, unit: 'g', avgG: 58,
+    kcal: 44, protein: 1.1, carbs: 9.3, fat: 0.3, satFat: 0.0, fiber: 2.8, sugars: 2.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Produce', iconKey: 'lemon', src: 'USDA FDC 167746 (lemons, raw, without peel); kcal per 4/4/9. avgG = 1 medium lemon.'
   },
-  'lime-juice': {
-    name: 'Lime juice, raw', per: 100, unit: 'ml',
-    kcal: 37, protein: 0.4, carbs: 8.4, fat: 0.2, satFat: 0.0, fiber: 0.4, sugars: 1.7, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', iconKey: 'lime-juice', src: 'USDA FDC 173728 (lime juice, raw); kcal per 4/4/9. Added for the guacamole composite (composite-ingredients task).'
+  'lime': {
+    name: 'Lime, raw', per: 100, unit: 'g', avgG: 67,
+    kcal: 47, protein: 0.7, carbs: 10.5, fat: 0.2, satFat: 0.0, fiber: 2.8, sugars: 1.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Produce', src: 'USDA FDC 168156 (limes, raw); kcal per 4/4/9. avgG = 1 medium lime. No bespoke icon yet — falls back to the default ingredient icon.'
   },
   'coriander': {
     name: 'Coriander (cilantro), fresh', per: 100, unit: 'g',
@@ -703,7 +703,7 @@ const FOODS = {
   // planner.js:foodQuantitiesForComponents's doc for the bought-vs-made distinction.
   'mayonnaise': {
     name: 'Mayonnaise', per: 100, unit: 'g',
-    components: [['eggs', 50], ['olive-oil', 200], ['lemon-juice', 15], ['mustard', 5]],
+    components: [['eggs', 50], ['olive-oil', 200], ['lemon', 15], ['mustard', 5]],
     yieldG: 270,
     bought: true,
     cat: 'Pantry', iconKey: 'mayonnaise', src: 'Composite: ~1 whole egg (50g) + 200g oil + 15g lemon juice + 5g mustard, USDA FDC-style component macros; kcal per 4/4/9. Bought as itself (bought:true) — components exist only so allergen/diet derivation can see the egg.'
@@ -835,7 +835,7 @@ const FOODS = {
   // for a variant to switch.
   'olive-oil-lemon-dressing': {
     name: 'Olive oil & lemon dressing (blend)', per: 100, unit: 'ml',
-    components: [['olive-oil', 80], ['lemon-juice', 20]],
+    components: [['olive-oil', 80], ['lemon', 20]],
     yieldG: 100,
     bought: false,
     cat: 'Pantry', iconKey: 'olive-oil-lemon-dressing', src: 'Composite: 80% olive oil + 20% lemon juice by weight; macros computed from these grams, never hand-frozen.'
@@ -854,7 +854,7 @@ const FOODS = {
   // pescatarian/lactose-safe under every diet, no variant needed.
   'guacamole': {
     name: 'Guacamole', per: 100, unit: 'g',
-    components: [['avocado', 200], ['lime-juice', 20], ['red-onion', 30], ['tomatoes', 80], ['coriander', 10], ['salt', 2]],
+    components: [['avocado', 200], ['lime', 20], ['red-onion', 30], ['tomatoes', 80], ['coriander', 10], ['salt', 2]],
     yieldG: 342,
     bought: false,
     cat: 'Pantry', season: 'evergreen',

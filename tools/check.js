@@ -9413,7 +9413,7 @@ function testRecipeOptionsBuilder(ctx){
     const rb = get(ctx, 'recipeBuilder');
     rb.name = 'D3 Test Variant Bowl';
     rb.emoji = '🥗';
-    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon', grams: 10}];
     call(ctx, 'addRecipeOptionGroup', []);
     rb.optionGroups[0].label = 'Protein';
     rb.optionGroups[0].choices[0].label = 'Salmon';
@@ -9529,7 +9529,7 @@ function testRecipeOptionsBuilder(ctx){
     call(ctx, 'openNewRecipeForm', []);
     const rb = get(ctx, 'recipeBuilder');
     rb.name = 'D3 hostile label recipe';
-    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon', grams: 10}];
     call(ctx, 'addRecipeOptionGroup', []);
     rb.optionGroups[0].label = PAYLOAD_TAG;
     rb.optionGroups[0].choices[0].label = PAYLOAD_TAG; // DEFAULT choice — this is the one recipeDisplayTitle surfaces
@@ -9582,7 +9582,7 @@ function testRecipeOptionsBuilder(ctx){
     call(ctx, 'openNewRecipeForm', []);
     const rb = get(ctx, 'recipeBuilder');
     rb.name = 'D3 slug collision recipe';
-    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon', grams: 10}];
     call(ctx, 'addRecipeOptionGroup', []);
     call(ctx, 'addRecipeOptionGroup', []);
     rb.optionGroups[0].label = 'Fish';
@@ -9624,7 +9624,7 @@ function testRecipeOptionsBuilder(ctx){
     call(ctx, 'openNewRecipeForm', []);
     let rb = get(ctx, 'recipeBuilder');
     rb.name = 'D3 dairy-default meta recipe';
-    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon', grams: 10}];
     call(ctx, 'addRecipeOptionGroup', []);
     rb.optionGroups[0].label = 'Topping';
     rb.optionGroups[0].choices[0].label = 'Ricotta'; // DEFAULT — cat 'Dairy'
@@ -9642,7 +9642,7 @@ function testRecipeOptionsBuilder(ctx){
     call(ctx, 'openNewRecipeForm', []);
     rb = get(ctx, 'recipeBuilder');
     rb.name = 'D3 dairy-nondefault meta recipe';
-    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon', grams: 10}];
     call(ctx, 'addRecipeOptionGroup', []);
     rb.optionGroups[0].label = 'Topping';
     rb.optionGroups[0].choices[0].label = 'Oranges'; // DEFAULT, no dairy
@@ -9666,7 +9666,7 @@ function testRecipeOptionsBuilder(ctx){
     call(ctx, 'openNewRecipeForm', []);
     const rb = get(ctx, 'recipeBuilder');
     rb.name = 'D3 unresolvable ingredient recipe';
-    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon-juice', grams: 10}];
+    rb.ingredients = [{foodId: 'olive-oil', grams: 10}, {foodId: 'lemon', grams: 10}];
     call(ctx, 'addRecipeOptionGroup', []);
     rb.optionGroups[0].label = 'Protein';
     rb.optionGroups[0].choices[0].label = 'Salmon';
