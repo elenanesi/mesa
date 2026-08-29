@@ -220,6 +220,17 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .lib-recipe-actions{display:grid;grid-template-columns:repeat(2,34px);grid-auto-rows:34px;gap:6px;flex:0 0 74px;align-self:center;}
 .lib-recipe-actions .lib-edit,.lib-recipe-actions .lib-del{width:34px;height:34px;min-width:34px;flex:0 0 34px;border-radius:10px;font-size:14px;padding:0;}
 .lib-recipe-actions .lib-del{font-size:13px;}
+/* RECIPE-MARKET: icon buttons (inline Lucide SVG) for the recipe-row actions. Centre the glyph
+   and size it so nothing overflows the 34px square the way the old "Add"/"Remove" text did. */
+.lib-recipe-actions .lib-edit,.lib-recipe-actions .lib-del,.lib-recipe-actions .lib-add-book{display:flex;align-items:center;justify-content:center;}
+.lib-recipe-actions .licon{width:18px;height:18px;display:block;}
+/* Market view: a single Add / Re-add icon button, right-aligned (no 2-col reserve). */
+.lib-recipe-actions.market{display:flex;justify-content:flex-end;align-items:center;flex:0 0 40px;}
+.lib-add-book{width:34px;height:34px;min-width:34px;flex:0 0 34px;border:0;border-radius:10px;background:var(--sage-deep,#6b7f5e);color:#fff;cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;}
+.lib-add-book:active{transform:scale(.94);}
+/* Market view: a recipe already in the book shows a quiet, non-interactive check — no remove. */
+.lib-inbook-check{width:34px;height:34px;display:flex;align-items:center;justify-content:center;color:var(--sage-deep,#6b7f5e);opacity:.55;}
+.lib-inbook-check .licon{width:18px;height:18px;}
 .field textarea.inp{display:block;}
 .stackbar{height:8px;border-radius:999px;background:#eef0ec;overflow:hidden;display:flex;}
 .stackbar i{display:block;height:100%;}
@@ -330,6 +341,9 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .day-meal-row .dm-e{font-size:20px;width:28px;text-align:center;flex:0 0 28px;}
 .day-meal-row .dm-t{flex:1 1 auto;font-size:13.5px;min-width:0;line-height:1.35;}
 .day-meal-row .dm-t small{display:block;color:var(--muted);font-size:11px;margin-top:1px;}
+/* RECIPE-MARKET: tappable "add from the Market" hint on a starved slot — reads like the muted
+   sub-label above, but underlined + accent-coloured to signal it's an action. */
+.day-meal-row .dm-t .dm-market-hint{display:block;margin-top:1px;padding:0;border:0;background:none;color:var(--accent,#6b7f5e);font-size:11px;text-align:left;text-decoration:underline;cursor:pointer;min-height:0;}
 .day-meal-row .dm-k{font-size:12px;font-weight:700;color:var(--ink-soft);flex:0 0 auto;}
 /* Two-week horizon: inline per-meal swap icon on the Week screen's day rows (works on
    whichever week — current or next — is displayed; render.js:openWeekSwap). 44x44

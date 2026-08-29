@@ -147,8 +147,13 @@ function applyCustomRecipes(){
   Object.keys(RECIPES_DB).forEach(function(id){ delete RECIPES_DB[id]; });
   Object.keys(RECIPE_SLOT_DB).forEach(function(id){ delete RECIPE_SLOT_DB[id]; });
 
+  // RECIPE-MARKET gate: once the book is initialised (recipeBookInit > 0), a built-in is live
+  // only if it's IN the book (recipeBook[id]). While uninitialised (0, every legacy household)
+  // this is inert and the full catalog is live — byte-identical to the pre-market behaviour.
+  const bookActive = recipeBookInit > 0;
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
     if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    if(bookActive && !recipeBook[id]) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
     RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(src));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
@@ -2731,6 +2736,10 @@ function confirmPantryAdd(){
 let libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
 let libRecipeFiltersOpen = false;
 let libRecipeListReturn = null;
+// RECIPE-MARKET: which lens the Recipes screen shows — 'book' (recipes in the household's book,
+// the planner's pool) or 'market' (the full catalog to add from). Same search/filter machinery
+// serves both; only the source id list and the per-row action chips differ.
+let libRecipeView = 'book';
 
 function cloneLibRecipeFilters(filters){
   return {query: filters.query || '', diets: new Set(filters.diets), slots: new Set(filters.slots), tags: new Set(filters.tags), seasons: new Set(filters.seasons)};
@@ -2757,6 +2766,7 @@ function returnToMyRecipes(){
 function openMyRecipes(){
   libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
   libRecipeFiltersOpen = false;
+  libRecipeView = 'book'; // always land on the household's book; the Market is one tap away
   setRecipesScreenHtml(buildMyRecipesSheet());
   attachLibRecipeListHandler();
 }
@@ -2782,12 +2792,41 @@ function attachLibRecipeListHandler(){
     if(act === 'favorite' || act === 'down') toggleRecipePref(id, act);
     else if(act === 'edit') openEditRecipeForm(id);
     else if(act === 'delete') deleteRecipe(id);
+    else if(act === 'duplicate') duplicateRecipe(id);
+    else if(act === 'addbook') addRecipeToBook(id);
+    else if(act === 'removebook') removeRecipeFromBook(id);
   };
 }
 
+// RECIPE-MARKET: switch the Recipes screen between the household's book and the full market.
+function setLibRecipeView(view){
+  const next = (view === 'market') ? 'market' : 'book';
+  if(libRecipeView === next) return;
+  libRecipeView = next;
+  const seg = document.getElementById('libRecipeViewSeg');
+  if(seg){
+    seg.querySelectorAll('[data-lib-view]').forEach(function(b){
+      b.classList.toggle('active', b.getAttribute('data-lib-view') === next);
+    });
+  }
+  rerenderLibRecipeFilteredView();
+}
+
+// The recipe object for a list row, resolved from the active view's source (book == RECIPES_DB,
+// market == the full built-in catalog). Custom `cr-` recipes only ever live in RECIPES_DB.
+function libRecipeSource(id){
+  if(libRecipeView === 'market') return RECIPES_DB[id] || BUILTIN_RECIPES_DB[id];
+  return RECIPES_DB[id];
+}
+
 function filteredRecipeIds(){
-  return Object.keys(RECIPES_DB).filter(function(id){
-    const r = RECIPES_DB[id];
+  // Book view: the household's live recipes (RECIPES_DB). Market view: the whole catalog minus
+  // hard-deleted/retired ids — each row then shows whether it's already in the book (Add/Remove).
+  const sourceIds = (libRecipeView === 'market')
+    ? Object.keys(BUILTIN_RECIPES_DB).filter(function(id){ return !deletedRecipes[id] && RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) === -1; })
+    : Object.keys(RECIPES_DB);
+  return sourceIds.filter(function(id){
+    const r = libRecipeSource(id);
     // Defensive: same reasoning as libFoodIdsByCategory above — a malformed entry from a
     // bad merge must not crash the whole Recipes sheet build.
     if(!r || !r.title) return false;
@@ -2830,7 +2869,9 @@ function filteredRecipeIds(){
     const rank = function(id){ const p = activePrefs[id]; return p === 'favorite' ? 0 : (p === 'down' ? 2 : 1); };
     const ra = rank(a), rb = rank(b);
     if(ra !== rb) return ra - rb;
-    return RECIPES_DB[a].title < RECIPES_DB[b].title ? -1 : (RECIPES_DB[a].title > RECIPES_DB[b].title ? 1 : 0);
+    const ta = (libRecipeSource(a) || {}).title || '';
+    const tb = (libRecipeSource(b) || {}).title || '';
+    return ta < tb ? -1 : (ta > tb ? 1 : 0);
   });
 }
 
@@ -2974,11 +3015,14 @@ function rerenderLibRecipeFilteredView(){
 
 function renderLibRecipeListMarkup(){
   const ids = filteredRecipeIds();
+  const isMarket = libRecipeView === 'market';
   if(!ids.length){
     const query = (libRecipeFilters.query || '').trim();
     const labels = recipeFilterLabels().map(function(item){ return item.label; });
     const hasFilters = labels.length > 0;
-    let message = 'No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.';
+    let message = isMarket
+      ? 'Nothing in the market matches — everything already fits here is in your book.'
+      : 'No recipes in your book yet — switch to the Market to add some, or tap ＋ New recipe to write your own.';
     if(query && hasFilters) message = 'No ' + labels.join(', ').toLowerCase() + ' recipes match &ldquo;' + escapeHtml(query) + '&rdquo;. Clear filters or edit your search.';
     else if(query) message = 'No recipes match &ldquo;' + escapeHtml(query) + '&rdquo;.';
     else if(hasFilters) message = 'No ' + labels.join(', ').toLowerCase() + ' recipes match these filters.';
@@ -2988,22 +3032,60 @@ function renderLibRecipeListMarkup(){
   // id in data-recipe-id and the action buttons a data-act verb, resolved by
   // attachLibRecipeListHandler's delegation — never interpolated into inline onclick JS.
   return '<div style="margin-top:4px">' + ids.map(function(id){
-    const r = RECIPES_DB[id];
+    const r = libRecipeSource(id);
+    if(!r) return '';
     const nut = recipeNutrition(id, 1).totals;
-    const badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
+    const inBook = recipeInBook(id);
+    let badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
+    if(isMarket && inBook) badge += ' <span class="pill mini">in your book</span>';
     const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
     const pref = (recipePrefs[currentProf] && recipePrefs[currentProf][id]) || null;
+    let actions;
+    if(isMarket){
+      // Market is browse-and-ADD only. A recipe already in the book shows just the "in your book"
+      // pill (no remove/edit/duplicate here — those live in My book / the recipe detail). A recipe
+      // not yet added shows a single Add / Re-add icon button.
+      if(inBook){
+        actions = '<span class="lib-inbook-check" aria-label="In your book">' + lucideIcon('check') + '</span>';
+      } else {
+        const label = deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book';
+        actions = '<button class="lib-add-book" data-act="addbook" aria-label="' + label + ' — ' + htmlAttr(r.title) + '">' + lucideIcon('plus') + '</button>';
+      }
+    } else {
+      // My book: favourite / thumbs (per-person), edit, and the calm reversible remove (permanent
+      // delete only for a recipe you authored). Four icon buttons in a tidy 2x2 grid — no text to
+      // overflow. Duplicate lives on the recipe DETAIL (openRecipe) to keep the row compact.
+      const removeAct = customRecipes[id] ? 'delete' : 'removebook';
+      const removeLabel = customRecipes[id] ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
+      actions = '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">' + lucideIcon('heart') + '</button>'
+        + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">' + lucideIcon('thumbs-down') + '</button>'
+        + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">' + lucideIcon('pencil') + '</button>'
+        + '<button class="lib-del" data-act="' + removeAct + '" aria-label="' + removeLabel + '">' + lucideIcon('trash') + '</button>';
+    }
     return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
       + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
-      + '<div class="lib-recipe-actions">'
-      + '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">♡</button>'
-      + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">👎</button>'
-      + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">✎</button>'
-      + '<button class="lib-del" data-act="delete" aria-label="Delete ' + htmlAttr(r.title) + '">✕</button>'
-      + '</div>'
+      + '<div class="lib-recipe-actions' + (isMarket ? ' market' : '') + '">' + actions + '</div>'
       + '</div>';
   }).join('') + '</div>';
+}
+
+// Minimal inline Lucide icons (MIT) for the recipe-row actions — inline SVG (no external asset,
+// CSP-safe) so a glyph font can never render an empty box. stroke:currentColor picks up each
+// button's own colour (sage / terracotta / muted). 24x24 viewBox, 2px round strokes.
+const LUCIDE_PATHS = {
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  copy: '<rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>',
+  pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+  trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
+  heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
+  'thumbs-down': '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>'
+};
+function lucideIcon(name){
+  const body = LUCIDE_PATHS[name];
+  if(!body) return '';
+  return '<svg class="licon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">' + body + '</svg>';
 }
 
 function toggleRecipePref(id, pref){
@@ -3021,11 +3103,19 @@ function toggleRecipePref(id, pref){
 
 function buildMyRecipesSheet(){
   let html = '<div class="row between" style="margin-top:6px"><h1 style="margin:0">Recipes</h1><button class="backbtn" style="margin:0" onclick="openLibraryHub()">‹ Library</button></div>'
+    // RECIPE-MARKET: My book (the planner's pool) vs Market (the full catalog to add from). Same
+    // search/filter machinery serves both; setLibRecipeView() swaps the source + re-renders.
+    + '<div class="seg" id="libRecipeViewSeg" role="tablist" aria-label="Recipe view" style="margin-top:10px">'
+    + '<button role="tab" data-lib-view="book" class="' + (libRecipeView === 'book' ? 'active' : '') + '" aria-selected="' + (libRecipeView === 'book' ? 'true' : 'false') + '" onclick="setLibRecipeView(\'book\')">My book</button>'
+    + '<button role="tab" data-lib-view="market" class="' + (libRecipeView === 'market' ? 'active' : '') + '" aria-selected="' + (libRecipeView === 'market' ? 'true' : 'false') + '" onclick="setLibRecipeView(\'market\')">Market</button>'
+    + '</div>'
     + '<button class="cta ghostbtn" style="margin-top:10px" onclick="openNewRecipeForm()">＋ New recipe</button>'
     + '<div class="recipe-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input type="search" id="libRecipeSearchInput" placeholder="Search recipes…" value="' + htmlAttr(libRecipeFilters.query || '') + '" oninput="onLibRecipeSearchInput(this.value)" autocomplete="off" aria-label="Search recipes"></div>'
     + '<div id="libRecipeFilterBar">' + renderLibRecipeFilterBar() + '</div>';
-  if(!Object.keys(RECIPES_DB).length){
-    html += '<p class="sub" style="margin-top:14px">No recipes available — tap ＋ New recipe to add one. It’ll show up here and in the planner automatically.</p>';
+  // Only the book can be legitimately empty (a household that pruned it right down); the market
+  // always has the catalog to browse, so don't early-return out of it.
+  if(libRecipeView === 'book' && !Object.keys(RECIPES_DB).length){
+    html += '<p class="sub" style="margin-top:14px">Your book is empty — switch to the <b>Market</b> to add recipes, or tap ＋ New recipe to write your own.</p>';
     return html;
   }
   html += '<div id="libRecipeList">' + renderLibRecipeListMarkup() + '</div>';
@@ -3035,7 +3125,7 @@ function buildMyRecipesSheet(){
 function deleteRecipe(id){
   const r = RECIPES_DB[id] || customRecipes[id] || recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
   if(!r) return;
-  if(!confirmDeletion()) return;
+  if(!confirmDeletion('“' + r.title + '”')) return;
   const title = r.title;
   // Both branches tombstone: without it, couple-sync's per-id merge (js/sync.js:
   // mergeLibrarySection) is a plain union and would resurrect the delete from whichever
@@ -3051,6 +3141,173 @@ function deleteRecipe(id){
   toast('✓ Deleted ' + title);
   renderFoodLibraryCount();
   if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
+}
+
+/* ---------------- recipe market / book (RECIPE-MARKET, 2026-08) ----------------
+   The book is a per-household POSITIVE include-set of BUILT-IN ids (recipeBook, state.js). The
+   full D1 catalog is a browsable market; the planner + shopping list draw only from the book.
+   Custom `cr-` recipes are always in the book (authoring == adding). See the state.js doc block. */
+
+// The curated starter book: built-in ids a fresh household begins with (before diet/avoid
+// filtering). A CODE list (not a per-recipe data field) so it needs no D1 reseed and is one edit
+// to tune. Chosen for BREADTH across slots AND diets and biased to evergreen staples, so that
+// after diet filtering every supported eating style still clears the per-slot floors the check.js
+// starter-sufficiency test enforces (tools/check.js:testStarterBookSufficiency). Keep every id in
+// sync with data/recipes.js (an id removed from the catalog just drops out here harmlessly).
+const STARTER_RECIPE_IDS = [
+  // breakfast (incl. plant-based: porridge, tofu scramble, avocado toast)
+  'yogurt', 'omelette', 'oats-berries-walnuts', 'scrambled-eggs-tomato-toast',
+  'porridge-banana-almond', 'tofu-scramble-spinach-tomato', 'avocado-tomato-toast',
+  'overnight-oats-banana-peanut-butter', 'coconut-chia-pudding-peach',
+  // lunch / dinner mains — vegan, vegetarian, pescatarian and meat all covered
+  'chickpea-veg-stew', 'tofu-rice-broccoli-bowl', 'chickpea-quinoa-broccoli-bowl',
+  'lentil-rice-vegetable-bowl', 'lentils-tomato-cumin', 'white-bean-rosemary-mash',
+  'greek-salad-big', 'lentil', 'tunasalad', 'tuna-white-bean-salad', 'baked-cod-greens',
+  'chickenfarro', 'pollo-al-forno', 'chicken-sweet-potato-broccoli', 'turkey-roasted-veg',
+  // sides (all plant-based)
+  'roasted-potatoes', 'mashed-potatoes', 'steamed-rice', 'roasted-mixed-veg',
+  'steamed-broccoli-pumpkin-seeds',
+  // snacks
+  'carrots-over-hummus', 'hummus-veg-sticks', 'yogurt-fruit-snack', 'boiled-eggs-veg-sticks',
+  'brazil-nuts-apple'
+];
+
+// Runtime floor below which we DON'T flip the book on when seeding — a diet/avoid combo we
+// haven't curated enough starters for is safer left on the full catalog than seeded to a
+// near-empty (broken) week. The check.js starter-sufficiency test guarantees each supported
+// DIET clears this comfortably; only a user's own unusually heavy avoid-list can dip under it.
+const STARTER_MIN_TO_ACTIVATE = 8;
+
+// Is this recipe id currently in the household's book (i.e. live for the planner)?
+function recipeInBook(id){
+  if(!id) return false;
+  if(id.indexOf('cr-') === 0) return !deletedRecipes[id]; // custom: in unless hard-deleted
+  if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
+  if(recipeBookInit > 0) return !!recipeBook[id];
+  return true; // uninitialised == full catalog
+}
+
+// True once the household has a curated book (new households after onboarding, or an existing
+// household after its first market action). Drives whether the market surfaces Add/Remove chips.
+function recipeBookIsActive(){ return recipeBookInit > 0; }
+
+// Materialise the book to the CURRENT live built-in set (minus deletes/retired) and switch it
+// on. Used the first time an already-established (uninitialised) household curates via the
+// market, so "remove one recipe" doesn't accidentally empty a book that meant "everything".
+function materializeRecipeBook(){
+  if(recipeBookInit > 0) return;
+  recipeBookInit = Date.now();
+  recipeBook = {};
+  Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
+    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    recipeBook[id] = {u: recipeBookInit};
+  });
+}
+
+// Built-in starter ids for a fresh household: the `starter`-tagged built-ins that at least one
+// household member can actually eat (diet + avoid). "At least one" (not "all") so a couple with
+// divergent diets each gets their staples as solo options; the planner still enforces per-slot
+// diet unions for shared meals. Computed against the FULL catalog (call before the book is on).
+function starterRecipeIdsForHousehold(){
+  const people = (typeof rebalanceTrackedPeople === 'function') ? rebalanceTrackedPeople() : ['elena'];
+  const out = [];
+  STARTER_RECIPE_IDS.forEach(function(id){
+    const r = BUILTIN_RECIPES_DB[id];
+    if(!r) return; // id no longer in the catalog — skip harmlessly
+    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    const okForSomeone = people.some(function(person){
+      const diets = (PROF[person] && PROF[person].diets) || [];
+      if(typeof recipeViolatesDiet === 'function' && recipeViolatesDiet(id, diets)) return false;
+      if(typeof recipeHitsAvoid === 'function' && recipeHitsAvoid(r, avoidFoodsList(person))) return false;
+      return true;
+    });
+    if(okForSomeone) out.push(id);
+  });
+  return out;
+}
+
+// Seed a brand-new household's book from the starter set (js/app.js:finishOnboarding). Idempotent
+// guard: only ever runs while the book is still uninitialised, and only flips the book ON when the
+// starter set clears STARTER_MIN_TO_ACTIVATE — otherwise the household stays on the full catalog
+// (a safe, never-broken week) rather than a too-thin seed. Returns the number of recipes seeded
+// (0 = left on full catalog).
+function seedStarterBook(){
+  if(recipeBookInit > 0) return 0; // already curated — never clobber
+  const ids = starterRecipeIdsForHousehold();
+  if(ids.length < STARTER_MIN_TO_ACTIVATE) return 0;
+  const now = Date.now();
+  recipeBookInit = now;
+  recipeBook = {};
+  deletedFromBook = {};
+  ids.forEach(function(id){ recipeBook[id] = {u: now}; });
+  customRev++;
+  applyCustomRecipes();
+  return ids.length;
+}
+
+// Market "Add" / "Re-add": bring a built-in id into the book. Clears any book-removal tombstone
+// with a newer stamp so a peer's stale removal can't win the next merge (pruneTombstoned).
+function addRecipeToBook(id){
+  if(!id || id.indexOf('cr-') === 0) return; // custom recipes are always in the book
+  materializeRecipeBook();
+  recipeBook[id] = {u: Date.now()};
+  if(deletedFromBook[id]) delete deletedFromBook[id];
+  customRev++;
+  applyCustomRecipes();
+  persist();
+  applyProf(currentProf); // refresh library-derived UI without resetting the current plan
+  const r = BUILTIN_RECIPES_DB[id] || RECIPES_DB[id];
+  toast('✓ Added ' + ((r && r.title) || 'recipe') + ' to your book');
+  renderFoodLibraryCount();
+  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
+}
+
+// Remove a BUILT-IN from the book — the calm, reversible counterpart to deleteRecipe. NOT a
+// hard delete/tombstone (deletedRecipes): the recipe stays in the market, re-addable anytime.
+// `silent` skips the toast/re-render for callers that manage their own (e.g. an Undo flow).
+function removeRecipeFromBook(id, silent){
+  if(!id || id.indexOf('cr-') === 0) return; // custom recipes: use deleteRecipe (permanent)
+  materializeRecipeBook();
+  if(recipeBook[id]) delete recipeBook[id];
+  deletedFromBook[id] = Date.now();
+  customRev++;
+  applyCustomRecipes();
+  persist();
+  applyProf(currentProf);
+  if(!silent){
+    const r = BUILTIN_RECIPES_DB[id] || RECIPES_DB[id];
+    toast('Removed ' + ((r && r.title) || 'recipe') + ' — re-add from the market anytime');
+    renderFoodLibraryCount();
+    if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
+  }
+}
+
+// Open the Recipes screen straight into the Market, pre-filtered to one meal slot — the "add one
+// of these to fill the gap" path the planner's starved-slot card points at (render-week/today).
+function openMarketForSlot(slot){
+  openMyRecipes(); // navigates to + renders the Recipes screen (My book)
+  libRecipeView = 'market';
+  if(slot && ['breakfast', 'lunch', 'dinner', 'snack', 'side'].indexOf(slot) !== -1){
+    libRecipeFilters.slots = new Set([slot]);
+  }
+  setRecipesScreenHtml(buildMyRecipesSheet());
+  attachLibRecipeListHandler();
+}
+
+// Duplicate any recipe (built-in, market, or custom) into a fresh editable `cr-` draft — the
+// on-brand, non-destructive "make it mine". Reuses recipeToBuilder + the normal save path, which
+// mints a new cr- id (uniqueSlug) on save. The "Copy of …" title is load-bearing: saveRecipeBuilder
+// rejects a duplicate title, and this keeps the fork from colliding with its source.
+function duplicateRecipe(id){
+  const src = RECIPES_DB[id] || BUILTIN_RECIPES_DB[id] || customRecipes[id];
+  if(!src){ toast('Recipe not found'); return; }
+  const draft = recipeToBuilder(id, src);
+  if(!draft){ toast('Recipe not found'); return; }
+  draft.editingId = null; // detach → saveRecipeBuilder allocates a fresh cr- id
+  draft.name = 'Copy of ' + (src.title || 'recipe');
+  rememberRecipeListReturn();
+  recipeBuilder = draft;
+  renderRecipeBuilderSheet(false);
 }
 
 /* ---------------- recipe builder ---------------- */
@@ -3089,8 +3346,10 @@ function recipeOptionGroupsToBuilder(r){
   });
 }
 
-function recipeToBuilder(id){
-  const r = RECIPES_DB[id];
+// `recipeObj` overrides the live-DB lookup — used by duplicateRecipe() so a Market recipe that
+// isn't in the current book (so not in RECIPES_DB) can still be forked from BUILTIN_RECIPES_DB.
+function recipeToBuilder(id, recipeObj){
+  const r = recipeObj || RECIPES_DB[id];
   if(!r) return null;
   return {
     editingId: id,

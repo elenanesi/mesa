@@ -57,7 +57,8 @@ function recipeServingContextFor(key){
 // default combo for a recipe WITH optionGroups, or {} (bare `ingredients`, unchanged) for
 // one without — byte-identical to pre-D1 output either way.
 function recipeDisplayIngredients(recipeId, opts){
-  const src = RECIPES_DB[recipeId];
+  // RECIPE-MARKET: catalog fallback so an out-of-book market recipe still previews its ingredients.
+  const src = RECIPES_DB[recipeId] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[recipeId]);
   if(!src) return [];
   const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
   const ingredients = recipeEffectiveIngredients(src, opts).map(function(ing){
@@ -75,7 +76,8 @@ function recipeDisplayIngredients(recipeId, opts){
 // legacy [pillClass, label] pill pairs the recipe screen/Today cards already know how to
 // paint — moved verbatim from the old buildLegacyRecipesCompat() compat view.
 function recipeDisplayPills(recipeId){
-  const src = RECIPES_DB[recipeId];
+  // RECIPE-MARKET: catalog fallback so an out-of-book market recipe still previews its pills.
+  const src = RECIPES_DB[recipeId] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[recipeId]);
   if(!src || !Array.isArray(src.tags)) return [];
   // Tags without an approved, factual display label are internal catalog metadata, not
   // user-facing health claims (for example the retired thyroid/skin/low-GI labels).
@@ -90,7 +92,8 @@ function recipeDisplayPills(recipeId){
 // back to the deterministic default combo (normalizeRecipeOpts), so a stale/legacy
 // component with no `.opts` field still shows a sensible ("default choice") label.
 function recipeDisplayTitle(id, opts){
-  const r = RECIPES_DB[id];
+  // RECIPE-MARKET: catalog fallback so an out-of-book market recipe still previews its title.
+  const r = RECIPES_DB[id] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[id]);
   if(!r) return '';
   if(!Array.isArray(r.optionGroups) || !r.optionGroups.length) return r.title;
   const normalized = normalizeRecipeOpts(r, opts);
@@ -314,8 +317,12 @@ function recipeHeroHtml(recipe, recipeId){
 }
 
 function renderRecipe(key){
-  const r = RECIPES_DB[key] || RECIPES_DB.omelette;
-  currentRecipeKey = RECIPES_DB[key] ? key : 'omelette';
+  // RECIPE-MARKET: a recipe opened from the Market may not be in the book (so not in RECIPES_DB
+  // yet) — fall back to the catalog so it still previews. If it's not even in the catalog, keep
+  // the existing omelette safety net.
+  const resolved = RECIPES_DB[key] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[key]) || null;
+  const r = resolved || RECIPES_DB.omelette;
+  currentRecipeKey = resolved ? key : 'omelette';
   svE = 1; svM = 1.5; svS = 1;
   recipeServingCtx = recipeServingContextFor(currentRecipeKey);
   if(recipeServingCtx){
@@ -353,18 +360,52 @@ function renderRecipe(key){
 // cooking flow. Logging is intentionally absent: a meal is confirmed only from Today.
 function renderRecipeDetailActions(){
   const wrap = document.getElementById('recipeDetailActions');
-  const r = RECIPES_DB[currentRecipeKey];
+  const key = currentRecipeKey;
+  const r = RECIPES_DB[key] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[key]);
   if(!wrap || !r) return;
+  const isCustom = !!customRecipes[key];
+  const inBook = (typeof recipeInBook === 'function') ? recipeInBook(key) : true;
   const hasMeal = !!(recipeServingCtx && recipeServingCtx.slot);
-  let html = '<button class="recipe-action recipe-action-primary" onclick="openRecipeEditorFromDetail()">✎ Edit recipe</button>';
+  let html = '';
+  // RECIPE-MARKET: a built-in the household hasn't added yet leads with "Add to your book"; the
+  // rest of the management actions only make sense once it's in the book.
+  if(!isCustom && !inBook){
+    // Market preview: add-only. Duplicate/edit belong to My book, so a catalog recipe is added
+    // first, then tweaked — keeps the market a browse-and-add surface (owner's call).
+    html += '<button class="recipe-action recipe-action-primary" onclick="addRecipeToBookFromDetail()">＋ Add to your book</button>';
+    wrap.innerHTML = html;
+    return;
+  }
+  html += '<button class="recipe-action recipe-action-primary" onclick="openRecipeEditorFromDetail()">✎ Edit recipe</button>';
+  // Duplicate → "make it mine": the on-brand, non-destructive way to riff on any recipe.
+  html += '<button class="recipe-action" onclick="duplicateRecipeFromDetail()">Duplicate &amp; tweak</button>';
   if(hasMeal){
     html += '<button class="recipe-action" onclick="manageRecipeMealFromDetail()">☷ Manage meal</button>';
     html += '<button class="recipe-action recipe-action-quiet" onclick="openSwap(recipeServingCtx.slot,null)">↔ Swap</button>';
   }
-  if(recipeOverrides[currentRecipeKey]) html += '<button class="recipe-action recipe-action-quiet" onclick="resetRecipeFromDetail()">↺ Reset</button>';
-  if(customRecipes[currentRecipeKey]) html += '<button class="recipe-action recipe-action-danger" onclick="deleteRecipeFromDetail()">Delete</button>';
+  if(recipeOverrides[key]) html += '<button class="recipe-action recipe-action-quiet" onclick="resetRecipeFromDetail()">↺ Reset</button>';
+  if(isCustom){
+    // A recipe you authored — delete is permanent (its data is destroyed); Duplicate above is the
+    // safe way to experiment.
+    html += '<button class="recipe-action recipe-action-danger" onclick="deleteRecipeFromDetail()">Delete</button>';
+  } else {
+    // A built-in — "remove" is the calm, reversible book removal (re-add from the market anytime),
+    // never a hard delete.
+    html += '<button class="recipe-action recipe-action-quiet" onclick="removeRecipeFromBookDetail()">Remove from book</button>';
+  }
   wrap.innerHTML = html;
 }
+
+function addRecipeToBookFromDetail(){
+  addRecipeToBook(currentRecipeKey);
+  renderRecipe(currentRecipeKey); // repaint actions now that it's in the book
+}
+function removeRecipeFromBookDetail(){
+  const id = currentRecipeKey;
+  removeRecipeFromBook(id);
+  backFromRecipe();
+}
+function duplicateRecipeFromDetail(){ duplicateRecipe(currentRecipeKey); }
 
 function openRecipeEditorFromDetail(){ openEditRecipeForm(currentRecipeKey); }
 function manageRecipeMealFromDetail(){
@@ -419,7 +460,8 @@ function buildRecipeOptionsChipsHtml(recipe, resolvedOpts){
 function renderRecipeOptionsChips(){
   const wrap = document.getElementById('recipeOptionsWrap');
   if(!wrap) return;
-  const r = RECIPES_DB[currentRecipeKey];
+  // RECIPE-MARKET: catalog fallback so an out-of-book market recipe still shows its variant chips.
+  const r = RECIPES_DB[currentRecipeKey] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[currentRecipeKey]);
   if(!r || !Array.isArray(r.optionGroups) || !r.optionGroups.length){
     wrap.innerHTML = '';
     wrap.style.display = 'none';

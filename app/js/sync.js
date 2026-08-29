@@ -120,6 +120,13 @@ function librarySectionData(){
     recipeOverrides: clone(recipeOverrides),
     deletedRecipes: clone(deletedRecipes),
     deletedFoods: clone(deletedFoods),
+    // recipeBook (RECIPE-MARKET) rides the couple-sync `library` section (a small KV blob), and is
+    // DELIBERATELY kept out of the per-row D1 mirror (buildLibraryCatalogPayload) — the per-row
+    // mirror is where the 2026-08 100k-D1-writes/day incident lived; the book is per-household
+    // state, not catalog content.
+    recipeBook: clone(recipeBook),
+    deletedFromBook: clone(deletedFromBook),
+    recipeBookInit: recipeBookInit,
     recipePrefs: clone(recipePrefs),
     customRev: customRev
   };
@@ -898,6 +905,11 @@ function mergePersonalPrefs(local, remote){
 function mergeLibrarySection(local, remote){
   const mergedDeletedRecipes = mergeTombstones(local.deletedRecipes, remote.deletedRecipes);
   const mergedDeletedFoods = mergeTombstones(local.deletedFoods, remote.deletedFoods);
+  // recipeBook (RECIPE-MARKET): the SAME (entryMap, tombstoneMap) pattern as customRecipes —
+  // per-id newer-wins union, then prune ids a book-removal tombstoned unless the include entry's
+  // `u` is newer (a re-add after a peer's removal). recipeBookInit is a scalar gate merged
+  // max-wins: once either phone initialises the book (>0), both do.
+  const mergedDeletedFromBook = mergeTombstones(local.deletedFromBook, remote.deletedFromBook);
   return {
     customFoods: pruneTombstoned(mergeEntryMap(local.customFoods, remote.customFoods), mergedDeletedFoods),
     foodOverrides: pruneTombstoned(mergeEntryMap(local.foodOverrides, remote.foodOverrides), mergedDeletedFoods),
@@ -905,6 +917,12 @@ function mergeLibrarySection(local, remote){
     recipeOverrides: pruneTombstoned(mergeEntryMap(local.recipeOverrides, remote.recipeOverrides), mergedDeletedRecipes),
     deletedRecipes: mergedDeletedRecipes,
     deletedFoods: mergedDeletedFoods,
+    recipeBook: pruneTombstoned(mergeEntryMap(local.recipeBook, remote.recipeBook), mergedDeletedFromBook),
+    deletedFromBook: mergedDeletedFromBook,
+    recipeBookInit: Math.max(
+      (typeof local.recipeBookInit === 'number' && isFinite(local.recipeBookInit)) ? local.recipeBookInit : 0,
+      (typeof remote.recipeBookInit === 'number' && isFinite(remote.recipeBookInit)) ? remote.recipeBookInit : 0
+    ),
     recipePrefs: mergePersonalPrefs(local.recipePrefs, remote.recipePrefs)
   };
 }
@@ -968,6 +986,9 @@ function applySyncResponse(sent, remoteSections){
       recipeOverrides = merged.recipeOverrides;
       deletedRecipes = merged.deletedRecipes;
       deletedFoods = merged.deletedFoods;
+      recipeBook = merged.recipeBook;
+      deletedFromBook = merged.deletedFromBook;
+      recipeBookInit = merged.recipeBookInit;
       recipePrefs = merged.recipePrefs;
       applyCustomFoods();
       applyCustomRecipes();
@@ -978,10 +999,13 @@ function applySyncResponse(sent, remoteSections){
       // checks below (applyMergedRevBookkeeping assumes mergedData's shape IS remote.data's
       // shape 1:1, which isn't true here because of that counter field, hence the inline
       // version instead of reusing it for this section).
-      const LIB_KEYS = ['customFoods', 'foodOverrides', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'deletedFoods', 'recipePrefs'];
+      const LIB_KEYS = ['customFoods', 'foodOverrides', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'deletedFoods', 'recipeBook', 'deletedFromBook', 'recipePrefs'];
       function libContentOnly(data){
         const out = {};
         LIB_KEYS.forEach(function(k){ out[k] = data[k] || {}; });
+        // recipeBookInit is a scalar gate (0 default), not a map — compare it as a number so a
+        // 0 doesn't read as {} and spuriously bump customRev.
+        out.recipeBookInit = (typeof data.recipeBookInit === 'number' && isFinite(data.recipeBookInit)) ? data.recipeBookInit : 0;
         return out;
       }
       if(!deepEqualJSON(merged, libContentOnly(sentEntry.data))) customRev++; // local content actually changed by the merge

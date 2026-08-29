@@ -857,8 +857,13 @@ function testDeletionConfirmation(ctx){
   ctx.confirm = function(message){ asked = message; return false; };
   assert(call(ctx, 'confirmDeletion', []) === false,
     'deletion confirmation: cancelling native prompt blocks the destructive action', '');
-  assert(asked === 'Are you SURE you want to delete?',
-    'deletion confirmation: every destructive action uses the requested clear wording', asked);
+  assert(asked === 'Delete this? This can’t be undone.',
+    'deletion confirmation: permanent-delete wording is honest and specific', asked);
+  // With an explicit noun (e.g. a recipe title) the message names what is being deleted.
+  ctx.confirm = function(message){ asked = message; return false; };
+  call(ctx, 'confirmDeletion', ['“Omelette”']);
+  assert(asked === 'Delete “Omelette”? This can’t be undone.',
+    'deletion confirmation: an explicit noun is folded into the wording', asked);
   ctx.confirm = function(){ return true; };
   assert(call(ctx, 'confirmDeletion', []) === true,
     'deletion confirmation: accepting native prompt permits the action', '');
@@ -1624,6 +1629,85 @@ function testMergeLibraryTombstoneIdempotence(ctx){
     'converged=' + JSON.stringify(m) + ' after=' + JSON.stringify(again1));
   assert(JSON.stringify(again2) === JSON.stringify(m), 'mergeLibrarySection: merging the converged result with the remote input again is a no-op',
     'converged=' + JSON.stringify(m) + ' after=' + JSON.stringify(again2));
+}
+
+// RECIPE-MARKET: recipeBook is a positive include-set merged with the SAME (entryMap, tombstone)
+// machinery as customRecipes. Covers: an add on one side survives, a book-removal (deletedFromBook)
+// newer than the include wins, a re-add (include `u` newer than the removal) survives, recipeBookInit
+// merges max-wins, and the whole thing is order-independent + idempotent (the convergence property).
+function testMergeRecipeBook(ctx){
+  function sec(){ const s = emptyLibrarySection(); s.recipeBook = {}; s.deletedFromBook = {}; s.recipeBookInit = 0; return s; }
+  // (a) an add on A with an initialised book, nothing on B → the id is in the merged book.
+  const A = sec(); A.recipeBook['pizza'] = {u: 1000}; A.recipeBookInit = 1000;
+  const B = sec();
+  const mAB = call(ctx, 'mergeLibrarySection', [cloneJSON(A), cloneJSON(B)]);
+  const mBA = call(ctx, 'mergeLibrarySection', [cloneJSON(B), cloneJSON(A)]);
+  assert(!!mAB.recipeBook['pizza'] && !!mBA.recipeBook['pizza'],
+    'mergeRecipeBook: an add survives a merge from either side', JSON.stringify(mAB.recipeBook));
+  assert(mAB.recipeBookInit === 1000 && mBA.recipeBookInit === 1000,
+    'mergeRecipeBook: recipeBookInit merges max-wins (once either phone initialises, both do)', String(mAB.recipeBookInit));
+
+  // (b) a book-removal (deletedFromBook) NEWER than the include on the other side wins.
+  const has = sec(); has.recipeBook['pizza'] = {u: 1000}; has.recipeBookInit = 1000;
+  const removed = sec(); removed.deletedFromBook['pizza'] = 2000; removed.recipeBookInit = 1000;
+  const mRem = call(ctx, 'mergeLibrarySection', [cloneJSON(has), cloneJSON(removed)]);
+  assert(!mRem.recipeBook['pizza'], 'mergeRecipeBook: a newer removal drops the recipe from the book',
+    JSON.stringify(mRem.recipeBook['pizza']));
+  assert(mRem.deletedFromBook['pizza'] === 2000, 'mergeRecipeBook: the removal tombstone survives', String(mRem.deletedFromBook['pizza']));
+
+  // (c) a RE-ADD (include `u` newer than the removal tombstone) beats the stale removal.
+  const readd = sec(); readd.recipeBook['pizza'] = {u: 3000}; readd.recipeBookInit = 1000;
+  const mReadd = call(ctx, 'mergeLibrarySection', [cloneJSON(mRem), cloneJSON(readd)]);
+  assert(!!mReadd.recipeBook['pizza'], 'mergeRecipeBook: a re-add newer than the removal restores the recipe',
+    JSON.stringify(mReadd.recipeBook));
+
+  // (d) convergence: alternating merges never oscillate, and re-merging the result is a no-op.
+  let m = call(ctx, 'mergeLibrarySection', [cloneJSON(has), cloneJSON(removed)]);
+  m = call(ctx, 'mergeLibrarySection', [cloneJSON(m), cloneJSON(has)]);
+  m = call(ctx, 'mergeLibrarySection', [cloneJSON(m), cloneJSON(removed)]);
+  assert(!m.recipeBook['pizza'], 'mergeRecipeBook: alternating merges never resurrect a removed recipe',
+    JSON.stringify(m.recipeBook['pizza']));
+  const again = call(ctx, 'mergeLibrarySection', [cloneJSON(m), cloneJSON(removed)]);
+  assert(JSON.stringify(again) === JSON.stringify(m), 'mergeRecipeBook: re-merging the converged result is a no-op', '');
+}
+
+// RECIPE-MARKET: the curated starter book (STARTER_RECIPE_IDS) must, AFTER diet filtering, still
+// give every supported eating style enough per slot to plan a week — otherwise "start small" would
+// hand a vegan (say) a broken plan on day one. Uses the app's own recipeViolatesDiet, so it tracks
+// real ingredient/optionGroups semantics (e.g. soy-yogurt variants), not a keyword guess.
+function testStarterBookSufficiency(ctx){
+  const STARTER = get(ctx, 'STARTER_RECIPE_IDS');
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const ACTIVATE = get(ctx, 'STARTER_MIN_TO_ACTIVATE');
+  assert(Array.isArray(STARTER) && STARTER.length >= ACTIVATE,
+    'starter book: the curated list clears the activation floor', String(STARTER && STARTER.length));
+  // Every starter id must resolve in the catalog (a stale id would silently thin the book).
+  const stale = STARTER.filter(function(id){ return !RECIPES_DB[id]; });
+  assert(stale.length === 0, 'starter book: every id exists in the catalog', 'stale: ' + stale.join(', '));
+
+  const diets = [
+    {name: 'no-restriction', diet: []},
+    {name: 'vegetarian', diet: ['vegetarian']},
+    {name: 'vegan', diet: ['vegan']},
+    {name: 'pescatarian', diet: ['pescatarian']}
+  ];
+  // Per-slot floors: enough distinct candidates for the planner to fill a week with some rotation.
+  const floors = {breakfast: 3, lunch: 4, dinner: 4, side: 2, snack: 2};
+  diets.forEach(function(d){
+    const ok = STARTER.filter(function(id){ return !call(ctx, 'recipeViolatesDiet', [id, d.diet]); });
+    assert(ok.length >= ACTIVATE, 'starter book: ' + d.name + ' clears the activation floor after diet filtering', String(ok.length));
+    const perSlot = {breakfast: 0, lunch: 0, dinner: 0, side: 0, snack: 0};
+    ok.forEach(function(id){
+      const r = RECIPES_DB[id];
+      const slots = (Array.isArray(r.slots) && r.slots.length) ? r.slots : [r.slot];
+      slots.forEach(function(s){ if(perSlot.hasOwnProperty(s)) perSlot[s]++; });
+    });
+    Object.keys(floors).forEach(function(slot){
+      assert(perSlot[slot] >= floors[slot],
+        'starter book: ' + d.name + ' has enough ' + slot + ' options (>=' + floors[slot] + ')',
+        slot + '=' + perSlot[slot]);
+    });
+  });
 }
 
 // mergeLibrarySection case (c): the duplication-ratchet regression — several
@@ -11766,6 +11850,8 @@ function main(){
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
+  runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
+  runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('mergePantrySection: newer-wins (PANTRY-plan.md P1)', function(){ testMergePantrySectionNewerWins(ctx); });
   runTest('mergePantrySection: delete not resurrected (PANTRY-plan.md P1)', function(){ testMergePantrySectionDeleteNotResurrected(ctx); });
   runTest('mergePantrySection: order-independence (PANTRY-plan.md P1)', function(){ testMergePantrySectionOrderIndependence(ctx); });

@@ -502,7 +502,9 @@ function recipeHitsAvoid(recipe, avoidList){
 //   lactose-intolerant: no dairy (recipeMayContainDairy — NOT the old avoid-list hack,
 //                       which is retired; see state.js:loadState()'s migration doc)
 function recipeViolatesDiet(id, dietList){
-  const recipe = RECIPES_DB[id];
+  // RECIPE-MARKET: fall back to the catalog for an out-of-book recipe (market view diet filter).
+  // Inert for the planner — its candidate ids are always live in RECIPES_DB.
+  const recipe = RECIPES_DB[id] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[id]);
   if(!recipe || !dietList || !dietList.length) return false;
   if(ingredientIdsViolateDiet((recipe.ingredients || []).map(function(ing){ return ing[0]; }), dietList)) return true;
   if(dietList.indexOf('gluten-free') !== -1 && recipe.avoid && recipe.avoid.indexOf('gluten') !== -1) return true;

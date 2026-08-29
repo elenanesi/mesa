@@ -735,6 +735,27 @@ let customRecipes = {};
 let recipeOverrides = {};
 let deletedRecipes = {};
 let deletedFoods = {};
+// recipeBook (RECIPE-MARKET, 2026-08): a per-household POSITIVE include-set of BUILT-IN recipe
+// ids that are "in the book" — the recipes the planner + shopping list draw from. The full D1
+// GLOBAL catalog acts as a browsable "market"; adding a recipe writes its id here, removing it
+// deletes the id and tombstones it in deletedFromBook (couple-sync-safe, mirroring the
+// customRecipes/deletedRecipes pair — see js/sync.js:mergeLibrarySection). Custom `cr-` recipes
+// are ALWAYS in the book (authoring == adding) and are never gated by it.
+//   recipeBook: id -> {u: epoch ms} (same `u`-stamped entry shape mergeEntryMap expects).
+//   deletedFromBook: id -> tombstone (epoch ms), a book REMOVAL — deliberately distinct from
+//     deletedRecipes (a hard delete/hide) so "removed from my book, re-addable from the market"
+//     and "deleted" stay separate concepts.
+//   recipeBookInit: 0 = UNINITIALISED — the book is inert and the household sees the FULL catalog
+//     (byte-identical legacy behaviour, so every existing household is unaffected with zero
+//     migration). It flips to a Date.now() stamp the first time the book is SEEDED (new household,
+//     js/app.js:finishOnboarding) or CURATED (first market removal materialises the current
+//     catalog then removes one — js/library.js). Once >0 the book is authoritative:
+//     applyCustomRecipes() includes a built-in only if recipeBook[id] is present. Merged
+//     max-wins across a couple (once either phone initialises, both do). This gate — NOT a
+//     loadState snapshot — is what keeps the catalog-replace/byte-identical tests green.
+let recipeBook = {};
+let deletedFromBook = {};
+let recipeBookInit = 0;
 // recipePrefs (PERSONAL-PREFS, 2026-07): PER-PERSON hearts/thumbs, not a shared
 // household map — {elena: {recipeId: 'favorite'|'down'}, partner: {recipeId:
 // 'favorite'|'down'}}. Each person favorites/downs a recipe for themselves; planner.js's
@@ -943,6 +964,10 @@ function buildSnapshot(){
     recipeOverrides: recipeOverrides,
     deletedRecipes: deletedRecipes,
     deletedFoods: deletedFoods,
+    // recipeBook / deletedFromBook / recipeBookInit (RECIPE-MARKET) — see the doc block above.
+    recipeBook: recipeBook,
+    deletedFromBook: deletedFromBook,
+    recipeBookInit: recipeBookInit,
     recipePrefs: recipePrefs,
     mealPins: mealPins,
     mealShareOverrides: mealShareOverrides,
@@ -1266,6 +1291,29 @@ function loadState(){
       else if(typeof v === 'number' && isFinite(v)) deletedFoods[id] = v;
     });
   }
+  // recipeBook (RECIPE-MARKET) — positive include-set of built-in ids, {u}-stamped like
+  // customRecipes; deletedFromBook is its tombstone map (numeric/legacy-true like the other
+  // tombstones); recipeBookInit is the 0=uninitialised gate. Absent in a legacy store ⇒ stay
+  // uninitialised ⇒ full catalog, no migration needed. See the doc block above.
+  recipeBook = {};
+  if(saved.recipeBook && typeof saved.recipeBook === 'object'){
+    Object.keys(saved.recipeBook).forEach(function(id){
+      const v = saved.recipeBook[id];
+      if(typeof id !== 'string' || !v || typeof v !== 'object') return;
+      recipeBook[id] = {u: (typeof v.u === 'number' && isFinite(v.u)) ? v.u : 0};
+    });
+  }
+  deletedFromBook = {};
+  if(saved.deletedFromBook && typeof saved.deletedFromBook === 'object'){
+    Object.keys(saved.deletedFromBook).forEach(function(id){
+      if(typeof id !== 'string') return;
+      const v = saved.deletedFromBook[id];
+      if(v === true) deletedFromBook[id] = true;
+      else if(typeof v === 'number' && isFinite(v)) deletedFromBook[id] = v;
+    });
+  }
+  recipeBookInit = (typeof saved.recipeBookInit === 'number' && isFinite(saved.recipeBookInit) && saved.recipeBookInit > 0)
+    ? saved.recipeBookInit : 0;
   // PERSONAL-PREFS: normalizeRecipePrefsShape() (above) handles both the current nested
   // shape and a pre-migration OLD FLAT store (the household pref becomes each person's
   // own starting pref) in one place — see its doc block for the detection rule.

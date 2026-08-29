@@ -467,7 +467,12 @@ function recipeEffectiveIngredients(recipe, opts, depth){
 function recipeNutrition(recipeId, servings, opts){
   servings = (typeof servings === 'number' && servings > 0) ? servings : 1;
   const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown', goodFat:0};
-  const r = (typeof RECIPES_DB !== 'undefined') ? RECIPES_DB[recipeId] : undefined;
+  // RECIPE-MARKET: fall back to the built-in catalog for a recipe the household hasn't added to
+  // its book (so it isn't in RECIPES_DB) — lets the market list show real nutrition for
+  // available-to-add recipes. Inert for every existing caller (they pass live, in-book ids).
+  const r = ((typeof RECIPES_DB !== 'undefined') && RECIPES_DB[recipeId])
+    || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[recipeId])
+    || undefined;
   if(!r){
     console.error('recipeNutrition: unknown recipe id "' + recipeId + '"');
     return {totals: Object.assign({}, zero), perServing: Object.assign({}, zero)};

@@ -14,13 +14,16 @@ function toast(msg){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
 }
 
-// Use the same clear confirmation for every user-triggered destructive action. Non-browser
-// render/test contexts have no native dialog, so their underlying mutation helpers remain
-// usable while the app itself always asks first.
-function confirmDeletion(){
+// Confirmation for a genuinely PERMANENT delete (a recipe or ingredient you authored — its data
+// is destroyed). Reversible book removals (built-in recipes) go through removeRecipeFromBook and
+// never reach here, so this copy can be honest and specific rather than an all-caps scare. Non-
+// browser render/test contexts have no native dialog, so their mutation helpers stay usable while
+// the app itself always asks first. `what` is an optional noun for a clearer message.
+function confirmDeletion(what){
+  const noun = (typeof what === 'string' && what) ? what : 'this';
   return (typeof window === 'undefined' || typeof window.confirm !== 'function')
     ? true
-    : window.confirm('Are you SURE you want to delete?');
+    : window.confirm('Delete ' + noun + '? This can’t be undone.');
 }
 
 /* ---------------- Botanical log rewards ----------------

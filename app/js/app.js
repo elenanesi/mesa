@@ -349,6 +349,12 @@ function finishOnboarding(){
   }
   document.getElementById('onboard').classList.add('hidden');
   onboarded = true;               // persisted by applyProf()'s persist() call below
+  // RECIPE-MARKET: seed a fresh household's starter book from its just-chosen diet/avoid. Only on
+  // a genuine first run — never a replay (obIsReplay), and seedStarterBook itself no-ops once the
+  // book is already initialised, so an existing household is never re-seeded/clobbered. Diet/avoid
+  // are already committed to PROF by the slides, so the starter is diet-appropriate. If the seed
+  // would be too thin (STARTER_MIN_TO_ACTIVATE) it leaves the household on the full catalog.
+  if(!obIsReplay && typeof seedStarterBook === 'function') seedStarterBook();
   applyProf(slot); // -> syncPersonLabels() -> renderPersonSwitchers(): every switcher mount (including #profSeg) already repaints its active state from currentProf, no separate sync needed here
   go('today');
 }
