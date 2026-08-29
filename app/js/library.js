@@ -3140,7 +3140,9 @@ function deleteRecipe(id){
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
   toast('✓ Deleted ' + title);
   renderFoodLibraryCount();
-  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
+  // Refresh the list IN PLACE (preserving the active search/filters + My-book/Market view) rather
+  // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
+  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
 }
 
 /* ---------------- recipe market / book (RECIPE-MARKET, 2026-08) ----------------
@@ -3259,7 +3261,9 @@ function addRecipeToBook(id){
   const r = BUILTIN_RECIPES_DB[id] || RECIPES_DB[id];
   toast('✓ Added ' + ((r && r.title) || 'recipe') + ' to your book');
   renderFoodLibraryCount();
-  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
+  // Refresh the list IN PLACE (preserving the active search/filters + My-book/Market view) rather
+  // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
+  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
 }
 
 // Remove a BUILT-IN from the book — the calm, reversible counterpart to deleteRecipe. NOT a
@@ -3278,7 +3282,9 @@ function removeRecipeFromBook(id, silent){
     const r = BUILTIN_RECIPES_DB[id] || RECIPES_DB[id];
     toast('Removed ' + ((r && r.title) || 'recipe') + ' — re-add from the market anytime');
     renderFoodLibraryCount();
-    if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) openMyRecipes();
+    // Refresh the list IN PLACE (preserving the active search/filters + My-book/Market view) rather
+  // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
+  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
   }
 }
 
