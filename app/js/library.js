@@ -3005,6 +3005,17 @@ function rerenderLibRecipeFilteredView(){
   if(libRecipeFilterSheetIsOpen()) renderLibRecipeFilterSheet();
 }
 
+// MEAL-BUILDER: a recipe is a "Meal" (dishes eaten together) when it aggregates ≥2 sub-recipes via
+// `components`. Its meaning is the dish names, shown as a subtitle instead of a "3 dishes" count.
+function isMealRecipe(r){ return !!(r && Array.isArray(r.components) && r.components.length >= 2); }
+function mealDishNames(r){
+  if(!r || !Array.isArray(r.components)) return [];
+  return r.components.map(function(c){
+    const sub = RECIPES_DB[c.recipeId] || BUILTIN_RECIPES_DB[c.recipeId];
+    return sub ? sub.title : null;
+  }).filter(Boolean);
+}
+
 function renderLibRecipeListMarkup(){
   const ids = filteredRecipeIds();
   const isMarket = libRecipeView === 'market';
@@ -3029,7 +3040,10 @@ function renderLibRecipeListMarkup(){
     const nut = recipeNutrition(id, 1).totals;
     const inBook = recipeInBook(id);
     let badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
+    if(isMealRecipe(r)) badge += ' <span class="pill mini sage">Meal</span>';
     if(isMarket && inBook) badge += ' <span class="pill mini">in your book</span>';
+    // A Meal's meaning is its dishes, not a count — show the dish names (UX-panel call).
+    const mealSub = isMealRecipe(r) ? '<div class="ad meal-dishes">' + escapeHtml(mealDishNames(r).join(' · ')) + '</div>' : '';
     const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
     const pref = (recipePrefs[currentProf] && recipePrefs[currentProf][id]) || null;
     let actions;
@@ -3056,6 +3070,7 @@ function renderLibRecipeListMarkup(){
     }
     return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
+      + mealSub
       + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
       + '<div class="lib-recipe-actions' + (isMarket ? ' market' : '') + '">' + actions + '</div>'
       + '</div>';
@@ -4338,6 +4353,66 @@ function saveComposedMealAsRecipe(entry, name){
   if(recipeBuilder !== null) return null; // saveRecipeBuilder rejected the save — its own toast already fired
   const newId = Object.keys(customRecipes).filter(function(id){ return beforeIds.indexOf(id) === -1; })[0];
   return newId || null;
+}
+
+// How many RECIPE-level dishes a plan slot holds (base recipe + any recipe extras). ≥2 means it's a
+// "Meal" — dishes eaten together — that the capture flow can save with its structure preserved.
+function slotRecipeDishCount(entry){
+  return planEntryComponents(entry).filter(function(p){ return p && p.recipeId; }).length;
+}
+
+// MEAL-BUILDER (capture-only, panel-validated 2026-08-29): save a multi-dish plan slot as a reusable
+// "Meal" — a recipe-of-recipes that KEEPS its dishes as `components` (unlike saveComposedMealAsRecipe,
+// which flattens to a single ingredient list). Recipe dishes → components; any food extras → base
+// `ingredients` (the engine sums both, engine.js:recipeEffectiveIngredients). One tap, zero fields:
+// nutrition/shopping resolve from the sub-recipes automatically. Lands in customRecipes (auto in book,
+// plannable, couple-synced) exactly like any custom recipe. No blank-canvas builder — you can only
+// capture a Meal that already happened on a plan/log.
+function saveSlotAsMeal(entry, name){
+  const parts = planEntryComponents(entry);
+  const components = parts.filter(function(p){ return p && p.recipeId; }).map(function(p){
+    const c = {recipeId: p.recipeId, portion: (typeof p.portion === 'number' && p.portion > 0) ? p.portion : 1};
+    if(p.opts && typeof p.opts === 'object') c.opts = p.opts;
+    return c;
+  });
+  if(components.length < 2){ toast('A Meal needs at least two dishes'); return null; }
+  const foodRows = parts.filter(function(p){ return p && p.foodId && FOODS[p.foodId]; })
+    .map(function(p){ return {foodId: p.foodId, grams: (typeof p.grams === 'number' && p.grams > 0) ? p.grams : 100}; });
+  // Flattened full ingredient list (dishes + food extras) — only for deriving tags/styles/avoid/season;
+  // the SAVED recipe keeps the structure (components + food ingredients), never this flat list.
+  const flatRows = flattenComponentsToIngredientRows(parts);
+  const totals = {kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0};
+  flatRows.forEach(function(row){
+    const m = foodMacros(row.foodId, row.grams);
+    totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
+    totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
+  });
+  totals.kcal = 4 * totals.protein + 4 * totals.carbs + 9 * totals.fat;
+  const finalName = (name || '').trim() || 'Our meal';
+  const base = entry && entry.recipeId && RECIPES_DB[entry.recipeId];
+  const slots = (base && recipeSlotList(base).length) ? recipeSlotList(base) : [(base && base.slot) || 'dinner'];
+  const meta = deriveRecipeMeta(flatRows, totals, 25);
+  const id = uniqueSlug(slugify(finalName), RECIPES_DB, 'cr-');
+  const recipe = {
+    title: finalName, emoji: '🍽️', slot: slots[0], slots: slots,
+    styles: meta.styles, time: 25, servings: 1,
+    season: normalizeSeason(derivedRecipeSeasonFromIngredients(flatRows)),
+    role: 'full',
+    ingredients: foodRows.map(function(r){ return [r.foodId, r.grams]; }), // food extras (may be [])
+    components: components,                                                 // the dishes, structure kept
+    toTaste: [], steps: [],
+    tags: meta.tags, avoid: meta.avoid,
+    // occasional: a captured Meal is one you REACH FOR (swap/add or favourite), not one the
+    // generator surprise-inserts on a random day (psychologist: protect dinner variety — don't
+    // auto-re-insert a signature Meal). It still shows in My recipes and is fully plannable
+    // manually. Whether "infrastructure" Meals (breakfast/lunch) should autopilot is a later call.
+    occasional: true,
+    u: Date.now()
+  };
+  customRecipes[id] = recipe;
+  customRev++;
+  applyCustomRecipes();
+  return id;
 }
 
 // Meal builder (owner spec 2026-08-17) "Use for this meal" / "Log as eaten out": creates a

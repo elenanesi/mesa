@@ -1727,6 +1727,31 @@ function testStarterBookSufficiency(ctx){
   });
 }
 
+// MEAL-BUILDER (library.js:saveSlotAsMeal): capturing a plan slot that holds ≥2 recipe dishes saves
+// a Meal that KEEPS its dishes as `components` (not flattened), and the Meal's nutrition equals the
+// sum of its sub-recipes. Uses two real starter recipes as base + extra.
+function testSaveSlotAsMeal(ctx){
+  const baseId = 'omelette', extraId = 'roasted-potatoes';
+  assert(!!get(ctx, "RECIPES_DB['" + baseId + "']") && !!get(ctx, "RECIPES_DB['" + extraId + "']"),
+    'setup: the two fixture recipes exist', baseId + ' / ' + extraId);
+  // A slot entry = base recipe + one recipe extra (planEntryComponents yields two recipe dishes).
+  const newId = call(ctx, 'saveSlotAsMeal', [{recipeId: baseId, extras: [{recipeId: extraId, portion: 1}]}, 'Test Meal ZZ']);
+  assert(typeof newId === 'string' && newId.indexOf('cr-') === 0, 'saveSlotAsMeal mints a cr- id', String(newId));
+  const rec = JSON.parse(get(ctx, "JSON.stringify(customRecipes['" + newId + "'] || null)"));
+  assert(rec && Array.isArray(rec.components) && rec.components.length === 2,
+    'the Meal keeps its 2 dishes as components (not flattened)', JSON.stringify(rec && rec.components));
+  assert(rec.components[0].recipeId === baseId && rec.components[1].recipeId === extraId,
+    'the Meal components are the base + the recipe extra', JSON.stringify(rec.components));
+  assert(call(ctx, 'isMealRecipe', [rec]) === true, 'isMealRecipe recognises the components Meal', '');
+  const mealK = call(ctx, 'recipeNutrition', [newId, 1]).totals.kcal;
+  const baseK = call(ctx, 'recipeNutrition', [baseId, 1]).totals.kcal;
+  const extraK = call(ctx, 'recipeNutrition', [extraId, 1]).totals.kcal;
+  assert(Math.abs(mealK - (baseK + extraK)) < 1,
+    'the Meal\'s nutrition equals the sum of its dishes', 'meal=' + mealK.toFixed(1) + ' base+extra=' + (baseK + extraK).toFixed(1));
+  // cleanup so later tests see a clean library
+  run(ctx, "delete customRecipes['" + newId + "']; applyCustomRecipes();");
+}
+
 // mergeLibrarySection case (c): the duplication-ratchet regression — several
 // simulated sync round-trips of the same two sides must never grow the total
 // entry count (the original incident: mergeImportedLibrary re-cloned a same-id
@@ -11863,6 +11888,7 @@ function main(){
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
+  runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });
   runTest('mergePantrySection: newer-wins (PANTRY-plan.md P1)', function(){ testMergePantrySectionNewerWins(ctx); });
   runTest('mergePantrySection: delete not resurrected (PANTRY-plan.md P1)', function(){ testMergePantrySectionDeleteNotResurrected(ctx); });
   runTest('mergePantrySection: order-independence (PANTRY-plan.md P1)', function(){ testMergePantrySectionOrderIndependence(ctx); });

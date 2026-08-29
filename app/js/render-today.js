@@ -144,7 +144,13 @@ function openAddMealSheetForContext(ctx){
   // extras into a new custom recipe (library.js:saveComposedMealAsRecipe) — only worth
   // offering once there's actually a meal composed here (allComponents mirrors the "In this
   // meal" section built just below, so this stays in lockstep with what's on screen).
-  if(allComponents.length){
+  // A slot with ≥2 recipe DISHES (base + a recipe extra) is a "Meal" you can save with its dishes
+  // kept as structure (saveSlotAsMeal). A slot that's just one dish + food extras still saves the old
+  // way (flattened into one recipe). Same entry point, wording adapts to what's actually here.
+  const recipeDishes = allComponents.filter(function(c){ return c && c.recipeId; }).length;
+  if(recipeDishes >= 2){
+    html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">🍽️ Save as a Meal</button>';
+  } else if(allComponents.length){
     html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">💾 Save to My recipes</button>';
   }
 
@@ -240,20 +246,35 @@ function resolveAddMealCtxEntry(){
 // "repaint #sheetBody with a smaller step" pattern as library.js's pantry-add qty sheet) —
 // defaults the name to the base recipe's title + " (my version)" as a starting point the
 // user can overwrite.
+// True when the current slot holds ≥2 recipe dishes — i.e. saving it captures a "Meal" (structure
+// kept via saveSlotAsMeal), not just a customised single dish (flattened via saveComposedMealAsRecipe).
+function addMealCtxIsMeal(){
+  const entry = resolveAddMealCtxEntry();
+  return !!entry && typeof slotRecipeDishCount === 'function' && slotRecipeDishCount(entry) >= 2;
+}
+
 function openSaveComposedMealSheet(){
   const entry = resolveAddMealCtxEntry();
   if(!entry){ toast('Meal not found'); return; }
   const base = entry.recipeId && RECIPES_DB[entry.recipeId];
-  saveComposedMealName = base ? (base.title + ' (my version)') : '';
+  // A Meal defaults to the main dish's name (rename to "our Sunday roast" etc.); a single-dish save
+  // keeps the "(my version)" default it always had.
+  saveComposedMealName = addMealCtxIsMeal() ? (base ? base.title : '') : (base ? (base.title + ' (my version)') : '');
   document.getElementById('sheetBody').innerHTML = buildSaveComposedMealSheet();
 }
 
 function buildSaveComposedMealSheet(){
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Save to My recipes</h2>'
+  const isMeal = addMealCtxIsMeal();
+  const title = isMeal ? 'Save as a Meal' : 'Save to My recipes';
+  const blurb = isMeal
+    ? 'Name this Meal — the dishes you had together — to plan it again as one. Mesa keeps each dish, so the shopping list and numbers stay exact.'
+    : 'Give this composed meal a name to save it as a new recipe you can plan again.';
+  const cta = isMeal ? '🍽️ Save as a Meal' : '💾 Save to My recipes';
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">' + title + '</h2>'
     + '<button class="backbtn" style="margin:0" onclick="openAddMealSheetForContext(addMealCtx)">‹ Back</button></div>'
-    + '<p class="sub" style="margin-top:6px">Give this composed meal a name to save it as a new recipe you can plan again.</p>'
-    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="saveComposedMealNameInput" value="' + htmlAttr(saveComposedMealName) + '" oninput="saveComposedMealName=this.value" placeholder="Recipe name" autocomplete="off">'
-    + '<button class="cta" style="margin-top:14px" onclick="confirmSaveComposedMeal()">💾 Save to My recipes</button>'
+    + '<p class="sub" style="margin-top:6px">' + blurb + '</p>'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="saveComposedMealNameInput" value="' + htmlAttr(saveComposedMealName) + '" oninput="saveComposedMealName=this.value" placeholder="' + (isMeal ? 'Meal name' : 'Recipe name') + '" autocomplete="off">'
+    + '<button class="cta" style="margin-top:14px" onclick="confirmSaveComposedMeal()">' + cta + '</button>'
     + '<button class="cta ghostbtn" onclick="openAddMealSheetForContext(addMealCtx)">Cancel</button>';
 }
 
@@ -261,10 +282,12 @@ function confirmSaveComposedMeal(){
   const entry = resolveAddMealCtxEntry();
   if(!entry){ toast('Meal not found'); return; }
   const name = (saveComposedMealName || '').trim();
-  if(!name){ toast('Give this recipe a name'); return; }
-  const newId = saveComposedMealAsRecipe(entry, name); // library.js — its own toast covers every abort case
+  const isMeal = addMealCtxIsMeal();
+  if(!name){ toast(isMeal ? 'Give this Meal a name' : 'Give this recipe a name'); return; }
+  // A Meal keeps its dishes as structure (saveSlotAsMeal); a single-dish save flattens as before.
+  const newId = isMeal ? saveSlotAsMeal(entry, name) : saveComposedMealAsRecipe(entry, name);
   if(!newId) return;
-  toast('✓ Saved to My recipes');
+  toast(isMeal ? '✓ Saved as a Meal' : '✓ Saved to My recipes');
   openAddMealSheetForContext(addMealCtx);
 }
 

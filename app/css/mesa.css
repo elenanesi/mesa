@@ -202,6 +202,9 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 /* shared meals + macro-split additions */
 .pill.together{background:var(--sage-tint);color:var(--sage-deep);}
 .pill.mini{padding:3px 7px;font-size:9.5px;}
+/* MEAL-BUILDER: the "Meal" pill (a recipe-of-recipes) + its dish-name subtitle in recipe rows. */
+.pill.sage{background:var(--sage-tint);color:var(--sage-deep);}
+.altrow .ad.meal-dishes{color:var(--sage-deep);font-style:italic;margin-top:0;}
 /* library.js: delete affordance on custom-food/custom-recipe/builder-ingredient rows —
    sized to the app's 44px tap-target minimum (ground rule 4), unlike the smaller inline
    log-action buttons (.la-skip etc.) it visually echoes. */
