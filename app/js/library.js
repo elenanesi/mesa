@@ -3031,50 +3031,92 @@ function renderLibRecipeListMarkup(){
     else if(hasFilters) message = 'No ' + labels.join(', ').toLowerCase() + ' recipes match these filters.';
     return '<p class="sub" style="margin-top:14px">' + message + '</p>';
   }
-  // Recipe ids can be user-authored ('cr-<slug>' from a typed title), so rows carry the
-  // id in data-recipe-id and the action buttons a data-act verb, resolved by
-  // attachLibRecipeListHandler's delegation — never interpolated into inline onclick JS.
-  return '<div style="margin-top:4px">' + ids.map(function(id){
+  // Grouped by MEAL (like the ingredient library groups by category), one section header per
+  // non-empty slot. In the Market, recipes NOT yet in your book sort to the top of each meal so the
+  // "things to add" are what you see first (libRecipeGroupCompare).
+  const byMeal = {};
+  ids.forEach(function(id){
     const r = libRecipeSource(id);
-    if(!r) return '';
-    const nut = recipeNutrition(id, 1).totals;
-    const inBook = recipeInBook(id);
-    let badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
-    if(isMealRecipe(r)) badge += ' <span class="pill mini sage">Meal</span>';
-    if(isMarket && inBook) badge += ' <span class="pill mini">in your book</span>';
-    // A Meal's meaning is its dishes, not a count — show the dish names (UX-panel call).
-    const mealSub = isMealRecipe(r) ? '<div class="ad meal-dishes">' + escapeHtml(mealDishNames(r).join(' · ')) + '</div>' : '';
-    const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
-    const pref = (recipePrefs[currentProf] && recipePrefs[currentProf][id]) || null;
-    let actions;
-    if(isMarket){
-      // Market is browse-and-ADD only. A recipe already in the book shows just the "in your book"
-      // pill (no remove/edit/duplicate here — those live in My book / the recipe detail). A recipe
-      // not yet added shows a single Add / Re-add icon button.
-      if(inBook){
-        actions = '<span class="lib-inbook-check" aria-label="In your book">' + lucideIcon('check') + '</span>';
-      } else {
-        const label = deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book';
-        actions = '<button class="lib-add-book" data-act="addbook" aria-label="' + label + ' — ' + htmlAttr(r.title) + '">' + lucideIcon('plus') + '</button>';
-      }
+    if(!r) return;
+    (byMeal[recipeGroupSlot(r)] = byMeal[recipeGroupSlot(r)] || []).push(id);
+  });
+  let out = '<div style="margin-top:4px">';
+  RECIPE_MEAL_GROUP_ORDER.forEach(function(slot){
+    const group = byMeal[slot];
+    if(!group || !group.length) return;
+    group.sort(function(a, b){ return libRecipeGroupCompare(a, b, isMarket); });
+    out += '<div class="shop-cat">' + (SLOT_LABEL[slot] || slot) + '</div>';
+    group.forEach(function(id){ out += libRecipeRowHtml(id, isMarket); });
+  });
+  return out + '</div>';
+}
+
+// The meal section a recipe files under — its PRIMARY slot (r.slot), falling back to the first of
+// recipeSlotList. A recipe appears once (like an ingredient under one category), never duplicated
+// across every slot it's plannable in.
+const RECIPE_MEAL_GROUP_ORDER = ['breakfast', 'lunch', 'dinner', 'snack', 'side'];
+function recipeGroupSlot(r){
+  if(r && typeof r.slot === 'string' && RECIPE_MEAL_GROUP_ORDER.indexOf(r.slot) !== -1) return r.slot;
+  const list = recipeSlotList(r);
+  return (list.length && RECIPE_MEAL_GROUP_ORDER.indexOf(list[0]) !== -1) ? list[0] : 'dinner';
+}
+
+// Sort within a meal group. Market: NOT-in-book first (the recipes you can add), then in-book;
+// alphabetical within each. My book: favourite → normal → thumbs-down (active person), then alpha.
+function libRecipeGroupCompare(a, b, isMarket){
+  const ra = libRecipeSource(a) || {}, rb = libRecipeSource(b) || {};
+  if(isMarket){
+    const ia = recipeInBook(a) ? 1 : 0, ib = recipeInBook(b) ? 1 : 0;
+    if(ia !== ib) return ia - ib; // 0 (not in book) sorts before 1 (in book)
+  } else {
+    const prefs = recipePrefs[currentProf] || {};
+    const rank = function(id){ const p = prefs[id]; return p === 'favorite' ? 0 : (p === 'down' ? 2 : 1); };
+    const rkA = rank(a), rkB = rank(b);
+    if(rkA !== rkB) return rkA - rkB;
+  }
+  const ta = ra.title || '', tb = rb.title || '';
+  return ta < tb ? -1 : (ta > tb ? 1 : 0);
+}
+
+// One recipe row. Ids can be user-authored ('cr-<slug>'), so the id rides in data-recipe-id and each
+// action carries a data-act verb (attachLibRecipeListHandler delegation) — never inline onclick JS.
+function libRecipeRowHtml(id, isMarket){
+  const r = libRecipeSource(id);
+  if(!r) return '';
+  const nut = recipeNutrition(id, 1).totals;
+  const inBook = recipeInBook(id);
+  let badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
+  if(isMealRecipe(r)) badge += ' <span class="pill mini sage">Meal</span>';
+  if(isMarket && inBook) badge += ' <span class="pill mini">in your book</span>';
+  const mealSub = isMealRecipe(r) ? '<div class="ad meal-dishes">' + escapeHtml(mealDishNames(r).join(' · ')) + '</div>' : '';
+  const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
+  const pref = (recipePrefs[currentProf] && recipePrefs[currentProf][id]) || null;
+  let actions;
+  if(isMarket){
+    // Market is browse-and-ADD only — a recipe in the book shows just the "in your book" pill; one
+    // not yet added shows a single Add / Re-add icon button.
+    if(inBook){
+      actions = '<span class="lib-inbook-check" aria-label="In your book">' + lucideIcon('check') + '</span>';
     } else {
-      // My book: favourite / thumbs (per-person), edit, and the calm reversible remove (permanent
-      // delete only for a recipe you authored). Four icon buttons in a tidy 2x2 grid — no text to
-      // overflow. Duplicate lives on the recipe DETAIL (openRecipe) to keep the row compact.
-      const removeAct = customRecipes[id] ? 'delete' : 'removebook';
-      const removeLabel = customRecipes[id] ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
-      actions = '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">' + lucideIcon('heart') + '</button>'
-        + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">' + lucideIcon('thumbs-down') + '</button>'
-        + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">' + lucideIcon('pencil') + '</button>'
-        + '<button class="lib-del" data-act="' + removeAct + '" aria-label="' + removeLabel + '">' + lucideIcon('trash') + '</button>';
+      const label = deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book';
+      actions = '<button class="lib-add-book" data-act="addbook" aria-label="' + label + ' — ' + htmlAttr(r.title) + '">' + lucideIcon('plus') + '</button>';
     }
-    return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
-      + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
-      + mealSub
-      + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
-      + '<div class="lib-recipe-actions' + (isMarket ? ' market' : '') + '">' + actions + '</div>'
-      + '</div>';
-  }).join('') + '</div>';
+  } else {
+    // My book: favourite / thumbs (per-person), edit, and the calm reversible remove (permanent
+    // delete only for a recipe you authored). Duplicate lives on the recipe DETAIL.
+    const removeAct = customRecipes[id] ? 'delete' : 'removebook';
+    const removeLabel = customRecipes[id] ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
+    actions = '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">' + lucideIcon('heart') + '</button>'
+      + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">' + lucideIcon('thumbs-down') + '</button>'
+      + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">' + lucideIcon('pencil') + '</button>'
+      + '<button class="lib-del" data-act="' + removeAct + '" aria-label="' + removeLabel + '">' + lucideIcon('trash') + '</button>';
+  }
+  return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
+    + mealSub
+    + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'
+    + '<div class="lib-recipe-actions' + (isMarket ? ' market' : '') + '">' + actions + '</div>'
+    + '</div>';
 }
 
 // Minimal inline Lucide icons (MIT) for the recipe-row actions — inline SVG (no external asset,
