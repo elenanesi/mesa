@@ -185,9 +185,16 @@ function openAddMealSheetForContext(ctx){
     // data-* attributes and the buttons carry a data-act verb; the single delegated
     // handler (attachAddMealSheetHandler below) maps act+id back to the step/remove
     // functions. No inline onclick, so nothing user-influenced is ever parsed as JS.
+    // A recipe extra steps by 0.5 servings (kept as a stepper — "Nx" is a different unit); a FOOD
+    // extra gets a typeable grams input (anchor) with the +/- kept. The input carries data-act +
+    // the row's data-food-id, so the delegated change handler commits without interpolating the
+    // user-authored id into inline JS (onfocus/Enter-blur are static, id-free).
+    const valPart = isRecipe
+      ? '<span class="sv-val">' + (((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x') + '</span>'
+      : '<input class="sv-val" type="text" inputmode="decimal" data-act="setgrams" value="' + c.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" aria-label="Grams of ' + htmlAttr(title) + '"><span class="sv-unit">g</span>';
     const stepper = isBase ? '' : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
       + '<button data-act="minus" aria-label="' + (isRecipe ? 'Fewer servings of ' : 'Less ') + htmlAttr(title) + '">-</button>'
-      + '<span class="sv-val">' + (isRecipe ? (((typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1) + 'x') : foodAmountLabel(food, c.grams)) + '</span>'
+      + valPart
       + '<button data-act="plus" aria-label="' + (isRecipe ? 'More servings of ' : 'More ') + htmlAttr(title) + '">+</button>'
       + '</span>');
     html += '<div class="altrow" style="cursor:default" ' + (isRecipe ? 'data-recipe-id="' + htmlAttr(c.recipeId) + '"' : 'data-food-id="' + htmlAttr(c.foodId) + '"') + '>'
@@ -527,6 +534,15 @@ function attachAddMealSheetHandler(){
     const addFoodRow = e.target.closest('.altrow[data-add-food-id]');
     if(addFoodRow && el.contains(addFoodRow)) chooseMealExtraFood(addFoodRow.getAttribute('data-add-food-id'));
   };
+  // Typeable grams on a food extra (data-act="setgrams") — commits on blur/change, reading the
+  // food id from the row so no user-authored id is interpolated into inline JS.
+  el.onchange = function(e){
+    const input = e.target.closest('input[data-act="setgrams"]');
+    if(!input || !el.contains(input)) return;
+    const row = input.closest('.altrow[data-food-id]');
+    if(!row) return;
+    commitMealExtraFoodGrams(row.getAttribute('data-food-id'), input.value);
+  };
 }
 
 function renderMealFoodResults(q){
@@ -794,13 +810,14 @@ function stepMealExtraPortion(recipeId, delta){
   openAddMealRecipeSheet(ctx.slot, dateISO);
 }
 
-function stepMealExtraFoodGrams(foodId, delta){
-  if(!addMealCtx || !FOODS[foodId]) return;
+// The current grams of a meal EXTRA food for the active add-meal context (defaults if not present).
+function currentMealExtraFoodGrams(foodId){
+  if(!addMealCtx || !FOODS[foodId]) return null;
   const ctx = addMealCtx;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   let current = defaultMealFoodGrams(foodId);
   if(ctx.logged){
-    const loggedComp = ctx.logged ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
+    const loggedComp = loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot);
     const comps = loggedComp && Array.isArray(loggedComp.components) ? loggedComp.components : [];
     for(let i = comps.length - 1; i >= 1; i--){
       if(comps[i] && comps[i].foodId === foodId){ current = (typeof comps[i].grams === 'number' && comps[i].grams > 0) ? comps[i].grams : current; break; }
@@ -814,7 +831,16 @@ function stepMealExtraFoodGrams(foodId, delta){
       if(extras[i] && extras[i].foodId === foodId){ current = (typeof extras[i].grams === 'number' && extras[i].grams > 0) ? extras[i].grams : current; break; }
     }
   }
-  const newGrams = Math.max(1, Math.min(2000, Math.round(current + delta)));
+  return current;
+}
+
+// The one write path for a meal-extra food's grams (absolute). Both the +/- stepper and the
+// typeable input funnel through here, so the recompute/re-render/persist is defined once.
+function applyMealExtraFoodGrams(foodId, newGrams){
+  if(!addMealCtx || !FOODS[foodId]) return;
+  const ctx = addMealCtx;
+  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
+  newGrams = Math.max(1, Math.min(2000, Math.round(newGrams)));
   if(ctx.logged){
     setFoodExtraGramsInLoggedMeal(dateISO, ctx.person, ctx.slot, foodId, newGrams);
     setExtraFoodGrams(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, foodId, newGrams);
@@ -829,6 +855,21 @@ function stepMealExtraFoodGrams(foodId, delta){
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
+}
+
+function stepMealExtraFoodGrams(foodId, delta){
+  const current = currentMealExtraFoodGrams(foodId);
+  if(current === null) return;
+  applyMealExtraFoodGrams(foodId, current + delta);
+}
+
+// Typeable-amount commit for a meal-extra food (grams anchor). Bad/empty input just re-renders
+// (reverts to the current value), same forgiving contract as the other amount inputs.
+function commitMealExtraFoodGrams(foodId, raw){
+  if(!addMealCtx) return;
+  const v = parseDecimalInput(raw);
+  if(v !== null && v > 0) applyMealExtraFoodGrams(foodId, v);
+  else if(addMealCtx) openAddMealRecipeSheet(addMealCtx.slot, addDaysISO(addMealCtx.weekStartDate, addMealCtx.dayIndex));
 }
 
 /* ---------------- MEAL BUILDER: compose a one-time meal from ingredients + recipes ----------------
@@ -1011,6 +1052,16 @@ function stepMealBuilderRowGrams(i, delta){
   row.grams = Math.max(1, Math.min(2000, Math.round(row.grams + delta)));
   repaintMealBuilderSheet();
 }
+// Typeable-amount commit for a meal-builder row (grams anchor). Bad/empty input reverts to the
+// current value on repaint (same forgiving contract as commitLogPickerAmount).
+function commitMealBuilderRowGrams(i, raw){
+  if(!mealBuilder) return;
+  const row = mealBuilder.rows[i];
+  if(!row) return;
+  const v = parseDecimalInput(raw);
+  if(v !== null && v > 0) row.grams = Math.max(1, Math.min(2000, Math.round(v)));
+  repaintMealBuilderSheet();
+}
 
 function removeMealBuilderRow(i){
   if(!mealBuilder) return;
@@ -1037,7 +1088,9 @@ function mealBuilderRowHtml(row, i){
     + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
     + '<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
     + '<button onclick="stepMealBuilderRowGrams(' + i + ',-' + step + ')" aria-label="Less ' + htmlAttr(food.name) + '">-</button>'
-    + '<span class="sv-val">' + foodAmountLabel(food, row.grams) + '</span>'
+    // Typeable grams (grams stay the deterministic anchor); +/- kept. Mirrors the recipe-builder
+    // ingredient input (library.js) and log picker (parseDecimalInput + a commit handler).
+    + '<input class="sv-val" type="text" inputmode="decimal" value="' + row.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitMealBuilderRowGrams(' + i + ',this.value)" aria-label="Grams of ' + htmlAttr(food.name) + '"><span class="sv-unit">g</span>'
     + '<button onclick="stepMealBuilderRowGrams(' + i + ',' + step + ')" aria-label="More ' + htmlAttr(food.name) + '">+</button>'
     + '</span>'
     + '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="removeMealBuilderRow(' + i + ')">✕ Remove</button>'
@@ -1504,7 +1557,8 @@ function buildEditTodayFoodSheet(){
     + '<div class="serve-row" style="margin-top:14px"><div class="serve-card me" style="flex:1">'
     + '<div class="sv-name">Amount</div>'
     + '<div class="sv-stepper"><button onclick="stepEditTodayFood(-'+step+')" aria-label="Decrease amount">–</button>'
-    + '<span class="sv-val">' + amountText + '</span>'
+    // Typeable grams (anchor); +/- kept. amountText (piece-aware label) still shows in .ad above.
+    + '<input class="sv-val" type="text" inputmode="decimal" value="' + safeGrams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitEditTodayFoodGrams(this.value)" aria-label="Amount in grams"><span class="sv-unit">g</span>'
     + '<button onclick="stepEditTodayFood('+step+')" aria-label="Increase amount">+</button></div></div></div>'
     + '<div class="nutri" style="margin-top:16px">'
     + '<div class="n"><div class="nt"><span>Calories</span><b>'+Math.round(nut.kcal)+' kcal</b></div></div>'
@@ -1530,6 +1584,13 @@ function toggleEditTodayFoodEatenOut(){
 function stepEditTodayFood(delta){
   if(!editTodayFoodCtx) return;
   editTodayFoodCtx.grams = Math.max(1, Math.min(2000, Math.round(editTodayFoodCtx.grams + delta)));
+  document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
+}
+// Typeable-amount commit for the edit-today-food sheet (grams anchor); bad input reverts on repaint.
+function commitEditTodayFoodGrams(raw){
+  if(!editTodayFoodCtx) return;
+  const v = parseDecimalInput(raw);
+  if(v !== null && v > 0) editTodayFoodCtx.grams = Math.max(1, Math.min(2000, Math.round(v)));
   document.getElementById('sheetBody').innerHTML = buildEditTodayFoodSheet();
 }
 

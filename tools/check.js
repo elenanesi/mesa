@@ -1533,6 +1533,18 @@ function testDiffLibraryCatalogPayload(ctx){
   assert(third.changed.recipes.length === 0 && Object.keys(third.changed.recipePrefs).length === 0,
     'diffLibraryCatalogPayload: editing one food leaves unrelated recipes/prefs unchanged', JSON.stringify(third.changed));
 
+  // (b2) RECIPE CONTENT changed WITHOUT bumping updatedAt (the load-bearing invariant the old
+  // title-only signature silently relied on). A new write path — e.g. the Meal builder mutating
+  // `ingredients`/`components` — must still be detected as changed so the peer never sees stale
+  // nutrition. recipeRowSignature now hashes the real content, so this is caught even at u=1000.
+  const recipeContentEdit = cloneJSON(payload);
+  recipeContentEdit.recipes[0].data.ingredients = [['egg', 100], ['spinach', 50]];
+  // updatedAt deliberately left at 1000 (unchanged) — the whole point of the fix.
+  const contentDiff = call(ctx, 'diffLibraryCatalogPayload', [recipeContentEdit, first.nextSigs]);
+  assert(contentDiff.changed.recipes.length === 1 && contentDiff.changed.recipes[0].id === 'cr-a',
+    'diffLibraryCatalogPayload: a recipe content change (ingredients) is detected even when updatedAt is unchanged',
+    JSON.stringify(contentDiff.changed.recipes));
+
   // (c) A row that disappears from the payload (e.g. reverted to builtin) is dropped from the
   // next signature map, not carried forward forever.
   const shrunk = cloneJSON(payload);
@@ -1689,7 +1701,12 @@ function testStarterBookSufficiency(ctx){
     {name: 'no-restriction', diet: []},
     {name: 'vegetarian', diet: ['vegetarian']},
     {name: 'vegan', diet: ['vegan']},
-    {name: 'pescatarian', diet: ['pescatarian']}
+    {name: 'pescatarian', diet: ['pescatarian']},
+    // Intolerances + the tightest realistic STACK (vegan + gluten-free) — the nutritionist flagged
+    // vegan/GF breakfast as the thin corner, so the starter must still clear the per-slot floors here.
+    {name: 'gluten-free', diet: ['gluten-free']},
+    {name: 'lactose-intolerant', diet: ['lactose-intolerant']},
+    {name: 'vegan+gluten-free', diet: ['vegan', 'gluten-free']}
   ];
   // Per-slot floors: enough distinct candidates for the planner to fill a week with some rotation.
   const floors = {breakfast: 3, lunch: 4, dinner: 4, side: 2, snack: 2};

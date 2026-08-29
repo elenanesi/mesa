@@ -205,17 +205,17 @@ function renderWeek(){
         // case (a dangling/deleted reference, or a solo household's unused partner cell)
         // stays exactly as before; those aren't this batch's concern.
         if(view.reason === 'no-candidates'){
-          // RECIPE-MARKET: once the household curates a book, a starved slot is far more likely
-          // "nothing in my book fits here" than "my diet is too strict" — so point at the Market
-          // (pre-filtered to this slot) instead of Profile. An uninitialised (full-catalog)
-          // household keeps the diet-filter guidance, the real cause there.
-          const bookActive = (typeof recipeBookIsActive === 'function') && recipeBookIsActive();
-          const hint = bookActive
-            ? '<button class="dm-market-hint" onclick="event.stopPropagation();openMarketForSlot(\''+htmlAttr(slot)+'\')">'+SLOT_LABEL[slot]+' · add one from the Market</button>'
-            : '<small>'+SLOT_LABEL[slot]+' · adjust Diet in Profile</small>';
+          // Blame-free: put the gap on the SYSTEM, not the user (psychologist guardrail). Only point
+          // at the Market when it actually holds a diet-valid recipe this slot could add (never an
+          // empty shelf, UX flag) — otherwise the honest cause is the diet/avoid filters, so offer a
+          // calm, agency-framed route to relax them in Profile.
+          const marketCanFill = (typeof marketHasDietValidCandidateForSlot === 'function') && marketHasDietValidCandidateForSlot(slot);
+          const hint = marketCanFill
+            ? '<button class="dm-market-hint" onclick="event.stopPropagation();openMarketForSlot(\''+htmlAttr(slot)+'\')">Add a '+SLOT_LABEL[slot].toLowerCase()+' from the Market</button>'
+            : '<button class="dm-market-hint" onclick="event.stopPropagation();go(\'profilePreferences\')">Relax a filter to open up more '+SLOT_LABEL[slot].toLowerCase()+'s</button>';
           return '<div class="day-meal-row" data-di="'+di+'" data-slot="'+htmlAttr(slot)+'" data-recipe-id="">'
-            + '<div class="dm-e">⚠️</div>'
-            + '<div class="dm-t">'+(bookActive ? 'Nothing in your book fits here' : 'No meal fits your filters')+hint+'</div>'
+            + '<div class="dm-e">🍽️</div>'
+            + '<div class="dm-t">We couldn’t fit a '+SLOT_LABEL[slot].toLowerCase()+' here'+hint+'</div>'
             + '<div class="dm-k">0</div></div>';
         }
         return '';

@@ -624,7 +624,16 @@ function foodRowSignature(f){
   return JSON.stringify([f.source, f.updatedAt, f.season, d.name, d.iconKey, d.iconAsset, d.cat, d.sugarQuality, d.components, d.yieldG, d.bought, d.variants, d.flags, d.avgG, d.measures]);
 }
 function recipeRowSignature(r){
-  return JSON.stringify([r.source, r.updatedAt, r.season, r.data && r.data.title, r.data && r.data.imageKey, r.data && r.data.imageUri]);
+  const d = (r && r.data) || {};
+  // Content that defines a recipe's NUTRITION / planning / display — ingredients, components
+  // (recipe-of-recipes), optionGroups, slot(s), role, steps, tags, avoid, time, servings, toTaste.
+  // The old signature hashed only title/season/image and was correct ONLY because every write path
+  // bumps `updatedAt` (r.u) — an untested, load-bearing invariant. A new write path (e.g. the Meal
+  // builder) that mutated content without stamping a fresh `u` would let a peer silently see stale
+  // nutrition. Hash the real content so re-mirroring is correct regardless. (Mirrors foodRowSignature.)
+  return JSON.stringify([r.source, r.updatedAt, r.season, d.title, d.imageKey, d.imageUri,
+    d.ingredients, d.components, d.optionGroups, d.slot, d.slots, d.role, d.steps, d.tags,
+    d.avoid, d.time, d.servings, d.toTaste, d.emoji, d.occasional]);
 }
 
 // Diffs a (builtin-stripped) library catalog payload against the last-successfully-mirrored

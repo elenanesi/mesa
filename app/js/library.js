@@ -3149,10 +3149,11 @@ function deleteRecipe(id){
 // starter-sufficiency test enforces (tools/check.js:testStarterBookSufficiency). Keep every id in
 // sync with data/recipes.js (an id removed from the catalog just drops out here harmlessly).
 const STARTER_RECIPE_IDS = [
-  // breakfast (incl. plant-based: porridge, tofu scramble, avocado toast)
+  // breakfast (incl. plant-based: porridge, tofu scramble, avocado toast; chiapudding is an
+  // evergreen vegan + gluten-free option so the vegan+GF stack clears the breakfast floor)
   'yogurt', 'omelette', 'oats-berries-walnuts', 'scrambled-eggs-tomato-toast',
   'porridge-banana-almond', 'tofu-scramble-spinach-tomato', 'avocado-tomato-toast',
-  'overnight-oats-banana-peanut-butter', 'coconut-chia-pudding-peach',
+  'overnight-oats-banana-peanut-butter', 'coconut-chia-pudding-peach', 'chiapudding',
   // lunch / dinner mains — vegan, vegetarian, pescatarian and meat all covered
   'chickpea-veg-stew', 'tofu-rice-broccoli-bowl', 'chickpea-quinoa-broccoli-bowl',
   'lentil-rice-vegetable-bowl', 'lentils-tomato-cumin', 'white-bean-rosemary-mash',
@@ -3278,6 +3279,27 @@ function removeRecipeFromBook(id, silent){
   // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
   if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
   }
+}
+
+// Does the MARKET (full catalog, out of book) actually hold a recipe that fits `slot` AND passes
+// the tracked household's diet + avoid? Used by the starved-slot card so we only point a strict-diet
+// user at the Market when it can genuinely fill the gap — never at an empty shelf (UX-panel flag).
+// Returns false when the book is inactive (the book already IS the full catalog then).
+function marketHasDietValidCandidateForSlot(slot){
+  if(typeof recipeBookIsActive !== 'function' || !recipeBookIsActive()) return false;
+  const people = (typeof rebalanceTrackedPeople === 'function') ? rebalanceTrackedPeople() : ['elena'];
+  const diets = (typeof unionDiets === 'function') ? unionDiets(people) : [];
+  return Object.keys(BUILTIN_RECIPES_DB).some(function(id){
+    if(recipeInBook(id)) return false; // already in the book — not something the Market can add
+    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
+    const r = BUILTIN_RECIPES_DB[id];
+    if(!r || r.occasional || r.oneTime) return false;
+    const slots = (Array.isArray(r.slots) && r.slots.length) ? r.slots : [r.slot];
+    if(slots.indexOf(slot) === -1) return false;
+    if(typeof recipeViolatesDiet === 'function' && recipeViolatesDiet(id, diets)) return false;
+    if(typeof recipeHitsAvoid === 'function' && people.some(function(p){ return recipeHitsAvoid(r, avoidFoodsList(p)); })) return false;
+    return true;
+  });
 }
 
 // Open the Recipes screen straight into the Market, pre-filtered to one meal slot — the "add one
