@@ -520,6 +520,9 @@ function renderLibraryHub(){
     + '<div class="altrow" onclick="openBarcodeScanner(true)"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Add packaged products sold in Italy</div></div></div>'
     + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">＋</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food from macros</div></div></div>'
     + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">✎</div><div class="at"><div class="an">New recipe</div><div class="ad">Build from ingredients and meal slots</div></div></div>'
+    // Profile / settings was previously reachable ONLY from the Today avatar — a dead-end from
+    // every other tab. Surface it here too so settings are always ≤2 taps from anywhere.
+    + '<div class="altrow" onclick="go(\'profile\')" style="margin-top:14px"><div class="ae">⚙️</div><div class="at"><div class="an">Profile &amp; settings</div><div class="ad">Your basics, plan, food preferences and account</div></div></div>'
     + '</div>';
 }
 
@@ -619,19 +622,8 @@ function attachLibFoodListHandler(){
   };
 }
 
-function openAddMenu(){
-  document.getElementById('sheetBody').innerHTML =
-    '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Add</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<div style="margin-top:10px">'
-    + '<div class="altrow" onclick="closeSheet();go(\'log\')"><div class="ae">＋</div><div class="at"><div class="an">Log food</div><div class="ad">Quick-add something to today</div></div></div>'
-    + '<div class="altrow" onclick="openBarcodeScanner()"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Import packaged foods from Open Food Facts</div></div></div>'
-    + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">' + ingredientIconHtml('') + '</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food with computed calories from macros</div></div></div>'
-    + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">📖</div><div class="at"><div class="an">New recipe</div><div class="ad">Build a recipe from ingredients</div></div></div>'
-    + '</div>';
-  document.getElementById('sheet').classList.remove('tall');
-  document.getElementById('sheetBackdrop').classList.add('show');
-  document.getElementById('sheet').classList.add('show');
-}
+// (openAddMenu was retired — the centre + FAB now goes straight to the Log screen, the daily
+// one-tap action; authoring/scan live in the Library hub below.)
 
 function openLibraryHub(tabEl){
   renderLibraryHub();

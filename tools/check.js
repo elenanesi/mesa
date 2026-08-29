@@ -6307,33 +6307,27 @@ function testRefreshAfterLogChangeRendersWeekOnce(){
    testLogScreenIsSearchAndAddPicker below for that batch's own coverage), so this test only
    asserts the half of the old guarantee that's still real: Today's pending row. */
 function testOpenAddMenuRoutesToLogScreen(){
+  // UX-B2: the centre + FAB is now the ONE-TAP "log food" action — it routes straight to the #log
+  // screen (go('log')) instead of opening an Add menu that stacked rare authoring actions on top of
+  // the daily one. Authoring (new recipe/ingredient, scan) lives in the Library hub instead.
+  const indexSrc = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
+  const fabMatch = indexSrc.match(/<button class="tab add"[^>]*>/);
+  const fabTag = fabMatch ? fabMatch[0] : '';
+  assert(!!fabTag, 'setup: centre + FAB button found in index.html', indexSrc.slice(0, 200));
+  assert(/onclick="go\('log'[^"]*\)"/.test(fabTag),
+    'centre + FAB routes directly to the Log screen (go(\'log\')) — the one-tap daily log action',
+    fabTag);
+  // The old menu opener must be gone (no dead code, no second Add-menu path).
   const librarySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
-  const m = librarySrc.match(/function openAddMenu\(\)\{[\s\S]*?\n\}\n/);
-  const fnBody = m ? m[0] : '';
-  assert(fnBody.length > 0, 'setup: openAddMenu() function body found in library.js', 'not found');
-
-  // The "Log food" row's own altrow markup must be the one wired to go('log'), not just
-  // go('log') appearing somewhere unrelated in the function. Negative lookahead keeps the
-  // match from crossing into a DIFFERENT altrow's opening tag (there are several in this
-  // menu), so this is specifically the row whose text is "Log food".
-  const logFoodRow = fnBody.match(/<div class="altrow"[^>]*>(?:(?!<div class="altrow")[\s\S])*?Log food/);
-  assert(!!logFoodRow, 'setup: "Log food" altrow found inside openAddMenu()', fnBody);
-  const rowHtml = logFoodRow ? logFoodRow[0] : '';
-  // Source is a single-quoted JS string literal, so a JS-string argument like 'log' is
-  // written escaped as \'log\' in the .js file's own text — match the literal source form.
-  assert(/go\(\\?'log\\?'\)/.test(rowHtml),
-    'openAddMenu(): the "Log food" row navigates to the Log screen via go(\'log\') — the ONE canonical log-food destination',
-    rowHtml);
-  assert(rowHtml.indexOf('closeSheet()') !== -1,
-    'openAddMenu(): the "Log food" row closes the Add sheet before navigating',
-    rowHtml);
-  assert(rowHtml.indexOf('openFoodSearch()') === -1,
-    'openAddMenu(): the "Log food" row no longer opens the old openFoodSearch() bottom sheet',
-    rowHtml);
-  const logFoodAt = fnBody.indexOf('Log food');
-  const scannerAt = fnBody.indexOf('Scan barcode');
-  assert(logFoodAt !== -1 && scannerAt !== -1 && logFoodAt < scannerAt,
-    'openAddMenu(): Log food is the first action in the centre + menu', 'Log food@' + logFoodAt + ' scanner@' + scannerAt);
+  assert(!/function openAddMenu\(\)\{/.test(librarySrc),
+    'the retired openAddMenu() is removed (authoring lives in the Library hub now)', 'still present');
+  // Library hub keeps authoring + adds a Profile entry (Profile was a dead-end from other tabs).
+  const hubMatch = librarySrc.match(/function renderLibraryHub\(\)\{[\s\S]*?\n\}/);
+  const hubBody = hubMatch ? hubMatch[0] : '';
+  assert(hubBody.indexOf('New recipe') !== -1 && hubBody.indexOf('New ingredient') !== -1,
+    'Library hub still hosts recipe/ingredient authoring', hubBody);
+  assert(/go\(\\?'profile\\?'\)/.test(hubBody),
+    'Library hub surfaces Profile & settings (reachable beyond the Today avatar)', hubBody);
 }
 
 function testMealActionButtonHelperSharedByBothScreens(ctx){

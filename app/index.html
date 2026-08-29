@@ -931,7 +931,11 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></svg>
       <span class="tl">Planner</span>
     </button>
-    <button class="tab add" data-tab="add" onclick="openAddMenu()">
+    <!-- The centre + is the one-tap "log food" action (the app's highest-frequency task): it goes
+         straight to the Log screen and lights while you're there. Authoring (new recipe/ingredient,
+         scan) lives in the Library hub, its natural home — so the + is never a menu of rare actions
+         stacked on top of the daily one. -->
+    <button class="tab add" data-tab="add" aria-label="Log food" onclick="go('log', this)">
       <span class="fab"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg></span>
     </button>
     <button class="tab" data-tab="library" onclick="openLibraryHub(this)">
