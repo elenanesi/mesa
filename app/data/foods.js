@@ -78,7 +78,7 @@ const FOODS = {
     flags: ['lowGI'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'wild-strawberries', src: 'Wild strawberry representative raw-fruit table; kcal per 4/4/9'
   },
   'bell-pepper': {
-    name: 'Bell pepper, red, raw', per: 100, unit: 'g',
+    name: 'Bell pepper, red, raw', per: 100, unit: 'g', avgG: 119,
     kcal: 31, protein: 1.0, carbs: 6.0, fat: 0.3, satFat: 0.0, fiber: 2.1,
     flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'bell-pepper', src: 'USDA FDC 170108 (pepper, sweet, red, raw)'
   },
@@ -88,7 +88,7 @@ const FOODS = {
     flags: [], cat: 'Produce', iconKey: 'spinach', src: 'USDA FDC 168462 (spinach, raw); kcal per 4/4/9'
   },
   'courgette': {
-    name: 'Courgette / zucchini, raw', per: 100, unit: 'g',
+    name: 'Courgette / zucchini, raw', per: 100, unit: 'g', avgG: 196,
     kcal: 20, protein: 1.2, carbs: 3.1, fat: 0.3, satFat: 0.1, fiber: 1.0,
     flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'courgette', src: 'USDA FDC 169291 (zucchini, raw)'
   },
@@ -98,7 +98,7 @@ const FOODS = {
     flags: ['highFiber'], cat: 'Produce', season: 'spring/summer', iconKey: 'aubergine', src: 'USDA FDC 169228 (eggplant, raw)'
   },
   'red-onion': {
-    name: 'Onion, red, raw', per: 100, unit: 'g',
+    name: 'Onion, red, raw', per: 100, unit: 'g', avgG: 110,
     kcal: 43, protein: 1.1, carbs: 9.3, fat: 0.1, satFat: 0.0, fiber: 1.7,
     flags: [], cat: 'Produce', iconKey: 'red-onion', src: 'USDA FDC 170000-style (onion, red, raw)'
   },
@@ -123,12 +123,12 @@ const FOODS = {
     flags: [], cat: 'Pantry', iconKey: 'salt', src: 'Table salt — no caloric/macro contribution; no sodium field exists in FOODS (see this file\'s header). Added for the guacamole composite (composite-ingredients task).'
   },
   'cherry-tomatoes': {
-    name: 'Cherry tomatoes, raw', per: 100, unit: 'g',
+    name: 'Cherry tomatoes, raw', per: 100, unit: 'g', avgG: 17,
     kcal: 21, protein: 0.9, carbs: 3.9, fat: 0.2, satFat: 0.0, fiber: 1.2,
     flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'cherry-tomatoes', src: 'USDA FDC 170457 (tomatoes, cherry, raw)'
   },
   'cucumber': {
-    name: 'Cucumber, raw, with peel', per: 100, unit: 'g',
+    name: 'Cucumber, raw, with peel', per: 100, unit: 'g', avgG: 300,
     kcal: 18, protein: 0.7, carbs: 3.6, fat: 0.1, satFat: 0.0, fiber: 0.5,
     flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'cucumber', src: 'USDA FDC 168409 (cucumber, raw, with peel)'
   },
@@ -153,17 +153,17 @@ const FOODS = {
     flags: ['highFiber', 'glutenFree'], cat: 'Produce', season: 'spring/summer', iconKey: 'green-beans', src: 'USDA FDC 169961-style (green beans, cooked, boiled); kcal per 4/4/9'
   },
   'carrots': {
-    name: 'Carrots, raw', per: 100, unit: 'g',
+    name: 'Carrots, raw', per: 100, unit: 'g', avgG: 61,
     kcal: 43, protein: 0.9, carbs: 9.6, fat: 0.2, satFat: 0.0, fiber: 2.8,
     flags: ['glutenFree'], cat: 'Produce', iconKey: 'carrots', src: 'USDA FDC 170393 (carrots, raw); kcal per 4/4/9'
   },
   'peaches': {
-    name: 'Peaches, raw', per: 100, unit: 'g',
+    name: 'Peaches, raw', per: 100, unit: 'g', avgG: 150,
     kcal: 44, protein: 0.9, carbs: 10.1, fat: 0.3, satFat: 0.0, fiber: 1.5, sugars: 8.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Produce', sub: 'fruit', season: 'spring/summer', breakfastPair: true, iconKey: 'peaches', src: 'USDA FDC 169928 (peaches, raw); kcal per 4/4/9'
   },
   'pears': {
-    name: 'Pears, raw', per: 100, unit: 'g',
+    name: 'Pears, raw', per: 100, unit: 'g', avgG: 178,
     kcal: 59, protein: 0.4, carbs: 15.2, fat: 0.1, satFat: 0.0, fiber: 3.1, sugars: 9.8, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'pears', src: 'USDA FDC 169118 (pears, raw)'
   },
@@ -203,37 +203,37 @@ const FOODS = {
     flags: ['glutenFree'], cat: 'Produce', iconKey: 'lettuce', src: 'USDA FDC 169247 (lettuce, romaine, raw); kcal per 4/4/9'
   },
   'garlic': {
-    name: 'Garlic, raw', per: 100, unit: 'g',
+    name: 'Garlic, raw', per: 100, unit: 'g', avgG: 3,
     kcal: 163, protein: 6.4, carbs: 33.1, fat: 0.5, satFat: 0.1, fiber: 2.1,
     flags: [], cat: 'Produce', iconKey: 'garlic', src: 'USDA FDC 169230 (garlic, raw); kcal per 4/4/9'
   },
   'avocado': {
-    name: 'Avocado, raw', per: 100, unit: 'g',
+    name: 'Avocado, raw', per: 100, unit: 'g', avgG: 150,
     kcal: 174, protein: 2.0, carbs: 8.5, fat: 14.7, satFat: 2.1, fiber: 6.7,
     flags: ['highFiber'], cat: 'Produce', iconKey: 'avocado', src: 'USDA FDC 171705 (avocado, raw)'
   },
   'tomatoes': {
-    name: 'Tomatoes, raw', per: 100, unit: 'g',
+    name: 'Tomatoes, raw', per: 100, unit: 'g', avgG: 123,
     kcal: 21, protein: 0.9, carbs: 3.9, fat: 0.2, satFat: 0.0, fiber: 1.2,
     flags: [], cat: 'Produce', season: 'spring/summer', iconKey: 'cherry-tomatoes', src: 'USDA FDC 170457-style (tomatoes, red, raw)'
   },
   'potatoes': {
-    name: 'Potatoes, raw', per: 100, unit: 'g',
+    name: 'Potatoes, raw', per: 100, unit: 'g', avgG: 170,
     kcal: 77, protein: 2.0, carbs: 17.0, fat: 0.1, satFat: 0.0, fiber: 2.2,
     flags: ['glutenFree'], cat: 'Produce', iconKey: 'potatoes', src: 'USDA FDC 170026 (potato, flesh and skin, raw)'
   },
   'oranges': {
-    name: 'Oranges, raw', per: 100, unit: 'g',
+    name: 'Oranges, raw', per: 100, unit: 'g', avgG: 131,
     kcal: 52, protein: 0.9, carbs: 11.8, fat: 0.1, satFat: 0.0, fiber: 2.4, sugars: 9.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'oranges', src: 'USDA FDC 169918 (orange, raw)'
   },
   'apples': {
-    name: 'Apples, raw, with skin', per: 100, unit: 'g',
+    name: 'Apples, raw, with skin', per: 100, unit: 'g', avgG: 182,
     kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4, sugars: 10.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
   },
   'bananas': {
-    name: 'Bananas, raw', per: 100, unit: 'g',
+    name: 'Bananas, raw', per: 100, unit: 'g', avgG: 118,
     kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6, sugars: 12.2, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Produce', sub: 'fruit', breakfastPair: true, iconKey: 'bananas', src: 'USDA FDC 173944 (banana, raw)'
   },
@@ -760,7 +760,7 @@ const FOODS = {
     flags: [], cat: 'Pantry', iconKey: 'olives', src: 'USDA FDC 171899-style (olives, green, canned/pickled)'
   },
   'sweet-potato': {
-    name: 'Sweet potato', per: 100, unit: 'g',
+    name: 'Sweet potato', per: 100, unit: 'g', avgG: 130,
     kcal: 88, protein: 1.6, carbs: 20.1, fat: 0.1, satFat: 0, fiber: 3.0,
     flags: ['highFiber', 'glutenFree'], cat: 'Produce', iconKey: 'sweet-potato', src: 'USDA FDC 168482 (sweet potato, raw); kcal via 4/4/9 policy'
   },
