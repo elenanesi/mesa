@@ -3676,6 +3676,12 @@ function buildRecipeBuilderSheet(){
   if(editing && BUILTIN_RECIPES_DB[rb.editingId] && recipeOverrides[rb.editingId]){
     html += '<button class="cta ghostbtn" style="margin-top:16px" onclick="resetRecipeBuilderOverride()">↺ Reset to default</button>';
   }
+  // Fork-on-edit note (owner spec 2026-08-30): editing a MARKET recipe saves a copy as YOURS and
+  // returns the untouched original to the market, so the two can sit side by side. Shown only for a
+  // fresh built-in edit (a legacy in-place override still offers Reset above instead).
+  else if(editing && BUILTIN_RECIPES_DB[rb.editingId]){
+    html += '<div class="sub" style="margin-top:12px">Saving keeps this as <strong>your</strong> recipe and puts the original back in the market — you can re-add it anytime.</div>';
+  }
   // Save/Cancel live in a bar pinned above the tab bar (showEditorActionBar) so they're reachable
   // without scrolling to the end of a long form. The bar is a GLOBAL element (#editorActionBar,
   // outside the scrolling screen) so it stays put on iOS during scroll / with the keyboard open;
@@ -4332,8 +4338,12 @@ function saveRecipeBuilder(){
   const name = (rb.name || '').trim();
   if(!name){ toast('Give this recipe a name'); return; }
   const lower = name.toLowerCase();
-  const dup = Object.keys(RECIPES_DB).some(function(id){ return id !== rb.editingId && RECIPES_DB[id].title.toLowerCase() === lower; });
-  if(dup){ toast('“' + name + '” already exists — try a different name'); return; }
+  // Name collisions are checked against the recipes the user actually HAS (their book + own
+  // recipes), NOT the whole market catalog: a market recipe the user has removed from their book
+  // (e.g. the original of the one they are editing — see the fork below) must not block naming.
+  // This is what lets an edited fork sit beside the untouched original that returned to the market.
+  const dup = Object.keys(RECIPES_DB).some(function(id){ return id !== rb.editingId && RECIPES_DB[id].title.toLowerCase() === lower && recipeInBook(id); });
+  if(dup){ toast('“' + name + '” already exists in your book — try a different name'); return; }
   if(rb.ingredients.length < 2){ toast('Add at least 2 ingredients'); return; }
   const optionsError = validateRecipeBuilderOptionGroups(rb);
   if(optionsError){ toast(optionsError); return; }
@@ -4351,7 +4361,14 @@ function saveRecipeBuilder(){
     perServing, rb.time);
   const stepsArr = (rb.stepsText || '').split('\n').map(function(s){ return s.trim(); }).filter(function(s){ return !!s; });
 
-  const id = rb.editingId || uniqueSlug(slugify(name), RECIPES_DB, 'cr-');
+  // Owner spec (2026-08-30): editing a MARKET / built-in recipe never overwrites it in place.
+  // It FORKS to the user's own new recipe (a fresh cr- id) and the untouched original returns to
+  // the market (removed from the book, re-addable), so the edit and the original can live side by
+  // side — the user can even re-add the original next to their version. Editing one of the user's
+  // OWN recipes (a cr- id) still updates it in place. (This replaces the old in-place
+  // recipeOverrides model for built-ins; legacy overrides still load/merge for back-compat.)
+  const editingBuiltin = !!rb.editingId && rb.editingId.indexOf('cr-') !== 0;
+  const id = (rb.editingId && !editingBuiltin) ? rb.editingId : uniqueSlug(slugify(name), RECIPES_DB, 'cr-');
   const recipe = {
     title: name, emoji: (rb.emoji || '').trim() || '🍽️', slot: (rb.slots && rb.slots[0]) || 'dinner', slots: (rb.slots && rb.slots.length ? rb.slots.slice() : ['dinner']),
     styles: meta.styles, time: rb.time, servings: yieldN,
@@ -4369,12 +4386,17 @@ function saveRecipeBuilder(){
   const chosenImageKey = safeRecipeImageKey(rb.imageKey || '');
   if(chosenImageKey) recipe.imageKey = chosenImageKey;
   if(deletedRecipes[id]) delete deletedRecipes[id]; // recreate-after-delete: this save's `u` beats the tombstone either way
-  if(id.indexOf('cr-') === 0) customRecipes[id] = recipe;
-  else recipeOverrides[id] = recipe;
+  customRecipes[id] = recipe; // always the user's own recipe now (cr- id) — no in-place built-in override
+  if(editingBuiltin){
+    // Drop any legacy in-place override for the built-in so the ORIGINAL (not a stale prior edit)
+    // is what returns to the market, then send it back to the market — re-addable beside the fork.
+    if(recipeOverrides[rb.editingId]) delete recipeOverrides[rb.editingId];
+    removeRecipeFromBook(rb.editingId, true);
+  }
   customRev++;
   applyCustomRecipes();
   applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
-  toast('✓ ' + name + (rb.editingId ? ' updated' : ' added to recipes'));
+  toast('✓ ' + name + (editingBuiltin ? ' saved — the original is back in the market' : (rb.editingId ? ' updated' : ' added to recipes')));
   recipeBuilder = null;
   openMyRecipes();
   renderFoodLibraryCount();

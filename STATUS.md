@@ -129,12 +129,15 @@ review all 122 planned recipes (17 `occasional` treats left untouched). Applied 
 - **TO DEPLOY:** built-in recipes live in the D1 catalog → this needs `node tools/seed-d1.js` (a reviewed content
   release) + a Pages deploy. Not run yet — awaiting the go-ahead.
 
-**Recipe EDIT behaviour ("edit a market recipe → original returns to the market") — DECISION PENDING (2026-08-30).**
-Owner asked: editing a recipe should send the original back to the market (re-addable, able to sit beside the edit).
-Prototyped the fork model (edit a built-in → new `cr-` copy + `removeRecipeFromBook(original)`), but it **replaces** the
-established in-place override feature (D3): editing a built-in in place, the "edited" badge, **reset-to-default**, and
-**option-variant (optionGroups) editing** of built-ins — ~490 lines of tests. Reverted to keep 1938 green; needs an owner
-call on deprecating in-place override/reset before the full rework.
+**Recipe EDIT behaviour → FORK model (owner-approved 2026-08-30, DONE in-code, 1946 green, deployed with the fork build).**
+Editing a MARKET/built-in recipe no longer edits it in place — it **forks** to the user's own new `cr-` recipe and the
+untouched original **returns to the market** (removed from book via `removeRecipeFromBook`, re-addable), so the edit and
+the original can sit side by side (verified end-to-end: edit → `cr-…` fork, original back in market, re-add → both in
+book). `saveRecipeBuilder` (library.js): `editingBuiltin` branch; the dup-name check is now book-aware (a market recipe
+out of your book never blocks a name). A fork note replaces the old in-place hint in the edit form. This **deprecates**
+the in-place override model for NEW edits — legacy `recipeOverrides` still load/merge and their **reset-to-default**
+(↺ button + resetRecipeBuilderOverride) still works for back-compat. The D3 builder test suite (option-variant editing,
+occasional flag, reset) was reworked to the fork model (each block snapshots/restores the recipe-book globals).
 
 **Per-day calorie deviation — INVESTIGATED 2026-08-30, generation fix REJECTED (evidence-based).**
 Owner report: "1450 kcal planned, some days hit 1900+ (+31%)." The expert panel proposed a generation

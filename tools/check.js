@@ -1417,6 +1417,9 @@ function testRecipeImagePicker(ctx){
   assert(get(ctx, 'customRecipes')[savedId].imageKey === 'fish-main',
     'saveRecipeBuilder: custom recipes persist the chosen imageKey', JSON.stringify(get(ctx, 'customRecipes')[savedId]));
 
+  // Editing a built-in now FORKS + sends the original back to the market (owner spec 2026-08-30),
+  // which materializes/mutates the recipe-book globals — snapshot them so this test restores them.
+  const __bookSnap = get(ctx, "JSON.stringify({rb: (typeof recipeBook!=='undefined'&&recipeBook)||null, rbi: (typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb: (typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}})");
   call(ctx, 'openEditRecipeForm', ['omelette']);
   assert(get(ctx, 'recipeBuilder').imageKey === null,
     'openEditRecipeForm: built-in recipes without explicit imageKey start in Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
@@ -1431,10 +1434,20 @@ function testRecipeImagePicker(ctx){
     'openRecipeImageForm: opens edit recipe with the lead image picker expanded', html);
   call(ctx, 'setRecipeImageKey', ['salad']);
   call(ctx, 'saveRecipeBuilder', []);
-  assert(get(ctx, 'recipeOverrides').omelette && get(ctx, 'recipeOverrides').omelette.imageKey === 'salad',
-    'saveRecipeBuilder: built-in recipe overrides persist a chosen imageKey', JSON.stringify(get(ctx, 'recipeOverrides').omelette));
+  // Editing a built-in FORKS to the user's own recipe (owner spec 2026-08-30): the edit is a new
+  // cr- recipe carrying the chosen imageKey, NOT an in-place override, and the untouched built-in
+  // returns to the market (out of the book) so it can be re-added beside the fork.
+  const forkId = Object.keys(get(ctx, 'customRecipes')).find(function(k){ return get(ctx, 'customRecipes')[k].imageKey === 'salad'; });
+  assert(!!forkId && forkId.indexOf('cr-') === 0,
+    'saveRecipeBuilder: editing a built-in forks to a new custom recipe (not an in-place override)', String(forkId));
+  assert(!get(ctx, 'recipeOverrides').omelette,
+    'saveRecipeBuilder: editing a built-in no longer writes an in-place recipeOverride', JSON.stringify(get(ctx, 'recipeOverrides')));
+  assert(get(ctx, 'customRecipes')[forkId].imageKey === 'salad',
+    'saveRecipeBuilder: the forked recipe persists the chosen imageKey', JSON.stringify(get(ctx, 'customRecipes')[forkId]));
+  assert(call(ctx, 'recipeInBook', ['omelette']) === false,
+    'saveRecipeBuilder: the original built-in returns to the market (out of the book) after an edit', '');
 
-  call(ctx, 'openEditRecipeForm', ['omelette']);
+  call(ctx, 'openEditRecipeForm', [forkId]);
   assert(get(ctx, 'recipeBuilder').imageKey === 'salad',
     'openEditRecipeForm: existing recipe imageKey seeds back into the builder draft', get(ctx, 'recipeBuilder').imageKey);
   run(ctx, "recipeBuilder.imagePickerOpen = true;");
@@ -1445,7 +1458,7 @@ function testRecipeImagePicker(ctx){
   assert(get(ctx, 'recipeBuilder').imageKey === null,
     'setRecipeImageKey: empty key returns the recipe image picker to Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
 
-  run(ctx, "delete customRecipes['" + savedId + "']; delete recipeOverrides.omelette; applyCustomRecipes(); toast = __recipePickerStub.toast; openMyRecipes = __recipePickerStub.openMyRecipes; applyProf = __recipePickerStub.applyProf; renderFoodLibraryCount = __recipePickerStub.renderFoodLibraryCount; delete __recipePickerStub;");
+  run(ctx, "delete customRecipes['" + savedId + "']; delete customRecipes['" + forkId + "']; var __b=" + __bookSnap + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); toast = __recipePickerStub.toast; openMyRecipes = __recipePickerStub.openMyRecipes; applyProf = __recipePickerStub.applyProf; renderFoodLibraryCount = __recipePickerStub.renderFoodLibraryCount; delete __recipePickerStub;");
 }
 
 function testLibraryRecipeRowsOpenDetail(){
@@ -9514,63 +9527,63 @@ function testRecipeOptionsBuilder(ctx){
     run(ctx, "delete customRecipes['" + savedId + "']; applyCustomRecipes(); recipeBuilder = null;");
   })();
 
-  // -------- (3) built-in override: adding a 4th choice to french-toast-fruit-maple's
-  // fruit group through the builder -> chosenOptsForRecipe rotation can select it -> a
-  // STALE opts value from before the edit re-normalizes to the (possibly re-slugified)
-  // default rather than throwing -> reset restores exactly the original 3 choices and the
-  // recipeOverrides entry disappears. --------
+  // -------- (3) built-in edit FORKS (owner spec 2026-08-30): adding a 4th choice to
+  // french-toast-fruit-maple's fruit group through the builder saves the edit as a NEW cr-
+  // recipe carrying the 4 choices, leaves the built-in PRISTINE (3 choices) and returns it to
+  // the market (no in-place override). chosenOptsForRecipe rotation can select the fork's 4th
+  // choice, and a STALE opts value re-normalizes to the fork's default rather than throwing.
+  // The edit mutates the recipe-book globals, so snapshot + restore them for later blocks. --------
   (function(){
-    const originalIds = get(ctx, 'RECIPES_DB')['french-toast-fruit-maple'].optionGroups[0].choices.map(function(c){ return c.id; });
+    const __snap3 = get(ctx, "JSON.stringify({rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb:(typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}})");
+    const originalIds = get(ctx, 'BUILTIN_RECIPES_DB')['french-toast-fruit-maple'].optionGroups[0].choices.map(function(c){ return c.id; });
     assert(JSON.stringify(originalIds) === JSON.stringify(['berries', 'banana', 'peach']),
-      'french-toast override: original built-in choice ids, pre-edit (test setup sanity)', JSON.stringify(originalIds));
+      'french-toast fork: original built-in choice ids, pre-edit (test setup sanity)', JSON.stringify(originalIds));
 
     call(ctx, 'openEditRecipeForm', ['french-toast-fruit-maple']);
     const rb = get(ctx, 'recipeBuilder');
     assert(rb.optionGroups.length === 1 && rb.optionGroups[0].choices.length === 3,
-      'french-toast override: builder opens with the original 3-choice fruit group', JSON.stringify(rb.optionGroups));
+      'french-toast fork: builder opens with the original 3-choice fruit group', JSON.stringify(rb.optionGroups));
 
     call(ctx, 'addRecipeOptionChoice', [0]);
     rb.optionGroups[0].choices[3].label = 'Oranges';
     rb.optionGroups[0].choices[3].ingredients = [{foodId: 'oranges', grams: 80}];
     call(ctx, 'saveRecipeBuilder', []);
 
-    const recipeOverrides = get(ctx, 'recipeOverrides');
-    assert(!!recipeOverrides['french-toast-fruit-maple'],
-      'french-toast override: saving a built-in edit through the builder creates a recipeOverrides entry', '');
-    const updated = get(ctx, 'RECIPES_DB')['french-toast-fruit-maple'];
-    assert(updated.optionGroups[0].choices.length === 4, 'french-toast override: 4th fruit choice saved', updated.optionGroups[0].choices.length);
-    const newChoiceId = updated.optionGroups[0].choices[3].id;
-    assert(newChoiceId === 'oranges', 'french-toast override: new choice gets a slugified id', newChoiceId);
+    assert(!get(ctx, 'recipeOverrides')['french-toast-fruit-maple'],
+      'french-toast fork: editing a built-in writes NO in-place override', '');
+    const customRecipes = get(ctx, 'customRecipes');
+    const forkId = Object.keys(customRecipes).find(function(k){ return customRecipes[k].optionGroups && customRecipes[k].optionGroups[0] && customRecipes[k].optionGroups[0].choices.length === 4 && customRecipes[k].optionGroups[0].choices.some(function(c){ return c.id === 'oranges'; }); });
+    assert(!!forkId && forkId.indexOf('cr-') === 0, 'french-toast fork: the edit saved as a new custom recipe (fork)', String(forkId));
+
+    const originalNow = get(ctx, 'BUILTIN_RECIPES_DB')['french-toast-fruit-maple'].optionGroups[0].choices.map(function(c){ return c.id; });
+    assert(JSON.stringify(originalNow) === JSON.stringify(['berries', 'banana', 'peach']),
+      'french-toast fork: the original built-in is left pristine (3 choices) — the edit did not mutate it', JSON.stringify(originalNow));
+    assert(call(ctx, 'recipeInBook', ['french-toast-fruit-maple']) === false,
+      'french-toast fork: the original returns to the market (out of the book) after the edit', '');
+
+    const forked = get(ctx, 'RECIPES_DB')[forkId];
+    const gk = forked.optionGroups[0].key;
+    assert(forked.optionGroups[0].choices.length === 4, 'french-toast fork: the FORK carries the 4th fruit choice', forked.optionGroups[0].choices.length);
+    assert(forked.optionGroups[0].choices[3].id === 'oranges', 'french-toast fork: the new choice gets a slugified id', forked.optionGroups[0].choices[3].id);
 
     const validation = call(ctx, 'validateData', []);
-    assert(validation.ok === true, 'french-toast override: validateData() stays ok:true with the added 4th choice', JSON.stringify(validation.errors));
+    assert(validation.ok === true, 'french-toast fork: validateData() stays ok:true with the forked recipe', JSON.stringify(validation.errors));
 
     let found = false;
     for(let d = 0; d < 4; d++){
       for(let si = 0; si < 4; si++){
-        const opts = call(ctx, 'chosenOptsForRecipe', [updated, 0, d, si, []]);
-        if(opts && opts.fruit === newChoiceId) found = true;
+        const opts = call(ctx, 'chosenOptsForRecipe', [forked, 0, d, si, []]);
+        if(opts && opts[gk] === 'oranges') found = true;
       }
     }
-    assert(found, 'french-toast override: chosenOptsForRecipe rotation can select the newly-added 4th choice across a dayIndex/slotIndex sweep', '');
+    assert(found, 'french-toast fork: chosenOptsForRecipe rotation can select the newly-added 4th choice across a dayIndex/slotIndex sweep', '');
 
-    // D3 plan: an edited/removed choice's stale opts re-normalize to the default rather
-    // than crash. The "Mixed berries" label was left untouched, but D3 always re-derives
-    // ids from the CURRENT label at save time (buildRecipeOptionGroupsForSave's doc
-    // comment), so its id drifted from the original 'berries' to 'mixed-berries' — a real,
-    // expected instance of exactly the case this normalization exists for.
-    const staleNormalized = call(ctx, 'normalizeRecipeOpts', [updated, {fruit: 'berries'}]);
-    assert(staleNormalized.fruit === updated.optionGroups[0].choices[0].id,
-      'french-toast override: a stale opts value from before the edit falls back to the current default choice, never throws', JSON.stringify(staleNormalized));
+    const staleOpts = {}; staleOpts[gk] = 'no-such-choice';
+    const staleNormalized = call(ctx, 'normalizeRecipeOpts', [forked, staleOpts]);
+    assert(staleNormalized[gk] === forked.optionGroups[0].choices[0].id,
+      'french-toast fork: a stale opts value falls back to the current default choice, never throws', JSON.stringify(staleNormalized));
 
-    call(ctx, 'resetRecipeOverride', ['french-toast-fruit-maple']);
-    assert(!get(ctx, 'recipeOverrides')['french-toast-fruit-maple'],
-      'french-toast override: reset removes the recipeOverrides entry entirely', '');
-    const restored = get(ctx, 'RECIPES_DB')['french-toast-fruit-maple'];
-    const restoredIds = restored.optionGroups[0].choices.map(function(c){ return c.id; });
-    assert(JSON.stringify(restoredIds) === JSON.stringify(['berries', 'banana', 'peach']),
-      'french-toast override: reset restores exactly the original 3 choices (ids included)', JSON.stringify(restoredIds));
-    run(ctx, "recipeBuilder = null;");
+    run(ctx, "delete customRecipes['" + forkId + "']; var __b=" + __snap3 + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); recipeBuilder = null;");
   })();
 
   // -------- (4) hostile labels: group/choice labels are now USER-CONTROLLED text, so they
@@ -9843,41 +9856,55 @@ function testRecipeOptionsBuilder(ctx){
     run(ctx, "recipeBuilder = null;");
   })();
 
-  // -------- (12) "Reset to default" button gating + the reset flow end-to-end against a
-  // real built-in (baked-fish): hidden for an unedited built-in and for a brand-new custom
-  // recipe, shown once a household override exists, and clears the override on tap. --------
+  // -------- (12) Fork-on-edit note + legacy override reset (owner spec 2026-08-30). Editing a
+  // MARKET recipe no longer edits it in place: the builder shows a "saving keeps this as your
+  // recipe / original back in the market" note (not a Reset button), and Save FORKS. The old
+  // "Reset to default" button + resetRecipeBuilderOverride survive ONLY for LEGACY in-place
+  // overrides (data saved before the fork model) — exercised here against a hand-seeded one. --------
   (function(){
+    const __snap12 = get(ctx, "JSON.stringify({rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb:(typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}})");
+
+    // (a) Legacy in-place override (pre-fork-model data): the Reset button appears and clears it.
+    run(ctx, "recipeOverrides['baked-fish'] = JSON.parse(JSON.stringify(BUILTIN_RECIPES_DB['baked-fish'])); recipeOverrides['baked-fish'].time = (recipeOverrides['baked-fish'].time||10) + 2; applyCustomRecipes();");
     call(ctx, 'openEditRecipeForm', ['baked-fish']);
     let html = call(ctx, 'buildRecipeBuilderSheet', []);
-    assert(html.indexOf('Reset to default') === -1, 'Reset to default: hidden for a built-in recipe with no household override', '');
+    assert(html.indexOf('Reset to default') !== -1, 'legacy override: the Reset button is shown when a built-in still carries a legacy override', '');
+    call(ctx, 'resetRecipeBuilderOverride', []);
+    assert(!get(ctx, 'recipeOverrides')['baked-fish'], 'legacy override: resetRecipeBuilderOverride clears the override', '');
+    run(ctx, "recipeBuilder = null;");
 
-    const rb = get(ctx, 'recipeBuilder');
-    rb.time = rb.time + 2; // trivial edit so saveRecipeBuilder creates a recipeOverrides entry
-    call(ctx, 'saveRecipeBuilder', []);
-    const validation = call(ctx, 'validateData', []);
-    assert(validation.ok === true, 'Reset to default setup: validateData() stays ok:true after a trivial built-in edit', JSON.stringify(validation.errors));
-
+    // (b) Editing an ordinary built-in: the fork note shows, the Reset button does not, and Save FORKS.
     call(ctx, 'openEditRecipeForm', ['baked-fish']);
     html = call(ctx, 'buildRecipeBuilderSheet', []);
-    assert(html.indexOf('Reset to default') !== -1, 'Reset to default: shown once a built-in recipe has a household override', '');
+    assert(html.indexOf('Reset to default') === -1, 'fork note: the Reset button is hidden when editing a built-in with no legacy override', '');
+    assert(html.indexOf('original back in the market') !== -1,
+      'fork note: editing a built-in shows the "saving keeps this as yours / original back in the market" note', '');
 
-    call(ctx, 'resetRecipeBuilderOverride', []);
-    assert(!get(ctx, 'recipeOverrides')['baked-fish'], 'resetRecipeBuilderOverride: clears the override and reopens the builder on the restored built-in', '');
-    html = call(ctx, 'buildRecipeBuilderSheet', []);
-    assert(html.indexOf('Reset to default') === -1, 'Reset to default: hidden again once the override is cleared', '');
+    const rb = get(ctx, 'recipeBuilder');
+    rb.time = rb.time + 2; // a trivial edit
+    call(ctx, 'saveRecipeBuilder', []);
+    assert(!get(ctx, 'recipeOverrides')['baked-fish'], 'fork note: saving a built-in edit creates NO override', '');
+    const forkId = Object.keys(get(ctx, 'customRecipes')).find(function(k){ return get(ctx, 'customRecipes')[k].title === get(ctx, 'BUILTIN_RECIPES_DB')['baked-fish'].title; });
+    assert(!!forkId, 'fork note: the built-in edit saved as a fork (new cr- recipe)', String(forkId));
+    assert(call(ctx, 'recipeInBook', ['baked-fish']) === false, 'fork note: the original baked-fish returns to the market after the edit', '');
+    const validation = call(ctx, 'validateData', []);
+    assert(validation.ok === true, 'fork note: validateData() stays ok:true after a built-in fork', JSON.stringify(validation.errors));
 
+    // (c) Never shown for a brand-new custom recipe.
     call(ctx, 'openNewRecipeForm', []);
     html = call(ctx, 'buildRecipeBuilderSheet', []);
-    assert(html.indexOf('Reset to default') === -1, 'Reset to default: never shown for a brand-new custom recipe (no editingId)', '');
-    run(ctx, "recipeBuilder = null;");
+    assert(html.indexOf('Reset to default') === -1 && html.indexOf('original back in the market') === -1,
+      'fork note: neither the Reset button nor the fork note shows for a brand-new custom recipe', '');
+
+    run(ctx, "delete customRecipes['" + forkId + "']; delete recipeOverrides['baked-fish']; var __b=" + __snap12 + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); recipeBuilder = null;");
   })();
 
   // -------- (13) Occasional is an editor-owned planning flag, not a display-only tag:
   // saving it on a built-in creates an override, the planner excludes that recipe, and
   // clearing it removes the optional field again. --------
   (function(){
-    const id = 'baked-fish';
-    call(ctx, 'openEditRecipeForm', [id]);
+    const __snap13 = get(ctx, "JSON.stringify({rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb:(typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}})");
+    call(ctx, 'openEditRecipeForm', ['baked-fish']);
     let rb = get(ctx, 'recipeBuilder');
     assert(rb.occasional === false, 'Occasional editor: ordinary recipes open as eligible for automatic planning', String(rb.occasional));
     let html = call(ctx, 'buildRecipeBuilderSheet', []);
@@ -9886,22 +9913,27 @@ function testRecipeOptionsBuilder(ctx){
 
     call(ctx, 'setRecipeBuilderOccasional', [true]);
     call(ctx, 'saveRecipeBuilder', []);
-    const saved = get(ctx, 'RECIPES_DB')[id];
-    assert(saved.occasional === true && get(ctx, 'recipeOverrides')[id].occasional === true,
-      'Occasional editor: saving marks the recipe occasional in its override', JSON.stringify(saved));
-    const candidates = call(ctx, 'candidatesFor', [saved.slot, saved.styles[0], [], ['elena']]);
-    assert(candidates.indexOf(id) === -1,
+    // Editing the built-in forks (owner spec 2026-08-30): the occasional flag lives on the FORK,
+    // not an in-place override.
+    const forkId = Object.keys(get(ctx, 'customRecipes')).find(function(k){ return get(ctx, 'customRecipes')[k].occasional === true && get(ctx, 'customRecipes')[k].title === get(ctx, 'BUILTIN_RECIPES_DB')['baked-fish'].title; });
+    assert(!!forkId && get(ctx, 'customRecipes')[forkId].occasional === true,
+      'Occasional editor: saving marks the FORKED recipe occasional', String(forkId));
+    assert(!get(ctx, 'recipeOverrides')['baked-fish'], 'Occasional editor: editing the built-in wrote no in-place override', '');
+    const forked = get(ctx, 'RECIPES_DB')[forkId];
+    const candidates = call(ctx, 'candidatesFor', [forked.slot, forked.styles[0], [], ['elena']]);
+    assert(candidates.indexOf(forkId) === -1,
       'Occasional editor: an occasional recipe is excluded from automatic planner candidates', JSON.stringify(candidates));
 
-    call(ctx, 'openEditRecipeForm', [id]);
+    // Re-editing the fork (a cr- recipe) updates it IN PLACE; clearing occasional omits the field.
+    call(ctx, 'openEditRecipeForm', [forkId]);
     rb = get(ctx, 'recipeBuilder');
-    assert(rb.occasional === true, 'Occasional editor: reopening restores the occasional selection', String(rb.occasional));
+    assert(rb.occasional === true, 'Occasional editor: reopening the fork restores the occasional selection', String(rb.occasional));
     call(ctx, 'setRecipeBuilderOccasional', [false]);
     call(ctx, 'saveRecipeBuilder', []);
-    assert(!Object.prototype.hasOwnProperty.call(get(ctx, 'recipeOverrides')[id], 'occasional'),
-      'Occasional editor: clearing selection omits the optional occasional field', JSON.stringify(get(ctx, 'recipeOverrides')[id]));
-    call(ctx, 'resetRecipeOverride', [id]);
-    run(ctx, 'recipeBuilder = null;');
+    assert(!Object.prototype.hasOwnProperty.call(get(ctx, 'customRecipes')[forkId], 'occasional'),
+      'Occasional editor: clearing selection omits the optional occasional field', JSON.stringify(get(ctx, 'customRecipes')[forkId]));
+
+    run(ctx, "delete customRecipes['" + forkId + "']; var __b=" + __snap13 + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); recipeBuilder = null;");
   })();
 
   // -------- (14) final consistency: the whole D3 test suite leaves validateData() green
