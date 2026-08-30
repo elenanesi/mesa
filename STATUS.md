@@ -107,6 +107,49 @@ Week workspace.
 
 ## Open / next
 
+**Recipe quality pass (chef + nutritionist panel) — DONE in-code, 1938 green, NOT yet reseeded/deployed (2026-08-30).**
+Added a 5th expert persona — **Chef & neuro-food-marketing** (EXPERT-PANEL.md) — and had the chef + nutritionist
+review all 122 planned recipes (17 `occasional` treats left untouched). Applied in `app/data/recipes.js`:
+- **Nutritional outliers fixed:** the two coconut chia puddings (sat fat 33g/26g → ~5-6g, rebased on soy milk/yogurt,
+  kept vegan+GF); `ricotta-walnuts` and `olives-feta-snack` (sat ~10-12g → ~7g); three fibre bombs
+  (`lentil-quinoa-greens-bowl` 28→24, `zuppa-broccolo-nero-lenticchie` 26→24, `chickpea-quinoa-broccoli-bowl` 25→22,
+  all under the 25g GI-distress line). Highest planned-recipe sat fat is now 12g (was 33); highest fibre 24g (was 28).
+- **Balance rebuilds:** `greek-salad-big` (P13/fib4 → P18/fib12 via chickpeas), `insalata-pesche-feta`,
+  `white-bean-rosemary-mash` (2-ingredient → greens+tomato plate), `insalata-noci-mele-senape`, `pomodori-al-riso`
+  (+pecorino protein), `turkey-cutlets-sage` (+veg side), `feta-filo` trimmed to stay in the everyday pool.
+- **Appeal (chef, zero-macro):** renamed the boring "X-bowl" / "diet-food" titles (crispy/charred/smoky/Tuscan…),
+  added `toTaste` aromatics (chilli, smoked paprika, sesame, capers, lemon zest) and char-not-boil steps.
+- **12 new dishes** filling gaps: `berry-chia-soy-pudding` (vegan+GF+nut-free breakfast), `sea-bass-greens-potato` /
+  `spigola-acqua-pazza` (lighter dinners), `cannellini-carrot-lemon-dip` (low-cal snack), plus puttanesca-tonno,
+  vongole, caponata-ceci, salmon-avocado-bowl, farro-pomodoro-feta, ricotta-pomodoro-toast, caprese-skewers,
+  bresaola-rucola-parmigiano. Now **134 planned + 17 occasional**.
+- Two catalog-driven test-fixtures made robust (they depended on the generator producing an *un*balanced week, which
+  the healthier catalog no longer does): the re-balance-spread demo now *deliberately* builds an uneven week, and the
+  `lowSugar`-tuning fortnight guard now tolerates sparse-sugar feasible-set jitter (both documented in-place).
+- **TO DEPLOY:** built-in recipes live in the D1 catalog → this needs `node tools/seed-d1.js` (a reviewed content
+  release) + a Pages deploy. Not run yet — awaiting the go-ahead.
+
+**Recipe EDIT behaviour ("edit a market recipe → original returns to the market") — DECISION PENDING (2026-08-30).**
+Owner asked: editing a recipe should send the original back to the market (re-addable, able to sit beside the edit).
+Prototyped the fork model (edit a built-in → new `cr-` copy + `removeRecipeFromBook(original)`), but it **replaces** the
+established in-place override feature (D3): editing a built-in in place, the "edited" badge, **reset-to-default**, and
+**option-variant (optionGroups) editing** of built-ins — ~490 lines of tests. Reverted to keep 1938 green; needs an owner
+call on deprecating in-place override/reset before the full rework.
+
+**Per-day calorie deviation — INVESTIGATED 2026-08-30, generation fix REJECTED (evidence-based).**
+Owner report: "1450 kcal planned, some days hit 1900+ (+31%)." The expert panel proposed a generation
+"evener" (a re-portion move + a ±15% calorie term in `autoBalancePlan`). Built it, then **measured**
+current generation on three configs — normal 2150/2420 (max day deviation **13.7%**), low 1450/1600
+(**5.9%**), and the thinnest vegan+GF @1450 pool (**7.0%**): **0/14 days over ±15% in every case.**
+Generation does not produce the reported days, and the evener regressed the normal case (the
+fibre-ceiling term hijacked its shrink move, cutting good fibre and dragging calories to −15%).
+**Reverted; documented in AGENT-HANDOVER.md → "Investigated & rejected."** The real cause is
+user-injected: manual **occasional / eaten-out adds go in at portion 1x, bypassing `bestPortion`**
+(`applyOneTimeMealToSlot`, `addMealExtra`), and dense custom/favourite recipes. Real leverage, if the
+owner wants it, is **UX not generation**: surface the "high day" honestly (the `perDayBalanceState`
+cue exists) + a one-tap "trim this day" + a target-aware meal builder + a "Lighter" Market filter —
+and honor a deliberately-added treat rather than silently shrinking it. Tests still **1938 green**.
+
 **Measurement workstream — amounts & units (owner decisions LOCKED 2026-08-21):**
 - **Type amounts everywhere.** DONE 2026-08-29 — the last stepper-only `sv-val` spots (meal-builder
   rows, edit-today-food, add-meal food extras — render-today.js) are now typeable

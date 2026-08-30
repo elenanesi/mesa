@@ -194,3 +194,39 @@ offline fallback to match your curated catalog. `check.js`'s catalog tests valid
   library. A genuinely unchanged library now costs **zero** D1 writes per sync. Real edits still
   write their changed rows, so batching several content changes into one deploy is still the
   polite default, but the old whole-library-every-reload amplification is gone.
+
+## Investigated & rejected (don't re-attempt without NEW evidence)
+
+- **A per-day calorie "evener" in generation (a re-portion move + a calorie term in
+  `autoBalancePlan`).** Requested three times ("some days deviate too much from the goal, e.g.
+  1450 planned but a day hits 1900+"). Built and MEASURED on 2026-08-30 — **rejected, because the
+  premise is false: generation does not produce those days.** The forward water-fill
+  (`planner.js` ~2254, `remainingKcal × SLOT_WEIGHT`) self-corrects on average, and measured
+  per-day deviation from the calorie goal is already tight in every config tested:
+  - normal goals (2150/2420): **max 13.7%**, 0/14 days over ±15%, 0/14 over ±25%;
+  - low goal (1450/1600): **max 5.9%**, 0/14 over ±15%;
+  - the thinnest pool, vegan + gluten-free @1450 (candidate pool too thin to fill every slot):
+    **max 7.0%**, 0/14 over ±15%.
+
+  Adding a `reportion` move (step one slot's portion ±1 `PORTION_STEP`) plus a soft ±15%
+  calorie term to `dayImbalanceForPerson` did NOT help and actively **regressed** the normal
+  case: `dayImbalanceForPerson` is dominated by the **fibre-comfort-ceiling** term (Mesa days
+  run ~50g fibre, well above the ~43g ceiling), so the new shrink-a-slot move got hijacked to
+  cut fibre overshoots — dragging calories to −14/−15% while lowering good fibre. At low goals
+  it was simply inert (nothing to fix). It also introduced a real bug: because the calorie term
+  makes the pass consider days it used to skip, the existing `swap` move started **filling
+  intentionally-empty slots** (snacks-off cells; no-candidates gaps) — the evener must only
+  EVEN existing meals, never CREATE one in an empty slot (guard: skip a unit whose current
+  entry has no `recipeId`). All of this was reverted; the measurement harness is preserved in
+  the session scratchpad (`measure-kcal.js`) if you want to reproduce.
+
+  **What actually causes a "1900 on a 1450 plan" day** (the real leverage, none of it in
+  generation): (1) manual **occasional / eaten-out adds** go into a slot at **portion 1x with no
+  `bestPortion`** (`applyOneTimeMealToSlot` ~3409, `addMealExtra` ~1199) — the one path that can
+  add ~+500 kcal to a day; the panel's call is to **surface it honestly** (the `perDayBalanceState`
+  "high" day-cue already exists), NOT silently shrink a treat the user chose. (2) A user's own
+  **dense custom/market recipe or a favourite** whose even 0.5x portion overshoots a small slot
+  budget (built-in recipes are portion-scaled, so they don't do this; user content can). If you
+  pick this up, fix the cause (occasional-add path / a target-aware builder / a per-day high-day
+  cue with a one-tap trim), not the generator — and re-measure first: if `days>±15%` is still
+  0/14 on the built-in fixtures, generation is not your problem.

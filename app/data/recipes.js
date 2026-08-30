@@ -148,12 +148,17 @@ const RECIPES_DB = {
     ]
   },
   chiapudding: {
+    // Panel recipe pass (2026-08-30): the old 150g coconut-milk carried ~32g saturated fat
+    // (a whole day's WHO budget) in one breakfast and left it protein-thin. Rebased on soy
+    // milk + soy yogurt for creaminess and real protein, with a whisper of coconut kept for
+    // the name. MUST stay vegan + gluten-free (this is the vegan+GF starter breakfast) — soy,
+    // chia, berries and coconut are all vegan/GF. sat fat 33 -> ~5, protein 9 -> ~14.
     title: 'Chia pudding, coconut & berries', emoji: '🍮', slot: 'breakfast', role: 'full',
-    styles: ['lowcarb'], time: 5,
-    ingredients: [['chia-seeds', 30], ['coconut-milk', 150], ['mixed-berries', 60]],
+    styles: ['balanced'], time: 5,
+    ingredients: [['chia-seeds', 25], ['soy-milk', 170], ['soy-yogurt', 90], ['mixed-berries', 80], ['coconut-milk', 15]],
     toTaste: ['vanilla or cinnamon'],
-    steps: ['Stir chia seeds into coconut milk and chill overnight.', 'Stir again before serving to loosen the texture.', 'Top with berries and a touch of vanilla or cinnamon.'],
-    tags: ['lowGI', 'skin', 'omega3'],
+    steps: ['Stir the chia seeds into the soy milk and yogurt and chill overnight.', 'Stir again before serving to loosen the texture.', 'Top with berries and a touch of vanilla or cinnamon.'],
+    tags: ['lowGI', 'omega3', 'highFiber'],
     avoid: []
   },
   'oats-berries-walnuts': {
@@ -250,8 +255,8 @@ const RECIPES_DB = {
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['tofu', 150], ['spinach', 60], ['cherry-tomatoes', 80], ['olive-oil', 8], ['rye-bread', 40]],
-    toTaste: ['turmeric', 'black pepper'],
-    steps: ['Crumble the tofu into a hot pan with olive oil.', 'Add spinach and cherry tomatoes, cook 4-5 min until the spinach wilts.', 'Season and serve with the rye toast.'],
+    toTaste: ['turmeric', 'smoked paprika', 'chilli flakes', 'black pepper'],
+    steps: ['Crumble the tofu into a hot pan with olive oil, turmeric and smoked paprika.', 'Add spinach and cherry tomatoes, cook 4-5 min until the spinach wilts.', 'Season with chilli and serve with the rye toast.'],
     tags: ['veggie', 'highFiber'],
     avoid: ['gluten']
   },
@@ -266,12 +271,15 @@ const RECIPES_DB = {
     avoid: ['gluten']
   },
   'coconut-chia-pudding-peach': {
+    // Panel recipe pass (2026-08-30): same coconut-milk saturated-fat fix as chiapudding
+    // (was ~25g sat fat, P7). Soy base adds protein; ripe peach carries the sweetness so the
+    // maple syrup becomes an optional drizzle (free sugars -> 0). Kept vegan + gluten-free.
     title: 'Coconut chia pudding, peach', emoji: '🍮', slot: 'breakfast', role: 'full',
     season: 'evergreen',
-    styles: ['lowcarb'], time: 5,
-    ingredients: [['chia-seeds', 20], ['coconut-milk', 120], ['peaches', 100], ['maple-syrup', 8]],
-    toTaste: ['vanilla'],
-    steps: ['Stir chia seeds into coconut milk and chill overnight.', 'Stir again before serving to loosen the texture.', 'Top with sliced peach and a drizzle of maple syrup.'],
+    styles: ['balanced'], time: 5,
+    ingredients: [['chia-seeds', 20], ['soy-milk', 150], ['soy-yogurt', 70], ['peaches', 120], ['coconut-milk', 20]],
+    toTaste: ['vanilla', 'a drizzle of maple syrup (optional)'],
+    steps: ['Stir the chia seeds into the soy milk and yogurt and chill overnight.', 'Stir again before serving to loosen the texture.', 'Top with sliced peach and a little vanilla.'],
     tags: ['lowGI', 'veggie', 'omega3'],
     avoid: []
   },
@@ -358,13 +366,17 @@ const RECIPES_DB = {
     avoid: []
   },
   'greek-salad-big': {
+    // Panel recipe pass (2026-08-30): was lopsided (sat 13 from 70g feta, protein 13, fibre 4,
+    // no anchor). Feta trimmed to 45g and chickpeas add a protein + fibre spine (Mediterranean-
+    // authentic). No longer low-carb, so styles -> balanced only (lunch/dinner low-carb pools
+    // still have 23+ options each). sat 13 -> ~9, protein 13 -> ~18, fibre 4 -> ~11.
     title: 'Big Greek salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner', 'side'],
-    styles: ['lowcarb', 'balanced'], time: 10,
-    ingredients: [['cucumber', 100], ['cherry-tomatoes', 100], ['bell-pepper', 60], ['feta-cheese', 70], ['olives', 40], ['olive-oil', 15]],
+    styles: ['balanced'], time: 10,
+    ingredients: [['cucumber', 100], ['cherry-tomatoes', 100], ['bell-pepper', 60], ['feta-cheese', 45], ['olives', 30], ['chickpeas', 100], ['olive-oil', 10]],
     toTaste: ['oregano', 'lemon'],
-    steps: ['Chop cucumber, tomatoes and peppers into chunks.', 'Add olives and top with a slab of feta.', 'Dress with olive oil, oregano and lemon just before serving.'],
-    tags: ['veggie', 'heart', 'lowGI'],
+    steps: ['Chop the cucumber, tomatoes and peppers into chunks.', 'Add the chickpeas and olives, and crumble the feta over the top.', 'Dress with olive oil, oregano and lemon just before serving.'],
+    tags: ['veggie', 'heart', 'highFiber'],
     avoid: ['lactose']
   },
   'chicken-caprese-salad': {
@@ -421,12 +433,14 @@ const RECIPES_DB = {
     avoid: []
   },
   'baked-cod-greens': {
-    title: 'Baked cod & greens', emoji: '🐟', slot: 'dinner', role: 'main',
+    // Panel recipe pass (2026-08-30): chef adds a briny caper hit (~4 kcal, big umami lift) so
+    // the lean cod has a savoury hook; rename to sell the lemon-caper greens.
+    title: 'Baked cod, lemon-caper greens', emoji: '🐟', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch', 'side'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
-    ingredients: [['cod', 220], ['broccoli', 200], ['spinach', 80], ['olive-oil', 15]],
-    toTaste: ['lemon', 'garlic'],
-    steps: ['Rub cod with olive oil, lemon and garlic; bake at 200C for 12-15 min.', 'Steam the broccoli.', 'Wilt the spinach in a warm pan.', 'Plate the greens with the cod on top, finished with lemon.'],
+    ingredients: [['cod', 220], ['broccoli', 200], ['spinach', 80], ['capers', 10], ['olive-oil', 15]],
+    toTaste: ['lemon', 'garlic', 'chilli flakes', 'parsley'],
+    steps: ['Rub the cod with olive oil, lemon and garlic; bake at 200C for 12-15 min.', 'Char the broccoli in a hot pan.', 'Wilt the spinach with the capers and a pinch of chilli.', 'Plate the greens with the cod on top, finished with lemon and parsley.'],
     tags: ['thyroid', 'muscle', 'lowGI'],
     avoid: []
   },
@@ -533,14 +547,17 @@ const RECIPES_DB = {
   /* ================= ELENA RECIPE WISHLIST — LUNCH ================= */
 
   'insalata-pesche-feta': {
-    title: 'Peach & feta salad', emoji: '🥗', slot: 'lunch', role: 'full',
+    // Panel recipe pass (2026-08-30): protein 15 / fibre 4 / sat 13 -> chickpeas add the
+    // protein+fibre anchor; still a bright summer salad (chickpea + peach + feta is a real
+    // combo). No longer low-carb -> styles balanced only.
+    title: 'Peach, feta & chickpea salad', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
-    styles: ['balanced', 'lowcarb'], time: 10,
-    ingredients: [['peaches', 150], ['feta-cheese', 70], ['rocket-arugula', 50], ['walnuts', 15], ['olive-oil', 10]],
+    styles: ['balanced'], time: 10,
+    ingredients: [['peaches', 150], ['feta-cheese', 50], ['rocket-arugula', 50], ['walnuts', 15], ['chickpeas', 80], ['olive-oil', 8]],
     toTaste: ['lemon', 'black pepper'],
-    steps: ['Slice peaches and pile over rocket.', 'Crumble feta on top.', 'Add walnuts and dress with olive oil and lemon.'],
-    tags: ['veggie', 'quick'],
+    steps: ['Slice the peaches and pile over the rocket with the chickpeas.', 'Crumble the feta on top.', 'Add the walnuts and dress with olive oil, lemon and black pepper.'],
+    tags: ['veggie', 'highFiber'],
     avoid: ['lactose', 'nuts']
   },
   'insalata-greca-pizza-bianca': {
@@ -603,15 +620,18 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'insalata-noci-mele-senape': {
+    // Panel recipe pass (2026-08-30): protein 10, fat 36 (30g walnuts). Walnuts cut to 20g,
+    // chickpeas add the protein+fibre anchor. Also flagged gluten honestly (it contains
+    // wholewheat bread croutons). protein 10 -> ~16, fat 36 -> ~26.
     title: 'Apple, walnut & mustard salad', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'winter/autumn',
     slots: ['lunch', 'side'],
     styles: ['balanced'], time: 10,
-    ingredients: [['lettuce', 90], ['apples', 140], ['walnuts', 30], ['mustard', 8], ['olive-oil', 14], ['wholewheat-bread', 35]],
+    ingredients: [['lettuce', 90], ['apples', 120], ['walnuts', 20], ['mustard', 8], ['chickpeas', 90], ['olive-oil', 10], ['wholewheat-bread', 30]],
     toTaste: ['lemon'],
-    steps: ['Slice apple and toss with lettuce.', 'Add walnuts.', 'Dress with mustard, olive oil and lemon.'],
+    steps: ['Slice the apple and toss with the lettuce and chickpeas.', 'Add the walnuts and torn wholewheat croutons.', 'Dress with mustard, olive oil and lemon.'],
     tags: ['veggie', 'highFiber', 'quick'],
-    avoid: ['nuts']
+    avoid: ['nuts', 'gluten']
   },
   'couscous-legumi-limone': {
     title: 'Chickpea couscous salad with lemon', emoji: '🥗', slot: 'lunch', role: 'full',
@@ -630,11 +650,14 @@ const RECIPES_DB = {
     season: 'spring/summer',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 55,
-    ingredients: [['tomatoes', 300], ['rice', 65], ['potatoes', 180], ['olive-oil', 15]],
+    // Panel recipe pass (2026-08-30): was carb-on-carb (rice + 180g potato) with protein only 11.
+    // Redundant potato cut to 120g and pecorino folded into the rice filling (traditional in the
+    // Roman version) for a real protein bump. protein 11 -> ~16. Adds lactose (pecorino).
+    ingredients: [['tomatoes', 280], ['rice', 55], ['potatoes', 120], ['pecorino', 20], ['olive-oil', 12]],
     toTaste: ['basil', 'garlic', 'oregano'],
-    steps: ['Hollow tomatoes and mix the pulp with rice, herbs and oil.', 'Fill the tomatoes and place potatoes around them.', 'Bake until rice and potatoes are tender.'],
+    steps: ['Hollow the tomatoes and mix the pulp with the rice, grated pecorino, herbs and oil.', 'Fill the tomatoes and place the potatoes around them.', 'Bake until the rice and potatoes are tender.'],
     tags: ['veggie'],
-    avoid: []
+    avoid: ['lactose']
   },
 
   /* ================= ELENA RECIPE WISHLIST — DINNER ================= */
@@ -755,7 +778,9 @@ const RECIPES_DB = {
     season: 'winter/autumn',
     slots: ['dinner', 'lunch'],
     styles: ['balanced'], time: 30,
-    ingredients: [['cooked-lentils', 190], ['cavolo-nero', 140], ['tomatoes', 100], ['carrots', 80], ['olive-oil', 12], ['wholewheat-bread', 35]],
+    // Panel recipe pass (2026-08-30): fibre 26 -> ~23 (lentils 190 -> 160), under the
+    // single-dish GI-distress line while still a hearty high-fibre soup.
+    ingredients: [['cooked-lentils', 160], ['cavolo-nero', 140], ['tomatoes', 100], ['carrots', 80], ['olive-oil', 12], ['wholewheat-bread', 35]],
     toTaste: ['garlic', 'chilli if wanted'],
     steps: ['Simmer lentils with tomatoes and carrots.', 'Add greens until tender.', 'Finish with olive oil.'],
     tags: ['veggie', 'highFiber', 'heart'],
@@ -782,11 +807,11 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'tofu-noodles': {
-    title: 'Tofu & noodles', emoji: '🍜', slot: 'dinner', role: 'full',
+    title: 'Sesame-ginger tofu noodles', emoji: '🍜', slot: 'dinner', role: 'full',
     styles: ['balanced'], time: 22,
     ingredients: [['tofu', 160], ['egg-noodles', 70], ['broccoli', 120], ['carrots', 80], ['soy-sauce', 15], ['olive-oil', 8]],
-    toTaste: ['ginger', 'garlic'],
-    steps: ['Cook noodles.', 'Stir-fry tofu and vegetables.', 'Toss with soy sauce and noodles.'],
+    toTaste: ['ginger', 'garlic', 'toasted sesame', 'chilli', 'lime'],
+    steps: ['Cook the noodles.', 'Crisp the tofu in olive oil until golden, then stir-fry with the broccoli and carrots.', 'Toss with soy sauce, ginger and the noodles; finish with sesame, chilli and lime.'],
     tags: ['veggie', 'muscle'],
     avoid: ['gluten']
   },
@@ -795,9 +820,12 @@ const RECIPES_DB = {
     imageKey: 'feta-filo-miele-noodles-verdure',
     season: 'spring/summer',
     styles: ['balanced'], time: 30,
-    ingredients: [['feta-cheese', 80], ['pasta-filo', 45], ['honey', 10], ['egg-noodles', 45], ['courgette', 100], ['bell-pepper', 100], ['olive-oil', 10]],
+    // Panel recipe pass (2026-08-30): behaved like a treat in the everyday pool (sat 14, sugar
+    // 8). Trimmed feta 80->60 and honey 10->6, lifted the veg, to keep it in rotation honestly
+    // (sat ~10, sugar ~5) rather than reclassifying it occasional.
+    ingredients: [['feta-cheese', 60], ['pasta-filo', 45], ['honey', 6], ['egg-noodles', 45], ['courgette', 120], ['bell-pepper', 120], ['olive-oil', 10]],
     toTaste: ['sesame or thyme'],
-    steps: ['Wrap feta in filo and bake until crisp.', 'Drizzle with honey.', 'Serve with noodles and grilled vegetables.'],
+    steps: ['Wrap the feta in filo and bake until crisp.', 'Drizzle with a little honey.', 'Serve with the noodles and grilled vegetables.'],
     tags: ['veggie'],
     avoid: ['gluten', 'lactose']
   },
@@ -1206,22 +1234,28 @@ const RECIPES_DB = {
     avoid: []
   },
   'turkey-cutlets-sage': {
-    title: 'Turkey cutlets with sage', emoji: '🦃', slot: 'lunch', role: 'main',
+    // Panel recipe pass (2026-08-30): was pure protein (fibre 0, no veg). A simple rocket +
+    // cherry-tomato side gives it colour and a little fibre without touching its lean, high-
+    // protein character. turkey trimmed 220 -> 200g to make room.
+    title: 'Turkey cutlets with sage, rocket & tomato', emoji: '🦃', slot: 'lunch', role: 'main',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 18,
-    ingredients: [['turkey-breast', 220], ['olive-oil', 10]],
-    toTaste: ['sage', 'garlic', 'black pepper'],
-    steps: ['Season the turkey cutlets with sage, garlic and black pepper.', 'Pan-sear in olive oil until golden and cooked through, 3-4 min per side.', 'Rest briefly, then slice and serve.'],
+    ingredients: [['turkey-breast', 200], ['rocket-arugula', 40], ['cherry-tomatoes', 100], ['olive-oil', 8]],
+    toTaste: ['sage', 'garlic', 'black pepper', 'lemon'],
+    steps: ['Season the turkey cutlets with sage, garlic and black pepper.', 'Pan-sear in olive oil until golden and cooked through, 3-4 min per side.', 'Rest briefly, slice, and serve over the rocket and cherry tomatoes with a squeeze of lemon.'],
     tags: ['muscle', 'thyroid'],
     avoid: []
   },
   'white-bean-rosemary-mash': {
-    title: 'White bean & rosemary mash', emoji: '🫘', slot: 'lunch', role: 'main',
+    // Panel recipe pass (2026-08-30): was an under-built 2-ingredient dish (300g beans + oil),
+    // no veg or acid, and fibre pushed to 19. Cavolo nero + burst cherry tomatoes turn it into
+    // an actual plate; beans pulled back to 220g (fibre ~18). Now a Tuscan-style beans-and-greens.
+    title: 'Tuscan white beans, greens & tomato', emoji: '🫘', slot: 'lunch', role: 'main',
     slots: ['lunch', 'dinner'],
     styles: ['balanced'], time: 15,
-    ingredients: [['cannellini-beans', 300], ['olive-oil', 15]],
+    ingredients: [['cannellini-beans', 220], ['cavolo-nero', 80], ['cherry-tomatoes', 100], ['olive-oil', 12]],
     toTaste: ['rosemary', 'garlic', 'lemon', 'black pepper'],
-    steps: ['Warm the cannellini beans with olive oil, rosemary and garlic.', 'Mash roughly with a fork, leaving some texture.', 'Season with black pepper and a squeeze of lemon if wanted.'],
+    steps: ['Warm the cannellini beans with olive oil, rosemary and garlic, mashing some for texture.', 'Wilt the cavolo nero and burst the cherry tomatoes in the same pan.', 'Fold together and finish with black pepper and a squeeze of lemon.'],
     tags: ['veggie', 'highFiber', 'lowGI', 'heart'],
     avoid: []
   },
@@ -1251,13 +1285,15 @@ const RECIPES_DB = {
     avoid: []
   },
   'seared-tofu-greens': {
-    title: 'Pan-seared tofu with greens', emoji: '🥢', slot: 'lunch', role: 'main',
+    // Panel recipe pass (2026-08-30): read as pure diet-food. Chef rename + lacquer-the-soy
+    // technique + chilli/sesame/lime for crunch and brightness (zero macro change).
+    title: 'Crispy sesame-ginger tofu, wilted greens', emoji: '🥢', slot: 'lunch', role: 'main',
     season: 'evergreen',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 15,
     ingredients: [['tofu', 200], ['spinach', 80], ['olive-oil', 8], ['soy-sauce', 10]],
-    toTaste: ['ginger', 'garlic'],
-    steps: ['Pat the tofu dry and sear in olive oil until golden on both sides.', 'Add the spinach and wilt it in the same pan.', 'Finish with soy sauce, ginger and garlic.'],
+    toTaste: ['ginger', 'garlic', 'chilli flakes', 'toasted sesame', 'lime'],
+    steps: ['Press and cube the tofu, then sear hard in the olive oil until deep golden and crisp on all sides.', 'Glaze with the soy off the heat so it lacquers the tofu; wilt the spinach in the same pan.', 'Finish with ginger, chilli, sesame and a squeeze of lime.'],
     tags: ['veggie', 'muscle'],
     avoid: []
   },
@@ -1265,58 +1301,64 @@ const RECIPES_DB = {
   /* Complete plant-based lunch/dinner fallbacks: these keep the hard meal
      composition contract satisfiable for vegetarian and gluten-free plans. */
   'tofu-rice-broccoli-bowl': {
-    title: 'Tofu, rice & broccoli bowl', emoji: '🥦', slot: 'lunch', role: 'full',
+    title: 'Ginger tofu & sesame broccoli rice', emoji: '🥦', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
     ingredients: [['tofu', 180], ['rice', 55], ['broccoli', 180], ['carrots', 80], ['olive-oil', 8]],
-    toTaste: ['ginger', 'garlic', 'lemon'],
-    steps: ['Cook the rice until tender.', 'Sear the tofu in olive oil until golden.', 'Steam the broccoli and carrots.', 'Serve the tofu and vegetables over rice with ginger and lemon.'],
+    toTaste: ['ginger', 'garlic', 'toasted sesame', 'chilli', 'lemon'],
+    steps: ['Cook the rice until tender.', 'Sear the tofu in olive oil until golden and crisp.', 'Char the broccoli and carrots in a hot pan.', 'Serve the tofu and vegetables over rice with ginger, sesame and lemon.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
   'tofu-quinoa-greens-bowl': {
-    title: 'Tofu, quinoa & greens bowl', emoji: '🥗', slot: 'dinner', role: 'full',
+    // Panel recipe pass (2026-08-30): chef rename + char-not-boil technique (zero macro change) —
+    // "the single biggest appeal lever in the catalog" was replacing boiled broccoli with charred.
+    title: 'Chilli-lemon tofu & charred broccoli quinoa', emoji: '🥗', slot: 'dinner', role: 'full',
     season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 28,
     ingredients: [['tofu', 180], ['quinoa-dry', 65], ['broccoli', 160], ['spinach', 100], ['olive-oil', 8]],
-    toTaste: ['lemon', 'garlic', 'black pepper'],
-    steps: ['Cook the quinoa until fluffy.', 'Pan-sear the tofu in olive oil until golden.', 'Steam the broccoli and wilt the spinach with garlic.', 'Serve the tofu and greens over quinoa with lemon.'],
+    toTaste: ['lemon', 'garlic', 'chilli flakes', 'black pepper'],
+    steps: ['Cook the quinoa until fluffy.', 'Press and cube the tofu, then sear hard in the olive oil until deep golden and crisp on all sides.', 'Roast or griddle the broccoli until charred at the edges; wilt the spinach with garlic.', 'Pile the tofu and greens over the quinoa, finish with chilli and a squeeze of lemon.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
   'chickpea-quinoa-broccoli-bowl': {
-    title: 'Chickpea, quinoa & broccoli bowl', emoji: '🥦', slot: 'lunch', role: 'full',
+    // Panel recipe pass (2026-08-30): fibre 25 -> ~22 (chickpeas 190->160) and kcal 711 -> ~650,
+    // both back into comfortable range; chef rename + charred broccoli.
+    title: 'Roasted chickpeas & charred broccoli, cumin-lemon quinoa', emoji: '🥦', slot: 'lunch', role: 'full',
     season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
-    ingredients: [['chickpeas', 190], ['quinoa-dry', 60], ['broccoli', 180], ['spinach', 80], ['olive-oil', 8]],
-    toTaste: ['lemon', 'cumin', 'black pepper'],
-    steps: ['Cook the quinoa until tender.', 'Warm the chickpeas with cumin and a splash of water.', 'Steam the broccoli and wilt the spinach.', 'Assemble the bowl and finish with olive oil and lemon.'],
+    ingredients: [['chickpeas', 160], ['quinoa-dry', 55], ['broccoli', 180], ['spinach', 80], ['olive-oil', 8]],
+    toTaste: ['lemon', 'cumin', 'chilli flakes', 'black pepper'],
+    steps: ['Cook the quinoa until tender.', 'Roast the chickpeas with cumin until golden and nutty.', 'Char the broccoli under the grill or in a hot pan; wilt the spinach.', 'Assemble the bowl and finish with olive oil and lemon.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
   'lentil-quinoa-greens-bowl': {
-    title: 'Lentil, quinoa & greens bowl', emoji: '🫘', slot: 'dinner', role: 'full',
+    // Panel recipe pass (2026-08-30): was a fibre bomb (28g > 25g GI-distress flag) — lentils
+    // 220 -> 170 brings it to ~23g, still a robust high-fibre bowl; chef rename + blistered greens.
+    title: 'Herby lentil & quinoa, blistered greens', emoji: '🫘', slot: 'dinner', role: 'full',
     season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 28,
-    ingredients: [['cooked-lentils', 220], ['quinoa-dry', 55], ['broccoli', 160], ['spinach', 100], ['olive-oil', 8]],
+    ingredients: [['cooked-lentils', 170], ['quinoa-dry', 55], ['broccoli', 160], ['spinach', 100], ['olive-oil', 8]],
     toTaste: ['lemon', 'cumin', 'parsley'],
-    steps: ['Cook the quinoa until tender.', 'Warm the lentils with cumin and a splash of water.', 'Steam the broccoli and wilt the spinach.', 'Layer in a bowl and finish with olive oil, lemon and parsley.'],
+    steps: ['Cook the quinoa until tender.', 'Warm the lentils with cumin and a splash of water.', 'Blister the broccoli in a hot pan; wilt the spinach.', 'Layer in a bowl and finish with olive oil, lemon and parsley.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
   'chickpea-potato-veg-tray': {
     title: 'Chickpea, potato & vegetable traybake', emoji: '🥔', slot: 'dinner', role: 'full',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 35,
     ingredients: [['chickpeas', 180], ['potatoes', 220], ['courgette', 160], ['bell-pepper', 120], ['olive-oil', 10]],
-    toTaste: ['paprika', 'oregano', 'black pepper'],
-    steps: ['Heat the oven to 210C.', 'Toss potatoes and vegetables with olive oil and spices.', 'Roast until tender and browned.', 'Add chickpeas for the final 10 minutes and serve hot.'],
+    toTaste: ['smoked paprika', 'oregano', 'chilli flakes', 'lemon', 'black pepper'],
+    steps: ['Heat the oven to 210C.', 'Toss the potatoes and vegetables with olive oil, smoked paprika and oregano.', 'Roast until golden and caramelised at the edges.', 'Add the chickpeas for the final 10 minutes, finish with lemon and serve hot.'],
     tags: ['veggie', 'highFiber'], avoid: []
   },
   'lentil-rice-vegetable-bowl': {
-    title: 'Lentil, rice & vegetable bowl', emoji: '🫘', slot: 'lunch', role: 'full',
+    title: 'Smoky cumin lentils, rice & lemony carrots', emoji: '🫘', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
     ingredients: [['cooked-lentils', 220], ['rice', 45], ['spinach', 100], ['carrots', 100], ['olive-oil', 8]],
-    toTaste: ['cumin', 'lemon', 'parsley'],
-    steps: ['Warm the lentils with cumin and a splash of water.', 'Cook the rice until tender.', 'Sauté the spinach and carrots in olive oil.', 'Layer everything in a bowl and finish with lemon.'],
+    toTaste: ['cumin', 'smoked paprika', 'chilli flakes', 'lemon', 'parsley'],
+    steps: ['Warm the lentils with cumin and smoked paprika and a splash of water.', 'Cook the rice until tender.', 'Roast or caramelise the carrots and wilt the spinach in olive oil.', 'Layer everything in a bowl and finish with lemon and parsley.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
   'cannellini-potato-greens': {
-    title: 'Cannellini, potato & greens bowl', emoji: '🥬', slot: 'dinner', role: 'full',
+    title: 'Tuscan white bean, potato & greens', emoji: '🥬', slot: 'dinner', role: 'full',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
     ingredients: [['cannellini-beans', 220], ['potatoes', 200], ['spinach', 140], ['cherry-tomatoes', 120], ['olive-oil', 8]],
-    toTaste: ['rosemary', 'garlic', 'lemon'],
+    toTaste: ['rosemary', 'garlic', 'chilli flakes', 'lemon'],
     steps: ['Roast the potatoes with rosemary until crisp.', 'Warm cannellini beans with garlic and olive oil.', 'Wilt the spinach and tomatoes in a pan.', 'Serve the beans and greens beside the potatoes with lemon.'],
     tags: ['veggie', 'highFiber', 'muscle'], avoid: []
   },
@@ -1334,12 +1376,15 @@ const RECIPES_DB = {
     avoid: ['nuts']
   },
   'ricotta-walnuts': {
-    title: 'Snack: Ricotta & walnuts', emoji: '🧀', slot: 'snack', role: 'full',
+    // Panel recipe pass (2026-08-30): 130g ricotta carried ~12g saturated fat (half a day's
+    // ceiling) in a snack, with no fibre. Trimmed ricotta and added pear for fibre + natural
+    // sweetness — reads as a dessert-y snack. sat 12 -> ~7.
+    title: 'Snack: Ricotta, pear & walnuts', emoji: '🍐', slot: 'snack', role: 'full',
     imageKey: 'snack-board',
     styles: ['highprotein'], time: 3,
-    ingredients: [['ricotta', 130], ['walnuts', 12]],
-    toTaste: [],
-    steps: ['Spoon ricotta into a small bowl.', 'Top with walnuts.', 'Serve chilled.'],
+    ingredients: [['ricotta', 80], ['walnuts', 12], ['pears', 80]],
+    toTaste: ['black pepper'],
+    steps: ['Spoon the ricotta into a small bowl.', 'Slice the pear and add alongside.', 'Top with walnuts and a twist of black pepper.'],
     tags: ['muscle'],
     avoid: ['lactose', 'nuts']
   },
@@ -1422,12 +1467,14 @@ const RECIPES_DB = {
     ]
   },
   'olives-feta-snack': {
-    title: 'Snack: Marinated olives & feta', emoji: '🫒', slot: 'snack', role: 'full',
+    // Panel recipe pass (2026-08-30): 60g feta gave a 200 kcal snack ~10g saturated fat.
+    // Trimmed feta to 40g and added cherry tomatoes for volume, colour and freshness. sat -> ~7.
+    title: 'Snack: Feta, tomato & olives', emoji: '🫒', slot: 'snack', role: 'full',
     season: 'evergreen',
     styles: ['balanced', 'lowcarb'], time: 3,
-    ingredients: [['feta-cheese', 60], ['olives', 30]],
+    ingredients: [['feta-cheese', 40], ['olives', 30], ['cherry-tomatoes', 80]],
     toTaste: ['oregano', 'olive oil'],
-    steps: ['Cube the feta.', 'Toss with the olives and a scatter of oregano.', 'Serve chilled.'],
+    steps: ['Cube the feta and halve the cherry tomatoes.', 'Toss with the olives and a scatter of oregano.', 'Finish with a little olive oil and serve.'],
     tags: ['quick'],
     avoid: ['lactose']
   },
@@ -1442,23 +1489,23 @@ const RECIPES_DB = {
     avoid: []
   },
   'carrot-yogurt-dip-snack': {
-    title: 'Snack: Carrots with yogurt dip', emoji: '🥣', slot: 'snack', role: 'side',
+    title: 'Snack: Carrot batons & lemony herb yogurt', emoji: '🥕', slot: 'snack', role: 'side',
     season: 'evergreen',
     slots: ['snack', 'side'],
     styles: ['balanced', 'lowcarb'], time: 6,
     ingredients: [['carrots', 150], ['greek-yogurt', 100], ['lemon', 8]],
-    toTaste: ['black pepper', 'garlic'],
-    steps: ['Cut the carrots into sticks.', 'Stir the yogurt with lemon juice and garlic.', 'Serve the carrot sticks with the dip.'],
+    toTaste: ['dill or mint', 'cumin', 'black pepper', 'garlic'],
+    steps: ['Cut the carrots into batons.', 'Stir the yogurt with lemon, garlic, cumin and chopped dill or mint.', 'Serve the carrot batons with the herby dip.'],
     tags: ['veggie', 'lowGI'],
     avoid: ['lactose']
   },
   'tofu-carrot-snack': {
-    title: 'Snack: Marinated tofu & carrots', emoji: '🥢', slot: 'snack', role: 'full',
+    title: 'Snack: Sesame-soy tofu & carrot sticks', emoji: '🥢', slot: 'snack', role: 'full',
     season: 'evergreen',
     styles: ['balanced', 'lowcarb'], time: 5,
     ingredients: [['tofu', 150], ['carrots', 100]],
-    toTaste: ['soy sauce', 'ginger'],
-    steps: ['Cube the tofu.', 'Grate or stick-cut the carrots.', 'Toss together with a little soy sauce and ginger.'],
+    toTaste: ['soy sauce', 'ginger', 'toasted sesame', 'chilli'],
+    steps: ['Cube the tofu.', 'Grate or stick-cut the carrots.', 'Toss together with soy sauce, ginger, sesame and a pinch of chilli.'],
     tags: ['veggie', 'muscle'],
     avoid: []
   },
@@ -1662,6 +1709,120 @@ const RECIPES_DB = {
     toTaste: ['ginger', 'coriander'],
     steps: ['Toss the chickpeas with carrots and cucumber.', 'Whisk together soy sauce, lime juice and olive oil.', 'Dress the salad and toss well.', 'Serve chilled, finished with coriander if wanted.'],
     tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+
+  /* ================= PANEL RECIPE PASS — NEW DISHES (2026-08-30) =================
+     Added by the chef (neuro-food-marketing) + nutritionist panel to raise culinary
+     variety/appeal and fill real gaps: a vegan+GF+nut-free breakfast, lower-calorie
+     satisfying dinners, and a low-cal high-fibre snack — all composed from existing
+     foods, nutrition = sum(ingredients), each within its slot's KCAL_BAND. */
+  'spaghetti-puttanesca-tonno': {
+    title: 'Spaghetti puttanesca with tuna', emoji: '🍝', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 22,
+    ingredients: [['spaghetti', 80], ['tuna-in-olive-oil', 80], ['tomato-passata', 120], ['olives', 25], ['capers', 12], ['olive-oil', 6]],
+    toTaste: ['garlic', 'chilli flakes', 'parsley', 'oregano'],
+    steps: ['Cook the spaghetti until al dente.', 'Warm the passata with garlic and chilli, then stir in the olives, capers and flaked tuna.', 'Toss the pasta through the sauce and finish with parsley.'],
+    tags: ['muscle', 'omega3'],
+    avoid: ['gluten']
+  },
+  'spaghetti-vongole': {
+    title: 'Spaghetti alle vongole', emoji: '🍝', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['spaghetti', 90], ['clams', 150], ['cherry-tomatoes', 80], ['olive-oil', 10]],
+    toTaste: ['garlic', 'chilli', 'parsley', 'lemon'],
+    steps: ['Cook the spaghetti until al dente.', 'Open the clams in a hot pan with garlic, chilli and a splash of water; add the halved tomatoes.', 'Toss the pasta through the glossy clam sauce with parsley and lemon.'],
+    tags: ['muscle'],
+    avoid: ['gluten', 'shellfish']
+  },
+  'bresaola-rucola-parmigiano': {
+    title: 'Bresaola, rocket & parmesan crostini salad', emoji: '🥩', slot: 'lunch', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 10,
+    ingredients: [['bresaola', 70], ['rocket-arugula', 40], ['parmesan', 20], ['cherry-tomatoes', 80], ['wholewheat-bread', 60], ['olive-oil', 8]],
+    toTaste: ['lemon', 'black pepper'],
+    steps: ['Toast the bread and rub with a little olive oil.', 'Pile the bresaola over the rocket and tomatoes.', 'Shave the parmesan on top and dress with olive oil, lemon and black pepper.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['gluten', 'lactose']
+  },
+  'spigola-acqua-pazza': {
+    title: 'Sea bass acqua pazza', emoji: '🐟', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
+    ingredients: [['sea-bass-fillet', 200], ['cherry-tomatoes', 120], ['olives', 20], ['capers', 10], ['potatoes', 130], ['olive-oil', 12]],
+    toTaste: ['garlic', 'parsley', 'chilli'],
+    steps: ['Simmer the potatoes until nearly tender.', 'Poach the sea bass in a light broth of tomatoes, olives, capers and garlic.', 'Serve the fish in its broth with the potatoes and parsley.'],
+    tags: ['muscle', 'thyroid', 'lowGI'],
+    avoid: []
+  },
+  'caponata-ceci': {
+    title: 'Sicilian aubergine caponata with chickpeas', emoji: '🍆', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced'], time: 30,
+    ingredients: [['aubergine', 200], ['chickpeas', 150], ['tomato-passata', 120], ['olives', 20], ['capers', 10], ['olive-oil', 12]],
+    toTaste: ['garlic', 'oregano', 'basil', 'chilli', 'a splash of balsamic'],
+    steps: ['Roast or fry the aubergine until golden and silky.', 'Simmer with the passata, olives, capers and a splash of balsamic for the sweet-sour hit.', 'Fold through the chickpeas, warm and finish with basil.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'farro-pomodoro-feta': {
+    title: 'Farro, tomato, feta & basil salad', emoji: '🥗', slot: 'lunch', role: 'full',
+    season: 'evergreen', styles: ['balanced'], time: 15,
+    ingredients: [['farro-cooked', 150], ['cherry-tomatoes', 120], ['feta-cheese', 40], ['cucumber', 80], ['olives', 20], ['olive-oil', 8]],
+    toTaste: ['basil', 'oregano', 'lemon or balsamic', 'black pepper'],
+    steps: ['Toss the cooked farro with the tomatoes, cucumber and olives.', 'Crumble over the feta.', 'Dress with olive oil, lemon or balsamic, basil and black pepper.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['gluten', 'lactose']
+  },
+  'ricotta-pomodoro-toast': {
+    title: 'Whipped ricotta & blistered tomato toast', emoji: '🍅', slot: 'breakfast', role: 'full',
+    season: 'evergreen', styles: ['balanced'], time: 8,
+    ingredients: [['wholewheat-bread', 70], ['ricotta', 70], ['cherry-tomatoes', 80], ['olive-oil', 5]],
+    toTaste: ['basil', 'lemon zest', 'chilli flakes', 'black pepper'],
+    steps: ['Toast the bread.', 'Whip the ricotta with lemon zest and spread thickly.', 'Blister the cherry tomatoes in the olive oil and pile on top with basil and chilli.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+  'salmon-avocado-rice-bowl': {
+    title: 'Salmon & avocado rice bowl', emoji: '🍣', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['salmon-fillet', 130], ['rice', 55], ['avocado', 60], ['cucumber', 60], ['carrots', 40], ['soy-sauce', 12]],
+    toTaste: ['toasted sesame', 'lime', 'ginger', 'chilli'],
+    steps: ['Cook the rice and let it cool a little.', 'Sear or bake the salmon, then flake it over the rice.', 'Add sliced avocado, cucumber and carrot; finish with soy, sesame, lime and ginger.'],
+    tags: ['muscle', 'omega3'],
+    avoid: []
+  },
+  'caprese-skewers-snack': {
+    title: 'Snack: Caprese skewers', emoji: '🍅', slot: 'snack', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'lowcarb'], time: 5,
+    ingredients: [['mozzarella', 50], ['cherry-tomatoes', 80], ['olive-oil', 4]],
+    toTaste: ['basil', 'balsamic glaze', 'black pepper'],
+    steps: ['Thread the mozzarella and cherry tomatoes onto skewers with basil leaves.', 'Drizzle with olive oil and a little balsamic.', 'Finish with black pepper and serve.'],
+    tags: ['veggie', 'quick'],
+    avoid: ['lactose']
+  },
+  'berry-chia-soy-pudding': {
+    title: 'Berry chia & soy pudding', emoji: '🫐', slot: 'breakfast', role: 'full',
+    season: 'evergreen', styles: ['balanced'], time: 5,
+    ingredients: [['chia-seeds', 20], ['soy-milk', 200], ['bananas', 80], ['mixed-berries', 60], ['pumpkin-seeds', 15]],
+    toTaste: ['cinnamon'],
+    steps: ['Stir the chia seeds into the soy milk and chill overnight.', 'Stir again and mash in half the banana for sweetness.', 'Top with the remaining banana, berries and pumpkin seeds.'],
+    tags: ['veggie', 'highFiber', 'omega3', 'heart'],
+    avoid: []
+  },
+  'sea-bass-greens-potato': {
+    title: 'Sea bass, green beans & new potatoes', emoji: '🐟', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
+    ingredients: [['sea-bass-fillet', 200], ['green-beans', 150], ['cherry-tomatoes', 120], ['potatoes', 120], ['olive-oil', 10]],
+    toTaste: ['lemon', 'garlic', 'parsley'],
+    steps: ['Boil the new potatoes until tender.', 'Pan-fry the sea bass skin-side down until crisp.', 'Blanch the green beans and burst the tomatoes; plate with the fish, lemon and parsley.'],
+    tags: ['muscle', 'thyroid', 'lowGI', 'heart'],
+    avoid: []
+  },
+  'cannellini-carrot-lemon-dip': {
+    title: 'Snack: White bean & carrot dip', emoji: '🥕', slot: 'snack', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'lowcarb'], time: 6,
+    ingredients: [['cannellini-beans', 80], ['carrots', 100], ['lemon', 8], ['olive-oil', 5]],
+    toTaste: ['garlic', 'cumin', 'black pepper'],
+    steps: ['Blitz or mash the cannellini beans with lemon, garlic and cumin.', 'Cut the carrots into batons.', 'Serve the batons with the dip and a drizzle of olive oil.'],
+    tags: ['veggie', 'highFiber', 'heart'],
     avoid: []
   }
 

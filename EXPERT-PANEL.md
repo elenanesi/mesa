@@ -5,13 +5,22 @@ its consensus principles, and how to **re-spawn it** for a new problem (e.g. rec
 "Ate out" vs "Eating out"). The panel is a PM technique: spawn domain-expert subagents,
 have them analyse the same grounded facts through different lenses, then synthesize.
 
-## The four personas
+## The five personas
 
 1. **Senior UX designer** — interaction design + information architecture.
 2. **Doctor / registered nutritionist** — physiology + public-health guidance; honest about
    evidence strength; keeps claims non-clinical.
 3. **Senior software engineer** — feasibility, risk, reuse of existing machinery, determinism.
 4. **Psychologist — habit formation & app engagement** — behaviour change, anti-guilt framing.
+5. **Chef & neuro-food-marketing expert** — culinary craft + the sensory/behavioural science of
+   appetite and menu appeal. Makes dishes genuinely *crave-able* and appetising: flavour layering
+   (acid/fat/umami/heat/texture contrast), naming and description that trigger appetite
+   (sensory/provenance words, the "menu-engineering" effect), colour and plate variety, and the
+   "healthy can still be delicious" reframe. Partners with the nutritionist so appeal and balance
+   pull the same direction — never adds craveability by quietly loading sugar/salt/fat. Lens to
+   append when spawning: *culinary interest + sensory appeal + appetising naming/description;
+   which dishes are boring, monotonous, or read as "diet food"; concrete swaps/additions that
+   raise desire WITHOUT breaking the nutritionist's numbers; concerns to raise to the nutritionist.*
 
 Research backbone: `ux-research-notes.md` (best-in-class app UX, couples patterns,
 behaviour-change evidence, mobile UI patterns) and `KNOWLEDGE-BASE.md` (Mesa's
@@ -28,6 +37,9 @@ claim-classification policy).
 3. **PM (the main agent) synthesizes** — resolve tensions explicitly, pick an approach, and
    ask the owner only the genuine forks.
 4. Implement via Sonnet agents; verify in the no-auth preview; ship per deliverable.
+
+Not every problem needs all five — spawn the lenses the problem calls for (e.g. a recipe-content
+pass is chef + nutritionist; a flow redesign is UX + psychologist + engineer).
 
 Cost note: the panel is expensive (4+ agents). Convene it for genuine cross-functional
 product decisions, not mechanical work. The owner will usually say "involve the experts".
