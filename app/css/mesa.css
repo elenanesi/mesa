@@ -527,7 +527,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
    sticky bar at end-of-scroll, leaving a gap. No ancestor carries a transform, so position:fixed
    resolves against the viewport correctly (once the screen's open transition settles). The
    in-flow spacer after it gives the last field room to scroll clear of the fixed bar. */
-.editor-actionbar{position:fixed;left:0;right:0;bottom:88px;z-index:20;display:flex;gap:8px;align-items:stretch;
+.editor-actionbar{position:absolute;left:0;right:0;bottom:88px;z-index:29;display:flex;gap:8px;align-items:stretch;
   padding:8px 18px;background:var(--bg);border-top:1px solid var(--line);box-shadow:0 -6px 16px rgba(60,50,30,.10);}
 .editor-actionbar .cta{margin-top:0;box-shadow:none;padding:11px 15px;min-height:0;}
 .editor-actionbar .cta.editor-save{flex:1 1 auto;}
@@ -535,7 +535,9 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .editor-actionbar-spacer{height:76px;}
 /* The bar is position:fixed, so hide it the instant its screen goes inactive (before the 0.28s
    opacity fade would) — otherwise a fixed element could flash over another screen mid-transition. */
-.screen:not(.active) .editor-actionbar{display:none;}
+/* Hidden whenever the recipe editor isn't open (JS empties it on exit) — it's a global element now,
+   not scoped to a screen, so visibility is driven by whether it has content. */
+.editor-actionbar:empty{display:none;}
 .ghostbtn{background:rgba(255,250,240,.72);color:var(--sage-deep);border:1.5px solid var(--sage);box-shadow:none;}
 
 .banner{background:rgba(240,232,211,.92);color:var(--ink);border-radius:14px;padding:16px;margin-top:12px;box-shadow:var(--shadow-soft);border:1px solid rgba(176,146,105,.42);}

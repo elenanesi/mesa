@@ -921,6 +921,13 @@
   <div class="log-reward-layer" id="logRewardLayer" aria-hidden="true"></div>
   <div class="sr-only" id="logRewardLive" role="status" aria-live="polite" aria-atomic="true"></div>
 
+  <!-- Recipe editor Save/Cancel bar — a GLOBAL element (sibling of the tab bar), NOT inside a
+       scrolling .screen. A position:fixed bar inside the screen's -webkit-overflow-scrolling:touch
+       container disappears on iOS during momentum scroll / when the keyboard opens; anchoring it
+       here (like the tab bar) makes it stable. Populated + shown by library.js:showEditorActionBar;
+       hidden (emptied) whenever you leave the recipe editor. -->
+  <div class="editor-actionbar" id="editorActionBar" aria-hidden="true"></div>
+
   <!-- bottom nav -->
   <nav class="tabbar">
     <button class="tab on" data-tab="today" onclick="go('today',this)">

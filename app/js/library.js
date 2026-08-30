@@ -2745,6 +2745,7 @@ function rememberRecipeListReturn(){
 }
 
 function returnToMyRecipes(){
+  hideEditorActionBar(); // leaving the builder back to the list
   if(!libRecipeListReturn){ openMyRecipes(); return; }
   const saved = libRecipeListReturn;
   libRecipeListReturn = null;
@@ -2756,6 +2757,7 @@ function returnToMyRecipes(){
 }
 
 function openMyRecipes(){
+  hideEditorActionBar(); // leaving the builder for the list
   libRecipeFilters = {query: '', diets: new Set(), slots: new Set(), tags: new Set(), seasons: new Set()};
   libRecipeFiltersOpen = false;
   libRecipeView = 'book'; // always land on the household's book; the Market is one tap away
@@ -3473,6 +3475,8 @@ function renderRecipeBuilderSheet(preserveScroll){
   rememberRecipeBuilderPanels();
   setRecipesScreenHtml(buildRecipeBuilderSheet(), preserveScroll !== false);
   attachRecipeImageGridHandler();
+  // setRecipesScreenHtml may have called go() (first open), which hides the bar — show it AFTER.
+  showEditorActionBar();
 }
 
 // A slot/season/role tap redraws this form so the chip and computed nutrition update at once.
@@ -3672,13 +3676,31 @@ function buildRecipeBuilderSheet(){
   if(editing && BUILTIN_RECIPES_DB[rb.editingId] && recipeOverrides[rb.editingId]){
     html += '<button class="cta ghostbtn" style="margin-top:16px" onclick="resetRecipeBuilderOverride()">↺ Reset to default</button>';
   }
-  // Save/Cancel live in a sticky bar pinned above the tab bar so they're reachable without
-  // scrolling to the end of a long form (owner: save-only-at-the-bottom is confusing).
-  html += '<div class="editor-actionbar">'
-    + '<button class="cta ghostbtn" onclick="returnToMyRecipes()">Cancel</button>'
-    + '<button class="cta editor-save" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>'
-    + '</div><div class="editor-actionbar-spacer"></div>';
+  // Save/Cancel live in a bar pinned above the tab bar (showEditorActionBar) so they're reachable
+  // without scrolling to the end of a long form. The bar is a GLOBAL element (#editorActionBar,
+  // outside the scrolling screen) so it stays put on iOS during scroll / with the keyboard open;
+  // only this spacer stays in the scroll flow, reserving room so the last field clears the bar.
+  html += '<div class="editor-actionbar-spacer"></div>';
   return html;
+}
+
+// Populate + show the global recipe-editor Save/Cancel bar (#editorActionBar, in index.html — a
+// sibling of the tab bar, NOT inside the scrolling screen; see that element's comment for the iOS
+// bug this avoids). Idempotent — safe to call on every builder re-render.
+function showEditorActionBar(){
+  const bar = document.getElementById('editorActionBar');
+  if(!bar) return;
+  const editing = !!(recipeBuilder && recipeBuilder.editingId);
+  bar.innerHTML = '<button class="cta ghostbtn" onclick="returnToMyRecipes()">Cancel</button>'
+    + '<button class="cta editor-save" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>';
+  bar.setAttribute('aria-hidden', 'false');
+}
+// Hide it whenever the recipe editor closes (emptying it triggers the :empty display:none).
+function hideEditorActionBar(){
+  const bar = document.getElementById('editorActionBar');
+  if(!bar) return;
+  bar.innerHTML = '';
+  bar.setAttribute('aria-hidden', 'true');
 }
 
 /* ===================================================================

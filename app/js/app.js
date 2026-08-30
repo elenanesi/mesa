@@ -38,6 +38,9 @@ function go(id, el, opts){
   // any mutation means a bad/late id is a no-op instead of a blank screen.
   var target = document.getElementById(id);
   if(!target){ console.warn('Mesa: go() called with unknown screen id', id); return; }
+  // The recipe-editor Save bar is a global element (outside the screens) — hide it on any nav so it
+  // never lingers over another screen. Reopening the builder re-shows it (renderRecipeBuilderSheet).
+  if(typeof hideEditorActionBar === 'function') hideEditorActionBar();
   if(id !== 'libraryScanner' && typeof stopBarcodeScanner === 'function') stopBarcodeScanner();
   document.querySelectorAll('.screen').forEach(s=>s.classList.remove('active'));
   target.classList.add('active');
