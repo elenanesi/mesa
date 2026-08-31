@@ -362,6 +362,11 @@ function toggleWeekMealEatenOut(){
   } else {
     people.forEach(function(p){ removeLoggedSlot(dateISO, p, ctx.slot); });
   }
+  // Persist the eaten-out mark IMMEDIATELY, before the render chain. refreshAfterLogChange()
+  // only persists as its LAST step, so if any render inside it throws (e.g. a DOM state issue on
+  // the Week/Today screens while marking a future or shared meal) the save was skipped and the
+  // mark silently reverted on the next reload — the reported "eating out doesn't persist" bug.
+  persist();
   refreshAfterLogChange();
   openAddMealRecipeSheet(ctx.slot, dateISO);
   toast(turningOn ? '🍴 Marked eating out — logged & dropped from the shopping list' : '🏠 Marked home-cooked again');
