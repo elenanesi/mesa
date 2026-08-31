@@ -1684,6 +1684,30 @@ function testMealComponentsResolveOutOfBook(ctx){
   run(ctx, "var __m=" + snap + "; recipeBook=__m.rb; recipeBookInit=__m.rbi; applyCustomRecipes(); applyProf=__mcStub.applyProf; if(__mcStub.persist) persist=__mcStub.persist; delete __mcStub;");
 }
 
+// Per-component Meal logging (owner spec 2026-08-31): a Meal can be logged with a sub-recipe
+// removed (portion 0) or rescaled (e.g. "McDonald's without nuggets", "a full menu with only 2
+// nuggets"). The log entry stores the adjusted sub-recipes as its `components`, so its frozen macros
+// are exactly the sum of what was eaten, and it round-trips (a removed component stays removed).
+function testMealPerComponentLog(ctx){
+  run(ctx, "MESA_TEST_TODAY='2026-07-13'; logHistory={};");
+  const full = call(ctx, 'nutritionForRecipeComponents', [[{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 1}]]).kcal;
+  assert(full > 1200, 'meal per-component: the full McDonald\'s Meal sums both sub-recipes', 'kcal=' + full);
+  // Log it WITHOUT the nuggets — a removed sub-recipe is dropped from the components (portion 0 is
+  // coerced back to 1 by recipeNutrition, so "removed" means absent, not stored at 0). kcal drops to
+  // just the burger menu.
+  call(ctx, 'logPlanEntry', ['2026-07-13', 'elena', 'dinner', 'mcdonald-menu', 1, [{recipeId: 'mcd-bigmac-menu', portion: 1}]]);
+  const noNug = call(ctx, 'loggedPlanEntryForSlot', ['2026-07-13', 'elena', 'dinner']);
+  assert(!!noNug && noNug.ref === 'mcdonald-menu', 'meal per-component: the entry still reads as the McDonald\'s meal (ref unchanged)', JSON.stringify(noNug && noNug.ref));
+  assert(noNug.kcal < full - 100, 'meal per-component: logging without nuggets stores a LOWER kcal than the full meal', 'noNug=' + noNug.kcal + ' full=' + full);
+  const hasNug = (noNug.components || []).some(function(c){ return c.recipeId === 'mcd-nuggets-4'; });
+  assert(!hasNug, 'meal per-component: the removed sub-recipe is absent from the logged components', JSON.stringify(noNug.components));
+  // Re-log with only 2 nuggets (0.5x) — kcal lands between "no nuggets" and "full".
+  call(ctx, 'logPlanEntry', ['2026-07-13', 'elena', 'dinner', 'mcdonald-menu', 1, [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 0.5}]]);
+  const half = call(ctx, 'loggedPlanEntryForSlot', ['2026-07-13', 'elena', 'dinner']);
+  assert(half.kcal > noNug.kcal && half.kcal < full, 'meal per-component: a rescaled sub-recipe (2 of 4 nuggets) lands between no-nuggets and full', 'half=' + half.kcal + ' noNug=' + noNug.kcal + ' full=' + full);
+  run(ctx, "logHistory={};");
+}
+
 // Fork-model migration (owner spec 2026-08-30): a legacy in-place built-in override
 // (recipeOverrides[id], from before the fork model) is converted on boot into a cr- fork carrying
 // the user's edit, with the original returned to the market — so a previously-edited recipe shows
@@ -12003,6 +12027,7 @@ function main(){
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
   runTest('recipe market: legacy override migrates to fork', function(){ testMigrateOverridesToForks(ctx); });
   runTest('meal: components resolve out-of-book (no 0-kcal Meal)', function(){ testMealComponentsResolveOutOfBook(ctx); });
+  runTest('meal: per-component log (remove/rescale a sub-recipe)', function(){ testMealPerComponentLog(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });

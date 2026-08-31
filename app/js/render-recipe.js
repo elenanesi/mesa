@@ -1,6 +1,10 @@
 /* render-recipe.js — recipe detail rendering, options chips, serving context */
 /* ---------------- recipe detail rendering ---------------- */
 let recipeServingCtx = null;
+// For a MEAL (recipe-of-recipes), the per-component portions the user is currently viewing/eating
+// — [{recipeId, portion, opts}], portion 0 = that sub-recipe removed. Lets the user log e.g.
+// "McDonald's without nuggets" or "a full menu with only 2 nuggets". Null for a normal recipe.
+let recipeMealCompsCtx = null;
 
 function recipeServingContextFor(key){
   const person = (recipeDayCtx && recipeDayCtx.person) || currentProf;
@@ -341,6 +345,28 @@ function renderRecipe(key){
   // to the diet-aware (and, part 2b, favourite-aware) default instead of the bare choices[0].
   const defaultOpts = (recipeServingCtx && recipeServingCtx.opts) ? recipeServingCtx.opts : dietAwareDefaultOpts(r, currentRecipeKey, currentProf);
   recipeOptsCtx = normalizeRecipeOpts(r, defaultOpts);
+  // Meal (recipe-of-recipes) per-component context: start from the recipe's own sub-recipes, then
+  // overlay whatever this meal was last LOGGED with (its stored components) — so re-opening an
+  // eaten meal restores the exact tweaks (a removed sub-recipe stays removed, i.e. portion 0).
+  recipeMealCompsCtx = null;
+  if(r && Array.isArray(r.components) && r.components.length){
+    recipeMealCompsCtx = r.components.map(function(c){ const o = {recipeId: c.recipeId, portion: (typeof c.portion === 'number' ? c.portion : 1)}; if(c.opts) o.opts = c.opts; return o; });
+    if(recipeServingCtx && recipeServingCtx.source === 'logged'){
+      const lg = loggedPlanEntryForSlot(recipeServingCtx.dateISO || todayISO(), recipeServingCtx.person || currentProf, recipeServingCtx.slot);
+      if(lg && lg.ref === currentRecipeKey && Array.isArray(lg.components)){
+        // The stored components are the sub-recipes (recipeId !== the meal's own id) once tweaked;
+        // a never-tweaked log is just [{recipeId: mealId}], which leaves the defaults in place.
+        const custom = lg.components.filter(function(c){ return c && c.recipeId && c.recipeId !== currentRecipeKey; });
+        if(custom.length){
+          recipeMealCompsCtx.forEach(function(c){
+            const m = custom.filter(function(x){ return x.recipeId === c.recipeId; })[0];
+            c.portion = m ? (typeof m.portion === 'number' ? m.portion : 1) : 0;
+            if(m && m.opts) c.opts = m.opts;
+          });
+        }
+      }
+    }
+  }
   const base = recipeNutrition(currentRecipeKey, 1, recipeOptsCtx).totals; // one serving, same scale the old compat view used
   document.getElementById('recipeHero').innerHTML = recipeHeroHtml(r, currentRecipeKey);
   document.getElementById('recipeTitle').textContent = recipeDisplayTitle(currentRecipeKey, recipeOptsCtx);
@@ -638,7 +664,81 @@ function refreshAfterRecipeServingOverride(dateISO){
   renderWeek();
 }
 
+// Meal detail: hide the whole-dish serving steppers, render the "Made of" list as per-component
+// portion steppers (− / value / +, down to 0 = removed), and compute the nutrition grid from the
+// currently-included sub-recipes. Called by updateServings() whenever the open recipe is a Meal.
+function updateMealDetail(){
+  ['serveRowShared', 'sharedCaption', 'serveRowSolo', 'ingredientsSection'].forEach(function(id){
+    const el = document.getElementById(id); if(el) el.style.display = 'none';
+  });
+  const meta = document.getElementById('rsServesMeta'); if(meta) meta.textContent = '🍽️ Your meal';
+  const madeOfSection = document.getElementById('madeOfSection');
+  const madeOfList = document.getElementById('madeOfList');
+  if(madeOfSection) madeOfSection.style.display = '';
+  const canEdit = !!(recipeServingCtx && recipeServingCtx.source === 'logged'); // only a logged meal writes back
+  if(madeOfList){
+    madeOfList.innerHTML = recipeMealCompsCtx.map(function(c, i){
+      const cid = c.recipeId;
+      const sub = RECIPES_DB[cid] || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[cid]) || (typeof customRecipes !== 'undefined' && customRecipes[cid]);
+      if(!sub) return '';
+      const removed = !(c.portion > 0);
+      const kcal = removed ? 0 : Math.round(recipeNutrition(cid, c.portion, c.opts).totals.kcal);
+      const nameHtml = '<span class="madeof-name" onclick="openRecipe(\'' + cid + '\',\'libraryRecipes\')">' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + '</span>';
+      const stepper = '<span class="madeof-step">'
+        + '<button type="button" class="madeof-btn" onclick="adjMealComp(' + i + ',-0.5)" aria-label="Less ' + escapeHtml(sub.title) + '">−</button>'
+        + '<span class="madeof-portion">' + (removed ? 'none' : (c.portion + '×')) + '</span>'
+        + '<button type="button" class="madeof-btn" onclick="adjMealComp(' + i + ',0.5)" aria-label="More ' + escapeHtml(sub.title) + '">+</button>'
+        + '</span>';
+      const right = canEdit
+        ? stepper + '<span class="madeof-kcal">' + kcal + ' kcal</span>'
+        : '<span class="madeof-kcal">' + (removed ? '—' : (c.portion === 1 ? '' : c.portion + '× · ') + kcal + ' kcal') + ' ›</span>';
+      return '<li class="madeof-row' + (removed ? ' madeof-removed' : '') + '">' + nameHtml + '<span class="madeof-right">' + right + '</span></li>';
+    }).join('');
+  }
+  const anyIncluded = recipeMealCompsCtx.some(function(c){ return c.portion > 0; });
+  updateNutritionGrid(1, anyIncluded ? 'Nutrition · your meal' : 'Nutrition · nothing selected');
+}
+
+// Step one sub-recipe's portion by ±0.5 (clamped 0–3; 0 = removed). Re-renders the meal detail +
+// nutrition and, for an already-logged meal, writes the tweak straight back to that log entry.
+function adjMealComp(i, delta){
+  if(!recipeMealCompsCtx || !recipeMealCompsCtx[i]) return;
+  const c = recipeMealCompsCtx[i];
+  const cur = (typeof c.portion === 'number') ? c.portion : 0;
+  c.portion = Math.min(3, Math.max(0, +((cur + delta).toFixed(1))));
+  updateMealDetail();
+  applyMealCompsOverride();
+}
+
+// Persist the current per-component portions to the meal's LOG entry (only meaningful when the
+// recipe screen was opened from a logged meal). Stores the sub-recipes as the entry's `components`
+// so its frozen macros = the sum of exactly what the user says they ate; keeps `ref` = the meal id
+// so it still reads/opens as that meal. A portion-0 component is kept (round-trips the removal) and
+// contributes 0.
+function applyMealCompsOverride(){
+  if(!recipeMealCompsCtx || !recipeServingCtx || recipeServingCtx.source !== 'logged') return;
+  const dateISO = recipeServingCtx.dateISO || todayISO();
+  const slot = recipeServingCtx.slot;
+  const person = recipeServingCtx.person || currentProf;
+  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+  if(!logged || logged.ref !== currentRecipeKey) return;
+  // Only the INCLUDED sub-recipes go into the log (a portion of 0 is coerced back to 1 by
+  // recipeNutrition, so a removed component must be dropped, not stored at 0). The removal still
+  // round-trips: renderRecipe re-derives the per-component state from the recipe's full sub-recipe
+  // list, and any sub-recipe absent from the logged components is shown removed (portion 0).
+  const comps = recipeMealCompsCtx.filter(function(c){ return c.portion > 0; })
+    .map(function(c){ const o = {recipeId: c.recipeId, portion: c.portion}; if(c.opts) o.opts = c.opts; return o; });
+  // Guard the degenerate "everything removed" case — keep it logged as the meal itself rather than
+  // silently falling back to the full default (logPlanEntry treats an empty components list as none).
+  logPlanEntry(dateISO, person, slot, currentRecipeKey, 1, comps.length ? comps : [{recipeId: currentRecipeKey, portion: 0.0001}]);
+  refreshAfterRecipeServingOverride(dateISO);
+  persist();
+}
+
 function updateServings(){
+  // A MEAL (recipe-of-recipes) uses its own detail path: per-component portion steppers replace
+  // the whole-dish serving stepper (they ARE the scaling), so short-circuit here.
+  if(recipeMealCompsCtx){ updateMealDetail(); return; }
   // Task B3 (solo households): a plan-backed recipeServingCtx already carries shared:false
   // for every meal in a one-person household (planner.js:generateWeek never produces a
   // shared cell there), but the CONTEXT-LESS fallback (isShared(currentRecipeKey), reached
@@ -740,7 +840,11 @@ function updateServings(){
 function updateNutritionGrid(servings, headerText){
   const header = document.getElementById('nutriHeader');
   if(header) header.textContent = headerText || ((servings === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + servings + ' servings');
-  const nut = recipeNutrition(currentRecipeKey, servings, recipeOptsCtx).totals;
+  // A Meal's nutrition is the sum of its INCLUDED sub-recipes (per the per-component steppers),
+  // not the fixed recipe default — so a removed/rescaled sub-recipe is reflected live.
+  const nut = recipeMealCompsCtx
+    ? nutritionForRecipeComponents(recipeMealCompsCtx.filter(function(c){ return c.portion > 0; }))
+    : recipeNutrition(currentRecipeKey, servings, recipeOptsCtx).totals;
   const topKcal = document.getElementById('rsKcal');
   const topProt = document.getElementById('rsProt');
   if(topKcal) topKcal.textContent = '🔥 ' + fmtKcal(Math.round(nut.kcal)) + ' kcal';

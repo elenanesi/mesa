@@ -513,7 +513,13 @@ function nutritionForRecipeComponents(components){
   const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0};
   (components || []).forEach(function(c){
     let nut = null;
-    if(c && c.recipeId && typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId]){
+    // Resolve a component recipe from the FULL catalog, not just the active-book RECIPES_DB (same
+    // reason as recipeEffectiveIngredients) — a logged Meal's sub-recipes must still contribute
+    // even when out of the household's book, or the logged entry computes 0.
+    const compRecipe = c && c.recipeId && ((typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId])
+      || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[c.recipeId])
+      || (typeof customRecipes !== 'undefined' && customRecipes[c.recipeId]));
+    if(compRecipe){
       // task D1: c.opts (additive — undefined on every pre-D1 component) carries which
       // variant this component froze/planned; recipeNutrition's opts param defaults it.
       nut = recipeNutrition(c.recipeId, c.portion, c.opts).totals;
