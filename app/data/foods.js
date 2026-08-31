@@ -749,6 +749,34 @@ const FOODS = {
     kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0, sugars: 10.6, freeSugars: 10.6, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'cola', src: 'USDA FDC 174819-style cola soft drink'
   },
+  // Fast-food ESTIMATE foods (per official brand nutrition, 2026-08-31) — used only by the
+  // occasional McDonald's / Burger King "menu" Meals below. Per-100g from the brand per-item
+  // figures divided by the item weight; avgG lets them log by item/piece. Not verified whole foods.
+  'big-mac': {
+    name: 'Big Mac', per: 100, unit: 'g',
+    kcal: 226, protein: 9.7, carbs: 17.5, fat: 13.2, satFat: 4.3, fiber: 1.2, sugars: 3.5, freeSugars: 3.1, sugarQuality: 'added/free',
+    avgG: 257, flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: "McDonald's Big Mac (580 kcal / 257 g item)"
+  },
+  'bacon-king': {
+    name: 'Bacon King', per: 100, unit: 'g',
+    kcal: 348, protein: 18.5, carbs: 14.8, fat: 23.9, satFat: 9.1, fiber: 0.6, sugars: 2.7, freeSugars: 2.4, sugarQuality: 'added/free',
+    avgG: 330, flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: 'Burger King Bacon King (1150 kcal / ~330 g item)'
+  },
+  'fast-food-fries': {
+    name: 'Fast-food fries', per: 100, unit: 'g',
+    kcal: 312, protein: 3.4, carbs: 41.0, fat: 15.0, satFat: 2.3, fiber: 3.4, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: 150, flags: [], cat: 'Bakery', src: 'Fast-food French fries average (McD large 490 kcal / 157 g; BK medium 380 kcal / 122 g)'
+  },
+  'fast-food-nuggets': {
+    name: 'Chicken nuggets', per: 100, unit: 'g',
+    kcal: 262, protein: 15.4, carbs: 16.9, fat: 16.9, satFat: 3.0, fiber: 1.0, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: 16, flags: [], cat: 'Bakery', src: 'Fast-food breaded chicken nuggets average (McD 4pc 170 kcal / 64 g; BK 4pc 190 kcal / ~72 g)'
+  },
+  'ketchup': {
+    name: 'Ketchup', per: 100, unit: 'g',
+    kcal: 100, protein: 1.2, carbs: 25.0, fat: 0.1, satFat: 0, fiber: 0.3, sugars: 22.0, freeSugars: 22.0, sugarQuality: 'added/free',
+    avgG: 15, measures: {tbsp: 15, tsp: 5}, flags: [], cat: 'Pantry', src: 'USDA FDC 168556-style tomato ketchup'
+  },
   'capers': {
     name: 'Capers, brined, drained', per: 100, unit: 'g',
     kcal: 37, protein: 2.4, carbs: 4.9, fat: 0.9, satFat: 0.1, fiber: 3.2,

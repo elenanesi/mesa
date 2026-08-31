@@ -1602,15 +1602,61 @@ const RECIPES_DB = {
     tags: [],
     avoid: ['gluten', 'lactose']
   },
+  // McDonald's / Burger King "menu" MEALS (owner spec 2026-08-31; nutrition from the brands' own
+  // sites). Each brand menu is now a Meal — a recipe-of-recipes (`components`) — combining a burger
+  // menu (burger + fries + drink) with a 4-piece nuggets, exactly as the owner ordered them. The
+  // four component recipes are defined first; the two composites at the end reference them. All
+  // OCCASIONAL (searchable/loggable, never auto-planned) and deliberately unhealthy — left as-is
+  // nutritionally. Component nutrition uses the fast-food ESTIMATE foods added in foods.js.
+  'mcd-bigmac-menu': {
+    title: 'Big Mac menu (large)', emoji: '🍔', slot: 'dinner', role: 'full',
+    imageKey: 'fast-food-menu', slots: ['dinner', 'lunch'], occasional: true,
+    styles: ['balanced'], time: 5,
+    ingredients: [['big-mac', 257], ['fast-food-fries', 157], ['cola', 690]],
+    toTaste: [],
+    steps: ['Order a Big Mac with large fries and a large Coke.', 'Log it as one item.', 'Adjust with servings if your order differed.'],
+    tags: [], avoid: ['gluten', 'lactose']
+  },
+  'mcd-nuggets-4': {
+    title: 'Chicken McNuggets (4 pc)', emoji: '🍗', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 5,
+    ingredients: [['fast-food-nuggets', 64], ['ketchup', 15]],
+    toTaste: [],
+    steps: ['Order a 4-piece Chicken McNuggets with a dip.', 'Log it as one item.', 'Adjust with servings if you had more or fewer.'],
+    tags: [], avoid: ['gluten']
+  },
+  'bk-baconking-menu': {
+    title: 'Bacon King menu', emoji: '🍔', slot: 'dinner', role: 'full',
+    imageKey: 'fast-food-menu', slots: ['dinner', 'lunch'], occasional: true,
+    styles: ['balanced'], time: 5,
+    ingredients: [['bacon-king', 330], ['fast-food-fries', 122], ['cola', 500]],
+    toTaste: [],
+    steps: ['Order a Bacon King with fries and a drink.', 'Log it as one item.', 'Adjust with servings if your order differed.'],
+    tags: [], avoid: ['gluten', 'lactose']
+  },
+  'bk-nuggets-4': {
+    title: 'Chicken nuggets (4 pc)', emoji: '🍗', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 5,
+    ingredients: [['fast-food-nuggets', 72], ['ketchup', 15]],
+    toTaste: [],
+    steps: ['Order a 4-piece chicken nuggets with a dip.', 'Log it as one item.', 'Adjust with servings if you had more or fewer.'],
+    tags: [], avoid: ['gluten']
+  },
   'mcdonald-menu': {
     title: "McDonald's menu", emoji: '🍔', slot: 'dinner', role: 'full',
     imageKey: 'fast-food-menu',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['fast-food-beef-burger', 180], ['potatoes', 170], ['olive-oil', 18], ['cola', 400]],
+    ingredients: [],
+    components: [
+      {recipeId: 'mcd-bigmac-menu', portion: 1},
+      {recipeId: 'mcd-nuggets-4', portion: 1}
+    ],
     toTaste: [],
-    steps: ['Order the burger, fries and cola.', 'Use the menu as a single loggable meal.', 'Adjust portions later with servings if the actual order was larger or smaller.'],
+    steps: ['A Big Mac menu (large) plus a 4-piece McNuggets.', 'Order it, then log the whole menu as one meal.', 'Adjust with servings if your order was larger or smaller.'],
     tags: [],
     avoid: ['gluten', 'lactose']
   },
@@ -1620,9 +1666,13 @@ const RECIPES_DB = {
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['fast-food-beef-burger', 220], ['potatoes', 170], ['olive-oil', 18], ['cola', 400]],
+    ingredients: [],
+    components: [
+      {recipeId: 'bk-baconking-menu', portion: 1},
+      {recipeId: 'bk-nuggets-4', portion: 1}
+    ],
     toTaste: [],
-    steps: ['Order the burger, fries and cola.', 'Use the menu as a single loggable meal.', 'Adjust portions later with servings if the actual order was larger or smaller.'],
+    steps: ['A Bacon King menu plus a 4-piece chicken nuggets.', 'Order it, then log the whole menu as one meal.', 'Adjust with servings if your order was larger or smaller.'],
     tags: [],
     avoid: ['gluten', 'lactose']
   },
