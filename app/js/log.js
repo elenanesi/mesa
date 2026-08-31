@@ -162,6 +162,7 @@ function upsertLogEntry(dateISO, personKey, entry){
     const idx = arr.findIndex(function(e){ return e.kind === 'plan' && e.slot === entry.slot; });
     if(idx !== -1){
       entry.t = arr[idx].t || entry.t; // keep the original log time on an edit (e.g. a post-confirm swap)
+      if(arr[idx].eatenOut) entry.eatenOut = true; // and keep the eaten-out flag too — a swap/portion correction (chooseSwapRecipe, confirmMealBuilderUseForThisMeal, etc.) must not silently un-mark a slot already logged eaten out
       entry.u = Date.now(); // but sync conflicts must see this edit as newer than the original confirm
       arr[idx] = entry;
       return entry;
