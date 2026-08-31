@@ -1660,6 +1660,30 @@ function testMergeLibraryTombstoneIdempotence(ctx){
 // machinery as customRecipes. Covers: an add on one side survives, a book-removal (deletedFromBook)
 // newer than the include wins, a re-add (include `u` newer than the removal) survives, recipeBookInit
 // merges max-wins, and the whole thing is order-independent + idempotent (the convergence property).
+// A Meal (recipe-of-recipes via `components`) must compute its nutrition from its sub-recipes even
+// when the household's ACTIVE book excludes those sub-recipes — e.g. the fast-food menu components,
+// which are new occasional built-ins added after a book was materialized. `applyCustomRecipes` drops
+// out-of-book built-ins from RECIPES_DB, so recipeEffectiveIngredients must fall back to the full
+// catalog (BUILTIN_RECIPES_DB) or the Meal silently computes 0 kcal (the reported bug).
+function testMealComponentsResolveOutOfBook(ctx){
+  const snap = get(ctx, "JSON.stringify({rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0)})");
+  run(ctx, "var __mcStub={applyProf:applyProf,persist:(typeof persist==='function'?persist:null)}; applyProf=function(){}; persist=function(){};");
+  const kcalInBook = call(ctx, 'recipeNutrition', ['mcdonald-menu', 1]).totals.kcal;
+  assert(kcalInBook > 1000, 'meal components (book inactive): the McDonald\'s Meal computes real kcal from its components', 'kcal=' + kcalInBook);
+  // Activate the book, then remove the NEW component recipes from it (the user's real state: their
+  // book was materialized before these existed) and rebuild RECIPES_DB.
+  run(ctx, "materializeRecipeBook(); delete recipeBook['mcd-bigmac-menu']; delete recipeBook['mcd-nuggets-4']; delete recipeBook['bk-baconking-menu']; delete recipeBook['bk-nuggets-4']; applyCustomRecipes();");
+  assert(!get(ctx, 'RECIPES_DB')['mcd-bigmac-menu'] && !!get(ctx, 'BUILTIN_RECIPES_DB')['mcd-bigmac-menu'],
+    'meal components: setup — the component is out of the active book (dropped from RECIPES_DB, still in the catalog)', '');
+  const kcalOutOfBook = call(ctx, 'recipeNutrition', ['mcdonald-menu', 1]).totals.kcal;
+  assert(Math.abs(kcalOutOfBook - kcalInBook) < 1e-6,
+    'meal components (book active, components out of book): the Meal still computes the SAME kcal via the catalog fallback (not 0)',
+    'inBook=' + kcalInBook + ' outOfBook=' + kcalOutOfBook);
+  const bk = call(ctx, 'recipeNutrition', ['burger-king-menu', 1]).totals.kcal;
+  assert(bk > 1000, 'meal components: the Burger King Meal also resolves out-of-book components', 'kcal=' + bk);
+  run(ctx, "var __m=" + snap + "; recipeBook=__m.rb; recipeBookInit=__m.rbi; applyCustomRecipes(); applyProf=__mcStub.applyProf; if(__mcStub.persist) persist=__mcStub.persist; delete __mcStub;");
+}
+
 // Fork-model migration (owner spec 2026-08-30): a legacy in-place built-in override
 // (recipeOverrides[id], from before the fork model) is converted on boot into a cr- fork carrying
 // the user's edit, with the original returned to the market — so a previously-edited recipe shows
@@ -11978,6 +12002,7 @@ function main(){
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
   runTest('recipe market: legacy override migrates to fork', function(){ testMigrateOverridesToForks(ctx); });
+  runTest('meal: components resolve out-of-book (no 0-kcal Meal)', function(){ testMealComponentsResolveOutOfBook(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });

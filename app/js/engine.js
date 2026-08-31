@@ -424,8 +424,17 @@ function recipeEffectiveIngredients(recipe, opts, depth){
   // recipe's nutrition/shopping/validation is always exactly the sum of its sub-recipes.
   if(Array.isArray(recipe.components) && recipe.components.length && depth < COMPONENT_MAX_DEPTH){
     recipe.components.forEach(function(c){
-      if(!c || typeof c.recipeId !== 'string' || typeof RECIPES_DB === 'undefined' || !RECIPES_DB[c.recipeId]) return;
-      const sub = RECIPES_DB[c.recipeId];
+      if(!c || typeof c.recipeId !== 'string') return;
+      // Resolve a component from the FULL catalog, not just the active-book RECIPES_DB. A Meal's
+      // sub-recipes must always contribute their nutrition/ingredients even when the household's
+      // book excludes them — e.g. a NEW occasional component recipe added after the book was
+      // materialized (mcdonald-menu/burger-king-menu's pieces), or a sub-recipe the user removed
+      // from their book. Without the BUILTIN_RECIPES_DB/customRecipes fallback, `applyCustomRecipes`
+      // drops out-of-book built-ins from RECIPES_DB and the whole Meal silently computes 0 kcal.
+      const sub = (typeof RECIPES_DB !== 'undefined' && RECIPES_DB[c.recipeId])
+        || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[c.recipeId])
+        || (typeof customRecipes !== 'undefined' && customRecipes[c.recipeId]);
+      if(!sub) return;
       const subServings = (typeof sub.servings === 'number' && sub.servings > 0) ? sub.servings : 1;
       const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
       const factor = portion / subServings;

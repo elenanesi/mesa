@@ -701,7 +701,11 @@ function updateServings(){
     if(isComponentsRecipe){
       madeOfSection.style.display = '';
       madeOfList.innerHTML = recipeForMadeOf.components.map(function(c){
-        const sub = RECIPES_DB[c && c.recipeId];
+        // Resolve from the full catalog, not just the active-book RECIPES_DB (same reason as
+        // engine.js:recipeEffectiveIngredients) — a Meal whose sub-recipe is out of the household's
+        // book (e.g. the NEW fast-food menu components) must still list its dishes here, not vanish.
+        const cid = c && c.recipeId;
+        const sub = RECIPES_DB[cid] || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[cid]) || (typeof customRecipes !== 'undefined' && customRecipes[cid]);
         if(!sub) return '';
         const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
         const subKcal = Math.round(recipeNutrition(c.recipeId, portion, c.opts).totals.kcal);
