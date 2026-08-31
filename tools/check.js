@@ -1660,6 +1660,34 @@ function testMergeLibraryTombstoneIdempotence(ctx){
 // machinery as customRecipes. Covers: an add on one side survives, a book-removal (deletedFromBook)
 // newer than the include wins, a re-add (include `u` newer than the removal) survives, recipeBookInit
 // merges max-wins, and the whole thing is order-independent + idempotent (the convergence property).
+// Fork-model migration (owner spec 2026-08-30): a legacy in-place built-in override
+// (recipeOverrides[id], from before the fork model) is converted on boot into a cr- fork carrying
+// the user's edit, with the original returned to the market — so a previously-edited recipe shows
+// "edited version in the book, original re-addable in the market" just like a fresh edit does.
+function testMigrateOverridesToForks(ctx){
+  const snap = get(ctx, "JSON.stringify({co:customRecipes, ro:recipeOverrides, rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb:(typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}, dr:deletedRecipes})");
+  run(ctx, "var __mStub = {persist: (typeof persist==='function'?persist:null), applyProf: applyProf, toast: toast, renderFoodLibraryCount: renderFoodLibraryCount}; persist = function(){}; applyProf = function(){}; toast = function(){}; renderFoodLibraryCount = function(){};");
+  // Seed a legacy in-place override of a real built-in (with a synced `u` for determinism).
+  run(ctx, "recipeOverrides['pollo-al-forno'] = JSON.parse(JSON.stringify(BUILTIN_RECIPES_DB['pollo-al-forno'])); recipeOverrides['pollo-al-forno'].title = 'Roast chicken (my edit)'; recipeOverrides['pollo-al-forno'].u = 12345; applyCustomRecipes();");
+  assert(get(ctx, 'RECIPES_DB')['pollo-al-forno'].title === 'Roast chicken (my edit)',
+    'migrate setup: a legacy override shadows the built-in under the same id (edited title live)', '');
+
+  const ran = call(ctx, 'migrateRecipeOverridesToForks', []);
+  assert(ran === true, 'migrate: reports it migrated the legacy override', String(ran));
+  assert(!get(ctx, 'recipeOverrides')['pollo-al-forno'], 'migrate: the in-place override is removed', '');
+  const fork = get(ctx, 'customRecipes')['cr-fork-pollo-al-forno'];
+  assert(!!fork && fork.title === 'Roast chicken (my edit)',
+    'migrate: the edit becomes a cr- fork carrying the user\'s edited content', JSON.stringify(fork && fork.title));
+  assert(call(ctx, 'recipeInBook', ['pollo-al-forno']) === false,
+    'migrate: the original built-in returns to the market (out of the book)', '');
+  assert(get(ctx, 'BUILTIN_RECIPES_DB')['pollo-al-forno'].title === 'Roast chicken',
+    'migrate: the original in the market catalog is pristine (unedited)', '');
+  assert(call(ctx, 'migrateRecipeOverridesToForks', []) === false,
+    'migrate: idempotent — a second run has nothing to migrate', '');
+
+  run(ctx, "var __m=" + snap + "; customRecipes=__m.co; recipeOverrides=__m.ro; recipeBook=__m.rb; recipeBookInit=__m.rbi; deletedFromBook=__m.dfb; deletedRecipes=__m.dr; applyCustomRecipes(); if(__mStub.persist) persist = __mStub.persist; applyProf = __mStub.applyProf; toast = __mStub.toast; renderFoodLibraryCount = __mStub.renderFoodLibraryCount; delete __mStub;");
+}
+
 function testMergeRecipeBook(ctx){
   function sec(){ const s = emptyLibrarySection(); s.recipeBook = {}; s.deletedFromBook = {}; s.recipeBookInit = 0; return s; }
   // (a) an add on A with an initialised book, nothing on B → the id is in the merged book.
@@ -11949,6 +11977,7 @@ function main(){
   runTest('mergeLibrarySection: newer-wins', function(){ testMergeLibraryNewerWins(ctx); });
   runTest('mergeLibrarySection: tombstone + idempotence', function(){ testMergeLibraryTombstoneIdempotence(ctx); });
   runTest('mergeLibrarySection: ratchet regression', function(){ testMergeLibraryRatchetRegression(ctx); });
+  runTest('recipe market: legacy override migrates to fork', function(){ testMigrateOverridesToForks(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });

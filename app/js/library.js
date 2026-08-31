@@ -3340,6 +3340,40 @@ function removeRecipeFromBook(id, silent){
   }
 }
 
+// One-time migration to the FORK edit model (owner spec 2026-08-30). Earlier builds edited a built-in
+// recipe IN PLACE, storing the edit as recipeOverrides[builtinId] under the SAME id — which hides the
+// original. The fork model instead keeps the user's edit as a separate cr- recipe and returns the
+// untouched original to the market. This converts every legacy built-in override into that shape, so a
+// PREVIOUSLY-edited recipe also shows "your edited version in the book, the original re-addable in the
+// market". Deterministic fork id (cr-fork-<id>) so a couple converges on ONE fork, not one each; stamps
+// reuse the override's own synced `u` where present. Idempotent — once it runs there are no built-in
+// overrides left, so the next boot is a no-op. Called at boot (app.js bootStage 'cleanup') after
+// applyCustomRecipes. Returns true if it migrated anything (for tests/telemetry).
+function migrateRecipeOverridesToForks(){
+  if(typeof BUILTIN_RECIPES_DB === 'undefined' || !recipeOverrides) return false;
+  const ids = Object.keys(recipeOverrides).filter(function(id){ return BUILTIN_RECIPES_DB[id]; });
+  if(!ids.length) return false;
+  ids.forEach(function(id){
+    const ov = recipeOverrides[id];
+    const stamp = (ov && typeof ov.u === 'number') ? ov.u : Date.now();
+    const forkId = 'cr-fork-' + id;
+    if(!customRecipes[forkId] && !deletedRecipes[forkId]){
+      const fork = deepClone(ov);
+      fork.u = stamp;
+      customRecipes[forkId] = fork;
+    }
+    materializeRecipeBook();        // activates the book so the removal below actually takes effect
+    if(recipeBook[id]) delete recipeBook[id];
+    deletedFromBook[id] = stamp;    // original -> market (re-addable); this tombstone DOES sync
+    delete recipeOverrides[id];     // like resetRecipeOverride — no tombstone, but the deterministic
+                                    // fork + deletedFromBook make both sides of a couple converge
+  });
+  customRev++;
+  applyCustomRecipes();
+  if(typeof persist === 'function') persist();
+  return true;
+}
+
 // Does the MARKET (full catalog, out of book) actually hold a recipe that fits `slot` AND passes
 // the tracked household's diet + avoid? Used by the starved-slot card so we only point a strict-diet
 // user at the Market when it can genuinely fill the gap — never at an empty shelf (UX-panel flag).

@@ -673,6 +673,9 @@ function bootMesaApp(){
   bootStage('recipes', applyCustomRecipes);
 
   bootStage('cleanup', function(){
+    // One-time: convert any legacy in-place built-in edits (recipeOverrides) to the fork model so a
+    // previously-edited recipe shows the original back in the market (js/library.js). Idempotent.
+    if(typeof migrateRecipeOverridesToForks === 'function') migrateRecipeOverridesToForks();
     if(typeof cleanupDuplicateLibraryEntries === 'function') cleanupDuplicateLibraryEntries();
   });
 
