@@ -214,8 +214,8 @@ const FISH_FOOD_IDS = [
 ];
 const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);
 // Per the task brief's exact list.
-const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats', 'wheat-wrapper'];
-const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds'];
+const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats', 'wheat-wrapper', 'breadcrumbs'];
+const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds', 'almond-flour', 'pistachios'];
 // Diet-filtering food-id lists (multi-select diets batch) — same hand-picked-by-real-
 // ingredient-content pattern as RED_MEAT_FOOD_IDS/POULTRY_FOOD_IDS/FISH_FOOD_IDS above,
 // each food defined in exactly one place here. Deliberately NOT derived from
@@ -235,7 +235,7 @@ const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pum
 const DAIRY_FOOD_IDS = [
   'greek-yogurt', 'skyr', 'feta-cheese', 'parmesan', 'pecorino', 'mozzarella', 'robiola',
   'cream-cheese', 'whipped-cream', 'provola', 'scamorza', 'ricotta', 'butter', 'gorgonzola', 'milk',
-  'semi-skimmed-milk', 'cappuccino-unsweetened',
+  'semi-skimmed-milk', 'cappuccino-unsweetened', 'mascarpone', 'burrata',
   // 'Nutella' (real-world chocolate-hazelnut spread) contains skimmed milk powder, unlike
   // the plain dark-chocolate-85 entry — a correctness fix noticed while building this list,
   // not something the pre-existing lactose avoid-key check ever covered either.

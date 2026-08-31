@@ -2052,6 +2052,56 @@ const RECIPES_DB = {
     steps: ['Melt the chocolate and whisk in the yogurt and eggs until glossy.', 'Pour into a small lined tin.', 'Bake (or air-fry) at 150°C for ~30 min until just set; chill before slicing. A per-slice serving.'],
     tags: ['veggie'],
     avoid: ['lactose']
+  },
+
+  // ── Instagram-inspired batch #2 (2026-08-31) ──────────────────────────────
+  // Reels 18-25 (see ig-recipes.md). Savoury mains healthy-tweaked (oil trimmed, veg/protein
+  // anchored); the galette stays `occasional`. New foods: breadcrumbs, quinoa, pistachios,
+  // mascarpone, cornstarch, burrata (diet lists wired in library.js).
+  'broccoli-ricotta-patties': {
+    title: 'Broccoli & ricotta melty patties', emoji: '🥦', slot: 'dinner', role: 'full',
+    season: 'winter/autumn', styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['broccoli', 200], ['ricotta', 100], ['scamorza', 45], ['breadcrumbs', 15]],
+    toTaste: ['black pepper', 'salt', 'garlic'],
+    steps: ['Steam or microwave the broccoli until soft, then cool and blitz with the ricotta.', 'Work in enough breadcrumbs to form a shapeable mixture; season.', 'Shape into patties around a cube of scamorza and pan-fry in a lightly oiled pan until golden and molten inside.'],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['lactose', 'gluten']
+  },
+  'pumpkin-gnocchi-2ing': {
+    title: 'Two-ingredient pumpkin gnocchi', emoji: '🎃', slot: 'dinner', role: 'full',
+    season: 'winter/autumn', styles: ['balanced'], time: 40,
+    ingredients: [['pumpkin', 250], ['00-flour', 98], ['olive-oil', 8], ['parmesan', 15]],
+    toTaste: ['sage', 'nutmeg', 'black pepper', 'salt'],
+    steps: ['Roast the pumpkin until soft and dry, then mash to a smooth purée.', 'Mix in just enough flour (about 39 g per 100 g purée) to form a soft, barely-sticky dough; roll and cut into gnocchi.', 'Boil until they float; toss through olive oil warmed with sage, and finish with a little parmesan.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+  'jennifer-aniston-salad': {
+    title: 'Jennifer Aniston quinoa salad', emoji: '🥗', slot: 'lunch', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['quinoa', 55], ['chickpeas', 70], ['cucumber', 60], ['red-onion', 30], ['pistachios', 20], ['feta-cheese', 40], ['olive-oil', 8], ['lemon', 6]],
+    toTaste: ['parsley', 'mint', 'black pepper', 'salt'],
+    steps: ['Cook and cool the quinoa.', 'Toss with chickpeas, cucumber, red onion, chopped parsley and mint, and the pistachios.', 'Fold through crumbled feta, dress with olive oil, lemon, salt and pepper.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: ['nuts', 'lactose', 'raw-onion']
+  },
+  'cherry-tomato-fresh-pasta': {
+    title: 'Roasted cherry-tomato spaghetti', emoji: '🍝', slot: 'dinner', role: 'full',
+    season: 'spring/summer', styles: ['balanced'], time: 40,
+    ingredients: [['00-flour', 90], ['eggs', 30], ['cherry-tomatoes', 160], ['bell-pepper', 40], ['olive-oil', 10], ['parmesan', 15], ['burrata', 50]],
+    toTaste: ['garlic', 'basil', 'black pepper', 'salt'],
+    steps: ['Make a fresh egg-pasta dough, rest it, and roll and cut into spaghetti.', 'Roast the cherry tomatoes, sweet pepper and garlic in the oil until soft, then mash to a sauce loosened with a little pasta water and parmesan.', 'Toss the cooked pasta through the sauce; top with torn burrata and basil.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+  'strawberry-galette': {
+    title: 'Strawberry cream-cheese galette', emoji: '🍓', slot: 'snack', role: 'full', occasional: true,
+    season: 'spring/summer', styles: ['balanced'], time: 70,
+    ingredients: [['00-flour', 28], ['almond-flour', 5], ['butter', 22], ['cream-cheese', 7], ['mascarpone', 7], ['eggs', 6], ['strawberries', 55], ['granulated-sugar', 18], ['cornstarch', 3]],
+    toTaste: ['vanilla', 'lemon'],
+    steps: ['Rub cold butter into the flours, sugar and lemon zest; bring together with a little iced water and chill.', 'Whisk cream cheese, mascarpone, sugar, egg and vanilla; toss strawberries with sugar and cornstarch.', 'Roll the pastry, spread the cream, pile on the berries, fold the edges, egg-wash and bake at ~190°C for 40–50 min. A per-slice serving.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose', 'nuts']
   }
 
 };

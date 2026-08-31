@@ -800,6 +800,38 @@ const FOODS = {
     kcal: 614, protein: 21.0, carbs: 20.0, fat: 50.0, satFat: 3.8, fiber: 11.0, sugars: 4.0, freeSugars: 0, sugarQuality: 'intrinsic',
     avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: ['nuts'], cat: 'Pantry', src: 'Ground blanched almonds (almond flour/meal)'
   },
+  // Foods added for Instagram recipe batch #2 (2026-08-31) — default ingredient icon (no iconKey).
+  // Diet-filter wiring (GLUTEN/NUT/DAIRY_FOOD_IDS in library.js) updated alongside these.
+  'breadcrumbs': {
+    name: 'Breadcrumbs, dried', per: 100, unit: 'g',
+    kcal: 395, protein: 13.4, carbs: 72.0, fat: 5.3, satFat: 1.2, fiber: 4.5, sugars: 6.0, freeSugars: 3.0, sugarQuality: 'added/free',
+    avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: [], cat: 'Bakery', src: 'USDA FDC 174987-style (bread crumbs, dry, grated, plain)'
+  },
+  'quinoa': {
+    name: 'Quinoa, dry', per: 100, unit: 'g',
+    kcal: 368, protein: 14.1, carbs: 64.2, fat: 6.1, satFat: 0.7, fiber: 7.0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: null, measures: {tbsp: 11, cup: 170}, flags: ['glutenFree', 'highFiber'], cat: 'Pantry', src: 'USDA FDC 168917 (quinoa, uncooked)'
+  },
+  'pistachios': {
+    name: 'Pistachios, shelled', per: 100, unit: 'g',
+    kcal: 562, protein: 20.2, carbs: 28.0, fat: 45.3, satFat: 5.6, fiber: 10.6, sugars: 7.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    avgG: null, measures: {tbsp: 8, tsp: 3}, flags: ['nuts'], cat: 'Pantry', src: 'USDA FDC 170185 (nuts, pistachio, raw)'
+  },
+  'mascarpone': {
+    name: 'Mascarpone', per: 100, unit: 'g',
+    kcal: 429, protein: 4.8, carbs: 3.6, fat: 44.0, satFat: 29.0, fiber: 0, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', src: 'Mascarpone cream cheese (Italian)'
+  },
+  'cornstarch': {
+    name: 'Cornstarch', per: 100, unit: 'g',
+    kcal: 381, protein: 0.3, carbs: 91.0, fat: 0.1, satFat: 0, fiber: 0.9, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: null, measures: {tbsp: 8, tsp: 2.7}, flags: ['glutenFree'], cat: 'Pantry', src: 'USDA FDC 169698 (cornstarch)'
+  },
+  'burrata': {
+    name: 'Burrata', per: 100, unit: 'g',
+    kcal: 275, protein: 12.0, carbs: 3.0, fat: 24.0, satFat: 16.0, fiber: 0, sugars: 1.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['fermented'], cat: 'Dairy', src: 'Burrata (fresh mozzarella with cream centre)'
+  },
   'capers': {
     name: 'Capers, brined, drained', per: 100, unit: 'g',
     kcal: 37, protein: 2.4, carbs: 4.9, fat: 0.9, satFat: 0.1, fiber: 3.2,
