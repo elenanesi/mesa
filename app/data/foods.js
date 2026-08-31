@@ -749,28 +749,29 @@ const FOODS = {
     kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0, sugars: 10.6, freeSugars: 10.6, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'cola', src: 'USDA FDC 174819-style cola soft drink'
   },
-  // Fast-food ESTIMATE foods (per official brand nutrition, 2026-08-31) — used only by the
-  // occasional McDonald's / Burger King "menu" Meals below. Per-100g from the brand per-item
-  // figures divided by the item weight; avgG lets them log by item/piece. Not verified whole foods.
+  // Fast-food ESTIMATE foods (EU/UK brand nutrition, 2026-08-31) — used only by the occasional
+  // McDonald's / Burger King "menu" Meals below. EU portions are smaller than US (esp. drinks +
+  // fries). Per-100g = the brand per-item figure / the item weight; avgG lets them log by
+  // item/piece. Not verified whole foods.
   'big-mac': {
     name: 'Big Mac', per: 100, unit: 'g',
-    kcal: 226, protein: 9.7, carbs: 17.5, fat: 13.2, satFat: 4.3, fiber: 1.2, sugars: 3.5, freeSugars: 3.1, sugarQuality: 'added/free',
-    avgG: 257, flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: "McDonald's Big Mac (580 kcal / 257 g item)"
+    kcal: 237, protein: 12.6, carbs: 19.1, fat: 11.6, satFat: 4.65, fiber: 1.4, sugars: 3.7, freeSugars: 3.7, sugarQuality: 'added/free',
+    avgG: 215, flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: "McDonald's UK Big Mac (509 kcal / ~215 g item)"
   },
   'bacon-king': {
     name: 'Bacon King', per: 100, unit: 'g',
-    kcal: 348, protein: 18.5, carbs: 14.8, fat: 23.9, satFat: 9.1, fiber: 0.6, sugars: 2.7, freeSugars: 2.4, sugarQuality: 'added/free',
-    avgG: 330, flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: 'Burger King Bacon King (1150 kcal / ~330 g item)'
+    kcal: 359, protein: 23.8, carbs: 20.0, fat: 20.3, satFat: 8.97, fiber: 0.7, sugars: 4.8, freeSugars: 4.8, sugarQuality: 'added/free',
+    avgG: 290, flags: [], cat: 'Bakery', iconKey: 'fast-food-beef-burger', src: 'Burger King UK Bacon King (1040 kcal / ~290 g item)'
   },
   'fast-food-fries': {
     name: 'Fast-food fries', per: 100, unit: 'g',
-    kcal: 312, protein: 3.4, carbs: 41.0, fat: 15.0, satFat: 2.3, fiber: 3.4, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: 150, flags: [], cat: 'Bakery', src: 'Fast-food French fries average (McD large 490 kcal / 157 g; BK medium 380 kcal / 122 g)'
+    kcal: 296, protein: 2.9, carbs: 36.7, fat: 14.7, satFat: 1.3, fiber: 3.3, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: 150, flags: [], cat: 'Bakery', src: 'EU fast-food fries (McD UK large 444 kcal / 150 g basis; BK UK regular 269 kcal / ~91 g)'
   },
   'fast-food-nuggets': {
     name: 'Chicken nuggets', per: 100, unit: 'g',
-    kcal: 262, protein: 15.4, carbs: 16.9, fat: 16.9, satFat: 3.0, fiber: 1.0, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: 16, flags: [], cat: 'Bakery', src: 'Fast-food breaded chicken nuggets average (McD 4pc 170 kcal / 64 g; BK 4pc 190 kcal / ~72 g)'
+    kcal: 275, protein: 15.5, carbs: 15.5, fat: 17.0, satFat: 2.8, fiber: 1.0, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: 16, flags: [], cat: 'Bakery', src: 'EU fast-food breaded chicken nuggets (McD UK 4pc 176 kcal / 64 g; BK UK 4pc 190 kcal / ~69 g)'
   },
   'ketchup': {
     name: 'Ketchup', per: 100, unit: 'g',

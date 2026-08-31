@@ -1612,7 +1612,7 @@ const RECIPES_DB = {
     title: 'Big Mac menu (large)', emoji: '🍔', slot: 'dinner', role: 'full',
     imageKey: 'fast-food-menu', slots: ['dinner', 'lunch'], occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['big-mac', 257], ['fast-food-fries', 157], ['cola', 690]],
+    ingredients: [['big-mac', 215], ['fast-food-fries', 150], ['cola', 500]],
     toTaste: [],
     steps: ['Order a Big Mac with large fries and a large Coke.', 'Log it as one item.', 'Adjust with servings if your order differed.'],
     tags: [], avoid: ['gluten', 'lactose']
@@ -1630,7 +1630,7 @@ const RECIPES_DB = {
     title: 'Bacon King menu', emoji: '🍔', slot: 'dinner', role: 'full',
     imageKey: 'fast-food-menu', slots: ['dinner', 'lunch'], occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['bacon-king', 330], ['fast-food-fries', 122], ['cola', 500]],
+    ingredients: [['bacon-king', 290], ['fast-food-fries', 91], ['cola', 500]],
     toTaste: [],
     steps: ['Order a Bacon King with fries and a drink.', 'Log it as one item.', 'Adjust with servings if your order differed.'],
     tags: [], avoid: ['gluten', 'lactose']
@@ -1639,7 +1639,7 @@ const RECIPES_DB = {
     title: 'Chicken nuggets (4 pc)', emoji: '🍗', slot: 'snack', role: 'full',
     slots: ['snack', 'side'], occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['fast-food-nuggets', 72], ['ketchup', 15]],
+    ingredients: [['fast-food-nuggets', 69], ['ketchup', 15]],
     toTaste: [],
     steps: ['Order a 4-piece chicken nuggets with a dip.', 'Log it as one item.', 'Adjust with servings if you had more or fewer.'],
     tags: [], avoid: ['gluten']
