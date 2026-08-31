@@ -229,11 +229,17 @@ function validateData() {
     // recipeEffectiveIngredients) instead of a >=2 raw ingredient list — its own `ingredients`
     // may be empty then. Base ingredient entries, when present, are still validated.
     const hasComponents = Array.isArray(r.components) && r.components.length > 0;
+    const hasOptionGroups = Array.isArray(r.optionGroups) && r.optionGroups.length > 0;
     if (!Array.isArray(r.ingredients)) {
       errors.push(prefix + 'ingredients must be an array');
     } else {
-      if (!hasComponents && r.ingredients.length < 2) {
-        errors.push(prefix + 'needs at least 2 ingredients (or a components list of sub-recipes)');
+      // A recipe must get its ingredients from SOME source: raw ingredients, a components list
+      // (recipe-of-recipes), or option groups whose choices supply them. The old ">=2 raw
+      // ingredients" bar is kept as a builder-only nicety for USER recipes (saveRecipeBuilder);
+      // the CATALOG legitimately holds single-item recipes (a fast-food line item — a burger, a
+      // portion of fries) and drink recipes whose only ingredient comes from an option group.
+      if (!hasComponents && !hasOptionGroups && r.ingredients.length < 1) {
+        errors.push(prefix + 'needs at least 1 ingredient (or a components / option-groups list)');
       }
       r.ingredients.forEach(function (ing) {
         if (!Array.isArray(ing) || ing.length !== 2 || typeof ing[0] !== 'string' || typeof ing[1] !== 'number' || ing[1] <= 0) {

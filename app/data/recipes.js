@@ -1608,13 +1608,54 @@ const RECIPES_DB = {
   // four component recipes are defined first; the two composites at the end reference them. All
   // OCCASIONAL (searchable/loggable, never auto-planned) and deliberately unhealthy — left as-is
   // nutritionally. Component nutrition uses the fast-food ESTIMATE foods added in foods.js.
+  // Big Mac menu, divided into its sub-items (owner spec 2026-08-31) so each can be removed or
+  // rescaled independently in the "Made of" list: the burger, the fries and the drink. The drink
+  // defaults to Coca-Cola ZERO (no sugar) with full-sugar Coke as an option (its optionGroup).
+  'mcd-big-mac': {
+    title: 'Big Mac', emoji: '🍔', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 3,
+    ingredients: [['big-mac', 215]],
+    toTaste: [],
+    steps: ['Order a Big Mac.', 'Log it as one item.', 'Adjust with servings for a different burger size.'],
+    tags: [], avoid: ['gluten', 'lactose']
+  },
+  'mcd-fries': {
+    title: 'Large fries', emoji: '🍟', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 3,
+    ingredients: [['fast-food-fries', 150]],
+    toTaste: ['salt'],
+    steps: ['Order a large fries.', 'Log it as one item.', 'Adjust with servings for a smaller or larger portion.'],
+    tags: [], avoid: []
+  },
+  'mcd-drink': {
+    title: 'Soft drink', emoji: '🥤', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 1,
+    ingredients: [],
+    optionGroups: [
+      {key: 'drink', label: 'Drink', choices: [
+        {id: 'coke-zero', label: 'Coca-Cola Zero', ingredients: [['cola-zero', 500]]},
+        {id: 'coke', label: 'Coca-Cola', ingredients: [['cola', 500]]}
+      ]}
+    ],
+    toTaste: [],
+    steps: ['Choose your drink — Coca-Cola Zero by default, or switch to regular Coca-Cola.', 'Log it as one item.', 'Adjust with servings for a different size.'],
+    tags: [], avoid: []
+  },
   'mcd-bigmac-menu': {
     title: 'Big Mac menu (large)', emoji: '🍔', slot: 'dinner', role: 'full',
     imageKey: 'fast-food-menu', slots: ['dinner', 'lunch'], occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['big-mac', 215], ['fast-food-fries', 150], ['cola', 500]],
+    ingredients: [],
+    components: [
+      {recipeId: 'mcd-big-mac', portion: 1},
+      {recipeId: 'mcd-fries', portion: 1},
+      {recipeId: 'mcd-drink', portion: 1}
+    ],
     toTaste: [],
-    steps: ['Order a Big Mac with large fries and a large Coke.', 'Log it as one item.', 'Adjust with servings if your order differed.'],
+    steps: ['A Big Mac, large fries and a drink (Coca-Cola Zero by default).', 'Tweak any item — remove it or change its portion — in the list above.', 'Log it as one meal.'],
     tags: [], avoid: ['gluten', 'lactose']
   },
   'mcd-nuggets-4': {

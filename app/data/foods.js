@@ -749,6 +749,11 @@ const FOODS = {
     kcal: 42, protein: 0, carbs: 10.6, fat: 0, satFat: 0, fiber: 0, sugars: 10.6, freeSugars: 10.6, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry', iconKey: 'cola', src: 'USDA FDC 174819-style cola soft drink'
   },
+  'cola-zero': {
+    name: 'Cola, zero sugar', per: 100, unit: 'ml',
+    kcal: 0.3, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'none',
+    flags: [], cat: 'Pantry', iconKey: 'cola', src: 'Coca-Cola Zero Sugar (~0.3 kcal/100ml, no sugar)'
+  },
   // Fast-food ESTIMATE foods (EU/UK brand nutrition, 2026-08-31) — used only by the occasional
   // McDonald's / Burger King "menu" Meals below. EU portions are smaller than US (esp. drinks +
   // fries). Per-100g = the brand per-item figure / the item weight; avgG lets them log by

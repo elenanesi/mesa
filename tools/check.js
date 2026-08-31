@@ -1691,7 +1691,7 @@ function testMealComponentsResolveOutOfBook(ctx){
 function testMealPerComponentLog(ctx){
   run(ctx, "MESA_TEST_TODAY='2026-07-13'; logHistory={};");
   const full = call(ctx, 'nutritionForRecipeComponents', [[{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 1}]]).kcal;
-  assert(full > 1200, 'meal per-component: the full McDonald\'s Meal sums both sub-recipes', 'kcal=' + full);
+  assert(full > 1000, 'meal per-component: the full McDonald\'s Meal sums both sub-recipes (Big Mac menu + nuggets)', 'kcal=' + full);
   // Log it WITHOUT the nuggets — a removed sub-recipe is dropped from the components (portion 0 is
   // coerced back to 1 by recipeNutrition, so "removed" means absent, not stored at 0). kcal drops to
   // just the burger menu.
@@ -7187,7 +7187,7 @@ function testRecipeOptions(ctx){
   (function(){
     // eggsturkey joined the optionGroups set later (bread choice: wholegrain/white) — kept
     // in this list alphabetically alongside the original D2 four.
-    const expectedOptionGroupIds = ['baked-fish', 'eggsturkey', 'french-toast-fruit-maple', 'pasta', 'pizza', 'yogurt', 'yogurt-fruit-snack'];
+    const expectedOptionGroupIds = ['baked-fish', 'eggsturkey', 'french-toast-fruit-maple', 'mcd-drink', 'pasta', 'pizza', 'yogurt', 'yogurt-fruit-snack'];
     const actualOptionGroupIds = Object.keys(RECIPES_DB).filter(function(id){
       return Array.isArray(RECIPES_DB[id].optionGroups) && RECIPES_DB[id].optionGroups.length;
     }).sort();

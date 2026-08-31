@@ -102,10 +102,15 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
     const recipe = normalizeRecipeRoleField(deepClone(data));
     const titleValid = typeof recipe.title === 'string' && !!recipe.title;
     const slotValid = typeof recipe.slot === 'string' && VALID_SLOTS.indexOf(recipe.slot) !== -1;
-    // A recipe-of-recipes (engine.js recipeEffectiveIngredients) aggregates sub-recipes via
-    // `components` and legitimately carries an empty `ingredients` list — accept it too.
+    // A recipe legitimately carries an empty `ingredients` list when it gets them another way:
+    // a recipe-of-recipes via `components`, or an option-groups recipe whose only ingredients come
+    // from its choices (e.g. the fast-food drink: Coke Zero / Coke). Accept those too (mirrors
+    // data/validate.js's ingredient-source rule) — else such a recipe is silently dropped from the
+    // D1 catalog and any Meal referencing it loses that component.
     const ingredientsValid = Array.isArray(recipe.ingredients)
-      && (recipe.ingredients.length > 0 || (Array.isArray(recipe.components) && recipe.components.length > 0));
+      && (recipe.ingredients.length > 0
+        || (Array.isArray(recipe.components) && recipe.components.length > 0)
+        || (Array.isArray(recipe.optionGroups) && recipe.optionGroups.length > 0));
     if(!titleValid || !slotValid || !ingredientsValid){
       rejectedCount++;
       if(rejectedIds.length < 10) rejectedIds.push(id);
