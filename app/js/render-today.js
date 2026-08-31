@@ -136,9 +136,22 @@ function openAddMealSheetForContext(ctx){
   // "I ate something different" (a typed ESTIMATE). Both capabilities stay reachable in one
   // place. The label reflects current eaten-out state so the Week/Today row's state is still
   // legible at a glance.
-  html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">'
-    + (isEatenOut ? '🍴 Eaten out — tap to change' : '🍴 Ate out / eating out')
-    + '</button>';
+  // When there's a planned meal in this slot, the button is a DIRECT one-tap toggle: its label
+  // already reads like a toggle ("Ate out / eating out" ↔ "Eaten out — tap to change"), so tapping
+  // it marks/unmarks the planned meal eaten out right away (keeping Mesa's computed macros) instead
+  // of opening a sheet the user then has to complete — the reported "I tapped it but it stayed
+  // un-clicked" confusion. "Log something different" stays as a secondary link for the estimate path.
+  const hasPlannedMeal = !!(entry && entry.recipeId) || !!logged;
+  if(hasPlannedMeal){
+    html += '<button class="cta ghostbtn" onclick="ateOutToggleDirect()">'
+      + (isEatenOut ? '🍴 Eaten out — tap to change' : '🍴 Ate out / eating out')
+      + '</button>'
+      + '<p class="sub" style="margin-top:4px;text-align:center"><button class="week-standalone-link" onclick="openAteOutSheet(addMealCtx)">…or log something different you ate</button></p>';
+  } else {
+    html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">'
+      + '🍴 Ate out / eating out'
+      + '</button>';
+  }
 
   // "Save a composed meal as a recipe" (#5b follow-up): flattens this meal's base recipe +
   // extras into a new custom recipe (library.js:saveComposedMealAsRecipe) — only worth
@@ -214,19 +227,35 @@ function openAddMealSheetForContext(ctx){
           + '</div>';
       }
     }
-    const stepper = isBase ? '' : ('<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
+    const stepperInner = isBase ? '' : ('<span class="sv-stepper">'
       + '<button data-act="minus" aria-label="' + (isRecipe ? 'Fewer servings of ' : 'Less ') + htmlAttr(title) + '">-</button>'
       + valPart
       + '<button data-act="plus" aria-label="' + (isRecipe ? 'More servings of ' : 'More ') + htmlAttr(title) + '">+</button>'
       + '</span>');
-    html += '<div class="altrow" style="cursor:default" ' + (isRecipe ? 'data-recipe-id="' + htmlAttr(c.recipeId) + '"' : 'data-food-id="' + htmlAttr(c.foodId) + '"') + '>'
-      + '<div class="ae">' + emoji + '</div>'
-      + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
-      + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div>'
-      + unitPicker + '</div>'
-      + stepper
-      + (isBase ? '' : '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" data-act="remove">✕ Remove</button>')
-      + '</div>';
+    const removeBtn = isBase ? '' : '<button class="tag-undo meal-extra-remove" data-act="remove" aria-label="Remove ' + htmlAttr(title) + '">✕</button>';
+    if(isRecipe){
+      // Recipe / base component: the portion stepper (or nothing, for the base) sits compactly on
+      // the right — no unit picker to make room for, so the single row fits fine.
+      html += '<div class="altrow" style="cursor:default" data-recipe-id="' + htmlAttr(c.recipeId) + '">'
+        + '<div class="ae">' + emoji + '</div>'
+        + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
+        + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+        + (stepperInner ? '<span class="meal-extra-side">' + stepperInner + '</span>' : '')
+        + removeBtn
+        + '</div>';
+    } else {
+      // Food extra: the name (+ a compact ✕) goes on top; the amount stepper and unit picker get
+      // their OWN full-width line below. Cramming them onto the name's row crushed it into ugly
+      // wrapping (owner feedback) — this gives every control room to breathe.
+      html += '<div class="altrow meal-extra-row" style="cursor:default" data-food-id="' + htmlAttr(c.foodId) + '">'
+        + '<div class="ae">' + emoji + '</div>'
+        + '<div class="at">'
+        +   '<div class="an-row"><span class="an">' + escapeHtml(title) + '</span>' + removeBtn + '</div>'
+        +   '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div>'
+        +   '<div class="meal-extra-controls">' + stepperInner + unitPicker + '</div>'
+        + '</div>'
+        + '</div>';
+    }
   });
 
   html += '<div class="shop-cat">Ingredients</div>'
@@ -517,6 +546,12 @@ function ateOutTogglePlanned(){
   addMealCtx = ateOutSheet.ctx;
   ateOutSheet = null;
   toggleWeekMealEatenOut();
+}
+
+// One-tap "eating out" toggle straight from the add-meal sheet (no intermediate ate-out sheet) —
+// used when the slot has a planned meal. addMealCtx is already set by openAddMealSheetForContext.
+function ateOutToggleDirect(){
+  if(addMealCtx) toggleWeekMealEatenOut();
 }
 
 // Split this occurrence into two separate dishes, or merge two back into one — see the
