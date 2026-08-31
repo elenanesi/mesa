@@ -1667,13 +1667,54 @@ const RECIPES_DB = {
     steps: ['Order a 4-piece Chicken McNuggets with a dip.', 'Log it as one item.', 'Adjust with servings if you had more or fewer.'],
     tags: [], avoid: ['gluten']
   },
+  // Bacon King menu, divided into its sub-items (owner spec 2026-08-31) — same as the Big Mac menu:
+  // the burger, the fries and the drink, each removable/rescalable in the "Made of" list, with the
+  // drink defaulting to Coca-Cola Zero (full-sugar Coke as an option).
+  'bk-bacon-king': {
+    title: 'Bacon King', emoji: '🍔', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 3,
+    ingredients: [['bacon-king', 290]],
+    toTaste: [],
+    steps: ['Order a Bacon King.', 'Log it as one item.', 'Adjust with servings for a different burger size.'],
+    tags: [], avoid: ['gluten', 'lactose']
+  },
+  'bk-fries': {
+    title: 'Fries', emoji: '🍟', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 3,
+    ingredients: [['fast-food-fries', 91]],
+    toTaste: ['salt'],
+    steps: ['Order a fries.', 'Log it as one item.', 'Adjust with servings for a smaller or larger portion.'],
+    tags: [], avoid: []
+  },
+  'bk-drink': {
+    title: 'Soft drink', emoji: '🥤', slot: 'snack', role: 'full',
+    slots: ['snack', 'side'], occasional: true,
+    styles: ['balanced'], time: 1,
+    ingredients: [],
+    optionGroups: [
+      {key: 'drink', label: 'Drink', choices: [
+        {id: 'coke-zero', label: 'Coca-Cola Zero', ingredients: [['cola-zero', 500]]},
+        {id: 'coke', label: 'Coca-Cola', ingredients: [['cola', 500]]}
+      ]}
+    ],
+    toTaste: [],
+    steps: ['Choose your drink — Coca-Cola Zero by default, or switch to regular Coca-Cola.', 'Log it as one item.', 'Adjust with servings for a different size.'],
+    tags: [], avoid: []
+  },
   'bk-baconking-menu': {
     title: 'Bacon King menu', emoji: '🍔', slot: 'dinner', role: 'full',
     imageKey: 'fast-food-menu', slots: ['dinner', 'lunch'], occasional: true,
     styles: ['balanced'], time: 5,
-    ingredients: [['bacon-king', 290], ['fast-food-fries', 91], ['cola', 500]],
+    ingredients: [],
+    components: [
+      {recipeId: 'bk-bacon-king', portion: 1},
+      {recipeId: 'bk-fries', portion: 1},
+      {recipeId: 'bk-drink', portion: 1}
+    ],
     toTaste: [],
-    steps: ['Order a Bacon King with fries and a drink.', 'Log it as one item.', 'Adjust with servings if your order differed.'],
+    steps: ['A Bacon King, fries and a drink (Coca-Cola Zero by default).', 'Tweak any item — remove it or change its portion — in the list above.', 'Log it as one meal.'],
     tags: [], avoid: ['gluten', 'lactose']
   },
   'bk-nuggets-4': {

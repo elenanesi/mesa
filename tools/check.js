@@ -1705,6 +1705,22 @@ function testMealPerComponentLog(ctx){
   call(ctx, 'logPlanEntry', ['2026-07-13', 'elena', 'dinner', 'mcdonald-menu', 1, [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 0.5}]]);
   const half = call(ctx, 'loggedPlanEntryForSlot', ['2026-07-13', 'elena', 'dinner']);
   assert(half.kcal > noNug.kcal && half.kcal < full, 'meal per-component: a rescaled sub-recipe (2 of 4 nuggets) lands between no-nuggets and full', 'half=' + half.kcal + ' noNug=' + noNug.kcal + ' full=' + full);
+
+  // ISOLATION (owner spec 2026-08-31): one person tweaking their meal's sub-portions must NOT change
+  // the OTHER person's portions or the recipe's default components. The tweak lives only in that
+  // person's own log entry.
+  run(ctx, "logHistory={};");
+  const defaultsBefore = JSON.stringify(get(ctx, 'RECIPES_DB')['mcdonald-menu'].components);
+  call(ctx, 'logPlanEntry', ['2026-07-13', 'elena', 'dinner', 'mcdonald-menu', 1, [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 1}]]);
+  call(ctx, 'logPlanEntry', ['2026-07-13', 'partner', 'dinner', 'mcdonald-menu', 1, [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 1}]]);
+  const partnerBefore = call(ctx, 'loggedPlanEntryForSlot', ['2026-07-13', 'partner', 'dinner']).kcal;
+  // Elena eats "half this, half that" (both sub-recipes at 0.5x) — writes ONLY her own log.
+  call(ctx, 'logPlanEntry', ['2026-07-13', 'elena', 'dinner', 'mcdonald-menu', 1, [{recipeId: 'mcd-bigmac-menu', portion: 0.5}, {recipeId: 'mcd-nuggets-4', portion: 0.5}]]);
+  const elenaHalf = call(ctx, 'loggedPlanEntryForSlot', ['2026-07-13', 'elena', 'dinner']).kcal;
+  const partnerAfter = call(ctx, 'loggedPlanEntryForSlot', ['2026-07-13', 'partner', 'dinner']).kcal;
+  assert(elenaHalf < partnerBefore, 'meal isolation: Elena\'s half-portions lower HER kcal', 'elenaHalf=' + elenaHalf + ' partner=' + partnerBefore);
+  assert(partnerAfter === partnerBefore, 'meal isolation: the partner\'s logged meal is UNCHANGED by Elena\'s tweak', 'before=' + partnerBefore + ' after=' + partnerAfter);
+  assert(JSON.stringify(get(ctx, 'RECIPES_DB')['mcdonald-menu'].components) === defaultsBefore, 'meal isolation: the recipe\'s DEFAULT components are unchanged by a per-person tweak', '');
   run(ctx, "logHistory={};");
 }
 
@@ -7187,7 +7203,7 @@ function testRecipeOptions(ctx){
   (function(){
     // eggsturkey joined the optionGroups set later (bread choice: wholegrain/white) — kept
     // in this list alphabetically alongside the original D2 four.
-    const expectedOptionGroupIds = ['baked-fish', 'eggsturkey', 'french-toast-fruit-maple', 'mcd-drink', 'pasta', 'pizza', 'yogurt', 'yogurt-fruit-snack'];
+    const expectedOptionGroupIds = ['baked-fish', 'bk-drink', 'eggsturkey', 'french-toast-fruit-maple', 'mcd-drink', 'pasta', 'pizza', 'yogurt', 'yogurt-fruit-snack'];
     const actualOptionGroupIds = Object.keys(RECIPES_DB).filter(function(id){
       return Array.isArray(RECIPES_DB[id].optionGroups) && RECIPES_DB[id].optionGroups.length;
     }).sort();
