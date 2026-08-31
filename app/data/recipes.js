@@ -1956,6 +1956,102 @@ const RECIPES_DB = {
     steps: ['Blitz or mash the cannellini beans with lemon, garlic and cumin.', 'Cut the carrots into batons.', 'Serve the batons with the dip and a drizzle of olive oil.'],
     tags: ['veggie', 'highFiber', 'heart'],
     avoid: []
+  },
+
+  // ── Instagram-inspired batch #1 (2026-08-31) ──────────────────────────────
+  // Built from full-recipe captions Elena saved (see session ig-recipes.md). Chef+nutritionist pass:
+  // savoury mains lightened (butter/oil trimmed, veg + protein anchored to keep day-balance green);
+  // the dessert stays `occasional`, kept as-is. New foods added to foods.js: rice-paper, nori,
+  // almond-flour. Sources credited in each recipe's notes via the originating creator.
+  'peanut-tofu-noodles': {
+    title: 'Peanut butter tofu noodles', emoji: '🍜', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['egg-noodles', 85], ['tofu', 130], ['peanut-butter', 26], ['carrots', 60], ['bell-pepper', 60], ['soy-sauce', 15], ['honey', 6], ['olive-oil', 5]],
+    toTaste: ['garlic', 'ginger', 'lime', 'chilli', 'sesame', 'coriander'],
+    steps: ['Cook the noodles; press and cube the tofu and pan-sear until golden.', 'Whisk peanut butter, soy, honey, grated ginger, garlic, lime and a splash of noodle water into a glossy sauce.', 'Toss noodles, tofu, ribboned carrot and pepper through the sauce; finish with chilli, sesame and coriander.'],
+    tags: ['muscle', 'veggie'],
+    avoid: ['gluten', 'nuts']
+  },
+  'turkish-eggs-cilbir': {
+    title: 'Turkish eggs (çılbır)', emoji: '🍳', slot: 'breakfast', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 15,
+    ingredients: [['eggs', 120], ['greek-yogurt', 180], ['butter', 12], ['olive-oil', 3]],
+    toTaste: ['garlic', 'dill', 'chilli', 'lemon', 'salt'],
+    steps: ['Stir grated garlic and a pinch of salt through the yogurt and spread on a plate.', 'Poach the eggs and set them on the yogurt.', 'Melt the butter with a little oil and chilli flakes until foaming; spoon over and scatter dill.'],
+    tags: ['muscle', 'veggie'],
+    avoid: ['lactose']
+  },
+  'confit-cherry-tomatoes': {
+    title: 'Confit cherry tomatoes', emoji: '🍅', slot: 'side', role: 'side',
+    season: 'evergreen', styles: ['balanced', 'lowcarb'], time: 45,
+    ingredients: [['cherry-tomatoes', 200], ['olive-oil', 12], ['granulated-sugar', 3]],
+    toTaste: ['garlic', 'thyme', 'lemon', 'salt'],
+    steps: ['Nestle the tomatoes in a small dish with garlic, thyme and lemon zest.', 'Barely cover with olive oil and a pinch of sugar and salt.', 'Slow-roast at 150°C for ~40 min until slumped and sweet; serve on toast, yogurt or pasta.'],
+    tags: ['veggie', 'heart'],
+    avoid: []
+  },
+  'baked-berry-yogurt': {
+    title: 'Baked berry yogurt breakfast', emoji: '🫐', slot: 'breakfast', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['greek-yogurt', 170], ['eggs', 100], ['almond-flour', 12], ['mixed-berries', 80], ['honey', 6]],
+    toTaste: ['vanilla', 'cinnamon'],
+    steps: ['Whisk yogurt, eggs, almond flour and vanilla until smooth.', 'Fold in half the berries and pour into a small baking dish.', 'Top with the rest of the berries and bake at 175°C for ~20 min until just set; drizzle with honey.'],
+    tags: ['muscle', 'veggie'],
+    avoid: ['lactose', 'nuts']
+  },
+  'crema-di-zucca-ricotta': {
+    title: 'Squash soup with ricotta', emoji: '🎃', slot: 'dinner', role: 'full',
+    season: 'winter/autumn', styles: ['balanced'], time: 35,
+    ingredients: [['pumpkin', 350], ['potatoes', 120], ['carrots', 60], ['red-onion', 40], ['cannellini-beans', 100], ['olive-oil', 10], ['ricotta', 40]],
+    toTaste: ['ginger', 'garlic', 'rosemary', 'nutmeg', 'chilli', 'salt'],
+    steps: ['Soften onion, carrot, garlic and ginger in the oil; add squash and potato.', 'Cover with water and simmer until tender, then blend smooth with the beans for body and protein.', 'Season with nutmeg and rosemary; swirl ricotta through each bowl.'],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: ['lactose']
+  },
+  'sweet-potato-gnocchi-sage': {
+    title: 'Sweet-potato gnocchi, sage butter', emoji: '🍠', slot: 'dinner', role: 'full',
+    season: 'winter/autumn', styles: ['balanced'], time: 40,
+    ingredients: [['sweet-potato', 180], ['potatoes', 130], ['00-flour', 80], ['eggs', 20], ['butter', 16], ['parmesan', 18]],
+    toTaste: ['sage', 'garlic', 'nutmeg', 'black pepper', 'salt'],
+    steps: ['Bake the sweet potato and potato, then rice them and cool.', 'Work in the egg yolk and just enough flour to form a soft dough; roll, cut and mark the gnocchi.', 'Boil until they float; toss through gently browned butter with sage and a little parmesan.'],
+    tags: ['veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+  'ham-egg-in-a-hole': {
+    title: 'Ham & egg in a hole', emoji: '🥚', slot: 'breakfast', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['wholewheat-bread', 60], ['eggs', 60], ['prosciutto-cotto', 30], ['scamorza', 25], ['butter', 6]],
+    toTaste: ['chives', 'black pepper', 'salt'],
+    steps: ['Press a hollow in the bread, butter the edges and lay ham in the well.', 'Crack an egg into the hollow and scatter grated scamorza on the rim.', 'Bake at 180°C for ~12–15 min until the white is set; finish with chives and pepper.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['gluten', 'lactose']
+  },
+  'savoury-breakfast-muffins': {
+    title: 'Savoury cheese & herb muffins', emoji: '🧁', slot: 'breakfast', role: 'full',
+    season: 'evergreen', styles: ['balanced'], time: 30,
+    ingredients: [['00-flour', 55], ['eggs', 55], ['greek-yogurt', 40], ['olive-oil', 12], ['parmesan', 20], ['mozzarella', 15], ['bell-pepper', 25], ['red-onion', 10]],
+    toTaste: ['dill', 'basil', 'chilli', 'baking powder', 'garlic', 'salt'],
+    steps: ['Whisk eggs, yogurt and oil, then fold in flour with baking powder.', 'Stir through the cheeses, diced pepper, onion and herbs.', 'Spoon into a muffin tin and bake at 200°C for ~18 min until golden.'],
+    tags: ['muscle', 'veggie'],
+    avoid: ['gluten', 'lactose']
+  },
+  'crispy-ricepaper-sushi': {
+    title: 'Crispy rice-paper sushi rolls', emoji: '🍣', slot: 'dinner', role: 'full',
+    season: 'evergreen', styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['rice-paper', 44], ['nori', 9], ['tofu', 150], ['rice', 55], ['avocado', 50], ['cucumber', 60], ['carrots', 40], ['soy-sauce', 12], ['olive-oil', 6]],
+    toTaste: ['ginger', 'sesame', 'chilli', 'lime'],
+    steps: ['Cook and season the rice; cut tofu, avocado, cucumber and carrot into batons.', 'Lay a nori sheet on a dampened rice-paper wrapper, add rice and fillings, and roll tightly.', 'Pan-fry in a little oil until crisp all over; slice and serve with soy, ginger and chilli.'],
+    tags: ['muscle', 'veggie', 'highFiber'],
+    avoid: []
+  },
+  'choc-yogurt-cheesecake': {
+    title: 'Chocolate yogurt cheesecake', emoji: '🍫', slot: 'snack', role: 'full', occasional: true,
+    season: 'evergreen', styles: ['balanced'], time: 35,
+    ingredients: [['dark-chocolate-85', 25], ['greek-yogurt', 25], ['eggs', 25]],
+    toTaste: [],
+    steps: ['Melt the chocolate and whisk in the yogurt and eggs until glossy.', 'Pour into a small lined tin.', 'Bake (or air-fry) at 150°C for ~30 min until just set; chill before slicing. A per-slice serving.'],
+    tags: ['veggie'],
+    avoid: ['lactose']
   }
 
 };

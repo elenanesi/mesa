@@ -783,6 +783,23 @@ const FOODS = {
     kcal: 100, protein: 1.2, carbs: 25.0, fat: 0.1, satFat: 0, fiber: 0.3, sugars: 22.0, freeSugars: 22.0, sugarQuality: 'added/free',
     avgG: 15, measures: {tbsp: 15, tsp: 5}, flags: [], cat: 'Pantry', src: 'USDA FDC 168556-style tomato ketchup'
   },
+  // Foods added for the Instagram-inspired recipe batch (2026-08-31) — default ingredient icon (no
+  // iconKey), same as lime. Macros drive nutrition (kcal = 4p+4c+9f), so the kcal field is display-only.
+  'rice-paper': {
+    name: 'Rice paper (spring-roll wrapper)', per: 100, unit: 'g',
+    kcal: 342, protein: 0.5, carbs: 84.0, fat: 0.5, satFat: 0.1, fiber: 1.5, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: 11, flags: [], cat: 'Bakery', src: 'Dried rice-paper wrapper (~11 g per sheet)'
+  },
+  'nori': {
+    name: 'Nori seaweed, dried', per: 100, unit: 'g',
+    kcal: 232, protein: 41.0, carbs: 12.0, fat: 1.5, satFat: 0.3, fiber: 30.0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    avgG: 3, flags: [], cat: 'Produce', src: 'Dried nori/laver sheets (~3 g per sheet)'
+  },
+  'almond-flour': {
+    name: 'Almond flour', per: 100, unit: 'g',
+    kcal: 614, protein: 21.0, carbs: 20.0, fat: 50.0, satFat: 3.8, fiber: 11.0, sugars: 4.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: ['nuts'], cat: 'Pantry', src: 'Ground blanched almonds (almond flour/meal)'
+  },
   'capers': {
     name: 'Capers, brined, drained', per: 100, unit: 'g',
     kcal: 37, protein: 2.4, carbs: 4.9, fat: 0.9, satFat: 0.1, fiber: 3.2,
