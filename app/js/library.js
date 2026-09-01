@@ -1369,7 +1369,7 @@ let newFoodComponentPickerReturnScroll = null;
 
 function openNewFoodForm(){
   rememberFoodListReturn();
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: [], avgG: null, measures: {}};
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, supplement: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: [], avgG: null, measures: {}};
   renderNewFoodFormSheet(false);
 }
 
@@ -1395,6 +1395,7 @@ function openEditFoodForm(id){
     sugarQuality: dm.sugarQuality || f.sugarQuality || 'unknown',
     flags: Array.isArray(f.flags) ? f.flags.slice() : [],
     breakfastPair: !!f.breakfastPair,
+    supplement: f.supplement === true,
     iconKey: safeIngredientIconKey(f.iconKey) || null,
     iconPickerOpen: false,
     isComposite: composite,
@@ -1455,7 +1456,9 @@ function computeNewFoodKcal(f){ return Math.round(4 * f.protein + 4 * f.carbs + 
 function newFoodCapNotes(f){
   const notes = [];
   if(f.satFat > f.fat + 1e-9) notes.push('Sat. fat can’t be more than total fat.');
-  if(f.fiber > f.carbs + 1e-9) notes.push('Fiber can’t be more than total carbs.');
+  // Supplements (e.g. psyllium/fibre or protein powder) list fibre separately from net carbs, so
+  // the whole-food "fibre ≤ carbs" assumption doesn't hold — exempt them from just this one check.
+  if(!f.supplement && f.fiber > f.carbs + 1e-9) notes.push('Fiber can’t be more than total carbs.');
   if(f.sugars > f.carbs + 1e-9) notes.push('Sugars can’t be more than total carbs.');
   if(f.freeSugars > f.sugars + 1e-9) notes.push('Free sugars can’t be more than total sugars.');
   if(f.protein + f.carbs + f.fat > 100 + 1e-9) notes.push('Protein + carbs + fat can’t add up to more than 100g per 100g.');
@@ -1485,6 +1488,11 @@ function buildNewFoodFormSheet(){
   html += '<div class="field"><label>Season</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(f.season) === s ? ' chipsel' : '') + '" onclick="setNewFoodSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
     + '</div></div>';
+  html += '<div class="field"><label>Supplement</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+    + '<button class="pill ghost chip-preset' + (!f.supplement ? ' chipsel' : '') + '" onclick="setNewFoodSupplement(false)">Regular food</button>'
+    + '<button class="pill ghost chip-preset' + (f.supplement ? ' chipsel' : '') + '" onclick="setNewFoodSupplement(true)">Supplement</button>'
+    + '</div>'
+    + '<div class="cap-note">A supplement (e.g. psyllium fibre or protein powder) can list more fibre than carbs — this relaxes that one check. It still logs and counts its macros like any food; the planner never adds it on its own.</div></div>';
   html += '</div></details>';
 
   if(f.isComposite){
@@ -1655,6 +1663,7 @@ function buildNewFoodVariantsSection(){
 function setNewFoodCat(c){ newFoodForm.cat = c; renderNewFoodFormSheet(); }
 function setNewFoodCompositeMode(on){ newFoodForm.isComposite = !!on; renderNewFoodFormSheet(); }
 function setNewFoodBought(on){ newFoodForm.bought = !!on; renderNewFoodFormSheet(); }
+function setNewFoodSupplement(on){ newFoodForm.supplement = !!on; renderNewFoodFormSheet(); }
 function setNewFoodSeason(season){ newFoodForm.season = normalizeSeason(season); renderNewFoodFormSheet(); }
 function setNewFoodSugarQuality(value){ newFoodForm.sugarQuality = value; renderNewFoodFormSheet(); }
 function toggleNewFoodFlag(fl){
@@ -1978,7 +1987,7 @@ function saveNewFood(){
 
   if(f.protein < 0 || f.carbs < 0 || f.fat < 0 || f.satFat < 0 || f.fiber < 0 || f.sugars < 0 || f.freeSugars < 0){ toast('Values must be zero or more'); return; }
   if(f.satFat > f.fat + 1e-9){ toast('Sat. fat can’t exceed total fat'); return; }
-  if(f.fiber > f.carbs + 1e-9){ toast('Fiber can’t exceed total carbs'); return; }
+  if(!f.supplement && f.fiber > f.carbs + 1e-9){ toast('Fiber can’t exceed total carbs'); return; }
   if(f.sugars > f.carbs + 1e-9){ toast('Sugars can’t exceed total carbs'); return; }
   if(f.freeSugars > f.sugars + 1e-9){ toast('Free sugars can’t exceed total sugars'); return; }
   if(f.protein + f.carbs + f.fat > 100 + 1e-9){ toast('Protein + carbs + fat can’t exceed 100g per 100g'); return; }
@@ -1994,6 +2003,10 @@ function saveNewFood(){
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   });
   delete saved.components; delete saved.yieldG; delete saved.bought; delete saved.variants;
+  // Supplement flag (owner 2026-09-01, fibre/protein powders): only stored when true, so ordinary
+  // foods stay unchanged. Exempts the food from the fibre≤carbs sanity check above; it still logs,
+  // plans and counts its macros (incl. fibre) exactly like any other food — no auto-fill.
+  if(f.supplement === true) saved.supplement = true; else delete saved.supplement;
   // Amounts & measures (owner 2026-08-24): preserve an edited per-item weight + volume gram map
   // (were previously dropped — `delete saved.avgG` — which stripped a food's per-item logging on
   // any edit). Stored per-100g nutrition + avgG-as-item-grams is the unified representation the

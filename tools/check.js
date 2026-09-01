@@ -553,6 +553,43 @@ function testEditableFoodMeasures(ctx){
   }
 }
 
+// Supplement foods (owner 2026-09-01, psyllium/fibre + future protein powders): a food flagged
+// `supplement` is exempt from ONLY the whole-food "fibre ≤ carbs" sanity check (fibre is listed
+// apart from net carbs on these), while a regular food with fibre > carbs is still blocked. The
+// flag round-trips through save/edit; all other physical checks still apply.
+function testSupplementFood(ctx){
+  const savedCF = cloneJSON(get(ctx, 'customFoods'));
+  const savedFO = cloneJSON(get(ctx, 'foodOverrides'));
+  try{
+    run(ctx, "var __supStub={toast:toast,applyProf:applyProf,returnToFoodLibrary:returnToFoodLibrary,renderFoodLibraryCount:renderFoodLibraryCount,openFoodLibrary:openFoodLibrary}; toast=function(){}; applyProf=function(){}; returnToFoodLibrary=function(){}; renderFoodLibraryCount=function(){}; openFoodLibrary=function(){};");
+
+    // (a) newFoodCapNotes: the fibre note is suppressed for a supplement, kept for a regular food.
+    const supNotes = call(ctx, 'newFoodCapNotes', [{protein:2, carbs:5, fat:0.5, satFat:0.1, fiber:85, sugars:0, freeSugars:0, supplement:true}]);
+    const regNotes = call(ctx, 'newFoodCapNotes', [{protein:2, carbs:5, fat:0.5, satFat:0.1, fiber:85, sugars:0, freeSugars:0, supplement:false}]);
+    assert(!supNotes.some(function(n){ return /Fiber/i.test(n); }), 'newFoodCapNotes: supplement is exempt from the fibre≤carbs note', JSON.stringify(supNotes));
+    assert(regNotes.some(function(n){ return /Fiber/i.test(n); }), 'newFoodCapNotes: a regular food still gets the fibre≤carbs note', JSON.stringify(regNotes));
+
+    // (b) a supplement with fibre > carbs SAVES, keeps the flag and the fibre value.
+    run(ctx, "newFoodForm = {editingId:null, name:'Psyllium Husk Chk', cat:'Pantry', season:'evergreen', protein:2, carbs:5, fat:0.5, satFat:0.1, fiber:85, sugars:0, freeSugars:0, sugarQuality:'unknown', flags:[], breakfastPair:false, supplement:true, iconKey:null, iconPickerOpen:false, isComposite:false, components:[], yieldG:100, bought:false, variants:[], avgG:null, measures:{}};");
+    call(ctx, 'saveNewFood', []);
+    const FOODS1 = get(ctx, 'FOODS');
+    const psy = Object.keys(FOODS1).map(function(k){ return FOODS1[k]; }).filter(function(x){ return x.name === 'Psyllium Husk Chk'; })[0];
+    assert(psy && psy.supplement === true && psy.fiber === 85, 'saveNewFood: a supplement with fibre>carbs saves with the flag + fibre intact', JSON.stringify(psy && {supplement: psy.supplement, fiber: psy.fiber, carbs: psy.carbs}));
+
+    // (c) the SAME macros as a regular food are blocked (no food created).
+    run(ctx, "newFoodForm = {editingId:null, name:'Bad Fibre Chk', cat:'Pantry', season:'evergreen', protein:2, carbs:5, fat:0.5, satFat:0.1, fiber:85, sugars:0, freeSugars:0, sugarQuality:'unknown', flags:[], breakfastPair:false, supplement:false, iconKey:null, iconPickerOpen:false, isComposite:false, components:[], yieldG:100, bought:false, variants:[], avgG:null, measures:{}};");
+    call(ctx, 'saveNewFood', []);
+    const FOODS2 = get(ctx, 'FOODS');
+    const bad = Object.keys(FOODS2).map(function(k){ return FOODS2[k]; }).filter(function(x){ return x.name === 'Bad Fibre Chk'; })[0];
+    assert(!bad, 'saveNewFood: a regular (non-supplement) food with fibre>carbs is still blocked', JSON.stringify(bad || null));
+  } finally {
+    ctx.__restoreSupCF = savedCF; ctx.__restoreSupFO = savedFO;
+    run(ctx, "customFoods = __restoreSupCF; foodOverrides = __restoreSupFO; applyCustomFoods(); newFoodForm = null;" +
+      "if(typeof __supStub !== 'undefined'){ toast=__supStub.toast; applyProf=__supStub.applyProf; returnToFoodLibrary=__supStub.returnToFoodLibrary; renderFoodLibraryCount=__supStub.renderFoodLibraryCount; openFoodLibrary=__supStub.openFoodLibrary; delete __supStub; }" +
+      "delete __restoreSupCF; delete __restoreSupFO; localStorage.removeItem(STORE_KEY);");
+  }
+}
+
 /* ---------------- "Add to pantry" on ingredient cards ----------------
    The button lives on both ingredient surfaces (the Library > Ingredients rows and the
    ingredient detail page) and routes through openPantryAddForFood(), which reuses P2's
@@ -12020,6 +12057,7 @@ function main(){
   runTest('foodMacros linearity', function(){ testFoodMacrosLinearity(ctx); });
   runTest('food measure units (item/tbsp/tsp/cup resolver)', function(){ testFoodMeasureUnits(ctx); });
   runTest('editable food amounts & measures (avgG + tbsp/tsp/cup survive save)', function(){ testEditableFoodMeasures(ctx); });
+  runTest('supplement foods: fibre>carbs allowed for supplements, blocked for regular foods', function(){ testSupplementFood(ctx); });
   runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
   runTest('soft lunch=carbs / dinner=protein bias', function(){ testSlotCompositionBias(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
