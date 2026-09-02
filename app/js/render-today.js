@@ -1930,10 +1930,15 @@ function logSkip(key, dateISO, anchorEl){
 // corrections, imports, and swaps, which should remain intentionally quiet.
 function triggerMealLogReward(payload, accountedBefore, isSkip){
   if(typeof accountedSlotCount !== 'function') return;
+  // Required (not raw SLOT_ORDER.length) denominator — see render.js:requiredSlotCount —
+  // so a snacks-off household or a day with a no-candidates slot can still reach "complete"
+  // once its actually-plannable slots are all accounted, instead of maxing out at 3/4 forever.
+  const requiredCount = typeof requiredSlotCount === 'function' ? requiredSlotCount(payload.dateISO, payload.person) : SLOT_ORDER.length;
   const completedToday = payload.dateISO === todayISO()
     && accountedBefore !== null
-    && accountedBefore < SLOT_ORDER.length
-    && accountedSlotCount(payload.dateISO, payload.person) === SLOT_ORDER.length;
+    && requiredCount > 0
+    && accountedBefore < requiredCount
+    && accountedSlotCount(payload.dateISO, payload.person) === requiredCount;
   if(completedToday){
     if(typeof playDayCompletionReward === 'function') playDayCompletionReward(payload);
     return;
@@ -2571,15 +2576,20 @@ function scrollToMealCard(slot){
      botanical wreath reward uses; a missed prior day is never surfaced here.
    todayKeystoneState() is pure (no DOM) so tools/check.js can pin the state machine directly. */
 function todayKeystoneState(dateISO, person, hour){
-  var total = SLOT_ORDER.length;
+  // requiredSlots (render.js) — not raw SLOT_ORDER — excludes a snacks-off person's snack
+  // slot and any slot the planner starved (reason:'no-candidates'), neither of which the
+  // user can ever confirm or skip, so the keystone can actually reach "complete" for those
+  // households instead of sitting at "3 of 4 set" forever.
+  var slots = typeof requiredSlots === 'function' ? requiredSlots(dateISO, person) : SLOT_ORDER;
+  var total = slots.length;
   var accounted = 0;      // confirmed OR skipped — a "handled" slot
   var pending = [];       // slots still open (status null)
-  SLOT_ORDER.forEach(function(slot){
+  slots.forEach(function(slot){
     if(slotLogStatus(dateISO, person, slot)) accounted++;
     else pending.push(slot);
   });
   var evening = Number(hour) >= 18;
-  if(accounted >= total){
+  if(total > 0 && accounted >= total){
     // Calm closure — reuse the wreath reward's exact sentence so the transient reward and the
     // resting card state speak in one voice.
     return {phase: 'complete', accounted: accounted, total: total, pending: pending, evening: evening,

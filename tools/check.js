@@ -5939,6 +5939,122 @@ function testTodayKeystone(ctx){
   run(ctx, "MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; logHistory = {};");
 }
 
+/* ---------------- day-completion denominator fix (requiredSlotCount) ----------------
+   REGRESSION: accountedSlotCount()/weekDaysSetCount()/the completion reward/keystone used
+   to compare against the raw SLOT_ORDER.length (always 4), but two kinds of slot are
+   structurally unfillable and can never be confirmed OR skipped by the user: (1) a
+   snacks-off person's snack cell (PROF[person].planSnacks === false — see planner.js
+   snacksOnFor()) and (2) a slot the planner starved (reason:'no-candidates' — planner.js
+   planEntryView(), zero legal recipes for that person/slot/diet). Those days maxed out at
+   3/4 accounted forever and could never register as "complete". render.js:requiredSlots()/
+   requiredSlotCount() fix the DENOMINATOR to only the slots actually plannable for that
+   person on that day; accountedSlotCount() is scoped to the same set so an excluded slot
+   can neither block nor vacuously satisfy completion. Pins the fix at every layer that used
+   to compare against SLOT_ORDER.length: accountedSlotCount/weekDaysSetCount (render.js),
+   playDayCompletionReward's own guard (render.js), triggerMealLogReward's decision of
+   whether to fire it (render-today.js), and todayKeystoneState's phase machine
+   (render-today.js) — the actual "Confirm today as planned" widget the bug report is about. */
+function testRequiredSlotCountCompletionFix(ctx){
+  const TODAY = FIXED_MONDAY;
+  const savedE = get(ctx, "PROF.elena.planSnacks");
+  const savedA = get(ctx, "PROF.partner.planSnacks");
+  function reset(){
+    run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = []; logHistory = {}; currentProf = 'elena'; PROF.elena.planSnacks = true; PROF.partner.planSnacks = true;");
+    return call(ctx, 'ensureWeekPlan', []);
+  }
+  function confirmSlot(slot){
+    const v = call(ctx, 'computeMenuForDate', [TODAY, 'elena'])[slot];
+    call(ctx, 'logPlanEntry', [TODAY, 'elena', slot, v.recipeId, v.portion, v.components]);
+  }
+  try {
+    // -------- (a) snacks-ON, no no-candidates: confirming all 4 slots still completes 4/4
+    // (no regression from the fix — the common case is byte-identical to before). --------
+    reset();
+    assert(call(ctx, 'requiredSlotCount', [TODAY, 'elena']) === 4,
+      'requiredSlotCount (a, baseline): snacks on, no no-candidates slot -> all 4 required', '');
+    ['breakfast', 'lunch', 'dinner', 'snack'].forEach(confirmSlot);
+    assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === 4,
+      'day-complete (a): a snacks-on household confirming all 4 slots still reaches 4/4', '');
+    const ksA = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+    assert(ksA.phase === 'complete', 'keystone (a): the unchanged 4/4-confirmed case still settles to complete', 'phase=' + ksA.phase);
+
+    // -------- (b) snacks-OFF household: day-complete after breakfast+lunch+dinner only —
+    // WAS IMPOSSIBLE before the fix (accountedSlotCount capped at 3, compared === 4). --------
+    reset();
+    run(ctx, "PROF.elena.planSnacks = false; weekPlans = {}; weekPlan = null;");
+    call(ctx, 'ensureWeekPlan', []);
+    assert(call(ctx, 'requiredSlotCount', [TODAY, 'elena']) === 3,
+      'requiredSlotCount (b): snacks off excludes the snack cell -> 3 required', 'got=' + call(ctx, 'requiredSlotCount', [TODAY, 'elena']));
+    ['breakfast', 'lunch', 'dinner'].forEach(confirmSlot);
+    const reqB = call(ctx, 'requiredSlotCount', [TODAY, 'elena']);
+    assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === reqB && reqB === 3,
+      'day-complete (b): snacks-off household reaches day-complete with only breakfast+lunch+dinner accounted', '');
+    const ksB = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+    assert(ksB.phase === 'complete', 'keystone (b): a snacks-off day settles to complete once its 3 required slots are accounted', 'phase=' + ksB.phase);
+
+    // -------- (c) a no-candidates slot: day-complete after the OTHER required slots are
+    // accounted, WITHOUT the user skipping the no-candidates slot. --------
+    reset();
+    let plan = call(ctx, 'ensureWeekPlan', []);
+    run(ctx, "weekPlans['" + plan.weekStartDate + "'].days[0].meals.dinner.elena = {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'};");
+    assert(call(ctx, 'requiredSlotCount', [TODAY, 'elena']) === 3,
+      'requiredSlotCount (c): a no-candidates dinner is excluded -> 3 required', 'got=' + call(ctx, 'requiredSlotCount', [TODAY, 'elena']));
+    ['breakfast', 'lunch', 'snack'].forEach(confirmSlot);
+    const reqC = call(ctx, 'requiredSlotCount', [TODAY, 'elena']);
+    assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === reqC && reqC === 3,
+      'day-complete (c): the other 3 required slots being accounted completes the day without touching the no-candidates dinner', '');
+    assert(call(ctx, 'slotLogStatus', [TODAY, 'elena', 'dinner']) === null,
+      'day-complete (c): the no-candidates dinner was never auto-confirmed or auto-skipped by the fix', String(call(ctx, 'slotLogStatus', [TODAY, 'elena', 'dinner'])));
+    const ksC = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+    assert(ksC.phase === 'complete', 'keystone (c): a day with an un-actioned no-candidates slot still settles to complete', 'phase=' + ksC.phase);
+
+    // -------- (d) a required slot is still unconfirmed -> NOT complete. --------
+    reset();
+    confirmSlot('breakfast');
+    call(ctx, 'markSlotSkipped', [TODAY, 'elena', 'lunch']);
+    call(ctx, 'markSlotSkipped', [TODAY, 'elena', 'dinner']);
+    // snack left untouched: required (snacks on, no no-candidates) but not yet accounted.
+    assert(call(ctx, 'requiredSlotCount', [TODAY, 'elena']) === 4, 'requiredSlotCount (d): snacks on, no no-candidates -> all 4 required', '');
+    assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === 3, 'day-complete (d): 3 of 4 required slots accounted, snack still pending', '');
+    const ksD = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+    assert(ksD.phase === 'partial' && JSON.stringify(ksD.pending) === JSON.stringify(['snack']),
+      'day-complete (d): the day correctly stays incomplete while a required slot (snack) is unconfirmed', 'phase=' + ksD.phase + ' pending=' + JSON.stringify(ksD.pending));
+
+    // -------- (e) fully-unplannable day (every slot no-candidates, requiredSlotCount 0) ->
+    // NEVER falsely reports complete (the required>0 guard). --------
+    reset();
+    plan = call(ctx, 'ensureWeekPlan', []);
+    run(ctx, "['breakfast','lunch','dinner','snack'].forEach(function(slot){ weekPlans['" + plan.weekStartDate + "'].days[0].meals[slot].elena = {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'}; });");
+    assert(call(ctx, 'requiredSlotCount', [TODAY, 'elena']) === 0,
+      'requiredSlotCount (e): every slot no-candidates -> 0 required', 'got=' + call(ctx, 'requiredSlotCount', [TODAY, 'elena']));
+    assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === 0, 'day-complete (e): nothing accounted either (nothing to account for)', '');
+    const ksE = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+    assert(ksE.phase !== 'complete', 'keystone (e): a fully-unplannable day (0 required) never falsely settles to complete', 'phase=' + ksE.phase);
+    assert(call(ctx, 'playDayCompletionReward', [{dateISO: TODAY, person: 'elena'}]) === false,
+      'day-complete (e): playDayCompletionReward refuses a fully-unplannable day (0 required slots) — never vacuously complete', '');
+    assert(call(ctx, 'weekDaysSetCount', ['elena']) === 0,
+      'weekDaysSetCount (e): a fully-unplannable today does not count as set', 'got=' + call(ctx, 'weekDaysSetCount', ['elena']));
+
+    // -------- weekDaysSetCount reflects (b) and (c) correctly (FIXED_MONDAY is the Monday
+    // of its own week, so only "today" is elapsed — same setup testTodayKeystone uses). --------
+    reset();
+    run(ctx, "PROF.elena.planSnacks = false; weekPlans = {}; weekPlan = null; logHistory = {};");
+    call(ctx, 'ensureWeekPlan', []);
+    ['breakfast', 'lunch', 'dinner'].forEach(confirmSlot);
+    assert(call(ctx, 'weekDaysSetCount', ['elena']) === 1,
+      'weekDaysSetCount (b): a snacks-off household\'s fully-accounted (3 of 3 required) today counts as 1 of 7 set', 'got=' + call(ctx, 'weekDaysSetCount', ['elena']));
+
+    reset();
+    plan = call(ctx, 'ensureWeekPlan', []);
+    run(ctx, "weekPlans['" + plan.weekStartDate + "'].days[0].meals.dinner.elena = {recipeId: null, portion: 1, kcal: 0, protein: 0, reason: 'no-candidates'}; logHistory = {};");
+    ['breakfast', 'lunch', 'snack'].forEach(confirmSlot);
+    assert(call(ctx, 'weekDaysSetCount', ['elena']) === 1,
+      'weekDaysSetCount (c): a today with a no-candidates dinner, otherwise fully accounted, counts as 1 of 7 set', 'got=' + call(ctx, 'weekDaysSetCount', ['elena']));
+  } finally {
+    run(ctx, "PROF.elena.planSnacks = " + (savedE === false ? 'false' : 'true') + "; PROF.partner.planSnacks = " + (savedA === false ? 'false' : 'true') + "; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {}; mealRules = [];");
+  }
+}
+
 /* ---------------- Phase 3 D2: end-of-week "week in review" moment ----------------
    buildWeekReview() is the pure model behind the Week-screen review card. Pins the "moment"
    window (current week, Friday on, at least one day SET) and the positive/quiet-reset framing
@@ -12146,6 +12262,7 @@ function main(){
   runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });
+  runTest('day-completion denominator (requiredSlotCount): snacks-off + no-candidates slots never block completion', function(){ testRequiredSlotCountCompletionFix(ctx); });
   runTest('Week review moment (Phase 3 D2)', function(){ testWeekReview(ctx); });
   runTest('What do you feel like: diet-aware protein chips', function(){ testProteinCravings(ctx); });
   runTest('Onboarding structure (Phase 3 D3)', function(){ testOnboardingStructure(); });

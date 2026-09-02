@@ -38,11 +38,43 @@ function rewardMotionReduced(){
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 }
 
+// Which of SLOT_ORDER are actually plannable for `person` on `dateISO` — the DENOMINATOR
+// for day completion. Two structural exclusions, neither of which the user can act on:
+//   - snack, when the person has snacks off (PROF[person].planSnacks === false) — reuses
+//     planner.js's snacksOnFor(), the one place that flag is already interpreted, so this
+//     never re-derives the on/off rule a second, possibly-inconsistent way.
+//   - any slot whose planned view carries reason:'no-candidates' (planner.js:planEntryView
+//     — the planner found zero legal recipes for this person/slot/diet). computeMenuForDate
+//     is the same per-slot view builder logConfirm/weekLogConfirm/computeActiveMenu already
+//     use, so "reason" here is identical to what render-week.js's and Today's no-candidates
+//     rows already show — no ad-hoc re-reading of the raw weekPlan structure.
+// Works for ANY date in the current (or next) week, not just today.
+function requiredSlots(dateISO, person){
+  const menu = typeof computeMenuForDate === 'function' ? computeMenuForDate(dateISO, person) : null;
+  return SLOT_ORDER.filter(function(slot){
+    if(slot === 'snack' && typeof snacksOnFor === 'function' && !snacksOnFor(person)) return false;
+    const view = menu && menu[slot];
+    if(view && view.reason === 'no-candidates') return false;
+    return true;
+  });
+}
+
+function requiredSlotCount(dateISO, person){
+  return requiredSlots(dateISO, person).length;
+}
+
+// How many of the REQUIRED slots (requiredSlots above) are accounted — confirmed as a plan
+// entry or explicitly skipped. Deliberately scoped to required slots only, not all of
+// SLOT_ORDER: a slot excluded as not-required (snacks-off, no-candidates) must never block
+// completion, but it also must never COUNT toward it — a stale skipped-flag on a slot that
+// only later became excluded (e.g. the household turned snacks off after already skipping
+// one day's snack) would otherwise push this above requiredSlotCount and make that day
+// uncompletable forever under a strict equality check.
 function accountedSlotCount(dateISO, person){
   const day = logHistory && logHistory[dateISO];
   if(!day || !Array.isArray(day[person])) return 0;
   const skipped = day.skipped && day.skipped[person] ? day.skipped[person] : {};
-  return SLOT_ORDER.reduce(function(total, slot){
+  return requiredSlots(dateISO, person).reduce(function(total, slot){
     const confirmed = day[person].some(function(entry){
       return entry && entry.kind === 'plan' && entry.slot === slot;
     });
@@ -51,12 +83,14 @@ function accountedSlotCount(dateISO, person){
 }
 
 // Phase 3 D1 (weekly adherence band): how many days of the CURRENT week `person` has fully
-// SET — i.e. closed the day, every slot accounted (the same accountedSlotCount === 4 state the
-// keystone/day-completion reward already treat as "complete"). The reflective weekly echo of
-// the daily-confirm keystone. Framed against the whole week (denominator 7): a future day that
-// hasn't arrived and a past day that was missed both simply aren't counted — visually and
-// numerically indistinguishable, which is the quiet-reset guardrail (a miss is never flagged as
-// failure, only as "not set"). Deterministic; MESA_TEST_TODAY drives the week window in tests.
+// SET — i.e. closed the day, every REQUIRED slot accounted (the same accountedSlotCount ===
+// requiredSlotCount state the keystone/day-completion reward already treat as "complete").
+// The reflective weekly echo of the daily-confirm keystone. Framed against the whole week
+// (denominator 7): a future day that hasn't arrived and a past day that was missed both
+// simply aren't counted — visually and numerically indistinguishable, which is the
+// quiet-reset guardrail (a miss is never flagged as failure, only as "not set"). A day with
+// zero required slots (fully unplannable) never counts — see the requiredCount > 0 guard.
+// Deterministic; MESA_TEST_TODAY drives the week window in tests.
 function weekDaysSetCount(person){
   const monday = mondayOfWeek(todayISO());
   const today = todayISO();
@@ -64,7 +98,8 @@ function weekDaysSetCount(person){
   for(let i = 0; i < 7; i++){
     const d = addDaysISO(monday, i);
     if(d > today) continue; // not-yet — leaves the week's denominator at 7 without counting
-    if(accountedSlotCount(d, person) === SLOT_ORDER.length) n++;
+    const requiredCount = requiredSlotCount(d, person);
+    if(requiredCount > 0 && accountedSlotCount(d, person) === requiredCount) n++;
   }
   return n;
 }
@@ -148,7 +183,11 @@ function playLogReward(payload){
 function playDayCompletionReward(payload){
   payload = payload || {};
   const key = String(payload.dateISO || '') + '|' + String(payload.person || '');
-  if(!payload.dateISO || !payload.person || typeof todayISO !== 'function' || payload.dateISO !== todayISO() || accountedSlotCount(payload.dateISO, payload.person) < SLOT_ORDER.length || logRewardCompletionKeys.has(key)) return false;
+  // requiredCount === 0 guards a fully-unplannable day (every slot no-candidates, or a
+  // snacks-off person whose other three are also all no-candidates) from vacuously
+  // "completing" with nothing accounted at all.
+  const requiredCount = (payload.dateISO && payload.person) ? requiredSlotCount(payload.dateISO, payload.person) : 0;
+  if(!payload.dateISO || !payload.person || typeof todayISO !== 'function' || payload.dateISO !== todayISO() || requiredCount === 0 || accountedSlotCount(payload.dateISO, payload.person) < requiredCount || logRewardCompletionKeys.has(key)) return false;
   logRewardCompletionKeys.add(key);
   const message = 'Today’s record is complete.';
   const node = document.createElement('div');
