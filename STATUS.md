@@ -6,7 +6,7 @@ The one "where things stand" doc. Companions: **README.md** (what Mesa is + arch
 and **KNOWLEDGE-BASE.md** as its backbone. Full history is in `git log`; this is the summary a
 next agent needs to pick up cold.
 
-Prod: **https://mesa-9y5.pages.dev/app/** (invite-only Google sign-in; Cloudflare Access was REMOVED — see README). Tests: **1938 green**
+Prod: **https://mesa-9y5.pages.dev/app/** (invite-only Google sign-in; Cloudflare Access was REMOVED — see README). Tests: **1989 green**
 (`node tools/check.js`, was 1484).
 
 ---
@@ -203,19 +203,30 @@ sends-only-changed-rows). Merge invariants (`mergeLibrarySection`, tombstones) u
   widening the GLOBAL pool for very strict combos — a **D1 re-seed**, decoupled as its own reviewed
   content release.
 
-**Open follow-ups (from the 2026-08-29 batch):**
-- **Keystone/days-set counts a structurally-empty slot as unfinished.** A strict-diet household that
-  hits a `no-candidates` slot can never reach 4/4 accounted, so `todayKeystoneState` never settles to
-  "complete" and `weekDaysSetCount`/`accountedSlotCount` (render.js) never counts the day — the user
-  must manually SKIP the impossible slot. Fix = exclude `no-candidates` slots from the keystone total
-  + days-set denominator (the completion logic must consult the plan's `reason`). Deliberately
-  deferred — it touches the core habit, so do it with honesty tests, not a rushed edit.
+**Keystone/days-set counted a structurally-unfillable slot as unfinished — FIXED + deployed 2026-09-02.**
+Day-completion (the "Confirm today as planned" keystone + its wreath reward + the weekly "Days set"
+band) required all 4 `SLOT_ORDER` slots accounted, but two slot classes can never be confirmed or
+skipped, so the day maxed at 3/4 forever: (1) **snacks-off households** (`planSnacks === false` — a
+common setting, broader than the strict-diet case originally logged) whose snack slot is never planned,
+and (2) a strict-diet day with a `reason:'no-candidates'` slot. Fix: `requiredSlots()`/`requiredSlotCount()`
+(render.js) = `SLOT_ORDER` minus snacks-off (reuses planner `snacksOnFor()`) minus no-candidates (reuses
+`computeMenuForDate`/`planEntryView`); all five completion gates — `accountedSlotCount`, `weekDaysSetCount`,
+`playDayCompletionReward`, `triggerMealLogReward` (render-today.js), `todayKeystoneState` (render-today.js)
+— now compare against the required count with a `>0` guard (a fully-unplannable day never vacuously
+completes). +20 honesty tests (`testRequiredSlotCountCompletionFix`). Tests 1989 green. Pure app JS — no
+D1 reseed.
+
+**Open follow-ups:**
 - **Lime has no bespoke icon** — it uses the default ingredient icon. Drop a green watercolor
   `app/assets/ingredients/lime.png` (via the `watercolor-ingredient-icons` skill + an image tool) and
   set the `lime` food's `iconKey: 'lime'`; `build-sw` picks up the asset.
-- **Unmerged fix on `origin/claude/codebase-review-improvements-ictw46`** — one commit "remove
-  duplicate Swap button on the Today snack card" never merged; verify whether it's still needed in
-  `main` and cherry-pick if so.
+- **`parseInt` hygiene (minor, not a live bug)** — `obSetDob`/`obSetActivity` (app.js:460–473) call
+  `parseInt` without a radix on `<select>` values; guarded by `isNaN` today so harmless. Add radix 10
+  when next touching app.js — not worth a standalone deploy (a no-behavior-change ship forces a
+  client-wide SW reload).
+- ~~**Unmerged fix on `origin/claude/codebase-review-improvements-ictw46`** ("remove duplicate Swap
+  button on the Today snack card").~~ DROPPED 2026-09-02 — that branch is gone from origin
+  (unrecoverable) and no duplicate Swap button is present in `main`. Nothing to cherry-pick.
 
 ## Later-phase levers (deferred, not scheduled)
 - **Always-on fibre nudge — TRIED then DROPPED (2026-08-29).** Built a small always-on fibre term in
