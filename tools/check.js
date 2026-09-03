@@ -5818,6 +5818,107 @@ function testBoostChip(ctx){
   run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; boostChipDismissedFor = {date: null, person: null};');
 }
 
+/* ---------------- TRIM CHIP (v1, the boost chip's rich-day sibling) ----------------
+   Advisory one-tap skip: mirrors testBoostChip's structure — pure eligibility predicate
+   over LIVE running totals (trimChipDayTotals/isDayRunningRich/trimChipTargetSlot,
+   render-today.js), never DOM. */
+function testTrimChip(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; boostChipDismissedFor = {date: null, person: null}; trimChipDismissedFor = {date: null, person: null};');
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan.weekStartDate;
+  const dateISO = plan.days[0].date;
+  const person = 'elena';
+  call(ctx, 'recomputeProf', [person]);
+
+  const menu = call(ctx, 'computeMenuForDate', [dateISO, person]);
+  assert(!!(menu.snack && menu.snack.recipeId), 'test setup: today has a planned snack recipe for elena', JSON.stringify(menu.snack));
+
+  /* -------- BALANCED: a freshly generated, untouched day never fires -------- */
+  // AGENT-HANDOVER.md's "Investigated & rejected" measurement documents generation keeping
+  // calories balanced per day (well inside the +/-25% PER_DAY_BANDS.kcal tolerance, let alone
+  // this chip's tighter +12% margin), so an untouched day must read quiet.
+  assert(call(ctx, 'isDayRunningRich', [dateISO, person]) === false,
+    'isDayRunningRich: a freshly generated, untouched day is not running rich', JSON.stringify(call(ctx, 'trimChipDayTotals', [dateISO, person])));
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === null,
+    'trimChipTargetSlot: no chip on an in-band day', '');
+
+  /* -------- OVER TARGET: a big standalone add (e.g. a pinned dense dinner, or here a plain
+     quick-add) pushes projected kcal past the +12% margin; the still-open, real-kcal snack
+     becomes the trim target. -------- */
+  call(ctx, 'logFoodEntry', [dateISO, person, 'olive-oil', 150]); // ~1350 kcal standalone add
+  assert(call(ctx, 'isDayRunningRich', [dateISO, person]) === true,
+    'isDayRunningRich: true once projected kcal clears calGoal * 1.12', JSON.stringify(call(ctx, 'trimChipDayTotals', [dateISO, person])));
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === 'snack',
+    'trimChipTargetSlot: fires on the still-open snack once the day is running rich', '');
+
+  /* -------- snacks OFF: nothing to skip -------- */
+  run(ctx, "PROF['" + person + "'].planSnacks = false;");
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === null,
+    'trimChipTargetSlot: null when the person has snacks off', '');
+  run(ctx, "PROF['" + person + "'].planSnacks = true;");
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === 'snack',
+    'test hygiene: restoring snacks-on restores the target', '');
+
+  /* -------- the snack itself already confirmed/logged: forward-looking only -------- */
+  const snackEntry = get(ctx, "weekPlans['" + wk + "'].days[0].meals.snack['" + person + "']");
+  const components = call(ctx, 'planEntryComponents', [snackEntry]);
+  call(ctx, 'logPlanEntry', [dateISO, person, 'snack', snackEntry.recipeId, snackEntry.portion, components]);
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === null,
+    'trimChipTargetSlot: null once the snack itself is confirmed/logged — never comments on an already-eaten slot', '');
+  call(ctx, 'removeLoggedSlot', [dateISO, person, 'snack']); // undo — restore pending for the next case
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === 'snack',
+    'test hygiene: undoing the confirm restores the target', '');
+
+  /* -------- the snack already skipped: nothing left to skip -------- */
+  call(ctx, 'markSlotSkipped', [dateISO, person, 'snack']);
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === null,
+    'trimChipTargetSlot: null once the snack is already skipped', '');
+  call(ctx, 'removeLoggedSlot', [dateISO, person, 'snack']); // undo
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === 'snack',
+    'test hygiene: undoing the skip restores the target', '');
+
+  /* -------- DISMISSED: a manual dismiss recorded for this EXACT (date, person) hides the
+     chip; a dismiss recorded for a different date does not (self-resets on a new day). -------- */
+  run(ctx, "trimChipDismissedFor = {date: '" + dateISO + "', person: '" + person + "'};");
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === null,
+    'trimChipTargetSlot: null once dismissed for this exact (date, person)', '');
+  run(ctx, "trimChipDismissedFor = {date: '2020-01-01', person: '" + person + "'};");
+  assert(call(ctx, 'trimChipTargetSlot', [dateISO, person]) === 'snack',
+    'trimChipTargetSlot: a dismiss recorded for a DIFFERENT date does not suppress today', '');
+  run(ctx, 'trimChipDismissedFor = {date: null, person: null};'); // restore neutral default
+
+  /* -------- MUTUAL EXCLUSION: a day can in principle be BOTH kcal-rich (this chip's axis)
+     AND light on fibre/protein (the boost chip's axis) at once. When the boost chip would
+     ALSO target the snack slot, it wins — the two calm chips must never stack on one card. */
+  (function(){
+    run(ctx, "weekPlans = {}; weekPlan = null; logHistory = {}; boostChipDismissedFor = {date: null, person: null}; trimChipDismissedFor = {date: null, person: null};");
+    const plan2 = call(ctx, 'ensureWeekPlan', []);
+    const dateISO2 = plan2.days[0].date;
+    const menu2 = call(ctx, 'computeMenuForDate', [dateISO2, person]);
+    const reqSlots2 = call(ctx, 'requiredSlots', [dateISO2, person]);
+    const nonSnack = reqSlots2.filter(function(s){ return s !== 'snack' && menu2[s] && menu2[s].recipeId; });
+    assert(nonSnack.length >= 1, 'test setup: at least one non-snack required slot has a planned recipe today', JSON.stringify(nonSnack));
+    nonSnack.forEach(function(s){ call(ctx, 'markSlotSkipped', [dateISO2, person, s]); });
+    // Skipping breakfast/lunch/dinner drops their kcal from the running total (weekDayNutriViews
+    // excludes skipped slots), so a much bigger standalone add is needed here than in the plain
+    // "over target" case above to still clear calGoal*1.12 on just snack + this one add.
+    call(ctx, 'logFoodEntry', [dateISO2, person, 'olive-oil', 400]); // kcal-rich, zero fibre/protein
+
+    const nutrient = call(ctx, 'boostNutrientForDay', [dateISO2, person]);
+    assert(nutrient === 'fiber' || nutrient === 'protein',
+      'test setup: reduced to just the snack (plus a fibre/protein-free kcal add), the day also reads light on fibre or protein', String(nutrient));
+    assert(call(ctx, 'boostChipTargetSlot', [dateISO2, person]) === 'snack',
+      'test setup: the boost chip targets the snack slot in this synthetic both-axes scenario', '');
+    assert(call(ctx, 'isDayRunningRich', [dateISO2, person]) === true,
+      'test setup: the day is ALSO kcal-rich in this synthetic scenario', JSON.stringify(call(ctx, 'trimChipDayTotals', [dateISO2, person])));
+    assert(call(ctx, 'trimChipTargetSlot', [dateISO2, person]) === null,
+      'trimChipTargetSlot: defers to the boost chip when both would otherwise target the same snack slot — the two never stack on one card', '');
+  })();
+
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; boostChipDismissedFor = {date: null, person: null}; trimChipDismissedFor = {date: null, person: null};');
+}
+
 /* ---------------- task B5: catch-up logging from the Week view ----------------
    Backdated confirm/skip/undo on a past day of the CURRENT week, via the same
    logPlanEntry/markSlotSkipped/removeLoggedSlot funnel Log/Today use (log.js) — just
@@ -13038,6 +13139,7 @@ function main(){
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('meal-page extras: recipeDetailExtrasFor (owner gap fix, 2026-09-03)', function(){ testRecipeDetailExtrasFor(ctx); });
   runTest('BOOST CHIP (v1, manual-only nudge): eligibility predicate, suggested-food selection, extended composed-extras invariant', function(){ testBoostChip(ctx); });
+  runTest('TRIM CHIP (v1, boost chip\'s rich-day sibling): eligibility predicate, one-tap skip, mutual exclusion with boost chip', function(){ testTrimChip(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });

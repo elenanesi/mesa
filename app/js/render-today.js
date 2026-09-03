@@ -2592,6 +2592,7 @@ function renderTodayMeals(){
 
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
   renderBoostChip(); // BOOST CHIP: recomputed on every Today repaint so it self-corrects live
+  renderTrimChip(); // TRIM CHIP: the rich-day sibling — see the block below for why this runs after
   renderTodayRecords();
 }
 
@@ -2891,6 +2892,116 @@ function boostSuggestionRowHtml(item){
     + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
     + '<div class="ad">' + foodAmountLabel(f, item.grams) + ' · ' + item.kcal + ' kcal · ' + noteVal + ' <span class="chip-computed">✓ computed</span></div></div>'
     + '</div>';
+}
+
+/* ---------------- TRIM CHIP (v1, the boost chip's rich-day sibling) ----------------
+   Panel spec: an "advisory one-tap skip" — a calm chip ("🍃 Rich day — skip the snack?") on
+   the Today SNACK card ONLY, shown when the day's projected kcal is running rich (e.g. the
+   user deliberately pinned an occasional/dense dinner) and the still-open snack slot is the
+   one thing left that could bring it back toward target. Tapping it reuses the EXISTING
+   Skip action (logSkip -> markSlotSkipped) — a REVERSIBLE skip, never a deletion, never
+   automatic. It never touches the pinned meal that made the day rich: the invitation is
+   forward-looking, about the still-upcoming snack only, exactly like the boost chip is
+   forward-looking about the still-upcoming slot it targets.
+
+   Threshold: PER_DAY_BANDS.kcal.tol (planner.js) is 0.25 — the Week view's own "this day
+   reads high" line (perDayBalanceState). This chip fires EARLIER/CALMER than that, at a
+   lower +12% margin, so it can offer the trim while there's still slack before the day
+   would actually read "off" on the Week view — comfortably inside that +/-25% band, never
+   contradicting perDayBalanceState's own verdict, just a quieter nudge ahead of it. */
+const TRIM_CHIP_OVER_MULT = 1 + 0.12; // ~+12% over the daily calorie goal
+
+// Live day totals, identical derivation to the boost chip's own (boostDayTotals) — the SAME
+// running plan+log totals weekDayNutriViews/dayCompletionTotals already use, so a snack
+// skipped via this chip is reflected in the day total immediately, same as everywhere else.
+function trimChipDayTotals(dateISO, person){
+  return boostDayTotals(dateISO, person);
+}
+
+// True once projected day kcal clears the day's calorie goal by TRIM_CHIP_OVER_MULT. Missing
+// calorie-goal data (no PROF entry yet) resolves to false, same "never invent a warning"
+// convention perDayBalanceState follows.
+function isDayRunningRich(dateISO, person){
+  const calGoal = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].calGoalNum) || 0;
+  if(!(calGoal > 0)) return false;
+  const totals = trimChipDayTotals(dateISO, person);
+  if(!totals) return false;
+  return totals.kcal > calGoal * TRIM_CHIP_OVER_MULT;
+}
+
+// Dismiss is scoped to (date, person), same self-resetting shape as the boost chip's —
+// trimChipDismissedFor is declared in state.js (persisted like every other store field —
+// see buildSnapshot/loadState there), read/written only from here.
+function isTrimChipDismissed(dateISO, person){
+  return trimChipDismissedFor.date === dateISO && trimChipDismissedFor.person === person;
+}
+function dismissTrimChip(dateISO, person){
+  trimChipDismissedFor = {date: dateISO, person: person};
+  if(typeof persist === 'function') persist();
+  renderTodayMeals();
+}
+
+// The pure eligibility predicate. Returns 'snack' or null — this chip only ever targets the
+// snack slot (unlike the boost chip, which can land on any of the four), so there is no
+// SLOT_ORDER search here, just the four ALL-of conditions from the panel spec:
+//   1. the person plans snacks at all (snacksOnFor) — nothing to skip if snacks are off;
+//   2. the snack slot is still OPEN — has a planned recipe and slotLogStatus() is falsy
+//      (not yet confirmed/logged/eaten-out AND not already skipped) — same "unconfirmed
+//      slot" gate boostChipTargetSlot uses;
+//   3. the day is running rich (isDayRunningRich, above);
+//   4. skipping the snack would actually help — it carries a real, non-trivial kcal amount
+//      (TRIM_CHIP_MIN_SNACK_KCAL guards against a near-empty/placeholder snack view where
+//      skipping it wouldn't move the day total in any way worth offering).
+// Mutual exclusion with the boost chip is enforced explicitly at the end: the two chips
+// fire on opposite axes (boost = light on fibre/protein, trim = rich on kcal) so in
+// practice they can't both want the snack slot, but a day can in principle be BOTH kcal-rich
+// AND fibre/protein-light at once (e.g. dense but nutrient-poor) — if the boost chip would
+// also claim the snack slot today, it wins and this returns null, so the two visual
+// languages never stack on one card.
+const TRIM_CHIP_MIN_SNACK_KCAL = 30;
+function trimChipTargetSlot(dateISO, person){
+  if(typeof snacksOnFor === 'function' && !snacksOnFor(person)) return null; // (1)
+  if(isTrimChipDismissed(dateISO, person)) return null;
+  if(typeof slotLogStatus !== 'function' || typeof computeMenuForDate !== 'function') return null;
+  if(slotLogStatus(dateISO, person, 'snack')) return null; // (2) already confirmed/logged/skipped/eaten-out
+  const view = computeMenuForDate(dateISO, person).snack;
+  if(!view || !view.recipeId) return null; // (2) nothing planned to skip
+  if(!(view.kcal > TRIM_CHIP_MIN_SNACK_KCAL)) return null; // (4)
+  if(!isDayRunningRich(dateISO, person)) return null; // (3)
+  if(typeof boostChipTargetSlot === 'function' && boostChipTargetSlot(dateISO, person) === 'snack') return null; // mutual exclusion
+  return 'snack';
+}
+
+// Reuses the boost chip's exact visual language (.boost-chip/-btn/-x) per the panel spec —
+// no new CSS, same calm sage tone, just different copy and a direct one-tap action instead
+// of opening a sheet. Painted into the SAME #snackBoost mount the boost chip uses; called
+// AFTER renderBoostChip() in renderTodayMeals so it can check the mount is still empty
+// (belt-and-suspenders alongside the explicit boostChipTargetSlot check above — the mount
+// can only ever hold one chip at a time).
+function renderTrimChip(){
+  const el = document.getElementById(BOOST_MOUNT_ID.snack);
+  if(!el || el.innerHTML) return;
+  const dateISO = todayISO();
+  const person = currentProf;
+  const target = trimChipTargetSlot(dateISO, person);
+  if(!target) return;
+  el.innerHTML = '<div class="boost-chip">'
+    + '<button type="button" class="boost-chip-btn" onclick="event.stopPropagation();skipSnackFromTrimChip(\'' + dateISO + '\',this)">🍃 Rich day — skip the snack?</button>'
+    + '<button type="button" class="boost-chip-x" aria-label="Dismiss skip-snack suggestion" onclick="event.stopPropagation();dismissTrimChip(\'' + dateISO + '\',\'' + person + '\')">✕</button>'
+    + '</div>';
+}
+
+// The one-tap skip itself: reuses logSkip (log.js's SAME markSlotSkipped-backed funnel the
+// card's own Skip button uses — reversible, undo-able via that card's "Undo" control) so the
+// mutation, its persist(), and its day-completion reward check are all the ONE existing code
+// path. logSkip's own refresh is scoped to the action row it's normally called from
+// (renderTodayCardActions); this chip lives in a different mount (BOOST_MOUNT_ID.snack) that
+// only renderTodayMeals repaints, so a fresh renderTodayMeals() call right after is what
+// makes the cue disappear and the snack card's own kcal line/state update immediately — the
+// "refresh Today + day totals" the panel spec asks for.
+function skipSnackFromTrimChip(dateISO, anchorEl){
+  logSkip('snack', dateISO, anchorEl);
+  renderTodayMeals();
 }
 
 function showArcPopover(macro, event){

@@ -665,6 +665,11 @@ let basicsBannerDismissed = false;
 // question, so this naturally resets with no migration needed. See render-today.js's
 // isBoostChipDismissed/dismissBoostChip for the read/write side.
 let boostChipDismissedFor = {date: null, person: null};
+// TRIM CHIP (v1, the boost chip's rich-day sibling — render-today.js): a manual dismiss of
+// the "🍃 Rich day — skip the snack?" cue, same (date, person)-scoped, self-resetting shape
+// as boostChipDismissedFor just above (never a persisted-forever nag). See render-today.js's
+// isTrimChipDismissed/dismissTrimChip for the read/write side.
+let trimChipDismissedFor = {date: null, person: null};
 // Sets the flag + persists. Called from every body-stat commit funnel so onboarding and the
 // Profile editor can never disagree about whether the user has entered real basics.
 function markBasicsConfirmed(){
@@ -950,6 +955,9 @@ function buildSnapshot(){
     // BOOST CHIP (v1): {date, person} of the last manual dismiss — see the doc block above
     // boostChipDismissedFor's declaration.
     boostChipDismissedFor: {date: boostChipDismissedFor.date, person: boostChipDismissedFor.person},
+    // TRIM CHIP (v1): {date, person} of the last manual dismiss — see the doc block above
+    // trimChipDismissedFor's declaration.
+    trimChipDismissedFor: {date: trimChipDismissedFor.date, person: trimChipDismissedFor.person},
     householdStyle: householdStyle,
     householdSize: householdSize,
     householdSizeManual: householdSizeManual,
@@ -1469,6 +1477,13 @@ function loadState(){
   if(saved.boostChipDismissedFor && typeof saved.boostChipDismissedFor === 'object'){
     if(typeof saved.boostChipDismissedFor.date === 'string') boostChipDismissedFor.date = saved.boostChipDismissedFor.date;
     if(typeof saved.boostChipDismissedFor.person === 'string') boostChipDismissedFor.person = saved.boostChipDismissedFor.person;
+  }
+
+  // TRIM CHIP (v1): same additive/safe-default treatment as boostChipDismissedFor above.
+  trimChipDismissedFor = {date: null, person: null};
+  if(saved.trimChipDismissedFor && typeof saved.trimChipDismissedFor === 'object'){
+    if(typeof saved.trimChipDismissedFor.date === 'string') trimChipDismissedFor.date = saved.trimChipDismissedFor.date;
+    if(typeof saved.trimChipDismissedFor.person === 'string') trimChipDismissedFor.person = saved.trimChipDismissedFor.person;
   }
 
   // couple sync (task S1) — see syncState's doc above. Absent entirely on any pre-v5
