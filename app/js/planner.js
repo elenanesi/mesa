@@ -3798,15 +3798,17 @@ function buildSwapSearchOptions(dayIndex, slot, person, query, weekStartDate){
   const q = String(query || '').trim().toLowerCase();
   if(q.length < 2) return [];
   const anchor = PERSON_ANCHOR[person];
-  const includeOtherMeals = !!(swapCtx && swapCtx.includeOtherMeals);
-  const completeOnly = !includeOtherMeals && (slot === 'lunch' || slot === 'dinner');
+  // Universal search (owner 2026-09-03): the search box finds ANY recipe in the book by
+  // name/tag — every slot, every role, occasional treats (the Chinese/Japanese dinner)
+  // included — so it's the one "find anything" path. The old same-slot + complete-meal gate
+  // and the "show other meals" toggle that fed it were both removed. "Best matches"
+  // (buildSwapAlternatives) stays curated same-slot + complete, so the calm default is
+  // unchanged; only the explicit search reaches the whole book. Only the current recipe and
+  // throwaway one-time builds are excluded.
   const pool = Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     if(id === currentId || swapSearchText(id).indexOf(q) === -1) return false;
-    if(r.oneTime) return false; // throwaway one-time built meals never clutter swap search (same intent as filteredRecipeIds hiding them from My recipes)
-    if(includeOtherMeals) return !r.occasional;
-    if(recipeSlotList(r).indexOf(slot) === -1) return false;
-    if(completeOnly && !isCompleteLunchDinnerRecipe(id)) return false;
+    if(r.oneTime) return false; // throwaway one-time built meals never clutter swap search
     return true;
   });
   const scored = pool.map(function(id){
@@ -3937,13 +3939,12 @@ function buildSwapSearchResults(){
   try{
     if(!swapCtx) return '';
     const q = swapCtx.searchQuery || '';
-    const slotLabel = (SLOT_LABEL[swapCtx.slot] || swapCtx.slot).toLowerCase();
     if(String(q).trim().length < 2){
       return '<p class="sub">Search by recipe name or tag. Custom recipes are included with built-ins.</p>';
     }
     const matches = buildSwapSearchOptions(swapCtx.dayIndex, swapCtx.slot, swapCtx.person, q, swapCtx.weekStartDate);
     if(!matches.length){
-      return '<p class="sub">No ' + slotLabel + ' recipe matches that search.</p>';
+      return '<p class="sub">No recipe matches that search.</p>';
     }
     const shown = matches.slice(0, 8);
     let html = '<p class="sub" style="margin-top:8px">' + matches.length + ' match' + (matches.length === 1 ? '' : 'es') + (matches.length > shown.length ? ' · showing first ' + shown.length : '') + '</p>';
@@ -3984,28 +3985,11 @@ function attachSwapSearchHandler(){
   };
 }
 
-// FEATURE ("Swap anything"): the sheet has a short "Best matches" section and a search
-// field for the full same-slot recipe book. That keeps the default sheet calm while still
-// making every compatible recipe reachable, including custom `cr-...` recipes.
-function swapOtherMealsToggleLabel(slot){
-  const slotLabel = (SLOT_LABEL[slot] || slot).toLowerCase();
-  return swapCtx && swapCtx.includeOtherMeals
-    ? '↩︎ Showing all meals — limit to ' + slotLabel + ' only'
-    : '🍽️ Show other meals (e.g. a breakfast for lunch)';
-}
-
-// Problem 4 ("I had breakfast for lunch"): flips the same-slot-only search restriction and
-// re-renders just the search results + the toggle's own label. Never touches "Best
-// matches" (buildSwapAlternatives stays strictly same-slot + complete, per the owner's
-// same-slot-first decision) — only the search list beneath it changes.
-function toggleSwapOtherMeals(){
-  if(!swapCtx) return;
-  swapCtx.includeOtherMeals = !swapCtx.includeOtherMeals;
-  const btn = document.getElementById('swapOtherMealsToggle');
-  if(btn) btn.textContent = swapOtherMealsToggleLabel(swapCtx.slot);
-  const el = document.getElementById('swapSearchResults');
-  if(el) el.innerHTML = buildSwapSearchResults();
-}
+// FEATURE ("Swap anything"): the sheet has a short curated "Best matches" section
+// (same-slot + complete) and a search field that reaches the WHOLE recipe book — every
+// slot and role, custom `cr-...` recipes and occasional composites included. The old
+// "show other meals" toggle is gone: search is universal by default (see
+// buildSwapSearchOptions), so the toggle had nothing left to toggle.
 
 // #5b/meal-builder (owner spec 2026-08-17): from the swap sheet, jump straight into the
 // MEAL BUILDER (render-today.js:openMealBuilder) for this slot — a separate ingredient-row
@@ -4160,10 +4144,9 @@ function onSwapCravingFreeText(value){
 
 function buildSwapSheet(ctx){
   if(swapCtx){
-    // Reset every time the sheet (re)opens for a fresh context — a stale "show other
-    // meals" opt-in or craving filter from a previous swap should never leak into the next
-    // one. Reset BEFORE computing `best` below so the very first render is always unfiltered.
-    swapCtx.includeOtherMeals = false;
+    // Reset every time the sheet (re)opens for a fresh context — a stale craving filter
+    // from a previous swap should never leak into the next one. Reset BEFORE computing
+    // `best` below so the very first render is always unfiltered.
     swapCtx.craving = null;
     swapCtx.proteinType = null;
     swapCtx.proteinFilterEmpty = false;
@@ -4176,13 +4159,12 @@ function buildSwapSheet(ctx){
   }
 
   const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
-  let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Best matches keep the plan close. Search can pick any compatible ' + slotLabel + ' recipe, including yours.</p>'
+  let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Best matches keep the plan close. Search reaches your whole book — any recipe, any meal, including yours.</p>'
     + '<button class="cta ghostbtn" style="margin-top:4px" onclick="openBuildYourOwnMeal()">🧩 Build your own meal — ingredients &amp; recipes</button>'
     + '<div id="swapCravingChips">' + swapCravingChipsHtml() + '</div>'
     + '<div id="swapBestMatches">' + swapBestMatchesHtml(best) + '</div>';
 
-  html += '<div class="shop-cat">Search ' + slotLabel + ' recipes</div>'
-    + '<button type="button" class="backbtn" id="swapOtherMealsToggle" style="margin:8px 0" onclick="toggleSwapOtherMeals()">' + escapeHtml(swapOtherMealsToggleLabel(ctx.slot)) + '</button>'
+  html += '<div class="shop-cat">Search all recipes</div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapRecipeSearchInput" placeholder="Search recipes, tags, yours..." value="' + htmlAttr(swapCtx ? swapCtx.searchQuery || '' : '') + '" autocomplete="off">'
     + '<div id="swapSearchResults">' + buildSwapSearchResults() + '</div>';
   return html;

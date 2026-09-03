@@ -3487,14 +3487,15 @@ function testLunchFishMeatExclusionAndSwapVariety(ctx){
 }
 
 /* ---------------- swap sheet: complete-meal-only pool + same-slot-first with an
-   other-meals toggle (Problems 3 & 4, 2026-08-11) ----------------
-   Problem 3: a swap must never propose a bare side/main (e.g. steamed rice, a plain
-   protein main) for lunch/dinner — every buildSwapAlternatives id must satisfy
-   isCompleteLunchDinnerRecipe. Problem 4: buildSwapSearchOptions defaults to same-slot AND
-   (for lunch/dinner) complete-meal-only, matching buildSwapAlternatives' contract; flipping
-   swapCtx.includeOtherMeals opens the pool to any slot/role as an explicit escape hatch,
-   tagging cross-slot matches with their usual slot ("usually breakfast" in the UI). */
-function testSwapCompleteMealPoolAndOtherMealsToggle(ctx){
+   universal search (2026-08-11; search made universal 2026-09-03) ----------------
+   Problem 3 (unchanged): "Best matches" (buildSwapAlternatives) must never propose a bare
+   side/main (e.g. steamed rice, a plain protein main) for lunch/dinner — every id must
+   satisfy isCompleteLunchDinnerRecipe. The SEARCH box, by contrast, is now universal: it
+   reaches the whole book (every slot, every role, occasional composites), so a bare main, a
+   cross-slot breakfast, and an occasional whole-meal composite (the Japanese sushi dinner)
+   are all findable by name — the old same-slot/complete gate and the "show other meals"
+   toggle were removed. Cross-slot matches still carry their usual-slot label for the UI. */
+function testSwapCompleteMealPoolAndUniversalSearch(ctx){
   const saved = cloneJSON(get(ctx, 'weekPlans'));
   const savedSwapCtx = cloneJSON(get(ctx, 'swapCtx'));
   try{
@@ -3521,45 +3522,33 @@ function testSwapCompleteMealPoolAndOtherMealsToggle(ctx){
       if(cur !== 'turkey-spinach-omelette'){ bareTestDay = d; break; }
     }
 
-    // Problem 4, toggle OFF (default): same-slot AND complete-meal-only for lunch — a
-    // same-slot bare main (turkey-spinach-omelette) is excluded even though the query
-    // matches it directly, and a breakfast-only recipe never surfaces for a lunch query.
-    run(ctx, "swapCtx = {dayIndex: " + bareTestDay + ", slot: 'lunch', person: 'elena', weekStartDate: '" + wsd + "', includeOtherMeals: false};");
-    const offBareMain = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'turkey & spinach', wsd]).map(function(a){ return a.id; });
-    assert(offBareMain.indexOf('turkey-spinach-omelette') === -1,
-      'buildSwapSearchOptions (includeOtherMeals=false): excludes a same-slot bare main that fails the complete-meal contract',
-      JSON.stringify(offBareMain));
+    // Universal search (owner 2026-09-03): the search box reaches the WHOLE book — every
+    // slot, every role, occasional composites included. "Best matches" (tested above via
+    // buildSwapAlternatives) stays curated same-slot + complete. The old same-slot/
+    // complete-meal search gate and the "show other meals" toggle are gone.
+    run(ctx, "swapCtx = {dayIndex: " + bareTestDay + ", slot: 'lunch', person: 'elena', weekStartDate: '" + wsd + "'};");
 
-    const offChicken = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'chicken', wsd]);
-    assert(offChicken.length > 0,
-      'setup: "chicken" matches at least one same-slot lunch recipe with the toggle off', JSON.stringify(offChicken));
-    offChicken.forEach(function(a){
-      assert(call(ctx, 'isCompleteLunchDinnerRecipe', [a.id]) === true,
-        'buildSwapSearchOptions (includeOtherMeals=false, lunch): every default-search match is a same-slot complete meal',
-        a.id);
-    });
+    // a same-slot bare main (fails the complete-meal contract) is now reachable by search
+    const bareMain = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'turkey & spinach', wsd]).map(function(a){ return a.id; });
+    assert(bareMain.indexOf('turkey-spinach-omelette') !== -1,
+      'buildSwapSearchOptions (universal): a same-slot bare main is reachable by search',
+      JSON.stringify(bareMain));
 
-    const offOats = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'overnight oats', wsd]);
-    assert(offOats.length === 0,
-      'buildSwapSearchOptions (includeOtherMeals=false): a breakfast-only recipe does not surface for a lunch query',
-      JSON.stringify(offOats));
+    // a cross-slot (breakfast) recipe surfaces for a lunch query, tagged with its usual slot
+    const oats = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'overnight oats', wsd]);
+    const oatsMatch = oats.filter(function(a){ return a.id === 'oats-berries-walnuts'; })[0];
+    assert(!!oatsMatch,
+      'buildSwapSearchOptions (universal): a breakfast recipe surfaces for a lunch search',
+      JSON.stringify(oats));
+    assert(!!oatsMatch && oatsMatch.otherSlot === 'Breakfast',
+      'buildSwapSearchOptions (universal): a cross-slot match still carries its usual-slot label',
+      JSON.stringify(oats));
 
-    // Toggle ON: cross-slot recipes (any role, no complete-meal contract) become reachable,
-    // tagged with their usual slot so the UI can show "usually breakfast".
-    run(ctx, "swapCtx.includeOtherMeals = true;");
-    const onOats = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'overnight oats', wsd]);
-    const onOatsMatch = onOats.filter(function(a){ return a.id === 'oats-berries-walnuts'; })[0];
-    assert(!!onOatsMatch,
-      'buildSwapSearchOptions (includeOtherMeals=true): a breakfast recipe now matches a lunch search',
-      JSON.stringify(onOats));
-    assert(!!onOatsMatch && onOatsMatch.otherSlot === 'Breakfast',
-      'buildSwapSearchOptions (includeOtherMeals=true): a cross-slot match carries its usual-slot label for the UI tag',
-      JSON.stringify(onOats));
-
-    const onBareMain = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'lunch', 'elena', 'turkey & spinach', wsd]).map(function(a){ return a.id; });
-    assert(onBareMain.indexOf('turkey-spinach-omelette') !== -1,
-      'buildSwapSearchOptions (includeOtherMeals=true): the complete-meal contract is dropped, so a bare same-slot main is reachable too',
-      JSON.stringify(onBareMain));
+    // an occasional whole-meal composite (the Japanese sushi dinner) is findable by search
+    const sushi = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'dinner', 'elena', 'japanese', wsd]).map(function(a){ return a.id; });
+    assert(sushi.indexOf('cena-giapponese') !== -1,
+      'buildSwapSearchOptions (universal): an occasional composite (Japanese sushi dinner) is findable by search',
+      JSON.stringify(sushi));
   } finally {
     ctx.weekPlans = saved;
     run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; swapCtx = " + (savedSwapCtx ? JSON.stringify(savedSwapCtx) : 'null') + ";");
@@ -3700,15 +3689,14 @@ function testSwapCravingFilter(ctx){
     assert(get(ctx, 'swapCtx.searchQuery') === 'soup',
       "onSwapCravingFreeText: funnels the typed text into the existing swapCtx.searchQuery search state");
 
-    // buildSwapSheet: resets swapCtx.craving to null on every fresh open (mirrors
-    // swapCtx.includeOtherMeals's existing reset). Panel-approved de-clutter (2026-09):
+    // buildSwapSheet: resets swapCtx.craving to null on every fresh open. Panel-approved de-clutter (2026-09):
     // the craving section is now collapsed by default behind one "what are you feeling?"
     // toggle — Best matches used to start off-screen because this section always rendered
     // fully expanded. The chips are still exactly as wired, just one tap away.
     run(ctx, "swapCtx = {dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: '" + wsd + "', craving: 'fruit'};");
     const sheetHtml = call(ctx, 'buildSwapSheet', [{dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: wsd}]);
     assert(get(ctx, 'swapCtx.craving') === null,
-      'buildSwapSheet: resets swapCtx.craving to null on every fresh open, same as includeOtherMeals');
+      'buildSwapSheet: resets swapCtx.craving to null on every fresh open');
     assert(get(ctx, 'swapCravingExpanded') === false,
       'buildSwapSheet: the craving section is collapsed by default on every fresh open');
     assert(sheetHtml.indexOf('toggleSwapCravingExpanded()') !== -1,
@@ -13117,7 +13105,7 @@ function main(){
   runTest('persist() storage-failure reporting (Fix 3)', function(){ testPersistFailureHook(ctx); });
   runTest('per-meal share override (eat different/together)', function(){ testMealShareOverride(ctx); });
   runTest('lunch fish/meat exclusion + swap variety', function(){ testLunchFishMeatExclusionAndSwapVariety(ctx); });
-  runTest('swap sheet: complete-meal-only pool + same-slot-first with other-meals toggle', function(){ testSwapCompleteMealPoolAndOtherMealsToggle(ctx); });
+  runTest('swap sheet: Best-matches stays same-slot+complete; search is universal (all slots/roles, occasional composites)', function(){ testSwapCompleteMealPoolAndUniversalSearch(ctx); });
   runTest('swap sheet: "what do you feel like?" craving filter (fruit/veg/protein/light/quick)', function(){ testSwapCravingFilter(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
   runTest('regenerate considers logged meals for variety (no next-day repeat)', function(){ testRegenerateConsidersLoggedMeals(ctx); });
