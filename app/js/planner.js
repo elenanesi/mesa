@@ -2312,6 +2312,55 @@ function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, max
   }); });
 }
 
+// DRY refactor (code-health, zero behaviour change): the four candidate-pool "preamble"
+// steps pickSharedMeal/pickSoloMeal each ran verbatim (only differing by which
+// person(s) they're computed for) — cross-week + within-week variety filtering, the
+// full/main role split, the breakfast-pair food pool, and the lunch/dinner side pools.
+// Pulled out here so both callers delegate instead of duplicating the same lines; the
+// actual candidate-building/scoring loops stay in each picker since those genuinely
+// differ (per-person double totals vs a single person's).
+
+// Cross-week filter first (own full-pool fallback), then within-week variety over
+// `varietyPerson`'s history — for a shared slot that's Elena's (written in sync for
+// both, see pickSharedMeal's own comment at its call site), for solo it's the person
+// themself. `dayUsePersons` is who the day-wide same-day exclusion must honour — both
+// people for a shared slot, or omitted (defaults to [varietyPerson] inside
+// applyVarietyFilter) for solo.
+function filterMealPool(pool, excludePrevWeekId, history, varietyPerson, slot, dayIndex, dayUsePersons){
+  pool = applyCrossWeekFilter(pool, excludePrevWeekId);
+  return applyVarietyFilter(pool, history, varietyPerson, slot, dayIndex, dayUsePersons);
+}
+
+// The role/eligibility split into standalone `full` dishes vs `main` dishes that can be
+// composed with sides — identical predicate in both meal pickers (a lunch/dinner main
+// must also satisfy isCompleteLunchDinnerRecipe/isProteinMain; other slots don't gate
+// on those).
+function splitPoolByRole(pool, slot){
+  return {
+    fullIds: pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); }),
+    mainIds: pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); })
+  };
+}
+
+// The breakfast-pairing food pool: whitelisted foods, then the light consecutive-day
+// filter against yesterday's + today's already-used foods for every person in
+// `persons` (['elena','partner'] for a shared slot, [person] for solo — same order the
+// call sites used to build these arrays in, preserved via .map so the filter's
+// deterministic pool-relaxation stages see the identical input).
+function buildBreakfastFoodPool(avoid, persons, history, dayIndex){
+  const foodPoolRaw = breakfastPairFoodIds(avoid);
+  return applyLightConsecutiveFilter(foodPoolRaw,
+    persons.map(function(p){ return history[p].bfPairUse[dayIndex - 1]; }),
+    persons.map(function(p){ return history[p].dayUseFood[dayIndex]; }));
+}
+
+// The lunch/dinner side pools (carb + veg), ranked/relaxed by sidePoolLadder for
+// `persons` — same two-line sequence both pickers ran, only `avoid`/`persons` differ.
+function buildSidePools(avoid, persons, history, dayIndex){
+  const sidePool = sidePoolLadder(sidePoolFor(avoid, persons), history, persons, dayIndex);
+  return {carbPool: sidePool.filter(isCarbSide), vegPool: sidePool.filter(isVegSide)};
+}
+
 // remainingWeight is a per-person object {elena, partner} (owner 2026-08-23): the two can differ
 // on a shared breakfast/lunch/dinner when one person dropped their daily snack, so each person's
 // desired kcal/protein for this slot scales by THEIR own remaining fraction of the day. A shared
@@ -2324,11 +2373,9 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   const desiredProtA = remainingProtein.partner * (w / remainingWeight.partner);
   // Cross-week filter first (falls back to the full pool if it would empty it), then the
   // within-week variety filter over Elena's history — for shared slots both histories are
-  // written in sync, so hers stands for both.
-  pool = applyCrossWeekFilter(pool, excludePrevWeekId);
-  // Shared slot: gap history via Elena (written in sync for both), but the day-wide
+  // written in sync, so hers stands for both. Gap history via Elena, but the day-wide
   // exclusion must honour BOTH people — see applyVarietyFilter's doc.
-  pool = applyVarietyFilter(pool, history, 'elena', slot, dayIndex, ['elena', 'partner']);
+  pool = filterMealPool(pool, excludePrevWeekId, history, 'elena', slot, dayIndex, ['elena', 'partner']);
   const maxPortion = SLOT_MAX_PORTION[slot];
   // task D1: hoisted above the slot branches below (breakfast/lunch/dinner already
   // computed this further down for the composed-pair pools) so the final opts-rotation
@@ -2373,8 +2420,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       });
     });
   } else {
-    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); });
-    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); });
+    const split = splitPoolByRole(pool, slot);
+    const fullIds = split.fullIds, mainIds = split.mainIds;
     fullIds.forEach(function(id){
       viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
         const base = recipeNutrition(id, 1, opts).totals;
@@ -2385,8 +2432,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     });
 
     if(slot === 'breakfast'){
-      const foodPoolRaw = breakfastPairFoodIds(avoidBoth);
-      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history.elena.bfPairUse[dayIndex - 1], history.partner.bfPairUse[dayIndex - 1]], [history.elena.dayUseFood[dayIndex], history.partner.dayUseFood[dayIndex]]);
+      const foodPool = buildBreakfastFoodPool(avoidBoth, ['elena', 'partner'], history, dayIndex);
       mainIds.forEach(function(id){
         viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
           const base = recipeNutrition(id, 1, opts).totals;
@@ -2425,11 +2471,10 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
         });
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
-      const sidePoolRaw = sidePoolFor(avoidBoth, ['elena', 'partner']);
       // VARIETY-plan.md P1+P2 for sides, as one priority ladder (sidePoolLadder's doc
       // explains why nesting the rules ranked them wrong). Shared slot -> both people.
-      const sidePool = sidePoolLadder(sidePoolRaw, history, ['elena', 'partner'], dayIndex);
-      const carbPool = sidePool.filter(isCarbSide), vegPool = sidePool.filter(isVegSide);
+      const sides = buildSidePools(avoidBoth, ['elena', 'partner'], history, dayIndex);
+      const carbPool = sides.carbPool, vegPool = sides.vegPool;
       if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
           // task (variant-fit planner): topKSideIds is computed PER combo — a variant's
@@ -2524,8 +2569,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   const desiredProt = remainingProteinP * (w / remainingWeight);
   const anchor = PERSON_ANCHOR[person];
   // Cross-week filter first (with its own full-pool fallback), then within-week variety.
-  pool = applyCrossWeekFilter(pool, excludePrevWeekId);
-  pool = applyVarietyFilter(pool, history, person, slot, dayIndex);
+  pool = filterMealPool(pool, excludePrevWeekId, history, person, slot, dayIndex);
   const maxPortion = SLOT_MAX_PORTION[slot];
   const avoidP = avoidFoodsList(person);
   // task (variant-fit planner): hoisted once, same reasoning as pickSharedMeal's dietBoth.
@@ -2555,8 +2599,8 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
       });
     });
   } else {
-    const fullIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'full' && (slot !== 'lunch' && slot !== 'dinner' || isCompleteLunchDinnerRecipe(id)); });
-    const mainIds = pool.filter(function(id){ return RECIPES_DB[id].role === 'main' && (slot !== 'lunch' && slot !== 'dinner' || isProteinMain(id)); });
+    const split = splitPoolByRole(pool, slot);
+    const fullIds = split.fullIds, mainIds = split.mainIds;
     fullIds.forEach(function(id){
       viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
         const base = recipeNutrition(id, 1, opts).totals;
@@ -2565,8 +2609,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     });
 
     if(slot === 'breakfast'){
-      const foodPoolRaw = breakfastPairFoodIds(avoidP);
-      const foodPool = applyLightConsecutiveFilter(foodPoolRaw, [history[person].bfPairUse[dayIndex - 1]], [history[person].dayUseFood[dayIndex]]);
+      const foodPool = buildBreakfastFoodPool(avoidP, [person], history, dayIndex);
       mainIds.forEach(function(id){
         viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
           const base = recipeNutrition(id, 1, opts).totals;
@@ -2581,9 +2624,8 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
         });
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
-      const sidePoolRaw = sidePoolFor(avoidP, [person]);
-      const sidePool = sidePoolLadder(sidePoolRaw, history, [person], dayIndex);
-      const carbPool = sidePool.filter(isCarbSide), vegPool = sidePool.filter(isVegSide);
+      const sides = buildSidePools(avoidP, [person], history, dayIndex);
+      const carbPool = sides.carbPool, vegPool = sides.vegPool;
       if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
           // task (variant-fit planner): see pickSharedMeal's matching comment — sides are
