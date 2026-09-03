@@ -44,6 +44,23 @@ planner (see the memory `project-planner-safe-wave-2026-09.md`). Four deploys, e
 - **Still deferred:** more big-appetite recipes as desired; a target-aware meal builder for the
   user-injected-manual-add calorie/fibre cause (UX not gen).
 
+**Couple + composite-meal batch (2026-09-03, all deployed).**
+- **Swap search is universal** — the search box finds ANY recipe in the book (every slot/role, occasional
+  composites like the sushi dinner); removed the "show other meals" toggle. Best matches stays curated
+  same-slot+complete.
+- **Composite sub-recipe portions are editable while PLANNED** (not just after logging) — plan entries
+  carry an optional `components` override honored by `planEntryComponents` (→ nutrition/Today/Week/shopping);
+  shared composites mirror the override to both. `setMealComponentsOverride` (planner.js).
+- **Keyboard portion entry** — every portion control on the recipe/meal page (composite sub-recipes,
+  meal-page extras ×/g, whole-dish servings) is a typeable input alongside +/- (parseDecimalInput, clamp,
+  commit on blur/Enter).
+- **Shared-meal change warning** — a once-per-session confirm when a change hits BOTH plates (swap /
+  extras / composite override); per-person servings and solo households never prompt. `confirmSharedMealChange`.
+- **Regenerate "keep our shared meals"** — couples-only, default-off checkbox; when on, `preserveSharedMealRecipes`
+  keeps each shared slot's recipe (re-portioned) across regeneration. Pins still absolute.
+- Per-person portions on a shared meal already worked (two independent Elena/Andrea steppers).
+Tests → 2220 green.
+
 **Meal-page + content batch (2026-09-03, all deployed).**
 - **Meal page shows a slot's extras** — a planned meal's sides + added foods now render on its detail
   page (with nutrients + inline portion/grams edit + remove), like a composed recipe's components; no
