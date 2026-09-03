@@ -535,9 +535,15 @@ function openRegenerateSheet(){
 
 function buildRegenerateSheet(){
   const label = weekScreenShowsNext ? 'next week' : 'this week';
+  // "🔒 Keep our shared meals" (owner request 2026-09-03): couples only — a solo household
+  // has no shared meals for the option to act on. Default UNCHECKED (opt-in): a plain
+  // Regenerate still reshuffles everything, exactly as before this feature existed.
+  const lockOption = isSoloHousehold() ? '' :
+    '<label class="card" style="padding:14px;margin-top:12px;display:flex;gap:12px;align-items:flex-start;cursor:pointer"><input id="regenLockShared" type="checkbox" style="margin-top:3px;min-width:18px;min-height:18px"><span><b>🔒 Keep our shared meals</b><small style="display:block;color:var(--muted);margin-top:4px">Shared dinners stay the same dish — only portions may change. Everything else reshuffles.</small></span></label>';
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Regenerate ' + label + '?</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
     + '<p class="sub" style="margin-top:10px">Rebuilds ' + label + '’s plan ' + (isSoloHousehold() ? 'for you' : 'for both of you') + ' using the latest recipes and rules. '
     + '<b>Pinned meals and anything you’ve already logged or skipped stay exactly as they are</b> — only the other meals are replaced. Any un-pinned manual swaps on ' + label + ' will be redone.</p>'
+    + lockOption
     + '<button class="cta" onclick="confirmRegenerateWeek()">↻ Regenerate ' + label + '</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
 }
@@ -545,13 +551,16 @@ function buildRegenerateSheet(){
 function confirmRegenerateWeek(){
   const showingNext = weekScreenShowsNext;
   const monday = showingNext ? nextMondayISO() : mondayOfWeek(todayISO());
-  regenerateWeekPreservingLocks(monday);
+  const lockShared = !!(document.getElementById('regenLockShared') && document.getElementById('regenLockShared').checked);
+  const regenOpts = lockShared ? {lockSharedRecipes: true} : undefined;
+  regenerateWeekPreservingLocks(monday, regenOpts);
   if(monday === mondayOfWeek(todayISO())) weekPlan = weekPlans[monday];
   // Regenerating the current week invalidates a stored next week (its cross-week variety
-  // input just changed), so rebuild it too, same pairing ensureWeekPlan uses.
+  // input just changed), so rebuild it too, same pairing ensureWeekPlan uses — paired with
+  // the SAME lock choice so the option applies consistently across both weeks.
   if(!showingNext){
     const nm = nextMondayISO();
-    if(weekPlans[nm]) regenerateWeekPreservingLocks(nm);
+    if(weekPlans[nm]) regenerateWeekPreservingLocks(nm, regenOpts);
   }
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);

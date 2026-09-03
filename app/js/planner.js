@@ -1515,6 +1515,75 @@ function preservePinnedSlots(oldPlan, newPlan){
   refreshPlanNutrition(newPlan);
 }
 
+// Regenerate's "🔒 Keep our shared meals" option (opt-in, couples only — owner request
+// 2026-09-03): a SOFTER lock than a pin. A pin keeps a slot byte-for-byte (recipe AND
+// portion); this keeps only the RECIPE of every slot that was a shared dinner in the
+// PREVIOUS plan, and re-portions it against whatever the freshly-generated plan now wants
+// in that slot — so the shared dish stays the same but each person's portion can still
+// move with the new week's kcal balance. Runs AFTER preserveLoggedSlots/preservePinnedSlots
+// (regenerateWeekPreservingLocks below), so it must never touch a slot either of those
+// already fully restored — re-checking the same logged/pinned guards here rather than
+// trusting call order alone.
+//
+// Re-portioning reuses the exact bestPortion call applySwapToPlan's own shared branch uses
+// (same base-kcal-vs-target-kcal search, same per-person anchor/cap) — just applied by hand
+// instead of via applySwapToPlan itself, because applySwapToPlan is built for a genuine
+// swap to an UNRELATED new recipe: it deliberately carries over the CURRENT (freshly
+// generated) slot's extras and drops any opts/components override, which is backwards here
+// — we're keeping the SAME dish, so it's the OLD meal's opts/extras/components that must
+// survive, only the portion number gets recomputed. A composite recipe's entry.components
+// override (sub-recipe portions) carries over untouched, same as extras — the top-level
+// portion bestPortion picks is inert for those entries anyway (planEntryComponents ignores
+// entry.portion whenever entry.components is present), exactly like every other path in
+// this file that never re-derives a composite's sub-portions on a plain re-portion.
+//
+// If the old shared recipe no longer resolves (tombstoned, or fell out of the catalog),
+// mealRecipesValid bails out and the freshly-generated slot is left exactly as generateWeek
+// made it — never crashes, never resurrects a dangling reference (same contract
+// preserveLoggedSlots/preservePinnedSlots already hold via mealRecipesValid/
+// planEntryRecipeValid).
+//
+// Stamp convention: rewriting a shared cell stamps ONE meal.t (Date.now()), never per-entry
+// .t — the same convention mutateMealExtras/preservePinnedSlots use for a shared meal, and
+// getting it backwards resurrects the couple-sync revert bug fixed in commit 50f6f30.
+function preserveSharedMealRecipes(oldPlan, newPlan){
+  if(!oldPlan || !newPlan || !Array.isArray(oldPlan.days) || !Array.isArray(newPlan.days)) return;
+  for(let d = 0; d < newPlan.days.length; d++){
+    const dateISO = newPlan.days[d].date;
+    SLOT_ORDER.forEach(function(slot){
+      const oldMeal = oldPlan.days[d] && oldPlan.days[d].meals && oldPlan.days[d].meals[slot];
+      const newMeal = newPlan.days[d] && newPlan.days[d].meals && newPlan.days[d].meals[slot];
+      if(!oldMeal || !newMeal || !oldMeal.shared) return;
+      if(!mealRecipesValid(oldMeal)) return;
+      // Already fully preserved (whole cell, portion included) by preservePinnedSlots /
+      // preserveLoggedSlots — never override either.
+      if(isMealPinned(newPlan.weekStartDate, d, slot, 'shared')) return;
+      if(loggedSlotLocked(dateISO, 'elena', slot) || loggedSlotLocked(dateISO, 'partner', slot)) return;
+
+      const newBase = dbBaseNutrition(oldMeal.recipeId);
+      const targetE = planEntryNutrition(newMeal.elena).kcal;
+      const targetA = planEntryNutrition(newMeal.partner).kcal;
+      const bpE = bestPortion(newBase.kcal, targetE, PERSON_ANCHOR.elena, SLOT_MAX_PORTION[slot]);
+      const bpA = bestPortion(newBase.kcal, targetA, PERSON_ANCHOR.partner, SLOT_MAX_PORTION[slot]);
+      const newElena = makePlanEntry(oldMeal.recipeId, bpE.portion, undefined, oldMeal.elena && oldMeal.elena.opts);
+      const newPartner = makePlanEntry(oldMeal.recipeId, bpA.portion, undefined, oldMeal.partner && oldMeal.partner.opts);
+      if(Array.isArray(oldMeal.elena && oldMeal.elena.extras)) newElena.extras = deepClone(oldMeal.elena.extras);
+      if(Array.isArray(oldMeal.partner && oldMeal.partner.extras)) newPartner.extras = deepClone(oldMeal.partner.extras);
+      if(Array.isArray(oldMeal.elena && oldMeal.elena.components)) newElena.components = deepClone(oldMeal.elena.components);
+      if(Array.isArray(oldMeal.partner && oldMeal.partner.components)) newPartner.components = deepClone(oldMeal.partner.components);
+      refreshPlanEntryNutrition(newElena);
+      refreshPlanEntryNutrition(newPartner);
+
+      newMeal.shared = true;
+      newMeal.recipeId = oldMeal.recipeId;
+      newMeal.elena = newElena;
+      newMeal.partner = newPartner;
+      newMeal.t = Date.now();
+    });
+  }
+  refreshPlanNutrition(newPlan);
+}
+
 // Applies a real user-authored meal-routine rule to a stored plan cell. Stamped exactly
 // like applySwapToPlan (Date.now() for the real edit) so sync.js:mergePlansSection treats
 // a routine-set meal as a real edit instead of losing to any stamped remote change (the
@@ -1560,7 +1629,7 @@ function mealRuleApplies(rule, dateISO, dayIndex, slot, person){
 // existing plan without a profile/target change to invalidate its signature. Deterministic
 // (same seed), so it produces the same result each time. Does NOT persist or render — the
 // caller does that, exactly like applyRebalance.
-function regenerateWeekPreservingLocks(monday){
+function regenerateWeekPreservingLocks(monday, opts){
   const sig = computePlanSignature();
   const prev = weekPlans[monday] ? deepClone(weekPlans[monday]) : null;
   // Manual Regenerate must give a genuinely DIFFERENT week — generation is deterministic on
@@ -1574,6 +1643,11 @@ function regenerateWeekPreservingLocks(monday){
   applyMealRulesToPlan(plan);
   preserveLoggedSlots(prev, plan);
   preservePinnedSlots(prev, plan);
+  // Opt-in "🔒 Keep our shared meals" (couples only, off by default — see
+  // preserveSharedMealRecipes's own doc). Runs LAST so it never fights the byte-for-byte
+  // logged/pinned restores above; every existing caller omits `opts`, so this stays
+  // byte-identical to before whenever the flag isn't explicitly set.
+  if(opts && opts.lockSharedRecipes) preserveSharedMealRecipes(prev, plan);
   markWeekPlanEdited(plan);
   weekPlans[monday] = plan;
   refreshPlanNutrition(plan);

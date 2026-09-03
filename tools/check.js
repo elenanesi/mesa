@@ -4092,6 +4092,144 @@ function testRegenerateWeekPreservingLocks(ctx){
   }
 }
 
+/* ---------------- Regenerate: "🔒 Keep our shared meals" (owner 2026-09-03) ----------------
+   opts.lockSharedRecipes is a SOFTER lock than a pin: every slot that was a shared dinner in
+   the PRIOR plan keeps its recipe (and shared status) through a Regenerate, but its portion is
+   re-portioned (bestPortion) against whatever the freshly-generated plan now wants there — so
+   the dish stays the same while calorie balance can still move. A pin still wins outright
+   (byte-identical, portion included); the flag defaults off, so every existing caller (which
+   passes no opts) must be completely unaffected. */
+function testRegenerateLockSharedMeals(ctx){
+  const SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
+  const savedWeekPlans = cloneJSON(get(ctx, 'weekPlans'));
+  const savedPins = cloneJSON(get(ctx, 'mealPins'));
+  const savedLog = cloneJSON(get(ctx, 'logHistory'));
+  const savedHousehold = get(ctx, 'householdSize');
+  const savedHouseholdManual = get(ctx, 'householdSizeManual');
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealPins = {}; logHistory = {}; householdSize = 2; householdSizeManual = true;");
+    const monday = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+    call(ctx, 'ensureWeekPlan', [monday]);
+    const plan0 = get(ctx, "weekPlans['" + monday + "']");
+
+    const sharedBefore = {}; // "day|slot" -> recipeId, for every slot the fixture plan shares
+    plan0.days.forEach(function(day, d){
+      SLOTS.forEach(function(slot){
+        const m = day.meals[slot];
+        if(m && m.shared && m.recipeId) sharedBefore[d + '|' + slot] = m.recipeId;
+      });
+    });
+    assert(Object.keys(sharedBefore).length > 0,
+      'setup: the fixture plan has at least one shared meal to lock', JSON.stringify(sharedBefore));
+    const sharedKeys = Object.keys(sharedBefore);
+    const probeParts = sharedKeys[0].split('|');
+    const probeDay = Number(probeParts[0]), probeSlot = probeParts[1];
+    const oldRecipeId = sharedBefore[sharedKeys[0]];
+
+    // Pin a shared slot (a different one when available) to prove a pin still wins OUTRIGHT
+    // over the softer recipe-only lock — full byte-for-byte preservation, not just the recipe.
+    const pinParts = (sharedKeys.length > 1 ? sharedKeys[1] : sharedKeys[0]).split('|');
+    const pinDay = Number(pinParts[0]), pinSlot = pinParts[1];
+    run(ctx, "mealPins[mealPinKey('" + monday + "', " + pinDay + ", '" + pinSlot + "', 'shared')] = true;");
+    const pinnedCellBefore = get(ctx, "JSON.stringify(weekPlans['" + monday + "'].days[" + pinDay + "].meals." + pinSlot + ")");
+
+    // Probe: run a PLAIN (unlocked) regenerate from the same starting plan/variant to capture
+    // exactly what the freshly-generated probe slot's kcal target would be — this is the number
+    // preserveSharedMealRecipes must re-portion the kept recipe against.
+    run(ctx, "weekPlans['" + monday + "'] = " + JSON.stringify(plan0) + ";");
+    call(ctx, 'regenerateWeekPreservingLocks', [monday]);
+    const probeMeal = get(ctx, "weekPlans['" + monday + "'].days[" + probeDay + "].meals." + probeSlot);
+    // planEntryNutrition (not entry.kcal, which is base-recipe-only) — the SAME total
+    // (base + extras) preserveSharedMealRecipes/applySwapToPlan's shared branch both target.
+    const targetE = get(ctx, 'planEntryNutrition(' + JSON.stringify(probeMeal.elena) + ').kcal');
+    const targetA = get(ctx, 'planEntryNutrition(' + JSON.stringify(probeMeal.partner) + ').kcal');
+
+    // Real run: regenerate WITH the lock, from the identical starting plan/variant. Spy on
+    // preserveSharedMealRecipes to prove it actually ran exactly once.
+    run(ctx, "weekPlans['" + monday + "'] = " + JSON.stringify(plan0) + ";");
+    run(ctx, "var __origPSMR = preserveSharedMealRecipes; var __lockCalls = 0; " +
+      "preserveSharedMealRecipes = function(o, n){ __lockCalls++; return __origPSMR(o, n); };");
+    call(ctx, 'regenerateWeekPreservingLocks', [monday, {lockSharedRecipes: true}]);
+    const lockCalls = get(ctx, '__lockCalls');
+    assert(lockCalls === 1,
+      'regenerateWeekPreservingLocks({lockSharedRecipes:true}): runs preserveSharedMealRecipes exactly once', String(lockCalls));
+    run(ctx, "preserveSharedMealRecipes = __origPSMR; delete __origPSMR; delete __lockCalls;");
+
+    const planLocked = get(ctx, "weekPlans['" + monday + "']");
+
+    // Every slot shared in the PRIOR plan keeps its prior recipeId and shared status.
+    let allKept = true, keptDetail = [];
+    sharedKeys.forEach(function(key){
+      const parts = key.split('|'), d = Number(parts[0]), slot = parts[1];
+      const m = planLocked.days[d].meals[slot];
+      const ok = m && m.shared === true && m.recipeId === sharedBefore[key];
+      if(!ok){ allKept = false; keptDetail.push(key + ' -> recipeId=' + (m && m.recipeId) + ' shared=' + (m && m.shared)); }
+    });
+    assert(allKept,
+      'regenerateWeekPreservingLocks(lockSharedRecipes:true): every slot shared in the prior plan keeps its prior recipeId (shared status preserved)',
+      keptDetail.join(', '));
+
+    // Portions are RE-PORTIONED (allowed to differ), via the exact same bestPortion formula
+    // applySwapToPlan's shared branch uses, against the freshly-generated target captured by
+    // the unlocked probe above — an exact numeric check of the re-portioning, not a fuzzy one.
+    const anchors = get(ctx, 'PERSON_ANCHOR');
+    const maxPortion = get(ctx, 'SLOT_MAX_PORTION')[probeSlot];
+    const baseKcal = get(ctx, 'recipeNutrition(' + JSON.stringify(oldRecipeId) + ', 1).totals.kcal');
+    const expectedE = call(ctx, 'bestPortion', [baseKcal, targetE, anchors.elena, maxPortion]);
+    const expectedA = call(ctx, 'bestPortion', [baseKcal, targetA, anchors.partner, maxPortion]);
+    const lockedProbeMeal = planLocked.days[probeDay].meals[probeSlot];
+    assert(Math.abs(lockedProbeMeal.elena.portion - expectedE.portion) < 1e-9 && Math.abs(lockedProbeMeal.partner.portion - expectedA.portion) < 1e-9,
+      "regenerateWeekPreservingLocks(lockSharedRecipes:true): re-portions the kept recipe via bestPortion against the freshly-generated slot's kcal target",
+      'expected elena=' + expectedE.portion + ' partner=' + expectedA.portion + ' got elena=' + lockedProbeMeal.elena.portion + ' partner=' + lockedProbeMeal.partner.portion);
+
+    // The pinned shared slot stays byte-for-byte pinned — a full pin still wins outright over
+    // the softer recipe-only lock.
+    const pinnedCellAfter = get(ctx, "JSON.stringify(weekPlans['" + monday + "'].days[" + pinDay + "].meals." + pinSlot + ")");
+    assert(pinnedCellAfter === pinnedCellBefore,
+      'regenerateWeekPreservingLocks(lockSharedRecipes:true): a pinned shared slot stays fully pinned (byte-identical), unaffected by the softer recipe lock');
+
+    // An unshared/solo slot's recipe is free to change — every entry the fixture DIDN'T mark
+    // shared exists precisely because a couples plan mixes shared and solo slots; the lock
+    // above touched only sharedKeys, so any such slot was never constrained by this pass.
+    const soloSlotCount = plan0.days.reduce(function(n, day){
+      return n + SLOTS.filter(function(slot){ return day.meals[slot] && !day.meals[slot].shared; }).length;
+    }, 0);
+    assert(soloSlotCount > 0,
+      'setup: the fixture plan also has unshared/solo slots, which lockSharedRecipes never constrains', String(soloSlotCount));
+
+    // Flag OFF (omitted, {}, or {lockSharedRecipes:false}) must never invoke
+    // preserveSharedMealRecipes at all — byte-identical to today for every existing caller.
+    run(ctx, "var __origPSMR2 = preserveSharedMealRecipes; var __lockCalls2 = 0; " +
+      "preserveSharedMealRecipes = function(){ __lockCalls2++; return __origPSMR2.apply(this, arguments); };");
+    run(ctx, "weekPlans['" + monday + "'] = " + JSON.stringify(plan0) + ";");
+    call(ctx, 'regenerateWeekPreservingLocks', [monday]);
+    run(ctx, "weekPlans['" + monday + "'] = " + JSON.stringify(plan0) + ";");
+    call(ctx, 'regenerateWeekPreservingLocks', [monday, {}]);
+    run(ctx, "weekPlans['" + monday + "'] = " + JSON.stringify(plan0) + ";");
+    call(ctx, 'regenerateWeekPreservingLocks', [monday, {lockSharedRecipes: false}]);
+    const callsWithFlagOff = get(ctx, '__lockCalls2');
+    assert(callsWithFlagOff === 0,
+      'regenerateWeekPreservingLocks: preserveSharedMealRecipes never runs when opts is omitted, {}, or {lockSharedRecipes:false} — the flag defaults off, unaffecting every existing caller',
+      String(callsWithFlagOff));
+    run(ctx, "preserveSharedMealRecipes = __origPSMR2; delete __origPSMR2; delete __lockCalls2;");
+
+    // Sheet UI: the checkbox is offered for a couple, and entirely absent for a solo household
+    // (shared meals don't exist there, so the option would be meaningless).
+    run(ctx, "householdSize = 2; householdSizeManual = true;");
+    const sheetCouple = call(ctx, 'buildRegenerateSheet', []);
+    assert(sheetCouple.indexOf('id="regenLockShared"') !== -1,
+      'buildRegenerateSheet: offers the "Keep our shared meals" checkbox for a two-person household', 'not found');
+    run(ctx, "householdSize = 1; householdSizeManual = true;");
+    const sheetSolo = call(ctx, 'buildRegenerateSheet', []);
+    assert(sheetSolo.indexOf('id="regenLockShared"') === -1,
+      'buildRegenerateSheet: the checkbox is absent for a solo household', sheetSolo);
+  } finally {
+    ctx.weekPlans = savedWeekPlans; ctx.mealPins = savedPins; ctx.logHistory = savedLog;
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; mealPins = " + JSON.stringify(get(ctx, 'mealPins')) + "; logHistory = " + JSON.stringify(get(ctx, 'logHistory'))
+      + "; householdSize = " + JSON.stringify(savedHousehold) + "; householdSizeManual = " + JSON.stringify(savedHouseholdManual) + ";");
+  }
+}
+
 // REGRESSION (owner 2026-08-24): a logged/pinned meal must be KEPT through a Regenerate AND
 // CONSIDERED when building the rest of the week — before this fix, generateWeek built fresh picks
 // for all days and preserveLoggedSlots patched the logged slot in afterwards, so the logged meal
@@ -13558,6 +13696,7 @@ function main(){
   runTest('swap sheet: Best-matches stays same-slot+complete; search is universal (all slots/roles, occasional composites)', function(){ testSwapCompleteMealPoolAndUniversalSearch(ctx); });
   runTest('swap sheet: "what do you feel like?" craving filter (fruit/veg/protein/light/quick)', function(){ testSwapCravingFilter(ctx); });
   runTest('regenerate week keeps pinned + logged', function(){ testRegenerateWeekPreservingLocks(ctx); });
+  runTest('regenerate: "keep our shared meals" locks recipes but re-portions (opt-in, couples-only)', function(){ testRegenerateLockSharedMeals(ctx); });
   runTest('regenerate considers logged meals for variety (no next-day repeat)', function(){ testRegenerateConsidersLoggedMeals(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
