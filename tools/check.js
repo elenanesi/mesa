@@ -3999,6 +3999,148 @@ function testDominantIngredientVariety(ctx){
     'ingredientDiversityPenalty: per-person - partner has no carrots logged today, so no penalty for them');
 }
 
+// Over-scale comfort penalty (2026-09-03, panel-approved): a SOFT, bounded, always-on score
+// term (sibling to tuningBonus/ingredientDiversityPenalty above) that discourages tripling ONE
+// dish to hit a high-calorie lunch/dinner target instead of picking a denser recipe. See
+// portionScalePenalty's own doc in planner.js for the full design/measurement writeup.
+function testOverScalePenalty(ctx){
+  const PORTION_PENALTY_START = get(ctx, 'PORTION_PENALTY_START');
+  const PORTION_PENALTY_CAP = get(ctx, 'PORTION_PENALTY_CAP');
+  const PORTION_PENALTY_WEIGHT = get(ctx, 'PORTION_PENALTY_WEIGHT');
+  const FIBRE_CEILING = get(ctx, 'FIBRE_CEILING');
+  const FIBRE_PENALTY_WEIGHT = get(ctx, 'FIBRE_PENALTY_WEIGHT');
+  const maxCombined = PORTION_PENALTY_WEIGHT + FIBRE_PENALTY_WEIGHT;
+
+  // -------- (1) portionScalePenalty: pure function bounds — zero below both thresholds,
+  // ramps negative between them, saturates at (and never exceeds) the combined cap. --------
+  assert(call(ctx, 'portionScalePenalty', [1, 0]) === 0,
+    'portionScalePenalty: a normal 1x portion with no fibre concern scores exactly 0 (no penalty at all)');
+  assert(call(ctx, 'portionScalePenalty', [PORTION_PENALTY_START, 0]) === 0,
+    'portionScalePenalty: right at the portion ramp\'s start (1.75x), the penalty is still exactly 0');
+  assert(call(ctx, 'portionScalePenalty', [1, FIBRE_CEILING]) === 0,
+    'portionScalePenalty: right at the fibre ceiling (in a 1x-portion dish), the penalty is still exactly 0');
+  const midPortion = call(ctx, 'portionScalePenalty', [(PORTION_PENALTY_START + PORTION_PENALTY_CAP) / 2, 0]);
+  assert(midPortion < 0 && midPortion > -PORTION_PENALTY_WEIGHT,
+    'portionScalePenalty: a portion halfway up the ramp scores strictly between 0 and the full portion weight (a smooth ramp, not a step)',
+    'got=' + midPortion);
+  assert(call(ctx, 'portionScalePenalty', [PORTION_PENALTY_CAP, 0]) === -PORTION_PENALTY_WEIGHT,
+    'portionScalePenalty: at the lunch/dinner 3x cap with no fibre concern, the penalty saturates at exactly -PORTION_PENALTY_WEIGHT');
+  assert(call(ctx, 'portionScalePenalty', [1, FIBRE_CEILING + 1000]) === -FIBRE_PENALTY_WEIGHT,
+    'portionScalePenalty: an absurdly high fibre number never exceeds the fibre weight\'s own cap (bounded, not runaway)');
+  assert(call(ctx, 'portionScalePenalty', [PORTION_PENALTY_CAP, FIBRE_CEILING + 1000]) === -maxCombined,
+    'portionScalePenalty: both signals maxed out together saturate at exactly the combined cap, never beyond it');
+
+  // -------- (2) soft contract: the term can only reorder CLOSE ties — a candidate with a
+  // real kcal-fit advantage (here, 6% off target vs exact, well beyond the combined cap's
+  // reach at kcalErr*1000 scale) still wins even against the worst-case penalty. --------
+  const desired = 1000;
+  const scoreGoodFitHighPortion = call(ctx, 'mealScore', [desired, desired, 0, 0, 0, 0, 'x', 0, 'elena'])
+    + call(ctx, 'portionScalePenalty', [PORTION_PENALTY_CAP, FIBRE_CEILING + 1000]); // exact kcal fit, max penalty
+  const scorePoorFitLowPortion = call(ctx, 'mealScore', [desired * 0.94, desired, 0, 0, 0, 0, 'y', 0, 'elena'])
+    + call(ctx, 'portionScalePenalty', [1, 0]); // 6% off target, no penalty at all
+  assert(scoreGoodFitHighPortion > scorePoorFitLowPortion,
+    'over-scale penalty is soft: an exact-kcal-fit candidate at the fully-penalized 3x/high-fibre extreme STILL beats a 6%-off-target candidate with zero penalty — the term can only break close ties, never outvote a real kcal-fit advantage',
+    'goodFit(penalized)=' + scoreGoodFitHighPortion + ' poorFit(unpenalized)=' + scorePoorFitLowPortion);
+
+  // -------- (3) demo: a high-cal lunch slot with two role:'full' options — a lean, dense
+  // recipe that hits the target near 1x, and a legume-forward recipe that only hits the same
+  // target by tripling to 3x (and, tripled, runs well over the single-dish fibre comfort
+  // ceiling) — prefers the denser recipe once both are available, exactly the "one dish
+  // tripled" failure this term exists to fix. Built from real FOODS entries so the kcal/fibre
+  // numbers are genuine 4/4/9-derived macros, not hand-waved. --------
+  (function(){
+    const DENSE_ID = '__overscale_demo_dense__', THIN_ID = '__overscale_demo_thin__';
+    // Isolation: this demo must be decided by kcal-fit + portionScalePenalty alone, not by
+    // whatever nextWeekTuning/goals another test in this shared vm context left behind (the
+    // 'fiber' tuning key alone would hand the high-fibre thin fixture a huge, unrelated
+    // bonus at scale — see check.js's own top-of-file warning about shared-context leakage).
+    const savedTuning = get(ctx, 'nextWeekTuning');
+    const savedGoals = get(ctx, 'JSON.stringify(PROF.elena.goals||{})');
+    run(ctx, "nextWeekTuning = 'none'; PROF.elena.goals = {};");
+    const denseRecipe = {
+      title: 'Overscale demo: dense', emoji: '🧪', slot: 'lunch', role: 'full', season: 'evergreen',
+      slots: ['lunch', 'dinner'], styles: ['balanced'], time: 10,
+      // chicken (protein) + rice (carb) + spinach 80g (veg, clears the >=80g veg-bucket
+      // threshold) + olive oil to bring 1x kcal up near the shared target — low fibre
+      // throughout, so this recipe never trips the fibre signal at all.
+      ingredients: [['chicken-breast', 150], ['rice', 60], ['spinach', 80], ['olive-oil', 96]],
+      toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    };
+    const thinRecipe = {
+      title: 'Overscale demo: thin/legume', emoji: '🧪', slot: 'lunch', role: 'full', season: 'evergreen',
+      slots: ['lunch', 'dinner'], styles: ['balanced'], time: 10,
+      // lentils (protein+carb, high fibre) + spinach 80g (veg bucket) — low 1x kcal, so
+      // hitting a high-cal target needs a big portion multiplier.
+      ingredients: [['cooked-lentils', 350], ['spinach', 80]],
+      toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    };
+    run(ctx, 'RECIPES_DB["' + DENSE_ID + '"] = ' + JSON.stringify(denseRecipe) + ';');
+    run(ctx, 'RECIPES_DB["' + THIN_ID + '"] = ' + JSON.stringify(thinRecipe) + ';');
+    try {
+      assert(call(ctx, 'isCompleteLunchDinnerRecipe', [DENSE_ID]) === true,
+        'overscale demo setup: the dense fixture clears the protein+carbs+veg lunch/dinner completeness bar (or it would never enter the candidate pool)');
+      assert(call(ctx, 'isCompleteLunchDinnerRecipe', [THIN_ID]) === true,
+        'overscale demo setup: the thin/legume fixture also clears the completeness bar');
+
+      const thinBase = call(ctx, 'recipeNutrition', [THIN_ID, 1, {}]).totals;
+      // The desired kcal is set so the thin/legume recipe's own bestPortion search lands
+      // EXACTLY on 3x (0 kcal error there) — the worst case for this term, and the case the
+      // owner actually reported (one dish tripled to hit a high-calorie target).
+      const desiredLunch = thinBase.kcal * 3;
+      const slotWeightLunch = get(ctx, 'SLOT_WEIGHT.lunch');
+      const SLOT_ORDER = get(ctx, 'SLOT_ORDER');
+
+      function freshHistory(){
+        const h = {}; SLOT_ORDER.forEach(function(s){ h[s] = []; });
+        h.sideUse = {}; h.bfPairUse = {}; h.dayUseRecipe = {}; h.dayUseFood = {};
+        h.dayUseIngredientKey = {}; h.weekUse = {};
+        // lunch/dinner-only fields (generateWeek seeds these too — see its own history
+        // setup) that applyLunchDinnerMainRules reads unconditionally for a lunch/dinner
+        // slot, unlike the snack-only fixture history elsewhere in this file.
+        h.lunchDinnerMainUse = {}; h.meatUse = {red: 0, poultry: 0, total: 0};
+        return h;
+      }
+      const history = {elena: freshHistory(), partner: freshHistory()};
+      const weekSeed = call(ctx, 'stableHash', [FIXED_MONDAY]);
+      // remainingProteinP=0 -> desiredProt=0 -> mealScore's proteinShort term is 0 for both
+      // candidates regardless of their real protein, isolating the comparison to kcal-fit +
+      // the over-scale penalty (+ the small rotation/composition tie-break terms).
+      const entry = call(ctx, 'pickSoloMeal', [[DENSE_ID, THIN_ID], 'elena', 'lunch', 0, 1, desiredLunch, 0, slotWeightLunch, history, weekSeed, null]);
+
+      assert(entry.recipeId === DENSE_ID,
+        'over-scale penalty demo: given a fair choice between a dense recipe (near-1x) and a legume recipe that only hits the same target by tripling, the planner now prefers the DENSER recipe',
+        'picked=' + entry.recipeId + ' portion=' + entry.portion);
+      assert(entry.portion <= PORTION_PENALTY_START,
+        'over-scale penalty demo: the winning pick\'s portion stays at or under the ramp\'s own start (1.75x) — nowhere near the 3x cap',
+        'portion=' + entry.portion);
+
+      // Prove the penalty is WHY the dense recipe wins, not a coincidence of the other terms:
+      // recompute both candidates' scores with the SAME formula pickSoloMeal itself just used,
+      // once with the over-scale term included (matches the real winner) and once with it
+      // subtracted back out (what the score would have been before this change existed).
+      const denseBase = call(ctx, 'recipeNutrition', [DENSE_ID, 1, {}]).totals;
+      const denseBp = call(ctx, 'bestPortion', [denseBase.kcal, desiredLunch, get(ctx, 'PERSON_ANCHOR.elena'), 3]);
+      const thinBp = call(ctx, 'bestPortion', [thinBase.kcal, desiredLunch, get(ctx, 'PERSON_ANCHOR.elena'), 3]);
+      const denseFiberAtPortion = denseBase.fiber * denseBp.portion;
+      const thinFiberAtPortion = thinBase.fiber * thinBp.portion;
+      const denseRaw = call(ctx, 'mealScore', [denseBp.kcal, desiredLunch, 0, 0, 0, 1, DENSE_ID, weekSeed, 'elena']);
+      const thinRaw = call(ctx, 'mealScore', [thinBp.kcal, desiredLunch, 0, 0, 0, 1, THIN_ID, weekSeed, 'elena']);
+      const densePen = call(ctx, 'portionScalePenalty', [denseBp.portion, denseFiberAtPortion]);
+      const thinPen = call(ctx, 'portionScalePenalty', [thinBp.portion, thinFiberAtPortion]);
+      assert(thinBp.portion === 3, 'over-scale penalty demo: the thin/legume recipe\'s own best portion really is the 3x cap (confirms the fixture is testing the intended worst case)', 'thinPortion=' + thinBp.portion);
+      assert(thinRaw > denseRaw,
+        'over-scale penalty demo: WITHOUT this term, the thin/legume 3x pick would have out-scored the dense pick (kcal-fit/composition alone favored the over-scaled dish) — the flip below is the penalty\'s doing, not a coincidence',
+        'thinRaw=' + thinRaw + ' denseRaw=' + denseRaw);
+      assert((thinRaw + thinPen) < (denseRaw + densePen),
+        'over-scale penalty demo: WITH this term added, the ordering flips — the dense pick now wins, matching the real pickSoloMeal winner above',
+        'thinTotal=' + (thinRaw + thinPen) + ' denseTotal=' + (denseRaw + densePen));
+    } finally {
+      run(ctx, 'delete RECIPES_DB["' + DENSE_ID + '"]; delete RECIPES_DB["' + THIN_ID + '"];');
+      run(ctx, "nextWeekTuning = " + JSON.stringify(savedTuning) + "; PROF.elena.goals = " + savedGoals + ";");
+    }
+  })();
+}
+
 // Avoid a SPECIFIC ingredient (owner request 2026-08-22): PROF.avoidFoods excludes recipes that
 // contain that ingredient id (base ingredients drop the whole recipe; an option-group choice is
 // filtered per-choice so the recipe stays viable on its other variants).
@@ -12791,6 +12933,7 @@ function main(){
   runTest('regenerate considers logged meals for variety (no next-day repeat)', function(){ testRegenerateConsidersLoggedMeals(ctx); });
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
+  runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
   runTest('recipe-of-recipes (components aggregate)', function(){ testRecipeComponents(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

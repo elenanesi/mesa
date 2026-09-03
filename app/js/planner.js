@@ -1796,6 +1796,73 @@ function ingredientDiversityPenalty(mainId, opts, extras, history, person, dayIn
   return -penalty;
 }
 
+/* ---------------- over-scale comfort penalty (2026-09-03, panel-approved) ----------------
+   Owner report: a high-calorie eater (~3000kcal) can land one dense dish scaled up toward
+   the SLOT_MAX_PORTION lunch/dinner cap (3x) instead of a sensibly-sized plate — e.g. a
+   2-2.5x legume main running ~40g fibre in that ONE dish. Measured before this change: at
+   3000kcal, generated days ran median 62g / max 91g fibre, with 30% of lunch/dinner slots
+   at >=2x portion and several single dishes over 28g fibre. Panel resolution: a SOFT,
+   bounded, always-on SCORE term (sibling to tuningBonus/ingredientDiversityPenalty above),
+   not a hard cap/filter, and NOT a change to bestPortion() itself (bestPortion is shared by
+   the composed carb/veg-side paths too — capping/filtering there risks starving a slot on a
+   thin pool, the exact trap the prior calorie-evener investigation hit — see
+   AGENT-HANDOVER.md "Investigated & rejected"). Applied at every lunch/dinner candidate's
+   scoring (both pickSharedMeal and pickSoloMeal below), judged on the MAIN component's OWN
+   portion and OWN scaled fibre — standalone role:'full' dishes AND the main half of a
+   composed main+carb+veg pick alike, since a role:'main' recipe (e.g. a legume braise) can
+   be scaled just as high even WITH a side attached (a composed candidate's stored
+   mainFiberE/A/mainFiber field, set at candidate-push time in both files, keeps the side's
+   own fibre out of this term — a fibre-rich SIDE is a deliberate healthy choice, not the
+   over-scale failure this term exists to catch). Narrowing this to standalone-only was tried
+   first and measured to barely move anything (Braised lentils with tomato & cumin, the
+   textbook over-scale case, is role:'main' and therefore ALWAYS composed with a side under
+   the current planner — a standalone-only term structurally cannot touch it).
+
+   Two signals, summed, each clamped so it can only ramp up to its own flat weight and never
+   beyond (bounded — it cannot escalate without limit as a candidate gets more extreme):
+     - portion:  0 below PORTION_PENALTY_START (1.75x), ramping linearly to
+                 PORTION_PENALTY_WEIGHT at the lunch/dinner 3x cap. The simplest, cleanest
+                 signal — it directly targets "one dish tripled" regardless of what that
+                 dish is.
+     - fibre:    0 below FIBRE_CEILING (28g in the ONE scaled dish — a comfort ceiling for a
+                 single dish, distinct from PER_DAY_BANDS' ~43g DAY-level ceiling), ramping
+                 linearly to FIBRE_PENALTY_WEIGHT over the next FIBRE_PENALTY_SPAN (20g).
+                 Catches a fibre-dense dish (lentils, beans) that would still spike even at a
+                 portion below the ramp's start — the concrete failure the owner measured.
+
+   Magnitude: PORTION_PENALTY_WEIGHT=14 / FIBRE_PENALTY_WEIGHT=18, combined max 32 — same
+   band as tuningBonus (15) + goalTuningBonus (up to 15) stacked, well under
+   FAVORITE_SCORE_BOOST (90) and far under kcalErr*1000. Chosen the same way TUNING_WEIGHT
+   was (see that constant's own doc): a throwaway vm-harness debug dump of real candidate
+   scores at the exact flipped/unflipped slots on the 3000kcal fixture showed the REAL score
+   gaps this term has to close are small — e.g. a genuinely-comparable standalone-vs-composed
+   tie at a ~0.4 point margin (12/12 flipped it to 14/18 with room to spare) — while a
+   fibre-dense composed pick that's the pool's clear best kcal/protein fit sits ~24 points
+   ahead of its next-best alternative and stays chosen even at full 32-point penalty, exactly
+   the "never overrides a genuine kcal-fit advantage" contract working as intended, not a
+   sign the weight is too low. Being purely additive over an already-built candidate list,
+   never a filter, it can never empty a pool: on a thin pool where every candidate must scale
+   high, the least-penalized one still wins. Measured via scratchpad/measure-fibre.js before
+   shipping (see AGENT-HANDOVER.md-style before/after table in the commit/handover notes);
+   shipped because: (1) >=2.5x lunch/dinner slots at 3000kcal dropped 12->8 (-33%), >=2x
+   dropped 68->56 (-18%), single-dish fibre>28g dropped 24->19 (-21%), day-max fibre dropped
+   91->82; (2) the ~2150kcal normal case was untouched (portions there rarely cross the 1.75x
+   ramp start — 0 slots >=2x before AND after); (3) zero starved ('no-candidates') slots in
+   any config, including a vegan+gluten-free thin pool at ~1600kcal (also untouched — thin
+   pool never needs a portion above ~2x there either). */
+const PORTION_PENALTY_START = 1.75;
+const PORTION_PENALTY_CAP = 3;      // matches SLOT_MAX_PORTION.lunch/.dinner
+const PORTION_PENALTY_WEIGHT = 14;
+const FIBRE_CEILING = 28;           // grams, in ONE scaled dish (the main component only)
+const FIBRE_PENALTY_SPAN = 20;      // grams over the ceiling to reach full weight
+const FIBRE_PENALTY_WEIGHT = 18;
+function portionScalePenalty(portion, mainFiber){
+  const portionOver = Math.max(0, Math.min(1, (portion - PORTION_PENALTY_START) / (PORTION_PENALTY_CAP - PORTION_PENALTY_START)));
+  const fiber = mainFiber || 0;
+  const fiberOver = Math.max(0, Math.min(1, (fiber - FIBRE_CEILING) / FIBRE_PENALTY_SPAN));
+  return -(PORTION_PENALTY_WEIGHT * portionOver + FIBRE_PENALTY_WEIGHT * fiberOver);
+}
+
 /* ---------------- task C2 (2026-07-18): next-week tuning bonus ----------------
    tuningBonus(totals, tuningKey) is a small deterministic secondary term ADDED to
    mealScore's result (both pickSharedMeal and pickSoloMeal, below) for the candidate
@@ -2388,6 +2455,11 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
                 candidates.push({tieId: tieId, mainId: mainId, extras: extras, opts: opts,
                   portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal + extrasKcal, kcalA: bpA.kcal + extrasKcal,
                   proteinE: mainBase.protein * bpE.portion + extrasProtein, proteinA: mainBase.protein * bpA.portion + extrasProtein,
+                  // mainFiberE/A: the MAIN component's OWN scaled fibre (sides excluded) — fed to
+                  // portionScalePenalty below, which must judge the ONE over-scaled dish, not the
+                  // whole composed plate (a fibre-rich side is a deliberate healthy choice, not
+                  // the over-scale failure this term exists to catch).
+                  mainFiberE: mainBase.fiber * bpE.portion, mainFiberA: mainBase.fiber * bpA.portion,
                   totalsE: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpE.portion), extraTotals), hasO3), totalsA: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, bpA.portion), extraTotals), hasO3)});
               }); });
             }); });
@@ -2403,8 +2475,14 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // never the composite tieId — so a composed unit's score treats "which main" exactly
     // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
     // ONLY for the final deterministic tie-break below.
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex);
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex);
+    // portionScalePenalty: every lunch/dinner candidate (standalone-full AND composed
+    // main+side alike) is judged on its MAIN component's OWN portion/fibre — see that
+    // function's own doc above for why the main-only signal, not the whole plate's.
+    const overScaleSlot = (slot === 'lunch' || slot === 'dinner');
+    const mainFiberE = c.extras ? c.mainFiberE : (c.totalsE && c.totalsE.fiber);
+    const mainFiberA = c.extras ? c.mainFiberA : (c.totalsA && c.totalsA.fiber);
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex) + (overScaleSlot ? portionScalePenalty(c.portionE, mainFiberE) : 0);
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex) + (overScaleSlot ? portionScalePenalty(c.portionA, mainFiberA) : 0);
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
@@ -2518,6 +2596,9 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
             pushComposedSideCandidates(function(tieId, kcal, protein, extras, portion){
               const extraTotals = addNutrientTotals(scaleNutrientTotals(dbBaseNutrition(extras[0].recipeId), extras[0].portion), scaleNutrientTotals(dbBaseNutrition(extras[1].recipeId), extras[1].portion));
               candidates.push({tieId: (sig ? tieId + '|opts:' + sig : tieId), mainId: mainId, extras: extras, opts: opts, portion: portion, kcal: kcal, protein: protein,
+                // mainFiber: the MAIN component's OWN scaled fibre (sides excluded) — see the
+                // matching field in pickSharedMeal's composed push for why.
+                mainFiber: mainBase.fiber * portion,
                 totals: withOmega3(addNutrientTotals(scaleNutrientTotals(mainBase, portion), extraTotals), recipeHasOmega3(mainId) || recipeHasOmega3(extras[0].recipeId) || recipeHasOmega3(extras[1].recipeId))});
             }, mainId, mainBase, desired, anchor, maxPortion, carbIds, vegIds);
           });
@@ -2529,7 +2610,12 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   let best = null;
   candidates.forEach(function(c){
     // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex);
+    // portionScalePenalty: every lunch/dinner candidate is judged on its MAIN component's
+    // OWN portion/fibre — see that function's own doc above (near ingredientDiversityPenalty)
+    // for why the main-only signal, not the whole plate's.
+    const overScaleSlot = (slot === 'lunch' || slot === 'dinner');
+    const mainFiber = c.extras ? c.mainFiber : (c.totals && c.totals.fiber);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex) + (overScaleSlot ? portionScalePenalty(c.portion, mainFiber) : 0);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
   });
