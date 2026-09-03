@@ -787,7 +787,7 @@ const RECIPES_DB = {
     avoid: []
   },
   'polpette-tacchino-yogurt-menta': {
-    title: 'Turkey meatballs with yogurt & mint', emoji: '🦃', slot: 'dinner', role: 'full',
+    title: 'Turkey meatballs with yogurt & mint', emoji: '🦃', slot: 'dinner', role: 'main',
     imageKey: 'polpette-tacchino-yogurt-menta',
     styles: ['balanced', 'highprotein'], time: 28,
     ingredients: [['turkey-breast', 180], ['eggs', 50], ['wholewheat-bread', 35], ['greek-yogurt', 80], ['cucumber', 80], ['olive-oil', 8]],
@@ -2059,7 +2059,7 @@ const RECIPES_DB = {
   // anchored); the galette stays `occasional`. New foods: breadcrumbs, quinoa, pistachios,
   // mascarpone, cornstarch, burrata (diet lists wired in library.js).
   'broccoli-ricotta-patties': {
-    title: 'Broccoli & ricotta melty patties', emoji: '🥦', slot: 'dinner', role: 'full',
+    title: 'Broccoli & ricotta melty patties', emoji: '🥦', slot: 'dinner', role: 'main',
     season: 'winter/autumn', styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['broccoli', 200], ['ricotta', 100], ['scamorza', 45], ['breadcrumbs', 15]],
     toTaste: ['black pepper', 'salt', 'garlic'],
