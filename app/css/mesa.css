@@ -195,6 +195,15 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .ta-skip{background:#f6e6dc;color:#b25e35;}
 .today-actions .tag-row{margin-top:0;}
 
+/* BOOST CHIP (v1, manual-only nutrition nudge): calm sage pill, never terra/warning — this
+   is an invitation, not a correction. Its own small ✕ dismisses for the day, same visual
+   convention as .basics-banner-card's .bb-x. Both buttons stopPropagation (inline, at the
+   call site) so tapping either never also triggers the card's own recipe-open tap. */
+.boost-chip{display:flex;align-items:center;gap:4px;margin-top:9px;}
+.boost-chip-btn{border:1px solid rgba(127,147,100,.28);background:var(--sage-tint);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:700;padding:0 12px;height:36px;border-radius:999px;cursor:pointer;}
+.boost-chip-btn:active{transform:scale(.96);}
+.boost-chip-x{border:0;background:none;color:var(--sage-deep);opacity:.55;font-size:13px;cursor:pointer;padding:0 8px;height:36px;line-height:1;}
+
 /* nutrient coverage chips */
 .nutri{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;}
 .nutri .n{background:#fff;border:1px solid var(--line);border-radius:16px;padding:11px 13px;}

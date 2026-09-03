@@ -385,7 +385,10 @@ const FOODS = {
   'chickpeas': {
     name: 'Chickpeas, cooked', per: 100, unit: 'g',
     kcal: 169, protein: 8.9, carbs: 27.4, fat: 2.6, satFat: 0.3, fiber: 7.6,
-    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Protein', iconKey: 'chickpeas', src: 'USDA FDC 173757 (chickpeas, cooked, boiled)'
+    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Protein', iconKey: 'chickpeas', src: 'USDA FDC 173757 (chickpeas, cooked, boiled)',
+    // BOOST-CHIP allowlist (nutritionist, v1): a legume delivers a real bump of BOTH
+    // tracked nutrients at a sensible ~50g add — see BOOST_SUGGESTED_GRAMS (planner.js).
+    boostFor: ['fiber', 'protein']
   },
   'cannellini-beans': {
     name: 'Cannellini / white beans, cooked', per: 100, unit: 'g',
@@ -572,7 +575,10 @@ const FOODS = {
   'chia-seeds': {
     name: 'Chia seeds', per: 100, unit: 'g',
     kcal: 511, protein: 16.5, carbs: 42.1, fat: 30.7, satFat: 3.3, fiber: 34.4,
-    flags: ['omega3', 'highFiber', 'glutenFree'], cat: 'Pantry', measures: {tbsp:12, tsp:4}, iconKey: 'chia-seeds', src: 'USDA FDC 170554 (chia seeds, dried)'
+    flags: ['omega3', 'highFiber', 'glutenFree'], cat: 'Pantry', measures: {tbsp:12, tsp:4}, iconKey: 'chia-seeds', src: 'USDA FDC 170554 (chia seeds, dried)',
+    // BOOST-CHIP allowlist (nutritionist, v1): best fibre-per-kcal of the set — a 12g add
+    // (BOOST_SUGGESTED_GRAMS, planner.js) delivers ~4g fibre for ~61 kcal.
+    boostFor: ['fiber']
   },
   'quinoa-dry': {
     name: 'Quinoa, dry (uncooked)', per: 100, unit: 'g',
@@ -582,7 +588,10 @@ const FOODS = {
   'cooked-lentils': {
     name: 'Lentils, cooked', per: 100, unit: 'g',
     kcal: 120, protein: 9.0, carbs: 20.1, fat: 0.4, satFat: 0.1, fiber: 7.9,
-    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Pantry', iconKey: 'cooked-lentils', src: 'USDA FDC 172420 (lentils, cooked, boiled)'
+    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Pantry', iconKey: 'cooked-lentils', src: 'USDA FDC 172420 (lentils, cooked, boiled)',
+    // BOOST-CHIP allowlist (nutritionist, v1): a legume delivers a real bump of BOTH
+    // tracked nutrients at a sensible ~50g add — see BOOST_SUGGESTED_GRAMS (planner.js).
+    boostFor: ['fiber', 'protein']
   },
   'farro-cooked': {
     name: 'Farro, cooked', per: 100, unit: 'g',
@@ -905,7 +914,10 @@ const FOODS = {
   'pumpkin-seeds': {
     name: 'Pumpkin seeds, hulled, raw', per: 100, unit: 'g',
     kcal: 605, protein: 30.2, carbs: 10.7, fat: 49.0, satFat: 8.7, fiber: 6.0,
-    flags: ['omega3'], cat: 'Pantry', iconKey: 'pumpkin-seeds', src: 'USDA FDC 170556 (seeds, pumpkin, hulled, raw)'
+    flags: ['omega3'], cat: 'Pantry', iconKey: 'pumpkin-seeds', src: 'USDA FDC 170556 (seeds, pumpkin, hulled, raw)',
+    // BOOST-CHIP allowlist (nutritionist, v1): the set's protein-forward seed — a ~15g add
+    // (BOOST_SUGGESTED_GRAMS, planner.js) delivers ~4.5g protein for ~91 kcal.
+    boostFor: ['protein']
   },
   'coconut-milk': {
     name: 'Coconut milk, canned (regular)', per: 100, unit: 'ml',

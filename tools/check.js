@@ -4866,8 +4866,47 @@ function testProteinBalance(ctx){
   }
 }
 
+// Shared by testComposedMeals (below) and testBoostChip: validates EVERY element of a
+// composed entry's extras array, not just extras[0]. The generator only ever produces ONE
+// extra (composedCount across both suites has never seen index>=1 from generateWeek
+// itself), but a live app can stack a SECOND extra onto an already-composed unit by hand —
+// the BOOST CHIP feature adds a food extra onto a lunch/dinner slot that may already carry
+// its generator-composed role:"side" recipe extra (planner.js:addExtraFoodToMeal never
+// clears existing extras, it appends). So: index 0 is held to the SAME strict generation
+// whitelist as before (breakfastPair food id for breakfast, role:"side" recipe for lunch/
+// dinner) — composition structure at the front of the array is still generator-owned and
+// must stay whitelist-correct — while any LATER element (idx>0) only needs to resolve to a
+// real, present food or recipe (the same "does this component exist" shape every other add-
+// meal extra is held to elsewhere, e.g. planEntryComponents' own filtering) since a manually
+// stacked extra was never meant to satisfy the generator's own narrower whitelist.
+function composedExtraProblems(entry, slot, RECIPES_DB, FOODS){
+  const problems = [];
+  if(!entry || !Array.isArray(entry.extras)) return problems;
+  entry.extras.forEach(function(extra, idx){
+    if(idx === 0){
+      if(slot === 'breakfast'){
+        if(!extra.foodId || BREAKFAST_PAIR_FOOD_IDS.indexOf(extra.foodId) === -1){
+          problems.push('breakfast extra[0] not on the breakfastPair whitelist: ' + JSON.stringify(extra));
+        }
+      } else {
+        if(!extra.recipeId || !RECIPES_DB[extra.recipeId] || RECIPES_DB[extra.recipeId].role !== 'side'){
+          problems.push(slot + ' extra[0] is not a role:"side" recipe: ' + JSON.stringify(extra));
+        }
+      }
+    } else {
+      const validFood = extra.foodId && FOODS[extra.foodId];
+      const validRecipe = extra.recipeId && RECIPES_DB[extra.recipeId];
+      if(!validFood && !validRecipe){
+        problems.push(slot + ' extra[' + idx + '] is not a valid food/recipe reference: ' + JSON.stringify(extra));
+      }
+    }
+  });
+  return problems;
+}
+
 function testComposedMeals(ctx){
   const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
   const KCAL_BAND = get(ctx, 'KCAL_BAND');
 
   run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
@@ -4912,16 +4951,10 @@ function testComposedMeals(ctx){
 
           if(!isComposed) return;
           if(slot === 'breakfast') composedBreakfast++; else composedLunchDinner++;
-          const extra = entry.extras[0];
-          if(slot === 'breakfast'){
-            if(!extra.foodId || BREAKFAST_PAIR_FOOD_IDS.indexOf(extra.foodId) === -1){
-              problems.push('breakfast extra not on the breakfastPair whitelist: ' + JSON.stringify(extra));
-            }
-          } else {
-            if(!extra.recipeId || !RECIPES_DB[extra.recipeId] || RECIPES_DB[extra.recipeId].role !== 'side'){
-              problems.push(slot + ' extra is not a role:"side" recipe: ' + JSON.stringify(extra));
-            }
-          }
+          // Walks EVERY element of entry.extras (not just extras[0]) — see
+          // composedExtraProblems' header doc for why a later element is held to a looser
+          // (but still real) shape check than the generator-owned first slot.
+          Array.prototype.push.apply(problems, composedExtraProblems(entry, slot, RECIPES_DB, FOODS));
         });
       });
     });
@@ -5374,6 +5407,184 @@ function testMealExtras(ctx){
     assert(call(ctx, 'setExtraFoodGrams', [s.wk, 0, 'lunch', 'elena', 'never-added', 100]) === false,
       'setExtraFoodGrams: false when the foodId is not a current extra', '');
   })();
+}
+
+/* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------
+   Panel-approved feature: pins (a) the eligibility predicate (boostChipTargetSlot/
+   boostNutrientForDay, render-today.js) — light/low on a live running day, forward-looking
+   only (never a confirmed/eaten slot), dismissible per (date, person); (b) the suggested-
+   food selection (boostSuggestionsFor, planner.js) — fibre boosters for a fibre-light day,
+   protein boosters for a protein-low day, never a supplement:true food; (c) the extended
+   composed-extras invariant (composedExtraProblems, above) actually covers a stacked 2nd
+   extra, which is exactly what the boost chip's own add path produces when it lands a food
+   extra onto a slot the generator already composed with a role:"side" recipe.
+
+   Deliberately never calls renderTodayMeals()/dismissBoostChip() on the shared ctx — like
+   testBasicsBanner's avoidance of dismissBasicsBanner() above, those touch DOM ids
+   (bfBoost/etc.) with no `if(el)` guard on the render path itself in places, and this
+   harness's shared document stub returns null from getElementById (see this file's header
+   doc) — so this suite drives the pure globals/predicates directly. */
+function testBoostChip(ctx){
+  const RECIPES_DB = get(ctx, 'RECIPES_DB');
+  const FOODS = get(ctx, 'FOODS');
+
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; boostChipDismissedFor = {date: null, person: null};');
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan.weekStartDate;
+  const dateISO = plan.days[0].date;
+  const person = 'elena';
+  call(ctx, 'recomputeProf', [person]);
+
+  /* -------- (b) suggested-food selection: fibre boosters for fibre, protein boosters for
+     protein, every one on the boostFor allowlist, never a supplement:true food. -------- */
+  const fiberSugg = call(ctx, 'boostSuggestionsFor', ['fiber']);
+  assert(fiberSugg.length >= 2 && fiberSugg.length <= 3,
+    'boostSuggestionsFor("fiber"): returns 2-3 suggestions (panel spec: "2-3 suggested booster foods")', JSON.stringify(fiberSugg));
+  fiberSugg.forEach(function(s){
+    const f = FOODS[s.foodId];
+    assert(!!f && Array.isArray(f.boostFor) && f.boostFor.indexOf('fiber') !== -1,
+      'boostSuggestionsFor("fiber"): ' + s.foodId + ' is tagged boostFor:[...,"fiber",...] in data/foods.js', JSON.stringify(f));
+    assert(f.supplement !== true, 'boostSuggestionsFor("fiber"): never a supplement:true food (' + s.foodId + ')', '');
+    assert(s.grams > 0 && s.kcal > 0 && s.fiber > 0, 'boostSuggestionsFor("fiber"): ' + s.foodId + ' carries a real computed grams/kcal/fiber amount', JSON.stringify(s));
+  });
+  assert(fiberSugg[0].foodId === 'chia-seeds',
+    'boostSuggestionsFor("fiber"): chia seeds (best fibre-per-kcal per the nutritionist spec) sorts first', JSON.stringify(fiberSugg));
+
+  const proteinSugg = call(ctx, 'boostSuggestionsFor', ['protein']);
+  assert(proteinSugg.length >= 1 && proteinSugg.length <= 3,
+    'boostSuggestionsFor("protein"): returns 1-3 suggestions', JSON.stringify(proteinSugg));
+  proteinSugg.forEach(function(s){
+    const f = FOODS[s.foodId];
+    assert(!!f && Array.isArray(f.boostFor) && f.boostFor.indexOf('protein') !== -1,
+      'boostSuggestionsFor("protein"): ' + s.foodId + ' is tagged boostFor:[...,"protein",...] in data/foods.js', JSON.stringify(f));
+    assert(f.supplement !== true, 'boostSuggestionsFor("protein"): never a supplement:true food (' + s.foodId + ')', '');
+  });
+  assert(proteinSugg.some(function(s){ return s.foodId === 'pumpkin-seeds'; }),
+    'boostSuggestionsFor("protein"): pumpkin seeds (the set\'s protein-forward seed) is offered', JSON.stringify(proteinSugg));
+  // Whey protein powder is deliberately never on this allowlist — Mesa never auto-suggests
+  // a supplement, even though it can still be logged/added by hand elsewhere.
+  assert(!fiberSugg.concat(proteinSugg).some(function(s){ return s.foodId === 'whey-protein-powder'; }),
+    'boostSuggestionsFor: whey protein powder is never suggested (Mesa never auto-suggests a supplement)', '');
+
+  // Prove the supplement filter is a REAL guardrail, not "nothing to filter today": flag an
+  // otherwise-eligible candidate supplement:true and confirm it drops out immediately.
+  run(ctx, "FOODS['chia-seeds'].__boostTestSavedSupplement = FOODS['chia-seeds'].supplement; FOODS['chia-seeds'].supplement = true;");
+  const fiberSuggNoChia = call(ctx, 'boostSuggestionsFor', ['fiber']);
+  run(ctx, "FOODS['chia-seeds'].supplement = FOODS['chia-seeds'].__boostTestSavedSupplement; delete FOODS['chia-seeds'].__boostTestSavedSupplement;");
+  assert(!fiberSuggNoChia.some(function(s){ return s.foodId === 'chia-seeds'; }),
+    'boostSuggestionsFor: a candidate flagged supplement:true is excluded even though it carries boostFor', JSON.stringify(fiberSuggNoChia));
+  assert(FOODS['chia-seeds'].supplement !== true, 'test hygiene: chia-seeds\' supplement flag was restored', JSON.stringify(FOODS['chia-seeds']));
+
+  /* -------- (a) eligibility predicate -------- */
+  // BALANCED: a freshly generated, untouched day. AGENT-HANDOVER.md's "Investigated &
+  // rejected" measurement documents generation keeping fibre well clear of its floor (runs
+  // ~50g, above even the comfort CEILING) and calories/protein balanced per day — so an
+  // untouched day must read quiet, chip-wise, with nothing skipped/logged/dismissed.
+  assert(call(ctx, 'boostNutrientForDay', [dateISO, person]) == null,
+    'boostNutrientForDay: a freshly generated, untouched day is not light on fibre or protein', JSON.stringify(call(ctx, 'boostDayTotals', [dateISO, person])));
+  assert(call(ctx, 'boostChipTargetSlot', [dateISO, person]) === null,
+    'boostChipTargetSlot: no chip on a balanced day', '');
+
+  // Reduce the running day to its one remaining required meal — skip every other required,
+  // planned slot (markSlotSkipped, same B5 catch-up path the Week screen uses) so the LIVE
+  // running totals (weekDayNutriViews) collapse toward a single meal, which in practice is
+  // always short of both the fibre floor and the protein floor.
+  const reqSlots = call(ctx, 'requiredSlots', [dateISO, person]);
+  const menu = call(ctx, 'computeMenuForDate', [dateISO, person]);
+  const withRecipe = reqSlots.filter(function(s){ return menu[s] && menu[s].recipeId; });
+  assert(withRecipe.length >= 1, 'test setup: at least one required slot has a planned recipe today', JSON.stringify(withRecipe));
+  const target = withRecipe[withRecipe.length - 1];
+  withRecipe.slice(0, -1).forEach(function(s){ call(ctx, 'markSlotSkipped', [dateISO, person, s]); });
+
+  const nutrient = call(ctx, 'boostNutrientForDay', [dateISO, person]);
+  assert(nutrient === 'fiber' || nutrient === 'protein',
+    'boostNutrientForDay: a day reduced to one remaining meal reads light on fibre or protein', String(nutrient));
+  assert(call(ctx, 'boostChipTargetSlot', [dateISO, person]) === target,
+    'boostChipTargetSlot: targets the one remaining pending, planned slot on a light day', 'got ' + call(ctx, 'boostChipTargetSlot', [dateISO, person]) + ' want ' + target);
+
+  // CONFIRMED: once the TARGET slot itself is confirmed (logged), the forward-looking
+  // guardrail hides the chip immediately — psychologist requirement: never comment on an
+  // already-eaten meal, even if the day still reads light overall.
+  const entry = get(ctx, "weekPlans['" + wk + "'].days[0].meals['" + target + "']['" + person + "']");
+  const components = call(ctx, 'planEntryComponents', [entry]);
+  call(ctx, 'logPlanEntry', [dateISO, person, target, entry.recipeId, entry.portion, components]);
+  assert(call(ctx, 'boostChipTargetSlot', [dateISO, person]) === null,
+    'boostChipTargetSlot: null once the target slot is confirmed (forward-looking only — never surveils an eaten meal)', '');
+  call(ctx, 'removeLoggedSlot', [dateISO, person, target]); // undo — restore pending for the next case
+  assert(call(ctx, 'boostChipTargetSlot', [dateISO, person]) === target,
+    'test hygiene: undoing the confirm restores the chip target', '');
+
+  // DISMISSED: a manual dismiss recorded for this EXACT (date, person) hides the chip; a
+  // dismiss recorded for a different date does not (it auto-resets on a new day — no
+  // persisted-forever nag like the basics banner's one-time dismiss).
+  run(ctx, "boostChipDismissedFor = {date: '" + dateISO + "', person: '" + person + "'};");
+  assert(call(ctx, 'boostChipTargetSlot', [dateISO, person]) === null,
+    'boostChipTargetSlot: null once dismissed for this exact (date, person)', '');
+  run(ctx, "boostChipDismissedFor = {date: '2020-01-01', person: '" + person + "'};");
+  assert(call(ctx, 'boostChipTargetSlot', [dateISO, person]) === target,
+    'boostChipTargetSlot: a dismiss recorded for a DIFFERENT date does not suppress today', '');
+  run(ctx, 'boostChipDismissedFor = {date: null, person: null};'); // restore neutral default
+
+  /* -------- (c) extended composed-extras invariant covers a STACKED 2nd extra -------- */
+  // The boost chip's own add path (addExtraFoodToMeal) can land a food extra onto a lunch/
+  // dinner slot the generator already composed with its own role:"side" recipe extra
+  // (mutateMealExtras appends, never replaces) — exactly the 2-extra shape
+  // composedExtraProblems (above) must now validate in full, not just extras[0].
+  // The fixture's STARTING single-side-extra shape is set directly (not fished out of
+  // whatever this run's scorer happened to compose — that can legitimately be 0, 1 or 2
+  // side extras and made the very first version of this test flaky-skip on this exact
+  // FIXED_MONDAY fixture), so this case runs deterministically every time rather than only
+  // when generation happens to cooperate.
+  (function(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+    const plan2 = call(ctx, 'ensureWeekPlan', []);
+    const wk2 = plan2.weekStartDate;
+    let sample = null;
+    plan2.days.some(function(day, di){
+      return ['lunch', 'dinner'].some(function(slot){
+        return ['elena', 'partner'].some(function(p){
+          const e = day.meals[slot] && day.meals[slot][p];
+          if(e && e.recipeId){ sample = {dayIndex: di, slot: slot, person: p}; return true; }
+          return false;
+        });
+      });
+    });
+    assert(!!sample, 'test setup: at least one lunch/dinner slot has a planned recipe to build the stacked-extras fixture from', '');
+    const sideId = Object.keys(RECIPES_DB).filter(function(id){ return RECIPES_DB[id].role === 'side'; })[0];
+    assert(!!sideId, 'test setup: at least one role:"side" recipe exists in RECIPES_DB to seed the fixture\'s extras[0]', '');
+    run(ctx, "weekPlans['" + wk2 + "'].days[" + sample.dayIndex + "].meals['" + sample.slot + "']['" + sample.person + "'].extras = [{recipeId: '" + sideId + "', portion: 1}];");
+
+    const ok = call(ctx, 'addExtraFoodToMeal', [wk2, sample.dayIndex, sample.slot, sample.person, 'chia-seeds', 12]);
+    assert(ok === true, 'test setup: addExtraFoodToMeal stacks a 2nd (food) extra onto an already-composed side unit', 'got ' + ok);
+    const entry2 = get(ctx, "weekPlans['" + wk2 + "'].days[" + sample.dayIndex + "].meals['" + sample.slot + "']['" + sample.person + "']");
+    assert(Array.isArray(entry2.extras) && entry2.extras.length === 2 && entry2.extras[1].foodId === 'chia-seeds',
+      'test setup: the entry now carries TWO extras — generator side (extras[0]) + boost food (extras[1])', JSON.stringify(entry2.extras));
+
+    const clean = composedExtraProblems(entry2, sample.slot, RECIPES_DB, FOODS);
+    assert(clean.length === 0,
+      'composedExtraProblems: a valid stacked (generator side + boost food) 2-extra unit passes clean end to end', JSON.stringify(clean));
+
+    // Prove the extension actually reaches idx>0 (not vacuously always empty): corrupt
+    // extras[1] alone and confirm exactly that element is flagged.
+    const corruptTail = JSON.parse(JSON.stringify(entry2));
+    corruptTail.extras[1] = {foodId: 'not-a-real-food-id', grams: 12};
+    const tailProblems = composedExtraProblems(corruptTail, sample.slot, RECIPES_DB, FOODS);
+    assert(tailProblems.length === 1 && /extra\[1\]/.test(tailProblems[0]),
+      'composedExtraProblems: an invalid extras[1] (the stacked boost slot) is caught — proves idx>0 is actually walked, not skipped', JSON.stringify(tailProblems));
+
+    // extras[0] must still be held to the STRICT generator whitelist even with a valid
+    // extras[1] behind it — the extension must never loosen the original invariant.
+    const corruptHead = JSON.parse(JSON.stringify(entry2));
+    corruptHead.extras[0] = {recipeId: 'not-a-real-recipe-id'};
+    const headProblems = composedExtraProblems(corruptHead, sample.slot, RECIPES_DB, FOODS);
+    assert(headProblems.length >= 1 && /extra\[0\]/.test(headProblems[0]),
+      'composedExtraProblems: extras[0] stays held to the strict role:"side" whitelist regardless of a valid extras[1]', JSON.stringify(headProblems));
+
+    run(ctx, 'weekPlans = {}; weekPlan = null;');
+  })();
+
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {}; boostChipDismissedFor = {date: null, person: null};');
 }
 
 /* ---------------- task B5: catch-up logging from the Week view ----------------
@@ -12593,6 +12804,7 @@ function main(){
   runTest('PERSONAL-PREFS: D1 mirror flattening + never read back', function(){ testFlattenRecipePrefsForMirror(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
+  runTest('BOOST CHIP (v1, manual-only nudge): eligibility predicate, suggested-food selection, extended composed-extras invariant', function(){ testBoostChip(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });

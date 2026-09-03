@@ -2836,6 +2836,55 @@ function dayBalanceOverall(dayTotals, person){
   return (s.kcal==='ok' && s.protein==='ok' && s.fiber==='ok' && s.freeSugars==='ok' && s.satFat==='ok') ? 'balanced' : 'off';
 }
 
+/* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------
+   Panel spec: a calm, forward-looking, USER-INITIATED "add a boost" chip that offers a
+   small, appetising booster food (chia, seeds, legumes) when a day is running light on
+   fibre or protein per perDayBalanceState — never an auto-add, never attached to an
+   already-logged/eaten meal. This block is the pure ingredient-selection half; the
+   eligibility predicate (which reads live day totals + log/dismiss state) and the sheet
+   wiring live in render-today.js, next to the basics-banner's self-suppressing dismiss
+   this feature reuses the pattern of.
+
+   BOOST_SUGGESTED_GRAMS is a deliberately small, hand-picked amount per food — NOT
+   defaultMealFoodGrams()'s generic per-100g/avgG default, which would offer e.g. 100g of
+   chia seeds (a ~511 kcal add). These numbers are the nutritionist's actual spec: chia is
+   the best fibre-per-kcal in the set (12g -> ~4g fibre for ~61 kcal); cooked lentils/
+   chickpeas are the legume double (fibre AND protein) at a real-portion ~50g; pumpkin
+   seeds are the protein-forward seed at ~15g. Every id here must exist in FOODS and carry
+   a `boostFor` tag (data/foods.js) — testBoostChip (tools/check.js) pins both. */
+const BOOST_SUGGESTED_GRAMS = {
+  'chia-seeds': 12,
+  'cooked-lentils': 50,
+  'chickpeas': 50,
+  'pumpkin-seeds': 15
+};
+
+// Every FOODS id tagged boostFor for `nutrient` ('fiber' | 'protein'), in the fixed
+// BOOST_SUGGESTED_GRAMS order (stable/testable — not re-sorted by computed macros), MINUS
+// any food flagged supplement:true. Mesa deliberately never auto-*suggests* a supplement
+// (psyllium, protein powder) even though a supplement can still be logged/added by hand
+// elsewhere — this filter is the boost chip's own guardrail, independent of whether any
+// current allowlist id happens to carry the flag today.
+function boostCandidateFoodIds(nutrient){
+  return Object.keys(BOOST_SUGGESTED_GRAMS).filter(function(id){
+    const f = FOODS[id];
+    if(!f || f.supplement === true) return false;
+    return Array.isArray(f.boostFor) && f.boostFor.indexOf(nutrient) !== -1;
+  });
+}
+
+// Up to 3 suggested boosters for `nutrient`, each carrying its OWN hand-picked grams and
+// the real computed nutrition for that amount (foodMacros — the same verified path the
+// add-meal sheet's own rows use, never a re-derived estimate) so the sheet can show a
+// truthful "+Ng fibre/protein" note under the existing chip-computed "✓ computed" badge.
+function boostSuggestionsFor(nutrient){
+  return boostCandidateFoodIds(nutrient).slice(0, 3).map(function(id){
+    const grams = BOOST_SUGGESTED_GRAMS[id];
+    const nut = roundedNutritionTotals(foodMacros(id, grams));
+    return {foodId: id, grams: grams, nutrient: nutrient, kcal: nut.kcal, protein: nut.protein, fiber: nut.fiber};
+  });
+}
+
 // autoBalancePlan (post-generation balancing pass, below): a person's whole-day fiber/
 // free-sugars/sat-fat/kcal/protein totals, summed straight off the assembled plan's raw
 // entries via planEntryNutrition — NOT the display/log-aware view weekDayNutriViews

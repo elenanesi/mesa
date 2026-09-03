@@ -122,7 +122,7 @@ function openAddMealSheetForContext(ctx){
     return c && ((c.recipeId && RECIPES_DB[c.recipeId]) || (c.foodId && FOODS[c.foodId]));
   });
   const slot = ctx.slot;
-  addMealCtx = {weekStartDate: plan.weekStartDate, dayIndex: ctx.dayIndex, slot: slot, person: ctx.person, logged: !!logged};
+  addMealCtx = {weekStartDate: plan.weekStartDate, dayIndex: ctx.dayIndex, slot: slot, person: ctx.person, logged: !!logged, viaBoost: !!ctx.viaBoost};
   const opts = mealRecipeOptions(allComponents);
   // USER FEEDBACK item 3: retitle "Edit X" once the meal already has extras — "Add to X"
   // undersells that this is also where you remove what you added earlier.
@@ -284,7 +284,28 @@ function openAddMealSheetForContext(ctx){
     }
   });
 
-  html += '<div class="shop-cat">Ingredients</div>'
+  // BOOST CHIP: only when this sheet was opened FROM the chip (addMealCtx.viaBoost) AND the
+  // day is, right now, still actually running light — recomputed fresh on every render (not
+  // a snapshot taken at tap time), so the section quietly stops offering itself the moment
+  // the gap is covered, exactly like the chip on the card itself. Already-in-meal foods are
+  // excluded so a booster already added is never suggested again.
+  let boostBlock = '';
+  if(addMealCtx.viaBoost){
+    const boostNutrient = boostNutrientForDay(dateISO, ctx.person);
+    if(boostNutrient){
+      const usedFoodIds = {};
+      allComponents.forEach(function(c){ if(c.foodId) usedFoodIds[c.foodId] = true; });
+      const suggestions = boostSuggestionsFor(boostNutrient).filter(function(s){ return !usedFoodIds[s.foodId]; });
+      if(suggestions.length){
+        boostBlock = '<div class="shop-cat">🌱 Suggested for today</div>'
+          + '<p class="sub" style="margin-top:6px">' + escapeHtml(boostChipInviteLine(suggestions)) + '</p>'
+          + suggestions.map(boostSuggestionRowHtml).join('');
+      }
+    }
+  }
+
+  html += boostBlock
+    + '<div class="shop-cat">Ingredients</div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="mealFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(addMealFoodQuery) + '" oninput="onMealFoodSearch(this.value)" autocomplete="off">'
     + '<div id="mealFoodResults" style="margin-top:4px">' + renderMealFoodResults(addMealFoodQuery) + '</div>';
 
@@ -299,6 +320,13 @@ function openAddMealSheetForContext(ctx){
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
   document.getElementById('sheet').classList.add('show');
+  // Pre-focus ingredient search — only for the boost entry point (a plain ✎/＋ open should
+  // not yank focus into the search box unasked). Guarded for the check.js document stub,
+  // which returns null from getElementById.
+  if(boostBlock){
+    const searchInput = document.getElementById('mealFoodSearchInput');
+    if(searchInput && typeof searchInput.focus === 'function') searchInput.focus();
+  }
 }
 
 // "Save a composed meal as a recipe" (#5b follow-up): resolves addMealCtx's LIVE plan
@@ -639,6 +667,11 @@ function attachAddMealSheetHandler(){
     }
     const addRecipeRow = e.target.closest('.altrow[data-add-recipe-id]');
     if(addRecipeRow && el.contains(addRecipeRow)){ chooseMealExtraRecipe(addRecipeRow.getAttribute('data-add-recipe-id')); return; }
+    // BOOST CHIP: a suggested-booster row carries its own hand-picked grams (data-boost-
+    // grams) — checked before the generic data-add-food-id rows below since it's a
+    // different attribute (no collision either way).
+    const boostRow = e.target.closest('.altrow[data-boost-food-id]');
+    if(boostRow && el.contains(boostRow)){ chooseMealExtraFood(boostRow.getAttribute('data-boost-food-id'), parseFloat(boostRow.getAttribute('data-boost-grams'))); return; }
     const addFoodRow = e.target.closest('.altrow[data-add-food-id]');
     if(addFoodRow && el.contains(addFoodRow)) chooseMealExtraFood(addFoodRow.getAttribute('data-add-food-id'));
   };
@@ -701,10 +734,14 @@ function chooseMealExtraRecipe(recipeId){
   toast('＋ Added ' + RECIPES_DB[recipeId].title);
 }
 
-function chooseMealExtraFood(foodId){
+// gramsOverride (BOOST CHIP): a suggested-booster row carries its own hand-picked amount
+// (BOOST_SUGGESTED_GRAMS, planner.js — e.g. 12g chia, not defaultMealFoodGrams' generic
+// 100g) via data-boost-grams; every other caller (plain ingredient search results) omits
+// it and gets the existing default. Same addExtraFoodToMeal path either way.
+function chooseMealExtraFood(foodId, gramsOverride){
   if(!addMealCtx || !FOODS[foodId]) return;
   const ctx = addMealCtx;
-  const grams = defaultMealFoodGrams(foodId);
+  const grams = (typeof gramsOverride === 'number' && gramsOverride > 0) ? gramsOverride : defaultMealFoodGrams(foodId);
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
     addFoodExtraToLoggedMeal(dateISO, ctx.person, ctx.slot, foodId, grams);
@@ -2554,6 +2591,7 @@ function renderTodayMeals(){
   }
 
   renderTodayCardActions(); // FIX 1: paint each card's Confirm/Skip or Logged/Skipped+Undo row
+  renderBoostChip(); // BOOST CHIP: recomputed on every Today repaint so it self-corrects live
   renderTodayRecords();
 }
 
@@ -2715,6 +2753,144 @@ function dismissBasicsBanner(){
   if(typeof basicsBannerDismissed !== 'undefined') basicsBannerDismissed = true;
   if(typeof persist === 'function') persist();
   renderBasicsBanner();
+}
+
+/* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------
+   Panel spec: a single calm chip ("🌱 Add a boost") on a Today meal card, shown ONLY when
+   BOTH (a) the day is running light on fibre or protein (perDayBalanceState, planner.js)
+   against LIVE running totals, and (b) that card's slot is not yet confirmed/eaten —
+   forward-looking only, so it can never read as commentary on something already eaten
+   (psychologist guardrail against the "what-the-hell effect"). Tapping it opens the
+   EXISTING add-meal sheet, pre-focused on ingredient search with 2-3 booster foods
+   (planner.js:boostSuggestionsFor) surfaced first; adding goes through the existing
+   addExtraFoodToMeal path — no new nutrition-aggregation code.
+
+   "Running totals" reuses weekDayNutriViews (render-week.js) — the SAME live, log-aware
+   per-day totals dayCompletionTotals (render.js) already reads for the day-completion
+   reward: every non-skipped slot's CURRENT view (confirmed/logged macros where a slot has
+   been confirmed, otherwise its live plan — so a boost added to a still-pending slot is
+   reflected immediately) plus any standalone logged entries. This is deliberately NOT the
+   frozen at-generation snapshot (personDayNutriTotals) — it must move the moment the plan
+   changes (a boost extra added, a slot skipped, a swap), which is what makes "disappears
+   once the gap is covered" possible. */
+function boostDayTotals(dateISO, person){
+  if(typeof ensureWeekPlan !== 'function' || typeof mondayOfWeek !== 'function'
+    || typeof weekDayNutriViews !== 'function' || typeof diffDaysISO !== 'function') return null;
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  const dayIdx = Math.max(0, Math.min(6, diffDaysISO(dateISO, plan.weekStartDate)));
+  const views = weekDayNutriViews(plan, person);
+  return views[dayIdx] ? views[dayIdx].totals : null;
+}
+
+// The single nutrient this running day is light on, or null when neither axis needs a
+// boost (day is fine, or there isn't enough data to say). Fiber is checked first — the
+// stronger/most flexible booster set (legumes cover both) — but either flag is enough.
+function boostNutrientForDay(dateISO, person){
+  if(typeof perDayBalanceState !== 'function') return null;
+  const state = perDayBalanceState(boostDayTotals(dateISO, person), person);
+  if(state.fiber === 'light') return 'fiber';
+  if(state.protein === 'low') return 'protein';
+  return null;
+}
+
+// Dismiss is scoped to (date, person) rather than persisted forever, like
+// basicsBannerDismissed — a NEW day (or switching profile) is a fresh forward-looking
+// question, so there is nothing to grandfather/migrate here; it just naturally resets.
+// boostChipDismissedFor itself is declared in state.js (persisted like every other store
+// field — see buildSnapshot/loadState there), read/written only from here.
+function isBoostChipDismissed(dateISO, person){
+  return boostChipDismissedFor.date === dateISO && boostChipDismissedFor.person === person;
+}
+function dismissBoostChip(dateISO, person){
+  boostChipDismissedFor = {date: dateISO, person: person};
+  if(typeof persist === 'function') persist();
+  renderTodayMeals();
+}
+
+// The ONE upcoming card the chip attaches to: the first SLOT_ORDER slot that (1) is
+// actually required/plannable today (requiredSlots, render.js — excludes snacks-off and
+// no-candidates gaps), (2) has a real planned meal (nothing to boost in an empty slot),
+// and (3) has NO log status yet — slotLogStatus is truthy for both 'confirmed' AND
+// 'skipped', either of which must permanently exclude a slot here: a confirmed/eaten meal
+// per the forward-looking guardrail above, and a skipped one because there's no meal
+// happening there to add to. Returns null (no chip anywhere) when the day isn't running
+// light, every required slot is already accounted for, or the chip was dismissed today.
+function boostChipTargetSlot(dateISO, person){
+  if(!boostNutrientForDay(dateISO, person)) return null;
+  if(isBoostChipDismissed(dateISO, person)) return null;
+  if(typeof computeMenuForDate !== 'function' || typeof requiredSlots !== 'function' || typeof slotLogStatus !== 'function') return null;
+  const menu = computeMenuForDate(dateISO, person);
+  const slots = requiredSlots(dateISO, person);
+  for(let i = 0; i < SLOT_ORDER.length; i++){
+    const slot = SLOT_ORDER[i];
+    if(slots.indexOf(slot) === -1) continue;
+    const view = menu[slot];
+    if(!view || !view.recipeId) continue;
+    if(slotLogStatus(dateISO, person, slot)) continue;
+    return slot;
+  }
+  return null;
+}
+
+const BOOST_MOUNT_ID = {breakfast: 'bfBoost', lunch: 'lunchBoost', dinner: 'dinnerBoost', snack: 'snackBoost'};
+
+// A short "invitation of abundance" line naming the top 1-2 suggestions — never "gap"/
+// "low"/"deficit"/"you're missing" (panel guardrail): framed as rounding today out, not
+// correcting it.
+function boostChipInviteLine(suggestions){
+  // FOODS names carry a label-style qualifier ("Lentils, cooked") that reads fine on a
+  // detail row but awkward inline in a sentence — this line only wants the plain noun, so
+  // it takes everything before the first comma.
+  const names = suggestions.slice(0, 2).map(function(s){
+    return FOODS[s.foodId] ? FOODS[s.foodId].name.split(',')[0].toLowerCase() : '';
+  }).filter(Boolean);
+  if(!names.length) return 'A little something extra would round out today nicely.';
+  return 'A little ' + names.join(' or ') + ' would round out today nicely.';
+}
+
+function renderBoostChip(){
+  SLOT_ORDER.forEach(function(slot){
+    const el = document.getElementById(BOOST_MOUNT_ID[slot]);
+    if(el) el.innerHTML = '';
+  });
+  const dateISO = todayISO();
+  const person = currentProf;
+  const target = boostChipTargetSlot(dateISO, person);
+  if(!target) return;
+  const el = document.getElementById(BOOST_MOUNT_ID[target]);
+  if(!el) return;
+  el.innerHTML = '<div class="boost-chip">'
+    + '<button type="button" class="boost-chip-btn" onclick="event.stopPropagation();openBoostChipSheet(\'' + target + '\')">🌱 Add a boost</button>'
+    + '<button type="button" class="boost-chip-x" aria-label="Dismiss boost suggestion" onclick="event.stopPropagation();dismissBoostChip(\'' + dateISO + '\',\'' + person + '\')">✕</button>'
+    + '</div>';
+}
+
+// Opens the EXISTING add-meal sheet for the boost's target slot — addMealCtx.viaBoost lets
+// openAddMealSheetForContext (below) surface the "Suggested for today" booster rows and
+// pre-focus ingredient search, self-perpetuating across this sheet's own re-renders (any
+// re-open that passes addMealCtx straight back in, e.g. toggleAddMealMeta) exactly the way
+// addMealMetaExpanded already survives them, and naturally dropping away the moment a
+// caller builds a FRESH ctx object without it (e.g. the plain ✎/＋ entry points).
+function openBoostChipSheet(slot){
+  const weekStartDate = mondayOfWeek(todayISO());
+  const dayIndex = diffDaysISO(todayISO(), weekStartDate);
+  openAddMealSheetForContext({weekStartDate: weekStartDate, dayIndex: dayIndex, slot: slot, person: currentProf, viaBoost: true});
+}
+
+// Suggested-booster row: same shape/markup as a normal ingredient-search result row, but
+// carries its OWN hand-picked grams (data-boost-grams) rather than defaultMealFoodGrams —
+// chooseMealExtraFood's optional second argument (see below) uses it verbatim. The "+Ng
+// fibre/protein" note is the real computed number for that exact add — never a re-derived
+// estimate — so reusing chip-computed's "✓ computed" badge here stays honest.
+function boostSuggestionRowHtml(item){
+  const f = FOODS[item.foodId];
+  if(!f) return '';
+  const noteVal = (item.nutrient === 'protein') ? ('+' + item.protein + 'g protein') : ('+' + item.fiber + 'g fiber');
+  return '<div class="altrow" data-boost-food-id="' + htmlAttr(item.foodId) + '" data-boost-grams="' + item.grams + '">'
+    + '<div class="ae">' + foodIconHtml(item.foodId) + '</div>'
+    + '<div class="at"><div class="an">' + escapeHtml(f.name) + '</div>'
+    + '<div class="ad">' + foodAmountLabel(f, item.grams) + ' · ' + item.kcal + ' kcal · ' + noteVal + ' <span class="chip-computed">✓ computed</span></div></div>'
+    + '</div>';
 }
 
 function showArcPopover(macro, event){

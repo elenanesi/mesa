@@ -659,6 +659,12 @@ let onboarded = false;
 // honest "these are estimates" Today banner is a one-time nudge, never a recurring nag.
 let basicsConfirmed = false;
 let basicsBannerDismissed = false;
+// BOOST CHIP (v1, manual-only nutrition nudge — render-today.js): a manual dismiss of the
+// "🌱 Add a boost" chip is scoped to (date, person), not persisted forever like
+// basicsBannerDismissed above — a new day (or switching profile) is a fresh forward-looking
+// question, so this naturally resets with no migration needed. See render-today.js's
+// isBoostChipDismissed/dismissBoostChip for the read/write side.
+let boostChipDismissedFor = {date: null, person: null};
 // Sets the flag + persists. Called from every body-stat commit funnel so onboarding and the
 // Profile editor can never disagree about whether the user has entered real basics.
 function markBasicsConfirmed(){
@@ -941,6 +947,9 @@ function buildSnapshot(){
     onboarded: onboarded,
     basicsConfirmed: basicsConfirmed,        // Phase 3 D3b
     basicsBannerDismissed: basicsBannerDismissed,
+    // BOOST CHIP (v1): {date, person} of the last manual dismiss — see the doc block above
+    // boostChipDismissedFor's declaration.
+    boostChipDismissedFor: {date: boostChipDismissedFor.date, person: boostChipDismissedFor.person},
     householdStyle: householdStyle,
     householdSize: householdSize,
     householdSizeManual: householdSizeManual,
@@ -1452,6 +1461,15 @@ function loadState(){
     basicsConfirmed = hadStoredStateOnBoot; // pre-flag existing store => grandfather true; fresh => false
   }
   basicsBannerDismissed = (typeof saved.basicsBannerDismissed === 'boolean') ? saved.basicsBannerDismissed : false;
+
+  // BOOST CHIP (v1): {date, person} of the last manual dismiss — additive/safe-default like
+  // logHistory/pantry etc. above (no version-gated migration needed), always resets to
+  // "nothing dismissed" for a store saved before this field existed.
+  boostChipDismissedFor = {date: null, person: null};
+  if(saved.boostChipDismissedFor && typeof saved.boostChipDismissedFor === 'object'){
+    if(typeof saved.boostChipDismissedFor.date === 'string') boostChipDismissedFor.date = saved.boostChipDismissedFor.date;
+    if(typeof saved.boostChipDismissedFor.person === 'string') boostChipDismissedFor.person = saved.boostChipDismissedFor.person;
+  }
 
   // couple sync (task S1) — see syncState's doc above. Absent entirely on any pre-v5
   // store (fresh install or an app that's never configured sync), in which case it stays
