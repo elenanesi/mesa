@@ -41,8 +41,24 @@ planner (see the memory `project-planner-safe-wave-2026-09.md`). Four deploys, e
   integrated from the codex worktree (incl. the long-pending `lime`). Tests → **2109 green**.
 - **Auto-boost v2 HELD (contraindicated):** the fibre measurement shows generation is already
   fibre-rich, so auto-adding boosters would be noise + nag-risk; the manual boost chip suffices.
-- **Still deferred:** more big-appetite recipes as desired; a target-aware meal builder + "trim this
-  day" for the user-injected-manual-add calorie/fibre cause (the real remaining lever, UX not gen).
+- **Still deferred:** more big-appetite recipes as desired; a target-aware meal builder for the
+  user-injected-manual-add calorie/fibre cause (UX not gen).
+
+**Meal-page + content batch (2026-09-03, all deployed).**
+- **Meal page shows a slot's extras** — a planned meal's sides + added foods now render on its detail
+  page (with nutrients + inline portion/grams edit + remove), like a composed recipe's components; no
+  more digging into "manage". `recipeDetailExtrasFor` (render-recipe.js), reuses planEntryComponents +
+  the existing extra mutators; per-serving total now includes extras.
+- **Rich-day snack cue** — a calm "🍃 Rich day — skip the snack?" chip on the Today snack card when a
+  day runs >~+12% over the calorie goal (e.g. a pinned occasional dinner); one-tap reversible
+  `logSkip('snack')`, dismissible, mutually exclusive with the boost chip. The trim-side sibling of the
+  boost chip (render-today.js).
+- **Japanese sushi dinner** — new occasional `cena-giapponese` composite (mirrors the Chinese dinner):
+  meat-gyozas (reused) + nigiri-salmon + 2 uramaki + takoyaki; 2 new foods (eel, octopus, in
+  FISH_FOOD_IDS). D1 reseeded (189 live).
+- **Per-person shared portions already work** — confirmed: a shared meal's page shows two independent
+  steppers (Elena ×N / Andrea ×M), stored + synced per-person. No change needed.
+Tests → 2137 green.
 - **NB — D1 is IN SYNC with `data/recipes.js`** (176 live global = 176 file recipes; quality-pass dishes
   present). The 2026-08-30 note below ("quality pass NOT yet reseeded/deployed") is STALE — it is live.
 
