@@ -924,11 +924,49 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
 // gets an `opts` key at all and this stays byte-identical to pre-D1 output. Extras can
 // carry their own `.opts` too (generic — no built-in side/extra has optionGroups yet, but
 // nothing here assumes only the base does).
+//
+// PLANNED-COMPOSITE-EDIT (owner gap fix): a composite ("recipe-of-recipes", e.g.
+// cena-giapponese) PLAN entry may carry `entry.components` — the same shape a LOGGED
+// composite's `components` already uses: [{recipeId, portion, opts?}, ...], the user's
+// adjusted sub-recipe portions (a sub-recipe dropped to portion 0 is filtered out before
+// storage — see setMealComponentsOverride — so it never round-trips here as a 0-portion
+// row). When present and non-empty, it REPLACES the single-`base` component built from
+// entry.recipeId/portion above — the composite's own id/portion never resolves to real
+// macros anyway (a composite recipe's own `ingredients` is always `[]`; its nutrition IS
+// the sum of its sub-recipes) — then `entry.extras` still layers on top exactly as today.
+// Absent/empty `entry.components` (every entry before this feature, and every entry
+// generateWeek ever produces — generation never writes this field) takes the untouched
+// single-`base` path below, so this stays BYTE-IDENTICAL to pre-existing output whenever
+// the override isn't in use. A component whose recipeId no longer resolves in RECIPES_DB
+// (e.g. a since-deleted custom sub-recipe) is dropped silently, same tolerance the extras
+// loop below already gives a dangling extra.
 function planEntryComponents(entry){
   if(!entry || !entry.recipeId) return [];
-  const base = {recipeId: entry.recipeId, portion: (typeof entry.portion === 'number' ? entry.portion : 1)};
-  if(entry.opts && typeof entry.opts === 'object') base.opts = entry.opts;
-  const components = [base];
+  let components = null;
+  if(Array.isArray(entry.components) && entry.components.length){
+    // Resolve against the FULL catalog (RECIPES_DB, then BUILTIN_RECIPES_DB, then
+    // customRecipes), not just the active-book RECIPES_DB — same reason
+    // nutritionForRecipeComponents/recipeEffectiveIngredients do (see their own docs, and
+    // testMealComponentsResolveOutOfBook): a composite's OWN sub-recipes are routinely never
+    // individually added to the household's book (only the composite itself is), so a strict
+    // RECIPES_DB-only check would silently drop every sub-recipe the moment its portion is
+    // overridden — exactly the extras loop below does NOT need, since a manually-added extra
+    // really must already be in-book to have been addable in the first place.
+    components = entry.components.filter(function(c){
+      return c && c.recipeId && (RECIPES_DB[c.recipeId]
+        || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[c.recipeId])
+        || (typeof customRecipes !== 'undefined' && customRecipes[c.recipeId]));
+    }).map(function(c){
+      const o = {recipeId: c.recipeId, portion: (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1};
+      if(c.opts && typeof c.opts === 'object') o.opts = c.opts;
+      return o;
+    });
+  }
+  if(!components || !components.length){
+    const base = {recipeId: entry.recipeId, portion: (typeof entry.portion === 'number' ? entry.portion : 1)};
+    if(entry.opts && typeof entry.opts === 'object') base.opts = entry.opts;
+    components = [base];
+  }
   (entry.extras || []).forEach(function(extra){
     if(extra && extra.recipeId && RECIPES_DB[extra.recipeId]){
       const c = {recipeId: extra.recipeId, portion: (typeof extra.portion === 'number' && extra.portion > 0) ? extra.portion : 1};
@@ -1242,6 +1280,37 @@ function setExtraFoodGrams(weekStartDate, dayIndex, slot, person, foodId, grams)
     const idx = findLastExtraIndex(entry, {foodId: foodId});
     if(idx === -1) return false;
     entry.extras[idx].grams = amount;
+  });
+}
+
+// PLANNED-COMPOSITE-EDIT (owner gap fix): writes a composite ("recipe-of-recipes") PLANNED
+// meal's adjusted per-sub-recipe portions onto the plan entry's `.components` — the exact
+// field planEntryComponents() (above) reads as a base-component override, mirroring how a
+// LOGGED composite already stores this in the log entry (render-recipe.js:
+// applyMealCompsOverride). `components` is the INCLUDED (portion > 0) sub-recipe list —
+// [{recipeId, portion, opts?}] — the caller (render-recipe.js's plan branch of
+// applyMealCompsOverride) has already filtered out any portion-0 (removed) sub-recipe, same
+// as the logged path does before calling logPlanEntry. Built on mutateMealExtras so this
+// gets couple-sync stamping (meal.t for a shared cell, entry.t + cleared meal.t for a solo
+// one) and shared-meal mirroring — BOTH sides of a shared cell get the SAME override,
+// because mutateFn runs once per side and `components` is re-mapped fresh each call — for
+// free, exactly like every other meal mutator in this family; hand-rolling this against the
+// plan object directly is what resurrects the sync-revert bug the comment on
+// mutateMealExtras warns about. An empty/omitted `components` clears the override (deletes
+// `entry.components`), falling back to the recipe's own default sub-recipe portions via
+// planEntryComponents' guard — used when the user un-does every tweak back to defaults.
+function setMealComponentsOverride(weekStartDate, dayIndex, slot, person, components){
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
+    if(Array.isArray(components) && components.length){
+      entry.components = components.map(function(c){
+        const o = {recipeId: c.recipeId, portion: c.portion};
+        if(c.opts && typeof c.opts === 'object') o.opts = c.opts;
+        return o;
+      });
+    } else {
+      delete entry.components;
+    }
   });
 }
 

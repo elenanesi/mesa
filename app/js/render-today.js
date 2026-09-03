@@ -2431,22 +2431,33 @@ function displayedSlotViewForDate(dateISO, personKey, slot, planned){
     };
   }
   const recipe = planned && RECIPES_DB[planned.recipeId];
-  const nut = planned ? roundedNutritionTotals(planEntryNutrition(planned)) : null;
-  const plannedComponents = planned ? planEntryComponents(planned) : [];
+  // PLANNED-COMPOSITE-EDIT fix: `planned` here is ALWAYS an already-built VIEW (every call
+  // site passes planEntryView(entry, ...) or an activeMenu[slot]/computeMenuForDate() slot,
+  // itself a planEntryView result) — never a raw plan entry. It already carries every field
+  // this branch used to re-derive (kcal/protein/…/components/extras/opts), computed once by
+  // planEntryView. Read them straight off `planned` instead of re-running
+  // planEntryNutrition(planned)/planEntryComponents(planned): re-deriving used to be a
+  // harmless no-op round-trip (planEntryComponents never looked at a passed-in `.components`
+  // field), but since planEntryComponents now HONORS entry.components as a composite's
+  // sub-recipe override (owner gap fix), re-running it on a view would treat the view's own
+  // ALREADY-EXPANDED `.components` (base + extras) as that override and double-apply the
+  // extras on top of themselves. Reading the view's own fields directly sidesteps that
+  // entirely and is exactly what the redundant round-trip always evaluated to anyway.
+  const plannedComponents = (planned && Array.isArray(planned.components)) ? planned.components : [];
   return {
     recipeId: planned ? planned.recipeId : null,
     recipe: recipe,
-    opts: plannedComponents[0] && plannedComponents[0].opts,
+    opts: planned ? planned.opts : undefined,
     components: plannedComponents,
-    extras: plannedComponents.slice(1),
-    kcal: nut ? nut.kcal : 0,
-    protein: nut ? nut.protein : 0,
-    carbs: nut ? nut.carbs : 0,
-    fat: nut ? nut.fat : 0,
-    satFat: nut ? nut.satFat : 0,
-    fiber: nut ? nut.fiber : 0,
-    sugars: nut ? nut.sugars : 0,
-    freeSugars: nut ? nut.freeSugars : 0,
+    extras: (planned && Array.isArray(planned.extras)) ? planned.extras : plannedComponents.slice(1),
+    kcal: planned ? planned.kcal : 0,
+    protein: planned ? planned.protein : 0,
+    carbs: planned ? planned.carbs : 0,
+    fat: planned ? planned.fat : 0,
+    satFat: planned ? planned.satFat : 0,
+    fiber: planned ? planned.fiber : 0,
+    sugars: planned ? planned.sugars : 0,
+    freeSugars: planned ? planned.freeSugars : 0,
     portion: planned ? planned.portion : 1,
     shared: planned ? !!planned.shared : false,
     logged: false,

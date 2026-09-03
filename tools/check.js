@@ -1761,6 +1761,205 @@ function testMealPerComponentLog(ctx){
   run(ctx, "logHistory={};");
 }
 
+// PLANNED-COMPOSITE-EDIT (owner gap fix 2026-09-03): a composite ("recipe-of-recipes") meal's
+// per-sub-recipe portions can now be adjusted while the meal is still PLANNED, not only after
+// it's been logged (testMealPerComponentLog above covers the logged path). Exercises
+// planEntryComponents()'s entry.components override, planEntryNutrition/planEntryView's
+// downstream reflection of it, setMealComponentsOverride's couple-sync-stamp/shared-mirroring
+// contract (the mutateMealExtras family every other meal mutator already uses), the shopping-
+// list decomposition, and the determinism guardrail (generateWeek never writes
+// entry.components — every plan entry it produces is byte-identical to before this feature).
+//
+// recipeNutrition('mcdonald-menu', 1) is NOT 0 despite the composite's own `ingredients: []` —
+// recipeEffectiveIngredients (engine.js) already recurses into RECIPES_DB[id].components at
+// their DEFAULT portions for ANY recipeNutrition call on a composite id, override or not. So
+// "no override" and "override matching the recipe's own defaults" must land on the EXACT same
+// total — that equality is asserted explicitly below, not assumed.
+function testMealPerComponentPlan(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan.weekStartDate;
+
+  // -------- (d) determinism guardrail: a freshly generated plan — before this test, or any
+  // user action, touches anything — never carries entry.components anywhere. --------
+  (function(){
+    const leaks = [];
+    plan.days.forEach(function(day, di){
+      ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+        const m = day.meals[slot];
+        ['elena', 'partner'].forEach(function(person){
+          const e = m && m[person];
+          if(e && e.components) leaks.push('day' + di + ' ' + slot + ' ' + person);
+        });
+      });
+    });
+    assert(leaks.length === 0,
+      'determinism: generateWeek never writes entry.components on any freshly generated slot',
+      leaks.join('; '));
+  })();
+
+  function cell(slot){ return get(ctx, "weekPlans['" + wk + "'].days[0].meals['" + slot + "']"); }
+  function entry(slot, person){ return cell(slot)[person]; }
+
+  // -------- (a) planEntryComponents: absent entry.components is byte-identical to the
+  // pre-existing single-base-component behavior. Placed on lunch (SHARED defaults to false
+  // there), overwriting whatever generation picked, so this is a clean composite fixture. --------
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.shared = false; delete m.t; delete m.recipeId; m.elena = {recipeId:'mcdonald-menu', portion:1, kcal:0, protein:0}; })();");
+  const baseComponents = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(baseComponents.length === 1 && baseComponents[0].recipeId === 'mcdonald-menu' && baseComponents[0].portion === 1 && !baseComponents[0].opts,
+    'planEntryComponents: absent entry.components falls back to the single base component (unchanged pre-existing behavior)',
+    JSON.stringify(baseComponents));
+  const baseNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  const fullRecipeNut = call(ctx, 'recipeNutrition', ['mcdonald-menu', 1]).totals;
+  assert(fullRecipeNut.kcal > 1000, 'test setup: the McDonald\'s Meal has real (non-zero) default kcal', String(fullRecipeNut.kcal));
+  assert(Math.abs(baseNut.kcal - fullRecipeNut.kcal) < 1e-6,
+    'planEntryNutrition (no override): equals recipeNutrition of the composite itself (its DEFAULT sub-recipe portions)',
+    'planEntryNutrition=' + baseNut.kcal + ' recipeNutrition=' + fullRecipeNut.kcal);
+
+  // -------- (b) setMealComponentsOverride (SOLO write): the override list REPLACES the base
+  // component; matching the recipe's own defaults gives the SAME total as no override at all —
+  // proves the override and default paths are consistent, not just "both non-zero". --------
+  const okFull = call(ctx, 'setMealComponentsOverride', [wk, 0, 'lunch', 'elena',
+    [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 1}]]);
+  assert(okFull === true, 'setMealComponentsOverride: solo write returns true', String(okFull));
+  const fullOverrideComponents = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(fullOverrideComponents.length === 2 && fullOverrideComponents[0].recipeId === 'mcd-bigmac-menu' && fullOverrideComponents[1].recipeId === 'mcd-nuggets-4',
+    'planEntryComponents: a non-empty entry.components REPLACES the single base component with the sub-recipe list',
+    JSON.stringify(fullOverrideComponents));
+  const fullOverrideNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(Math.abs(fullOverrideNut.kcal - fullRecipeNut.kcal) < 1e-6,
+    'planEntryNutrition (override at default portions): equals the no-override total exactly (both paths sum the same sub-recipe ingredients)',
+    'override=' + fullOverrideNut.kcal + ' default=' + fullRecipeNut.kcal);
+  assert(typeof entry('lunch', 'elena').t === 'number', 'setMealComponentsOverride: solo write stamps entry.t', 'entry.t=' + entry('lunch', 'elena').t);
+  assert(cell('lunch').t === undefined, 'setMealComponentsOverride: solo write clears any stale meal.t (couple-sync compares at the right level)', 'meal.t=' + cell('lunch').t);
+
+  // -------- (c) rescale one sub-recipe down (nuggets 1x -> 0.5x): total lands strictly
+  // between "no nuggets" and "full nuggets". --------
+  const noNugComponents = [{recipeId: 'mcd-bigmac-menu', portion: 1}];
+  const noNugNut = call(ctx, 'nutritionForRecipeComponents', [noNugComponents]);
+  call(ctx, 'setMealComponentsOverride', [wk, 0, 'lunch', 'elena',
+    [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 0.5}]]);
+  const halfNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(halfNut.kcal > noNugNut.kcal && halfNut.kcal < fullOverrideNut.kcal,
+    'planEntryNutrition: rescaling a sub-recipe to 0.5x lands strictly between no-nuggets and full',
+    'half=' + halfNut.kcal + ' noNug=' + noNugNut.kcal + ' full=' + fullOverrideNut.kcal);
+
+  // -------- (c continued) a REMOVED sub-recipe (portion 0, filtered out before storage —
+  // never round-trips as a stored 0-portion row) drops the total to the remaining sub-recipes'
+  // exact sum, and lowers it vs the full meal (the owner's core "adjust down" scenario). --------
+  const okDrop = call(ctx, 'setMealComponentsOverride', [wk, 0, 'lunch', 'elena', noNugComponents]);
+  assert(okDrop === true, 'setMealComponentsOverride: dropping a sub-recipe returns true', String(okDrop));
+  const droppedComponents = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(droppedComponents.length === 1 && droppedComponents[0].recipeId === 'mcd-bigmac-menu',
+    'planEntryComponents: the removed sub-recipe is absent from the stored override (not stored at portion 0)',
+    JSON.stringify(droppedComponents));
+  const droppedNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(Math.abs(droppedNut.kcal - noNugNut.kcal) < 1e-6 && droppedNut.kcal < fullOverrideNut.kcal,
+    'planEntryNutrition: a removed sub-recipe lowers the total to exactly the remaining sub-recipes\' sum, below the full meal',
+    'dropped=' + droppedNut.kcal + ' noNug=' + noNugNut.kcal + ' full=' + fullOverrideNut.kcal);
+
+  // -------- planEntryView reflects the same adjusted total the raw nutrition helper does
+  // (Today/Week cards and every other UI surface read planEntryView, not planEntryNutrition
+  // directly, so this is the one downstream readers actually see). --------
+  const view = call(ctx, 'planEntryView', [entry('lunch', 'elena'), false]);
+  assert(Math.abs(view.kcal - Math.round(droppedNut.kcal)) <= 1,
+    'planEntryView: kcal reflects the adjusted (dropped-nugget) sub-portions',
+    'view.kcal=' + view.kcal + ' expected~=' + droppedNut.kcal);
+
+  // -------- entry.extras still layer on top of a components override, exactly as they do on
+  // top of the ordinary single-base component (owner spec: "then still append entry.extras
+  // exactly as today"). --------
+  call(ctx, 'addExtraRecipeToMeal', [wk, 0, 'lunch', 'elena', 'yogurt']);
+  const withExtra = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(withExtra.length === 2 && withExtra[0].recipeId === 'mcd-bigmac-menu' && withExtra[1].recipeId === 'yogurt',
+    'planEntryComponents: entry.extras still appends AFTER a components override, unaffected by it',
+    JSON.stringify(withExtra));
+  run(ctx, "delete weekPlans['" + wk + "'].days[0].meals.lunch.elena.extras;"); // cleanup before the next case
+
+  // -------- clearing the override (empty array) reverts to the recipe's own defaults —
+  // entry.components is deleted outright, not left as a stored empty array. --------
+  const okClear = call(ctx, 'setMealComponentsOverride', [wk, 0, 'lunch', 'elena', []]);
+  assert(okClear === true, 'setMealComponentsOverride: clearing with an empty array returns true', String(okClear));
+  assert(entry('lunch', 'elena').components === undefined,
+    'setMealComponentsOverride: an empty array DELETES entry.components (not stored as [])',
+    JSON.stringify(entry('lunch', 'elena').components));
+  const clearedComponents = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(clearedComponents.length === 1 && clearedComponents[0].recipeId === 'mcdonald-menu',
+    'planEntryComponents: clearing the override falls back to the single base component again',
+    JSON.stringify(clearedComponents));
+
+  // -------- (shared mirroring) a SHARED meal's override applies to BOTH people's entries —
+  // mirrors mutateMealExtras' own shared-cell contract (a composite is cooked once for the
+  // table, so both plates carry the same adjustment), and stamps meal.t (not a per-person t),
+  // the couple-sync level a shared cell is compared at. --------
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.dinner; m.shared = true; m.recipeId = 'mcdonald-menu'; m.elena = {recipeId:'mcdonald-menu', portion:1, kcal:0, protein:0}; m.partner = {recipeId:'mcdonald-menu', portion:1, kcal:0, protein:0}; delete m.t; })();");
+  const okShared = call(ctx, 'setMealComponentsOverride', [wk, 0, 'dinner', 'elena', noNugComponents]);
+  assert(okShared === true, 'setMealComponentsOverride: shared write returns true', String(okShared));
+  const elenaShared = entry('dinner', 'elena'), partnerShared = entry('dinner', 'partner');
+  assert(JSON.stringify(elenaShared.components) === JSON.stringify(partnerShared.components) && Array.isArray(elenaShared.components),
+    'setMealComponentsOverride: a shared meal mirrors the SAME override onto both people\'s entries (cooked once for the table)',
+    'elena=' + JSON.stringify(elenaShared.components) + ' partner=' + JSON.stringify(partnerShared.components));
+  assert(typeof cell('dinner').t === 'number', 'setMealComponentsOverride: shared write stamps meal.t (both entries move together, so sync compares the cell, not per-person)', 'meal.t=' + cell('dinner').t);
+
+  // -------- shopping-list decomposition honors the override: the removed sub-recipe's own
+  // ingredient (fast-food-nuggets) drops out of the derived food quantities entirely.
+  // weekPlanComponents (planner.js, the shopping list's own traversal) calls
+  // planEntryComponents(m.elena/m.partner) directly, so this is the exact function the real
+  // shopping list decomposes — see foodQuantitiesForComponents' own callers. --------
+  const fullQty = call(ctx, 'foodQuantitiesForComponents', [[{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: 'mcd-nuggets-4', portion: 1}]]);
+  assert(fullQty['fast-food-nuggets'] > 0, 'shopping setup: the full menu\'s decomposition includes fast-food-nuggets', JSON.stringify(fullQty['fast-food-nuggets']));
+  const droppedQty = call(ctx, 'foodQuantitiesForComponents', [call(ctx, 'planEntryComponents', [entry('dinner', 'elena')])]);
+  assert(!droppedQty['fast-food-nuggets'],
+    'shopping list: planEntryComponents\' override (nuggets removed) is exactly what foodQuantitiesForComponents/weekPlanComponents decomposes, so the dropped sub-recipe\'s own ingredient is gone from the shopping totals',
+    JSON.stringify(droppedQty));
+
+  // -------- a component whose recipeId no longer resolves in RECIPES_DB is dropped silently,
+  // same tolerance the extras loop already gives a dangling extra (e.g. a since-deleted
+  // custom sub-recipe never crashes downstream nutrition/shopping). --------
+  const dangling = call(ctx, 'planEntryComponents', [{recipeId: 'mcdonald-menu', portion: 1,
+    components: [{recipeId: 'mcd-bigmac-menu', portion: 1}, {recipeId: '__no-such-recipe__', portion: 1}]}]);
+  assert(dangling.length === 1 && dangling[0].recipeId === 'mcd-bigmac-menu',
+    'planEntryComponents: a component whose recipeId no longer resolves in RECIPES_DB is silently dropped',
+    JSON.stringify(dangling));
+
+  // -------- setMealComponentsOverride refuses to write onto a slot with no valid recipe
+  // (mirrors every other mutateMealExtras-family mutator's false-return contract). --------
+  const okMissing = call(ctx, 'setMealComponentsOverride', [wk, 99, 'lunch', 'elena', noNugComponents]);
+  assert(okMissing === false, 'setMealComponentsOverride: an out-of-range day index returns false (mutateMealExtras contract)', String(okMissing));
+
+  // -------- OUT-OF-BOOK sub-recipes (real bug caught in local-preview verification, not by
+  // the rest of this suite — this harness's demo household happens to have mcd-bigmac-menu/
+  // mcd-nuggets-4 already materialized into RECIPES_DB, unlike a real fresh household, whose
+  // book normally contains the composite meal itself but NONE of its individual sub-dishes).
+  // planEntryComponents' entry.components override must resolve sub-recipes through the FULL
+  // catalog (RECIPES_DB, then BUILTIN_RECIPES_DB, then customRecipes) exactly like
+  // nutritionForRecipeComponents/recipeEffectiveIngredients already do for a composite's
+  // OWN default components (testMealComponentsResolveOutOfBook covers that side) — a
+  // RECIPES_DB-only check would silently drop a sub-recipe (and its kcal) the instant its
+  // portion is overridden, purely because the user never separately added that sub-dish to
+  // their own book. -------- */
+  (function(){
+    const snap = get(ctx, "JSON.stringify({rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0)})");
+    run(ctx, "var __oobStub={applyProf:applyProf,persist:(typeof persist==='function'?persist:null)}; applyProf=function(){}; persist=function(){};");
+    run(ctx, "materializeRecipeBook(); delete recipeBook['mcd-bigmac-menu']; delete recipeBook['mcd-nuggets-4']; applyCustomRecipes();");
+    assert(!get(ctx, 'RECIPES_DB')['mcd-bigmac-menu'] && !!get(ctx, 'BUILTIN_RECIPES_DB')['mcd-bigmac-menu'],
+      'out-of-book setup: mcd-bigmac-menu is out of the active book (dropped from RECIPES_DB, still in the catalog)', '');
+    const okOob = call(ctx, 'setMealComponentsOverride', [wk, 0, 'lunch', 'elena', noNugComponents]);
+    assert(okOob === true, 'setMealComponentsOverride: writing an override referencing an out-of-book sub-recipe still returns true', String(okOob));
+    const oobComponents = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+    assert(oobComponents.length === 1 && oobComponents[0].recipeId === 'mcd-bigmac-menu',
+      'planEntryComponents: an out-of-book sub-recipe in the override is KEPT (resolved via BUILTIN_RECIPES_DB), not silently dropped',
+      JSON.stringify(oobComponents));
+    const oobNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+    assert(oobNut.kcal > 500,
+      'planEntryNutrition: an out-of-book sub-recipe still contributes its real kcal, not 0',
+      String(oobNut.kcal));
+    run(ctx, "var __m=" + snap + "; recipeBook=__m.rb; recipeBookInit=__m.rbi; applyCustomRecipes(); applyProf=__oobStub.applyProf; if(__oobStub.persist) persist=__oobStub.persist; delete __oobStub;");
+  })();
+
+  run(ctx, "weekPlans = {}; weekPlan = null;"); // leave no fixture plan cached for later tests
+}
+
 // Fork-model migration (owner spec 2026-08-30): a legacy in-place built-in override
 // (recipeOverrides[id], from before the fork model) is converted on boot into a cr- fork carrying
 // the user's edit, with the original returned to the market — so a previously-edited recipe shows
@@ -13066,6 +13265,7 @@ function main(){
   runTest('recipe market: legacy override migrates to fork', function(){ testMigrateOverridesToForks(ctx); });
   runTest('meal: components resolve out-of-book (no 0-kcal Meal)', function(){ testMealComponentsResolveOutOfBook(ctx); });
   runTest('meal: per-component log (remove/rescale a sub-recipe)', function(){ testMealPerComponentLog(ctx); });
+  runTest('meal: per-component PLAN override (remove/rescale a sub-recipe while still planned)', function(){ testMealPerComponentPlan(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });

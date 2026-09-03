@@ -515,24 +515,36 @@ function renderRecipe(key){
   const defaultOpts = (recipeServingCtx && recipeServingCtx.opts) ? recipeServingCtx.opts : dietAwareDefaultOpts(r, currentRecipeKey, currentProf);
   recipeOptsCtx = normalizeRecipeOpts(r, defaultOpts);
   // Meal (recipe-of-recipes) per-component context: start from the recipe's own sub-recipes, then
-  // overlay whatever this meal was last LOGGED with (its stored components) — so re-opening an
-  // eaten meal restores the exact tweaks (a removed sub-recipe stays removed, i.e. portion 0).
+  // overlay whatever this meal was last LOGGED with (its stored components) OR — owner gap fix —
+  // whatever this PLANNED slot's own components override says, so re-opening an eaten OR still-
+  // planned meal restores the exact tweaks (a removed sub-recipe stays removed, i.e. portion 0).
   recipeMealCompsCtx = null;
   if(r && Array.isArray(r.components) && r.components.length){
     recipeMealCompsCtx = r.components.map(function(c){ const o = {recipeId: c.recipeId, portion: (typeof c.portion === 'number' ? c.portion : 1)}; if(c.opts) o.opts = c.opts; return o; });
+    let overrideComponents = null;
     if(recipeServingCtx && recipeServingCtx.source === 'logged'){
       const lg = loggedPlanEntryForSlot(recipeServingCtx.dateISO || todayISO(), recipeServingCtx.person || currentProf, recipeServingCtx.slot);
-      if(lg && lg.ref === currentRecipeKey && Array.isArray(lg.components)){
-        // The stored components are the sub-recipes (recipeId !== the meal's own id) once tweaked;
-        // a never-tweaked log is just [{recipeId: mealId}], which leaves the defaults in place.
-        const custom = lg.components.filter(function(c){ return c && c.recipeId && c.recipeId !== currentRecipeKey; });
-        if(custom.length){
-          recipeMealCompsCtx.forEach(function(c){
-            const m = custom.filter(function(x){ return x.recipeId === c.recipeId; })[0];
-            c.portion = m ? (typeof m.portion === 'number' ? m.portion : 1) : 0;
-            if(m && m.opts) c.opts = m.opts;
-          });
-        }
+      if(lg && lg.ref === currentRecipeKey && Array.isArray(lg.components)) overrideComponents = lg.components;
+    } else if(recipeServingCtx && recipeServingCtx.source === 'plan'){
+      const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(recipeServingCtx.dateISO || todayISO());
+      const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+      const plan = ensureWeekPlan(weekStartDate);
+      const day = plan && plan.days && plan.days[dayIndex];
+      const meal = day && day.meals && day.meals[recipeServingCtx.slot];
+      const entry = meal && meal[recipeServingCtx.person || currentProf];
+      if(entry && entry.recipeId === currentRecipeKey && Array.isArray(entry.components)) overrideComponents = entry.components;
+    }
+    if(overrideComponents){
+      // The stored components are the sub-recipes (recipeId !== the meal's own id) once tweaked;
+      // a never-tweaked log/plan slot is just [{recipeId: mealId}] (or absent), which leaves the
+      // defaults in place.
+      const custom = overrideComponents.filter(function(c){ return c && c.recipeId && c.recipeId !== currentRecipeKey; });
+      if(custom.length){
+        recipeMealCompsCtx.forEach(function(c){
+          const m = custom.filter(function(x){ return x.recipeId === c.recipeId; })[0];
+          c.portion = m ? (typeof m.portion === 'number' ? m.portion : 1) : 0;
+          if(m && m.opts) c.opts = m.opts;
+        });
       }
     }
   }
@@ -844,7 +856,11 @@ function updateMealDetail(){
   const madeOfSection = document.getElementById('madeOfSection');
   const madeOfList = document.getElementById('madeOfList');
   if(madeOfSection) madeOfSection.style.display = '';
-  const canEdit = !!(recipeServingCtx && recipeServingCtx.source === 'logged'); // only a logged meal writes back
+  // PLANNED-COMPOSITE-EDIT: editable whenever there's a real plan/log slot to write back to
+  // (source 'plan' OR 'logged') — a library-only open (recipeServingCtx null, e.g. opened
+  // straight from the Library browser with no plan/log context) stays read-only, since
+  // there's nothing to persist the tweak to.
+  const canEdit = !!(recipeServingCtx && recipeServingCtx.slot);
   if(madeOfList){
     madeOfList.innerHTML = recipeMealCompsCtx.map(function(c, i){
       const cid = c.recipeId;
@@ -879,29 +895,47 @@ function adjMealComp(i, delta){
   applyMealCompsOverride();
 }
 
-// Persist the current per-component portions to the meal's LOG entry (only meaningful when the
-// recipe screen was opened from a logged meal). Stores the sub-recipes as the entry's `components`
-// so its frozen macros = the sum of exactly what the user says they ate; keeps `ref` = the meal id
-// so it still reads/opens as that meal. A portion-0 component is kept (round-trips the removal) and
-// contributes 0.
+// Persist the current per-component portions back to whichever slot the meal detail screen is
+// showing — the meal's LOG entry (recipeServingCtx.source === 'logged') or, owner gap fix, its
+// still-PLANNED slot (source === 'plan'). Stores the sub-recipes as the entry's `components` so
+// its macros = the sum of exactly what the user chose; keeps the meal's own id as `ref`/
+// `recipeId` so it still reads/opens as that meal. Library-only opens (recipeServingCtx null/no
+// slot) have nothing to write back to and are a no-op, matching canEdit above.
 function applyMealCompsOverride(){
-  if(!recipeMealCompsCtx || !recipeServingCtx || recipeServingCtx.source !== 'logged') return;
+  if(!recipeMealCompsCtx || !recipeServingCtx || !recipeServingCtx.slot) return;
   const dateISO = recipeServingCtx.dateISO || todayISO();
   const slot = recipeServingCtx.slot;
   const person = recipeServingCtx.person || currentProf;
-  const logged = loggedPlanEntryForSlot(dateISO, person, slot);
-  if(!logged || logged.ref !== currentRecipeKey) return;
-  // Only the INCLUDED sub-recipes go into the log (a portion of 0 is coerced back to 1 by
+  // Only the INCLUDED sub-recipes are written (a portion of 0 is coerced back to 1 by
   // recipeNutrition, so a removed component must be dropped, not stored at 0). The removal still
   // round-trips: renderRecipe re-derives the per-component state from the recipe's full sub-recipe
-  // list, and any sub-recipe absent from the logged components is shown removed (portion 0).
+  // list, and any sub-recipe absent from the stored components is shown removed (portion 0).
   const comps = recipeMealCompsCtx.filter(function(c){ return c.portion > 0; })
     .map(function(c){ const o = {recipeId: c.recipeId, portion: c.portion}; if(c.opts) o.opts = c.opts; return o; });
-  // Guard the degenerate "everything removed" case — keep it logged as the meal itself rather than
-  // silently falling back to the full default (logPlanEntry treats an empty components list as none).
-  logPlanEntry(dateISO, person, slot, currentRecipeKey, 1, comps.length ? comps : [{recipeId: currentRecipeKey, portion: 0.0001}]);
-  refreshAfterRecipeServingOverride(dateISO);
-  persist();
+
+  if(recipeServingCtx.source === 'logged'){
+    const logged = loggedPlanEntryForSlot(dateISO, person, slot);
+    if(!logged || logged.ref !== currentRecipeKey) return;
+    // Guard the degenerate "everything removed" case — keep it logged as the meal itself rather
+    // than silently falling back to the full default (logPlanEntry treats an empty components
+    // list as none).
+    logPlanEntry(dateISO, person, slot, currentRecipeKey, 1, comps.length ? comps : [{recipeId: currentRecipeKey, portion: 0.0001}]);
+    refreshAfterRecipeServingOverride(dateISO);
+    persist();
+    return;
+  }
+
+  if(recipeServingCtx.source === 'plan'){
+    const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
+    const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+    // planner.js:setMealComponentsOverride (the mutateMealExtras family) stamps couple-sync
+    // timestamps and mirrors a shared cell to both people's entries — same as every other plan
+    // mutator this screen already writes through (mealPageSetExtraRecipePortion etc.). An empty
+    // `comps` clears the override, falling back to the recipe's own default sub-recipe portions.
+    if(!setMealComponentsOverride(weekStartDate, dayIndex, slot, person, comps)) return;
+    refreshAfterRecipeServingOverride(dateISO);
+    persist();
+  }
 }
 
 function updateServings(){
