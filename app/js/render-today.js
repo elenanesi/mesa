@@ -1410,9 +1410,16 @@ function updateLogTotalPill(){
   document.getElementById('logTotalPill').textContent = Math.round(total) + ' kcal';
 }
 
+// Layout fix (item 6): at 375px this line ("Lunch · 63g protein · 39g carbs · 0g sugars ·
+// 25g fat") wrapped to a ragged second line on every Today card. Sugars is the macro most
+// often genuinely zero (any plain protein/veg meal), so it's the one segment dropped when
+// it carries no information — protein/carbs/fat always stay, even at 0, so the line's
+// shape never wobbles meal to meal and nothing is truncated, only the true zero omitted.
 function macroSummaryFromTotals(nut){
   nut = roundedNutritionTotals(nut || {});
-  return nut.protein + 'g protein · ' + nut.carbs + 'g carbs · ' + nut.sugars + 'g sugars · ' + nut.fat + 'g fat';
+  const parts = [[nut.protein, 'protein'], [nut.carbs, 'carbs'], [nut.sugars, 'sugars'], [nut.fat, 'fat']];
+  return parts.filter(function(p, i){ return p[0] > 0 || i !== 2; })
+    .map(function(p){ return p[0] + 'g ' + p[1]; }).join(' · ');
 }
 
 function beverageCountsForToday(){
@@ -2590,10 +2597,12 @@ function todayKeystoneState(dateISO, person, hour){
   });
   var evening = Number(hour) >= 18;
   if(total > 0 && accounted >= total){
-    // Calm closure — reuse the wreath reward's exact sentence so the transient reward and the
-    // resting card state speak in one voice.
+    // Calm closure — reuse the wreath reward's exact (date-rotated) closing line, via
+    // render.js:dayCompletionClosingLine, so the transient reward and the resting card
+    // state always speak in one voice, whichever of the calm variants today lands on.
+    var settledText = typeof dayCompletionClosingLine === 'function' ? dayCompletionClosingLine(dateISO) : 'Today’s record is complete.';
     return {phase: 'complete', accounted: accounted, total: total, pending: pending, evening: evening,
-      prominence: 'settled', settledText: 'Today’s record is complete.'};
+      prominence: 'settled', settledText: settledText};
   }
   var partial = accounted > 0;
   return {
@@ -2707,12 +2716,17 @@ function showArcPopover(macro, event){
   if(p.consumedKcal > 0){
     detail += '\n' + eaten[macro] + 'g eaten (' + fmtKcal(eatenKcal) + ' kcal)';
     if(leftKcal < 0){
-      detail += '\n⚠ ' + fmtKcal(Math.abs(leftKcal)) + ' kcal over target';
+      // Neutral typographic emphasis, not a warning: Mesa never colors eating red/over as a
+      // failure state. The exact number is unchanged — only the triangle glyph and any
+      // "warning" framing are gone, replaced by plain bold weight in the same muted ink.
+      detail += '\n<strong>' + fmtKcal(Math.abs(leftKcal)) + ' kcal over target</strong>';
     } else {
       detail += '\n' + fmtKcal(leftKcal) + ' kcal remaining';
     }
   }
-  detailEl.textContent = detail;
+  // innerHTML (not textContent) so the <strong> emphasis above can render — every other
+  // value concatenated into `detail` is a formatted number, never user/HTML input.
+  detailEl.innerHTML = detail;
   // Use white-space pre-line for multiline
   detailEl.style.whiteSpace = 'pre-line';
 

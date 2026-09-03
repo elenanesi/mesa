@@ -288,8 +288,17 @@ function renderWeek(){
     // when the day is expanded.
     const overall = dayBalanceOverall(totals, person);
     const dayDot = '<span class="day-dot day-dot-'+(overall==='balanced'?'ok':'off')+'" aria-label="'+(overall==='balanced'?'Balanced day':'Off-balance day')+'"></span>';
+    // Persistent, discoverable trace of a fully-closed day (item 4) — distinct from dayDot
+    // above (which is a QUALITY signal, balanced vs off) and from any streak/pass-fail
+    // marker: this is purely "was every plannable slot here accounted for" (confirmed or
+    // skipped — same requiredSlotCount/accountedSlotCount pair the keystone card and the
+    // wreath reward already use), a single static glyph so a user who missed the live
+    // animation still sees "that day, closed" whenever they visit Week later.
+    const dayReq = requiredSlotCount(day.date, person);
+    const dayClosed = dayReq > 0 && accountedSlotCount(day.date, person) === dayReq;
+    const closedGlyph = dayClosed ? dayClosedLeafHtml() : '';
     return '<div class="day'+(di === todayIdx ? ' today' : '')+(expanded ? ' expanded' : '')+'" id="wd'+di+'" data-di="'+di+'" data-date="'+htmlAttr(day.date)+'">'
-      + '<div class="dh"><span class="dn">'+label+'</span><span class="dk">'+dayDot+'~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
+      + '<div class="dh"><span class="dn">'+closedGlyph+label+'</span><span class="dk">'+dayDot+'~'+fmtKcal(Math.round(totals.kcal))+' kcal <span class="chev">⌄</span></span></div>'
       + '<div class="dmeals">'+titles.join(' · ')+'</div>'
       + '<div class="day-meals">'+dayMacroLine+standaloneLine+rows+'</div></div>';
   }).join('');

@@ -12152,8 +12152,207 @@ function testBotanicalStampReward(ctx){
     assert(!/play(?:Log|DayCompletion)Reward/.test(functionSource(owner, name)),
       'Botanical reward: ' + name + ' remains neutral', functionSource(owner, name));
   });
-  assert(/recorded\s*·/.test(rewardFn) && /Today.s record is complete\./.test(completionFn),
-    'Botanical reward: result copy is factual and contains no food-quality judgment');
+  // The completion sentence itself moved out of playDayCompletionReward's own body and into
+  // the shared DAY_COMPLETION_LINES rotation (dayCompletionClosingLine) it now calls — see
+  // testDayCompletionQualityVariant below for the rotation/quality/suppression behavior.
+  // Still pin: the base copy stays factual (present verbatim in render.js) and the function
+  // reaches it only through that shared closing-line machinery, never a hand-typed judgment.
+  assert(/recorded\s*·/.test(rewardFn) && /Today.s record is complete\./.test(renderSrc)
+      && /dayCompletionClosingLine|dayCompletionRewardPlan/.test(completionFn),
+    'Botanical reward: result copy is factual and contains no food-quality judgment', completionFn);
+}
+
+/* ===================================================================
+   item 5 (neutral over-target copy) + item 6 (one-line Today macro summary)
+   Two small, independent layout/copy fixes from the same UX/psychology pass:
+   - the macro arc popover used to show "⚠ N kcal over target" in a warning
+     glyph — Mesa's guardrail is no red-for-eating, so it's now plain bold
+     typographic emphasis with the exact same number, no iconography;
+   - macroSummaryFromTotals() dropped "0g sugars" (the segment most often
+     genuinely zero) so the Today card macro line fits one line at 375px
+     without truncating any non-zero macro. =================================================================== */
+function testNeutralOverTargetAndCompactMacroLine(ctx){
+  const zeroSugar = call(ctx, 'macroSummaryFromTotals', [{protein: 63, carbs: 39, sugars: 0, fat: 25}]);
+  assert(zeroSugar === '63g protein · 39g carbs · 25g fat',
+    'macroSummaryFromTotals: drops the "0g sugars" segment when sugars is zero, keeping protein/carbs/fat', zeroSugar);
+  const withSugar = call(ctx, 'macroSummaryFromTotals', [{protein: 10, carbs: 5, sugars: 3, fat: 2}]);
+  assert(withSugar === '10g protein · 5g carbs · 3g sugars · 2g fat',
+    'macroSummaryFromTotals: keeps sugars when it is genuinely non-zero (nothing truncated)', withSugar);
+  const allZero = call(ctx, 'macroSummaryFromTotals', [{protein: 0, carbs: 0, sugars: 0, fat: 0}]);
+  assert(allZero === '0g protein · 0g carbs · 0g fat',
+    'macroSummaryFromTotals: protein/carbs/fat stay even at 0 (only sugars is ever dropped) — the line shape never collapses to empty', allZero);
+
+  const todaySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-today.js'), 'utf8');
+  const popStart = todaySrc.indexOf('function showArcPopover(');
+  const popNext = todaySrc.indexOf('\nfunction ', popStart + 1);
+  const popoverSrc = todaySrc.slice(popStart, popNext === -1 ? todaySrc.length : popNext);
+  assert(popoverSrc.indexOf('⚠') === -1, 'showArcPopover: no warning-triangle glyph in the over-target copy', popoverSrc);
+  assert(/<strong>/.test(popoverSrc) && /kcal over target/.test(popoverSrc),
+    'showArcPopover: the over-target number is still shown, now as neutral bold emphasis instead of a warning glyph', popoverSrc);
+  assert(/detailEl\.innerHTML\s*=\s*detail/.test(popoverSrc),
+    'showArcPopover: renders via innerHTML so the neutral <strong> emphasis can actually render', popoverSrc);
+  const cssSrc = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  const apDetailRule = (cssSrc.match(/\.arc-popover \.ap-detail\{[^}]*\}/) || [''])[0];
+  assert(/color\s*:\s*var\(--muted\)/.test(apDetailRule) && !/--terra|--gold-warn|red/.test(apDetailRule),
+    'showArcPopover: the detail text stays in the same neutral muted color regardless of over/under target (no failure color)', apDetailRule);
+}
+
+/* ===================================================================
+   Day-completion QUALITY variant + all-skip suppression + persistent Week
+   glyph (UX/psychology panel item — decouples the wreath from mere
+   completion). Pins:
+   (a) a balanced, fully-confirmed day selects the QUALITY variant
+       (warmer motif class + " …and a well-rounded one." addendum);
+   (b) a completed-but-NOT-balanced day selects the plain wreath (no
+       addendum, no quality class) — two positive states only, never a
+       third/negative one;
+   (c) an all-skip completed day suppresses the wreath ANIMATION (genuine:
+       false) while still reporting the calm settled closing line — skips
+       stay guilt-free, they just don't independently earn the animation;
+   (d) the closing-line/motif rotation is a pure, deterministic function of
+       dateISO (stable for a given day, varies across different days);
+   (e) the Week day-header glyph condition (requiredSlotCount>0 &&
+       accountedSlotCount===requiredSlotCount) is exactly the same pairing
+       used everywhere else in the app for "day closed", and the glyph
+       markup itself is a distinct, non-animated element from both the
+       transient reward leaves and the existing balance day-dot.
+   dayCompletionTotals (render.js) is the one seam between the log-aware
+   day totals and dayBalanceOverall — stubbed here (restored after) so (a)/
+   (b) don't depend on whether the generator's fixture plan happens to be
+   naturally balanced, matching testPerDayBalanceState's own baseDay()
+   fixture technique for the same planner.js classifier. */
+function testDayCompletionQualityVariant(ctx){
+  const TODAY = FIXED_MONDAY;
+  const slotOrder = get(ctx, 'SLOT_ORDER');
+  function reset(){
+    run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; mealPins = {}; mealRules = []; logHistory = {}; currentProf = 'elena';");
+    call(ctx, 'ensureWeekPlan', []);
+  }
+
+  // -------- (d) deterministic closing-line/motif selection, keyed off dateISO --------
+  const lines = get(ctx, 'DAY_COMPLETION_LINES');
+  assert(Array.isArray(lines) && lines.length >= 3 && lines.every(function(s){ return typeof s === 'string' && s.length > 0; }),
+    'day-completion: at least 3 calm closing-line variants are defined', JSON.stringify(lines));
+  const idxA1 = call(ctx, 'dayCompletionVariantIndex', ['2026-07-13']);
+  const idxA2 = call(ctx, 'dayCompletionVariantIndex', ['2026-07-13']);
+  assert(idxA1 === idxA2 && idxA1 >= 0 && idxA1 < lines.length,
+    'day-completion: variant index is a pure function of dateISO — same date always selects the same in-range variant', 'idxA1=' + idxA1 + ' idxA2=' + idxA2);
+  const idxB = call(ctx, 'dayCompletionVariantIndex', ['2026-07-14']);
+  assert(idxA1 !== idxB, 'day-completion: a different dateISO can select a different variant (this is a rotation, not a hardcoded constant)', 'idxA1=' + idxA1 + ' idxB(2026-07-14)=' + idxB);
+  assert(call(ctx, 'dayCompletionClosingLine', ['2026-07-13']) === lines[idxA1],
+    'day-completion: dayCompletionClosingLine(dateISO) returns the line at that date\'s deterministic index', '');
+  // FIXED_MONDAY itself resolves to index 0 ("Today’s record is complete.") — the exact
+  // sentence testTodayKeystone and testBotanicalStampReward independently pin, so the
+  // rotation introduced here can never silently desync from those two older assertions.
+  assert(idxA1 === 0 && lines[0] === 'Today’s record is complete.',
+    'day-completion: the harness\'s FIXED_MONDAY test date selects variant 0, keeping the older "one voice" sentence assertions valid', 'idxA1=' + idxA1);
+
+  // -------- setup: a fully-confirmed today (genuine confirms, not skips) --------
+  reset();
+  slotOrder.forEach(function(slot){
+    const v = call(ctx, 'computeMenuForDate', [TODAY, 'elena'])[slot];
+    call(ctx, 'logPlanEntry', [TODAY, 'elena', slot, v.recipeId, v.portion, v.components]);
+  });
+  const req = call(ctx, 'requiredSlotCount', [TODAY, 'elena']);
+  assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === req && req > 0,
+    'day-completion setup: every required slot is genuinely confirmed today', 'req=' + req);
+  assert(call(ctx, 'confirmedSlotCount', [TODAY, 'elena']) === req,
+    'day-completion: confirmedSlotCount counts real confirms (not skips) — all of them here', '');
+
+  const calGoal = get(ctx, "PROF['elena'].calGoalNum");
+  const proteinTarget = get(ctx, "PROF['elena'].targetP");
+  assert(calGoal > 0 && proteinTarget > 0, 'test setup: PROF.elena has positive calGoal/targetP to build fixture totals from', 'calGoal=' + calGoal + ' targetP=' + proteinTarget);
+  run(ctx, "var __origDayCompletionTotals = dayCompletionTotals;");
+
+  try {
+    // -------- (a) balanced fully-confirmed day -> QUALITY variant --------
+    run(ctx, "dayCompletionTotals = function(){ return {kcal: " + calGoal + ", protein: " + proteinTarget + ", fiber: 26, freeSugars: 0, satFat: 0}; };");
+    assert(call(ctx, 'dayBalanceOverall', [call(ctx, 'dayCompletionTotals', [TODAY, 'elena']), 'elena']) === 'balanced',
+      'test setup: the stubbed totals classify as dayBalanceOverall "balanced"', '');
+    const planBalanced = call(ctx, 'dayCompletionRewardPlan', [TODAY, 'elena']);
+    assert(!!planBalanced && planBalanced.genuine === true && planBalanced.quality === true,
+      'day-completion (a): a balanced, fully-confirmed day selects the QUALITY variant', JSON.stringify(planBalanced));
+    assert(planBalanced.message.indexOf(planBalanced.closingLine) === 0 && / well-rounded/.test(planBalanced.message),
+      'day-completion (a): the quality message carries the warmer addendum on top of (not instead of) the normal closing line', JSON.stringify(planBalanced));
+
+    // -------- (b) completed but NOT balanced -> the normal wreath, no addendum --------
+    run(ctx, "dayCompletionTotals = function(){ return {kcal: " + calGoal + ", protein: " + proteinTarget + ", fiber: 10, freeSugars: 0, satFat: 0}; };");
+    assert(call(ctx, 'dayBalanceOverall', [call(ctx, 'dayCompletionTotals', [TODAY, 'elena']), 'elena']) === 'off',
+      'test setup: the stubbed low-fiber totals classify as dayBalanceOverall "off"', '');
+    const planOff = call(ctx, 'dayCompletionRewardPlan', [TODAY, 'elena']);
+    assert(!!planOff && planOff.genuine === true && planOff.quality === false && planOff.message === planOff.closingLine,
+      'day-completion (b): a completed-but-not-balanced day selects the plain wreath (no addendum, no quality flag)', JSON.stringify(planOff));
+  } finally {
+    run(ctx, "dayCompletionTotals = __origDayCompletionTotals; delete __origDayCompletionTotals;");
+  }
+
+  // -------- (c) all-skip completed day: animation suppressed, settled text stays --------
+  reset();
+  slotOrder.forEach(function(slot){ call(ctx, 'markSlotSkipped', [TODAY, 'elena', slot]); });
+  const reqC = call(ctx, 'requiredSlotCount', [TODAY, 'elena']);
+  assert(call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === reqC && reqC > 0,
+    'day-completion (c) setup: every required slot is accounted, purely via skips', 'reqC=' + reqC);
+  assert(call(ctx, 'confirmedSlotCount', [TODAY, 'elena']) === 0,
+    'day-completion (c) setup: zero of them are genuine confirms', '');
+  const planAllSkip = call(ctx, 'dayCompletionRewardPlan', [TODAY, 'elena']);
+  assert(!!planAllSkip && planAllSkip.genuine === false,
+    'day-completion (c): an all-skip completed day reports genuine:false — the wreath ANIMATION is suppressed', JSON.stringify(planAllSkip));
+  assert(planAllSkip.quality === false,
+    'day-completion (c): an all-skip day is never the quality variant either (quality implies a genuine confirm)', JSON.stringify(planAllSkip));
+  assert(typeof planAllSkip.closingLine === 'string' && planAllSkip.closingLine.length > 0,
+    'day-completion (c): the calm settled closing line is still produced — skipping stays 100% guilt-free, it just doesn\'t animate', JSON.stringify(planAllSkip));
+  // The resting keystone card must settle to the exact same sentence (one voice), proving
+  // the all-skip day still visibly "closes" even with the wreath suppressed.
+  const ksDone = call(ctx, 'todayKeystoneState', [TODAY, 'elena', 20]);
+  assert(ksDone.phase === 'complete' && ksDone.settledText === planAllSkip.closingLine,
+    'day-completion (c): the keystone card\'s settled text matches the (suppressed) wreath\'s closing line exactly', JSON.stringify({ks: ksDone.settledText, plan: planAllSkip.closingLine}));
+  // Skipping stays guilt-free: playDayCompletionReward's own source never brands a skip as
+  // a failure or addresses the user about it directly.
+  const renderSrcForSkip = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const completionStart = renderSrcForSkip.indexOf('function playDayCompletionReward(');
+  const completionNext = renderSrcForSkip.indexOf('\nfunction ', completionStart + 1);
+  // Trim to the function's own closing brace (not the next "\nfunction " marker, which
+  // would pull in the following function's doc-comment — coincidentally naming
+  // onMesaPersistFailed here, a false positive for any bare /failed/i scan).
+  const completionEnd = renderSrcForSkip.indexOf('\n}', completionStart);
+  const completionSrcForSkip = renderSrcForSkip.slice(completionStart, completionEnd === -1 ? completionNext : completionEnd + 2);
+  assert(!/you skipped|you missed|day failed/i.test(completionSrcForSkip),
+    'day-completion (c): playDayCompletionReward introduces no "you skipped/you missed/day failed" guilt copy', completionSrcForSkip);
+
+  // -------- not-yet-complete day: no plan at all (neither wreath nor settle) --------
+  reset();
+  call(ctx, 'logPlanEntry', [TODAY, 'elena', slotOrder[0], call(ctx, 'computeMenuForDate', [TODAY, 'elena'])[slotOrder[0]].recipeId, call(ctx, 'computeMenuForDate', [TODAY, 'elena'])[slotOrder[0]].portion, call(ctx, 'computeMenuForDate', [TODAY, 'elena'])[slotOrder[0]].components]);
+  assert(call(ctx, 'dayCompletionRewardPlan', [TODAY, 'elena']) === null,
+    'day-completion: a partially-accounted day (not yet complete) yields no reward plan at all', '');
+
+  // -------- (e) persistent Week day-header glyph: same closed condition, distinct markup --------
+  reset();
+  slotOrder.forEach(function(slot){
+    const v = call(ctx, 'computeMenuForDate', [TODAY, 'elena'])[slot];
+    call(ctx, 'logPlanEntry', [TODAY, 'elena', slot, v.recipeId, v.portion, v.components]);
+  });
+  const reqE = call(ctx, 'requiredSlotCount', [TODAY, 'elena']);
+  const closedDay = reqE > 0 && call(ctx, 'accountedSlotCount', [TODAY, 'elena']) === reqE;
+  assert(closedDay === true, 'day-closed-glyph: a fully-confirmed day satisfies the same requiredSlotCount/accountedSlotCount closure pair the keystone/wreath use', 'reqE=' + reqE);
+  const openDate = get(ctx, 'addDaysISO(\'' + TODAY + '\', 1)');
+  const reqOpen = call(ctx, 'requiredSlotCount', [openDate, 'elena']);
+  const openDay = reqOpen > 0 && call(ctx, 'accountedSlotCount', [openDate, 'elena']) === reqOpen;
+  assert(openDay === false, 'day-closed-glyph: a day with nothing logged is NOT closed (nothing accounted yet)', 'reqOpen=' + reqOpen + ' accounted=' + call(ctx, 'accountedSlotCount', [openDate, 'elena']));
+
+  const glyphHtml = call(ctx, 'dayClosedLeafHtml', []);
+  assert(typeof glyphHtml === 'string' && /day-closed-leaf/.test(glyphHtml),
+    'day-closed-glyph: dayClosedLeafHtml() renders the dedicated static class', glyphHtml);
+  assert(!/day-dot/.test(glyphHtml), 'day-closed-glyph: distinct markup from the existing per-day balance dot (day-dot)', glyphHtml);
+  assert(!/log-reward-leaf/.test(glyphHtml), 'day-closed-glyph: does NOT reuse the animated transient-reward leaf class (would inherit fly-in animation + absolute positioning)', glyphHtml);
+
+  const weekSrcForGlyph = fs.readFileSync(path.join(APP_DIR, 'js', 'render-week.js'), 'utf8');
+  assert(/dayClosedLeafHtml\(\)/.test(weekSrcForGlyph) && /accountedSlotCount\(day\.date,\s*person\)\s*===\s*dayReq/.test(weekSrcForGlyph),
+    'day-closed-glyph: render-week.js\'s day header calls dayClosedLeafHtml() gated on the same requiredSlotCount/accountedSlotCount closure pair', '');
+  const cssSrcForGlyph = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  assert(/\.day-closed-leaf\{[^}]*\}/.test(cssSrcForGlyph) && !/@keyframes[\s\S]*day-closed-leaf/.test(cssSrcForGlyph),
+    'day-closed-glyph: styled as a plain static element with no dedicated keyframe animation', '');
+
+  run(ctx, "MESA_TEST_HOUR = null; weekPlans = {}; weekPlan = null; logHistory = {};");
 }
 
 /* ===================================================================
@@ -12314,6 +12513,8 @@ function main(){
   runTest('Profile settings hub: four destinations, Back actions, reachable controls, no jump-nav regressions', function(){ testProfileSettingsHub(); });
   runTest('UX-REVIEW-plan.md P3: Library ingredient count tracks an active search', function(){ testLibraryIngredientCountTracksSearch(ctx); });
   runTest('Botanical Stamp reward: mounts, animation contract, logging wiring, completion, and neutral paths', function(){ testBotanicalStampReward(ctx); });
+  runTest('Day-completion quality variant + all-skip suppression + persistent Week closed-day glyph', function(){ testDayCompletionQualityVariant(ctx); });
+  runTest('Neutral over-target macro popover copy + compact one-line Today macro summary', function(){ testNeutralOverTargetAndCompactMacroLine(ctx); });
   runTest('build-stamp guard: sw.js CACHE === auth.js AUTH_BUILD', function(){ testBuildStampMatch(); });
   runTest('sw shell drift', function(){ testSwShellDrift(); });
   runTest('no-network', function(){ testNoNetwork(); }); // last: after every other test has had its chance to call fetch

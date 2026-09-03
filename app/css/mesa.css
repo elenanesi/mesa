@@ -66,6 +66,12 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .day-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle;}
 .day-dot-ok{background:var(--sage-deep);}
 .day-dot-off{background:var(--gold);}
+/* Persistent "day closed" trace (item 4) — a quiet, STATIC single leaf on the Week day
+   header, distinct from day-dot above (a quality signal). No animation, no streak, no
+   pass/fail color: it only ever marks "every plannable slot here is accounted for". */
+.day-closed-leaf{display:inline-block;width:9px;height:13px;margin-right:5px;vertical-align:middle;opacity:.85;}
+.day-closed-leaf svg{width:100%;height:100%;}
+.day-closed-leaf .leaf-body{fill:var(--sage-deep);stroke:rgba(86,107,67,.4);stroke-width:.6;}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:1.7px;text-transform:uppercase;color:var(--sage-deep);}
 
 .card{background:rgba(255,250,240,.92);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:16px;margin-top:12px;border:1px solid rgba(176,146,105,.38);}
@@ -697,6 +703,19 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .log-reward-wreath-seal svg{position:relative;width:52px;height:52px;overflow:visible;filter:drop-shadow(0 1px 0 #fff);}
 .log-reward-wreath-seal .seal-branch{fill:none;stroke:currentColor;stroke-width:2.25;stroke-linecap:round;stroke-linejoin:round;}
 .log-reward-wreath-seal .seal-leaf{fill:currentColor;stroke:none;opacity:.76;}
+/* Quality variant (item 1) — a warmer, richer botanical treatment for a day that closed
+   BOTH complete and balanced (dayBalanceOverall==='balanced'). Still two positive states
+   only, never a third/negative one: this only ever adds warmth on top of the same wreath,
+   it never subtracts from or recolors the plain-completion look into something lesser. */
+.log-reward--quality:before{
+  background:radial-gradient(circle,rgba(255,247,214,.92),rgba(226,196,140,.42) 38%,rgba(199,154,72,.16) 57%,transparent 70%);
+}
+.log-reward-wreath--quality:before{border-color:rgba(199,154,72,.58);}
+.log-reward-wreath--quality:after{border-color:rgba(190,108,69,.48);}
+.log-reward-wreath--quality .log-reward-wreath-seal{color:var(--gold);}
+.log-reward-wreath--quality .log-reward-message{
+  white-space:normal;text-align:center;max-width:min(216px,calc(100vw - 28px));
+}
 @keyframes log-reward-life{0%,86%{opacity:1;}100%{opacity:0;}}
 @keyframes log-reward-bloom{0%{opacity:0;transform:scale(.28);}35%{opacity:1;}100%{opacity:0;transform:scale(1.18);}}
 @keyframes log-reward-glints{0%{opacity:0;transform:scale(.2) rotate(-12deg);}42%{opacity:1;}100%{opacity:0;transform:scale(1.6) rotate(16deg);}}

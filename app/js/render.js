@@ -130,6 +130,18 @@ function rewardLeafHtml(index){
   return '<svg class="log-reward-leaf" viewBox="0 0 16 23" aria-hidden="true" style="--leaf-x:'+values[0]+';--leaf-y:'+values[1]+';--leaf-rotate:'+values[2]+';--leaf-turn:'+values[3]+';--leaf-delay:'+values[4]+';--leaf-color:'+values[5]+';--leaf-scale:'+values[6]+';--leaf-width:'+values[7]+';--leaf-height:'+values[8]+'">'+leafPath+'</svg>';
 }
 
+// Persistent, discoverable trace of a closed day (item 4 — a user who missed the live
+// wreath still sees "that day, closed" later on the Week screen). Deliberately NOT
+// rewardLeafHtml() reused as-is: that helper is built for the transient reward layer —
+// every instance carries an unconditional fly-in animation and absolute-position CSS vars
+// meant for a full-screen overlay, which would misbehave inline in a day header. This is
+// the same single leaf silhouette (visual family match) as a small, STATIC, inline glyph:
+// no animation, no streak count, no pass/fail color — just a quiet mark that the day is
+// fully accounted for.
+function dayClosedLeafHtml(){
+  return '<span class="day-closed-leaf" role="img" aria-label="Day closed"><svg aria-hidden="true" viewBox="0 0 16 23"><path class="leaf-body" d="M8.1 22C3.7 18.7 1.2 14.2 1.8 9.2 2.4 4.6 5.5 1.7 9.8.9c3.5 4.1 4.6 8.5 2.5 13-1.2 2.7-2.8 5.4-4.2 8.1Z"/></svg></span>';
+}
+
 function rewardPoint(anchorEl){
   const phone = document.querySelector('.phone');
   const phoneRect = phone && phone.getBoundingClientRect();
@@ -180,26 +192,116 @@ function playLogReward(payload){
   return startLogReward(node, message, 1550);
 }
 
+// How many of the REQUIRED slots are GENUINELY confirmed (a real kind:'plan' entry) —
+// unlike accountedSlotCount, a skip does NOT count here. This is the all-skip-suppression
+// gate below: a day of nothing but skips still reaches "complete" (the keystone action is
+// never punished/blocked), but the celebratory wreath is reserved for at least one meal the
+// person actually confirmed. Skipping itself stays entirely guilt-free — no negative
+// styling or copy of its own — it simply doesn't independently earn the animation.
+function confirmedSlotCount(dateISO, person){
+  const day = logHistory && logHistory[dateISO];
+  if(!day || !Array.isArray(day[person])) return 0;
+  return requiredSlots(dateISO, person).filter(function(slot){
+    return day[person].some(function(entry){ return entry && entry.kind === 'plan' && entry.slot === slot; });
+  }).length;
+}
+
+// Presentation variability (fights habituation): the wreath's closing line rotates among a
+// few equally calm variants, chosen DETERMINISTICALLY from dateISO (a plain char-code sum,
+// mod the list length) so a given calendar day always reads the same way — testable and
+// stable — while consecutive days don't feel byte-identical. This is variable PRESENTATION
+// only: the trigger condition (day complete) never changes, and there is no negative/third
+// variant. todayKeystoneState's resting "settled" card intentionally reuses this exact same
+// line (see its own comment) so the transient wreath and the resting state always speak in
+// one voice.
+const DAY_COMPLETION_LINES = [
+  'Today’s record is complete.',
+  'All set for today.',
+  'Nicely closed out.'
+];
+function dayCompletionVariantIndex(dateISO){
+  const s = String(dateISO || '');
+  if(!s) return 0;
+  let sum = 0;
+  for(let i = 0; i < s.length; i++) sum += s.charCodeAt(i);
+  return sum % DAY_COMPLETION_LINES.length;
+}
+function dayCompletionClosingLine(dateISO){
+  return DAY_COMPLETION_LINES[dayCompletionVariantIndex(dateISO)];
+}
+
+// Quality check for the day-complete reward (split from mere completion — see this
+// section's header comment). Reuses the SAME log-aware per-day totals the Week screen's
+// balance dot reads (weekDayNutriViews, render-week.js) rather than the raw generated
+// plan, so "balanced" reflects what was actually eaten/logged today, not just what was
+// planned. dayBalanceOverall (planner.js) is the single holistic verdict already used
+// everywhere else in the app for this — never re-derived here.
+function dayCompletionTotals(dateISO, person){
+  if(typeof ensureWeekPlan !== 'function' || typeof mondayOfWeek !== 'function'
+    || typeof weekDayNutriViews !== 'function' || typeof diffDaysISO !== 'function') return null;
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  const dayIdx = Math.max(0, Math.min(6, diffDaysISO(dateISO, plan.weekStartDate)));
+  const views = weekDayNutriViews(plan, person);
+  return views[dayIdx] ? views[dayIdx].totals : null;
+}
+function dayCompletionIsQuality(dateISO, person){
+  if(typeof dayBalanceOverall !== 'function') return false;
+  const totals = dayCompletionTotals(dateISO, person);
+  return !!totals && dayBalanceOverall(totals, person) === 'balanced';
+}
+
+// Pure decision core for playDayCompletionReward, DOM-free so tools/check.js can pin the
+// trigger/variant/quality/suppression logic directly (the harness's document stub returns
+// null from getElementById, so the DOM-painting function below never gets far enough to
+// expose these choices otherwise). Mirrors playDayCompletionReward's own completion guard
+// exactly; returns null whenever that function would bail out before doing anything.
+function dayCompletionRewardPlan(dateISO, person){
+  if(!dateISO || !person || typeof requiredSlotCount !== 'function') return null;
+  const requiredCount = requiredSlotCount(dateISO, person);
+  if(requiredCount === 0 || accountedSlotCount(dateISO, person) < requiredCount) return null;
+  const closingLine = dayCompletionClosingLine(dateISO);
+  const genuine = confirmedSlotCount(dateISO, person) > 0;
+  const quality = genuine && dayCompletionIsQuality(dateISO, person);
+  return {
+    closingLine: closingLine,
+    genuine: genuine,          // false => all-skip day: settle quietly, no wreath animation
+    quality: quality,          // true => balanced day: warmer motif + addendum line
+    message: quality ? (closingLine + ' …and a well-rounded one.') : closingLine,
+    variantIndex: dayCompletionVariantIndex(dateISO)
+  };
+}
+
 function playDayCompletionReward(payload){
   payload = payload || {};
   const key = String(payload.dateISO || '') + '|' + String(payload.person || '');
-  // requiredCount === 0 guards a fully-unplannable day (every slot no-candidates, or a
-  // snacks-off person whose other three are also all no-candidates) from vacuously
-  // "completing" with nothing accounted at all.
-  const requiredCount = (payload.dateISO && payload.person) ? requiredSlotCount(payload.dateISO, payload.person) : 0;
-  if(!payload.dateISO || !payload.person || typeof todayISO !== 'function' || payload.dateISO !== todayISO() || requiredCount === 0 || accountedSlotCount(payload.dateISO, payload.person) < requiredCount || logRewardCompletionKeys.has(key)) return false;
+  if(!payload.dateISO || !payload.person || typeof todayISO !== 'function' || payload.dateISO !== todayISO() || logRewardCompletionKeys.has(key)) return false;
+  const plan = dayCompletionRewardPlan(payload.dateISO, payload.person);
+  if(!plan) return false;
   logRewardCompletionKeys.add(key);
-  const message = 'Today’s record is complete.';
+  // All-skip suppression: a day that closed on skips alone still gets the calm settled
+  // text (announced via the same live region, one voice with the keystone card) but never
+  // the celebratory animation — the wreath is reserved for at least one genuine confirm.
+  if(!plan.genuine){
+    const live = document.getElementById('logRewardLive');
+    if(live) live.textContent = plan.closingLine;
+    return true;
+  }
   const node = document.createElement('div');
-  node.className = 'log-reward log-reward--complete';
+  node.className = 'log-reward log-reward--complete' + (plan.quality ? ' log-reward--quality' : '');
   const wreath = document.createElement('div');
-  wreath.className = 'log-reward-wreath';
+  wreath.className = 'log-reward-wreath' + (plan.quality ? ' log-reward-wreath--quality' : '');
+  // Small motif variation alongside the text (item 3): the 8 leaves start from a
+  // date-rotated offset instead of always 0-7, so the arrangement subtly shifts day to
+  // day without any new asset — still fully deterministic off dateISO.
+  const leafOffset = plan.variantIndex * 2;
+  let leaves = '';
+  for(let i = 0; i < 8; i++) leaves += rewardLeafHtml(i + leafOffset);
   wreath.innerHTML = '<div class="log-reward-wreath-seal" aria-hidden="true"><svg viewBox="0 0 56 56"><path class="seal-branch" d="m12 29 9 8.5L44 16M21.2 37c5.6-5.2 11.1-10.4 18-15.2"/><path class="seal-leaf" d="M26 32c-6.7.4-10.7-2-12.3-7.3 6.2-1.1 10.3 1.4 12.3 7.3ZM33 26c-.3-6.3 2.3-10.2 7.8-11.8.8 6-1.8 9.9-7.8 11.8ZM27.3 31.2c5.9.8 9.2 3.7 9.8 8.7-5.8.1-9-2.8-9.8-8.7Z"/></svg></div>'
-    + rewardLeafHtml(0) + rewardLeafHtml(1) + rewardLeafHtml(2) + rewardLeafHtml(3) + rewardLeafHtml(4) + rewardLeafHtml(5) + rewardLeafHtml(6) + rewardLeafHtml(7)
+    + leaves
     + '<div class="log-reward-message"></div>';
-  wreath.querySelector('.log-reward-message').textContent = message;
+  wreath.querySelector('.log-reward-message').textContent = plan.message;
   node.appendChild(wreath);
-  return startLogReward(node, message, 2200);
+  return startLogReward(node, plan.message, 2200);
 }
 
 // Implements the optional onMesaPersistFailed(err) hook state.js calls (see persist() in
