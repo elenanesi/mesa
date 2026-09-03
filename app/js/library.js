@@ -210,7 +210,7 @@ const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'bres
 const POULTRY_FOOD_IDS = ['turkey-breast', 'chicken-breast', 'chicken-thigh'];
 const FISH_FOOD_IDS = [
   'salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'clams', 'mussels',
-  'cod', 'sole-fish', 'sea-bass-fillet', 'prawns'
+  'cod', 'sole-fish', 'sea-bass-fillet', 'prawns', 'eel', 'octopus'
 ];
 const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);
 // Per the task brief's exact list.

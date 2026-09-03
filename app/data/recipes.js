@@ -1150,6 +1150,66 @@ const RECIPES_DB = {
     tags: ['muscle'],
     avoid: ['gluten', 'nuts']
   },
+  // A Japanese sushi dinner, built the same way as cena-cinese above: an AGGREGATE of five
+  // singular sub-recipes via `components` (engine.js recipeEffectiveIngredients sums each
+  // sub-recipe's own effective ingredients, scaled by portion). Each sub-dish is a real,
+  // browsable recipe on its own — gyoza REUSES meat-gyozas (already Japanese/Chinese-dumpling
+  // shaped, no need to duplicate it) plus four new sushi pieces: nigiri, two uramaki rolls and
+  // takoyaki. All occasional (loggable/searchable, not auto-planned) — a treat, not a weekday plan.
+  'nigiri-salmon': {
+    title: 'Nigiri with salmon', emoji: '🐟', slot: 'snack', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 15,
+    ingredients: [['rice', 35], ['salmon-fillet', 50]],
+    toTaste: ['rice vinegar', 'wasabi', 'pickled ginger'],
+    steps: ['Cook the rice, season with a splash of rice vinegar and let it cool to warm.', 'Slice the salmon into thin, even pieces.', 'Shape the rice into small ovals and press a slice of salmon over each — about 2 pieces per portion.'],
+    tags: ['quick'], avoid: []
+  },
+  'uramaki-salmon-philadelphia-avocado': {
+    title: 'Uramaki with salmon, Philadelphia & avocado', emoji: '🥑', slot: 'snack', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced'], time: 25,
+    ingredients: [['rice', 45], ['nori', 5], ['salmon-fillet', 28], ['cream-cheese', 20], ['avocado', 28]],
+    toTaste: ['rice vinegar', 'sesame seeds', 'soy sauce to serve'],
+    steps: ['Cook and season the rice with rice vinegar; lay it over a nori sheet on a bamboo mat.', 'Flip the nori rice-side down and lay strips of salmon, cream cheese and avocado along the centre.', 'Roll tightly, then slice into pieces — about 4 pieces per portion.'],
+    tags: [], avoid: ['lactose']
+  },
+  'uramaki-eel-fried-shrimp': {
+    title: 'Uramaki with eel & fried shrimp', emoji: '🦐', slot: 'snack', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['rice', 45], ['nori', 5], ['eel', 28], ['prawns', 35], ['breadcrumbs', 10], ['olive-oil', 5], ['soy-sauce', 5]],
+    toTaste: ['rice vinegar', 'ginger', 'sesame seeds'],
+    steps: ['Cook and season the rice with rice vinegar; warm the eel through with a little soy sauce.', 'Coat the prawns in breadcrumbs and pan-fry in the olive oil until crisp and golden.', 'Lay the rice over a nori sheet, flip rice-side down, add the eel and fried prawns, then roll tightly and slice — about 4 pieces per portion.'],
+    tags: [], avoid: ['gluten', 'shellfish']
+  },
+  takoyaki: {
+    title: 'Takoyaki', emoji: '🐙', slot: 'snack', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced'], time: 30,
+    ingredients: [['00-flour', 32], ['eggs', 35], ['octopus', 40], ['cabbage', 20], ['soy-sauce', 5], ['olive-oil', 6]],
+    toTaste: ['spring onion', 'pickled ginger', 'takoyaki sauce or soy sauce to finish'],
+    steps: ['Whisk the flour, egg and a little water into a smooth batter; stir through the shredded cabbage.', 'Dice the octopus and drop a piece into each well of a hot, oiled takoyaki pan with the batter.', 'Turn each ball as it sets until golden and cooked through on all sides — about 4-5 pieces per portion.', 'Finish with a drizzle of soy sauce and spring onion.'],
+    tags: [], avoid: ['gluten']
+  },
+  'cena-giapponese': {
+    title: 'Japanese sushi dinner', emoji: '🍣', slot: 'dinner', role: 'full',
+    slots: ['dinner', 'lunch'],
+    occasional: true,
+    styles: ['balanced'], time: 60,
+    ingredients: [],
+    components: [
+      {recipeId: 'meat-gyozas', portion: 1},
+      {recipeId: 'nigiri-salmon', portion: 1},
+      {recipeId: 'uramaki-salmon-philadelphia-avocado', portion: 0.75},
+      {recipeId: 'uramaki-eel-fried-shrimp', portion: 0.75},
+      {recipeId: 'takoyaki', portion: 1}
+    ],
+    toTaste: ['soy sauce', 'wasabi', 'pickled ginger'],
+    steps: ['Make the five sub-dishes: gyoza, salmon nigiri, salmon-avocado uramaki, eel & fried shrimp uramaki, and takoyaki.', 'Plate 3-4 gyoza and 2 nigiri each, with three-quarters of a portion of each uramaki roll.', 'Add the takoyaki and serve everything together as one shared spread, with soy sauce, wasabi and pickled ginger on the side.'],
+    tags: [],
+    avoid: ['gluten', 'shellfish', 'lactose']
+  },
 
   /* ================= TASK D2 — recipe options and mains ================= */
 

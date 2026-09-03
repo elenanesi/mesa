@@ -332,6 +332,19 @@ const FOODS = {
     kcal: 92, protein: 18.4, carbs: 0, fat: 2.0, satFat: 0.5, fiber: 0,
     flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'sea-bass-fillet', src: 'USDA FDC 175142 (fish, sea bass, mixed species, raw); kcal per 4/4/9'
   },
+  // Foods added for the Japanese sushi dinner composite (2026-09-03). No iconKey set — no
+  // watercolor asset for these yet, so foodIconHtml/ingredientIconAssetForFood fall back to
+  // the default icon per its documented onerror path.
+  'eel': {
+    name: 'Eel (unagi), raw', per: 100, unit: 'g',
+    kcal: 179, protein: 18.4, carbs: 0, fat: 11.7, satFat: 2.4, fiber: 0,
+    flags: ['omega3', 'selenium'], cat: 'Protein', src: 'USDA FDC-style (fish, eel, mixed species, raw); kcal per 4/4/9'
+  },
+  'octopus': {
+    name: 'Octopus, raw', per: 100, unit: 'g',
+    kcal: 77, protein: 14.9, carbs: 2.2, fat: 1.0, satFat: 0.2, fiber: 0,
+    flags: ['selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC-style (octopus, common, raw); kcal per 4/4/9'
+  },
   'chicken-thigh': {
     name: 'Chicken thigh, skinless, raw', per: 100, unit: 'g',
     kcal: 141, protein: 17.0, carbs: 0, fat: 8.1, satFat: 2.3, fiber: 0,
