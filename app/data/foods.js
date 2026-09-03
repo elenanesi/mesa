@@ -110,7 +110,7 @@ const FOODS = {
   'lime': {
     name: 'Lime, raw', per: 100, unit: 'g', avgG: 67,
     kcal: 47, protein: 0.7, carbs: 10.5, fat: 0.2, satFat: 0.0, fiber: 2.8, sugars: 1.7, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', src: 'USDA FDC 168156 (limes, raw); kcal per 4/4/9. avgG = 1 medium lime. No bespoke icon yet — falls back to the default ingredient icon.'
+    flags: [], cat: 'Produce', iconKey: 'lime', src: 'USDA FDC 168156 (limes, raw); kcal per 4/4/9. avgG = 1 medium lime.'
   },
   'coriander': {
     name: 'Coriander (cilantro), fresh', per: 100, unit: 'g',
@@ -441,7 +441,7 @@ const FOODS = {
   'whipped-cream': {
     name: 'Whipped cream, sweetened', per: 100, unit: 'g',
     kcal: 346, protein: 2.0, carbs: 8.0, fat: 34.0, satFat: 22.0, fiber: 0, sugars: 7.0, freeSugars: 6.0, sugarQuality: 'added/free',
-    flags: [], cat: 'Dairy', src: 'Sweetened dairy whipped cream (heavy cream + a little sugar); USDA FDC 170859-style base; kcal per 4/4/9'
+    flags: [], cat: 'Dairy', iconKey: 'whipped-cream', src: 'Sweetened dairy whipped cream (heavy cream + a little sugar); USDA FDC 170859-style base; kcal per 4/4/9'
   },
   'provola': {
     name: 'Provola cheese', per: 100, unit: 'g',
@@ -780,66 +780,66 @@ const FOODS = {
   'fast-food-fries': {
     name: 'Fast-food fries', per: 100, unit: 'g',
     kcal: 296, protein: 2.9, carbs: 36.7, fat: 14.7, satFat: 1.3, fiber: 3.3, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: 150, flags: [], cat: 'Bakery', src: 'EU fast-food fries (McD UK large 444 kcal / 150 g basis; BK UK regular 269 kcal / ~91 g)'
+    avgG: 150, flags: [], cat: 'Bakery', iconKey: 'fast-food-fries', src: 'EU fast-food fries (McD UK large 444 kcal / 150 g basis; BK UK regular 269 kcal / ~91 g)'
   },
   'fast-food-nuggets': {
     name: 'Chicken nuggets', per: 100, unit: 'g',
     kcal: 275, protein: 15.5, carbs: 15.5, fat: 17.0, satFat: 2.8, fiber: 1.0, sugars: 0.4, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: 16, flags: [], cat: 'Bakery', src: 'EU fast-food breaded chicken nuggets (McD UK 4pc 176 kcal / 64 g; BK UK 4pc 190 kcal / ~69 g)'
+    avgG: 16, flags: [], cat: 'Bakery', iconKey: 'fast-food-nuggets', src: 'EU fast-food breaded chicken nuggets (McD UK 4pc 176 kcal / 64 g; BK UK 4pc 190 kcal / ~69 g)'
   },
   'ketchup': {
     name: 'Ketchup', per: 100, unit: 'g',
     kcal: 100, protein: 1.2, carbs: 25.0, fat: 0.1, satFat: 0, fiber: 0.3, sugars: 22.0, freeSugars: 22.0, sugarQuality: 'added/free',
-    avgG: 15, measures: {tbsp: 15, tsp: 5}, flags: [], cat: 'Pantry', src: 'USDA FDC 168556-style tomato ketchup'
+    avgG: 15, measures: {tbsp: 15, tsp: 5}, flags: [], cat: 'Pantry', iconKey: 'ketchup', src: 'USDA FDC 168556-style tomato ketchup'
   },
-  // Foods added for the Instagram-inspired recipe batch (2026-08-31) — default ingredient icon (no
-  // iconKey), same as lime. Macros drive nutrition (kcal = 4p+4c+9f), so the kcal field is display-only.
+  // Foods added for the Instagram-inspired recipe batch (2026-08-31). Macros drive nutrition
+  // (kcal = 4p+4c+9f), so the kcal field is display-only.
   'rice-paper': {
     name: 'Rice paper (spring-roll wrapper)', per: 100, unit: 'g',
     kcal: 342, protein: 0.5, carbs: 84.0, fat: 0.5, satFat: 0.1, fiber: 1.5, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: 11, flags: [], cat: 'Bakery', src: 'Dried rice-paper wrapper (~11 g per sheet)'
+    avgG: 11, flags: [], cat: 'Bakery', iconKey: 'rice-paper', src: 'Dried rice-paper wrapper (~11 g per sheet)'
   },
   'nori': {
     name: 'Nori seaweed, dried', per: 100, unit: 'g',
     kcal: 232, protein: 41.0, carbs: 12.0, fat: 1.5, satFat: 0.3, fiber: 30.0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: 3, flags: [], cat: 'Produce', src: 'Dried nori/laver sheets (~3 g per sheet)'
+    avgG: 3, flags: [], cat: 'Produce', iconKey: 'nori', src: 'Dried nori/laver sheets (~3 g per sheet)'
   },
   'almond-flour': {
     name: 'Almond flour', per: 100, unit: 'g',
     kcal: 614, protein: 21.0, carbs: 20.0, fat: 50.0, satFat: 3.8, fiber: 11.0, sugars: 4.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: ['nuts'], cat: 'Pantry', src: 'Ground blanched almonds (almond flour/meal)'
+    avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: ['nuts'], cat: 'Pantry', iconKey: 'almond-flour', src: 'Ground blanched almonds (almond flour/meal)'
   },
-  // Foods added for Instagram recipe batch #2 (2026-08-31) — default ingredient icon (no iconKey).
+  // Foods added for Instagram recipe batch #2 (2026-08-31).
   // Diet-filter wiring (GLUTEN/NUT/DAIRY_FOOD_IDS in library.js) updated alongside these.
   'breadcrumbs': {
     name: 'Breadcrumbs, dried', per: 100, unit: 'g',
     kcal: 395, protein: 13.4, carbs: 72.0, fat: 5.3, satFat: 1.2, fiber: 4.5, sugars: 6.0, freeSugars: 3.0, sugarQuality: 'added/free',
-    avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: [], cat: 'Bakery', src: 'USDA FDC 174987-style (bread crumbs, dry, grated, plain)'
+    avgG: null, measures: {tbsp: 7, tsp: 2.5}, flags: [], cat: 'Bakery', iconKey: 'breadcrumbs', src: 'USDA FDC 174987-style (bread crumbs, dry, grated, plain)'
   },
   'quinoa': {
     name: 'Quinoa, dry', per: 100, unit: 'g',
     kcal: 368, protein: 14.1, carbs: 64.2, fat: 6.1, satFat: 0.7, fiber: 7.0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: null, measures: {tbsp: 11, cup: 170}, flags: ['glutenFree', 'highFiber'], cat: 'Pantry', src: 'USDA FDC 168917 (quinoa, uncooked)'
+    avgG: null, measures: {tbsp: 11, cup: 170}, flags: ['glutenFree', 'highFiber'], cat: 'Pantry', iconKey: 'quinoa-dry', src: 'USDA FDC 168917 (quinoa, uncooked)'
   },
   'pistachios': {
     name: 'Pistachios, shelled', per: 100, unit: 'g',
     kcal: 562, protein: 20.2, carbs: 28.0, fat: 45.3, satFat: 5.6, fiber: 10.6, sugars: 7.7, freeSugars: 0, sugarQuality: 'intrinsic',
-    avgG: null, measures: {tbsp: 8, tsp: 3}, flags: ['nuts'], cat: 'Pantry', src: 'USDA FDC 170185 (nuts, pistachio, raw)'
+    avgG: null, measures: {tbsp: 8, tsp: 3}, flags: ['nuts'], cat: 'Pantry', iconKey: 'pistachios', src: 'USDA FDC 170185 (nuts, pistachio, raw)'
   },
   'mascarpone': {
     name: 'Mascarpone', per: 100, unit: 'g',
     kcal: 429, protein: 4.8, carbs: 3.6, fat: 44.0, satFat: 29.0, fiber: 0, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Dairy', src: 'Mascarpone cream cheese (Italian)'
+    flags: [], cat: 'Dairy', iconKey: 'mascarpone', src: 'Mascarpone cream cheese (Italian)'
   },
   'cornstarch': {
     name: 'Cornstarch', per: 100, unit: 'g',
     kcal: 381, protein: 0.3, carbs: 91.0, fat: 0.1, satFat: 0, fiber: 0.9, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
-    avgG: null, measures: {tbsp: 8, tsp: 2.7}, flags: ['glutenFree'], cat: 'Pantry', src: 'USDA FDC 169698 (cornstarch)'
+    avgG: null, measures: {tbsp: 8, tsp: 2.7}, flags: ['glutenFree'], cat: 'Pantry', iconKey: 'cornstarch', src: 'USDA FDC 169698 (cornstarch)'
   },
   'burrata': {
     name: 'Burrata', per: 100, unit: 'g',
     kcal: 275, protein: 12.0, carbs: 3.0, fat: 24.0, satFat: 16.0, fiber: 0, sugars: 1.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['fermented'], cat: 'Dairy', src: 'Burrata (fresh mozzarella with cream centre)'
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'burrata', src: 'Burrata (fresh mozzarella with cream centre)'
   },
   'capers': {
     name: 'Capers, brined, drained', per: 100, unit: 'g',
