@@ -907,6 +907,79 @@ function testDeletionConfirmation(ctx){
   delete ctx.confirm;
 }
 
+// Owner request: warn before a SHARED meal edit that changes BOTH people's plates (a recipe
+// swap, an extra add/remove/adjust, or a composite sub-recipe portion tweak — the three
+// mutateMealExtras/setMealComponentsOverride/applySwapToPlan families that mirror onto both
+// entries), but never for a per-person portion change (svE/svM stay independent even on a
+// shared meal) or anything on a solo meal/solo household. The harness has no window.confirm
+// wired up (see testDeletionConfirmation above for the ctx.confirm mock pattern), so per the
+// implementation plan this sticks to the pure decision logic: isSharedMealChangeAffectingBoth
+// (the shared-detection predicate) and confirmSharedMealChange's non-blocking/true bypass
+// paths — not simulating an actual accept/cancel modal.
+function testSharedMealChangeConfirmation(ctx){
+  const savedWeekPlans = cloneJSON(get(ctx, 'weekPlans'));
+  const savedOverrides = cloneJSON(get(ctx, 'mealShareOverrides'));
+  const savedHouseholdSize = get(ctx, 'householdSize');
+  const savedHouseholdSizeManual = get(ctx, 'householdSizeManual');
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealShareOverrides = {}; householdSize = 2; householdSizeManual = true;");
+    assert(get(ctx, 'SHARED.dinner') === true, 'setup: dinner is shared by default in the test household');
+    const wsd = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+    call(ctx, 'ensureWeekPlan', [wsd]);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[2].meals.dinner.shared") === true,
+      'setup: day-2 dinner generated shared, as SHARED.dinner default predicts');
+
+    // (1) isSharedMealChangeAffectingBoth: identifies a real shared cell in a two-person
+    // household as both-affecting.
+    assert(call(ctx, 'isSharedMealChangeAffectingBoth', [wsd, 2, 'dinner']) === true,
+      'isSharedMealChangeAffectingBoth: a shared dinner cell in a two-person household affects both plates');
+
+    // (2) A per-cell solo override (splitMealCell's underlying mechanism) makes the SAME
+    // slot NOT both-affecting, without touching household size.
+    call(ctx, 'setMealShareOverride', [wsd, 3, 'dinner', false]);
+    run(ctx, "weekPlans = {}; weekPlan = null;"); // force regeneration under the override
+    call(ctx, 'ensureWeekPlan', [wsd]);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[3].meals.dinner.shared") === false,
+      'setup: day-3 dinner generated solo under the per-cell override');
+    assert(call(ctx, 'isSharedMealChangeAffectingBoth', [wsd, 3, 'dinner']) === false,
+      'isSharedMealChangeAffectingBoth: a solo (unshared) meal never affects the other person');
+
+    // (3) The SAME already-shared cell (day 2) stops being both-affecting the instant the
+    // household itself is solo — isSoloHousehold() short-circuits before even reading
+    // meal.shared, matching "a solo household never sees the warning" regardless of what a
+    // stale/leftover shared flag says.
+    run(ctx, "householdSize = 1;");
+    assert(call(ctx, 'isSharedMealChangeAffectingBoth', [wsd, 2, 'dinner']) === false,
+      'isSharedMealChangeAffectingBoth: a solo household is never both-affecting, even on an already-shared cell');
+    run(ctx, "householdSize = 2;");
+
+    // (4) confirmSharedMealChange's non-blocking bypass: returns true (no dialog needed to
+    // reach that answer) for every "never warn" case — solo household, a solo meal, and a
+    // shared meal in this harness (no window.confirm wired up, so tools/check.js and every
+    // mutator it drives directly are never blocked by this gate).
+    assert(typeof get(ctx, 'window.confirm') !== 'function',
+      'setup: the harness has no window.confirm wired up by default');
+    assert(call(ctx, 'confirmSharedMealChange', [wsd, 2, 'dinner', 'elena']) === true,
+      'confirmSharedMealChange: a shared meal with no window.confirm available never blocks (tests/mutators stay usable)');
+    run(ctx, "householdSize = 1;");
+    assert(call(ctx, 'confirmSharedMealChange', [wsd, 2, 'dinner', 'elena']) === true,
+      'confirmSharedMealChange: a solo household always returns true');
+    run(ctx, "householdSize = 2;");
+    assert(call(ctx, 'confirmSharedMealChange', [wsd, 3, 'dinner', 'elena']) === true,
+      'confirmSharedMealChange: a solo (unshared) meal always returns true');
+
+    // (5) sharedMealChangeAcknowledged is a plain module let, not persisted — confirms it's
+    // absent from the buildSnapshot/localStorage round-trip (session-only by construction).
+    const snapshotFn = get(ctx, 'buildSnapshot.toString()');
+    assert(snapshotFn.indexOf('sharedMealChangeAcknowledged') === -1,
+      'sharedMealChangeAcknowledged: never persisted into buildSnapshot (session-only, resets on reload)');
+  } finally {
+    run(ctx, "weekPlans = " + JSON.stringify(savedWeekPlans) + "; weekPlan = null; mealShareOverrides = " + JSON.stringify(savedOverrides)
+      + "; householdSize = " + JSON.stringify(savedHouseholdSize) + "; householdSizeManual = " + JSON.stringify(savedHouseholdSizeManual)
+      + "; sharedMealChangeAcknowledged = false;");
+  }
+}
+
 function testIconPicker(ctx){
   const FOODS = get(ctx, 'FOODS');
   const BUILTIN_FOODS_DB = get(ctx, 'BUILTIN_FOODS_DB');
@@ -13423,6 +13496,7 @@ function main(){
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
+  runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });
   runTest('reconcileInCartShopSet: prunes stale shopping-list in-cart ticks (Defect C redesign)', function(){ testReconcileInCartShopSet(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('composite ingredient UI: save/detail/pantry/persist/D1 guards', function(){ testCompositeIngredientUi(ctx); });

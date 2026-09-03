@@ -26,6 +26,58 @@ function confirmDeletion(what){
     : window.confirm('Delete ' + noun + '? This can’t be undone.');
 }
 
+/* ---------------- shared-meal change confirmation (owner request) ----------------
+   A shared meal's PORTION (svE/svM) is already per-person, so tweaking your own serving
+   never touches the other person's plate and must never warn. But three edit kinds are
+   cooked/chosen ONCE for the whole shared dish and mutateMealExtras/setMealComponentsOverride/
+   applySwapToPlan all mirror them onto BOTH people's entries: swapping the recipe, adding/
+   removing/adjusting an extra (side or food), and adjusting a composite sub-recipe portion.
+   Those, and only those, should ask first.
+
+   isSharedMealChangeAffectingBoth is the pure predicate (no dialog, no session state) —
+   false for a solo household (isSoloHousehold(), state.js) or when the specific plan cell
+   at (weekStartDate, dayIndex, slot) isn't currently shared (meal.shared — the EFFECTIVE
+   per-cell flag mealShareOverrides can flip away from the household SHARED[slot] default,
+   see planner.js:effectiveMealShared, so this reads the live meal object rather than the
+   household default). Reads via editableWeekPlan (planner.js), the same accessor
+   mutateMealExtras itself uses, so "is this cell shared" never disagrees with what the
+   mutator is about to do. */
+function isSharedMealChangeAffectingBoth(weekStartDate, dayIndex, slot){
+  if(typeof isSoloHousehold === 'function' && isSoloHousehold()) return false;
+  const plan = (typeof editableWeekPlan === 'function') ? editableWeekPlan(weekStartDate) : null;
+  const day = plan && plan.days && plan.days[dayIndex];
+  const meal = day && day.meals && day.meals[slot];
+  return !!(meal && meal.shared);
+}
+
+// Calm, ONCE-PER-SESSION confirm gate for the both-affecting shared edits above. Returns
+// true immediately (no dialog) for: a non-browser context (no window.confirm — so
+// tools/check.js and every mutator it calls directly stay unblocked), a solo household, or
+// a meal that isn't actually shared — isSharedMealChangeAffectingBoth covers all three via
+// its own solo/shared checks, so only the non-browser guard is duplicated here (it must
+// short-circuit before ever touching window.confirm). Otherwise asks once: after the user
+// accepts, sharedMealChangeAcknowledged latches so every later shared edit THIS SESSION
+// proceeds without asking again — the point is one calm heads-up, not a nag on every +/-
+// tap. A cancel leaves the flag unset, so the very next both-affecting edit asks again.
+// Session-only by construction (a plain module `let`, never persisted/synced) — a reload
+// always asks again once. Call sites gate at the user-action layer (the swap apply, the
+// extras add/remove/adjust handlers, the composite sub-recipe portion handlers) BEFORE
+// mutating, never inside the shared low-level mutators those handlers call — so a test
+// harness driving mutateMealExtras/setMealComponentsOverride/applySwapToPlan directly is
+// never gated (it has no window.confirm anyway, but this keeps the intent explicit).
+let sharedMealChangeAcknowledged = false;
+function confirmSharedMealChange(weekStartDate, dayIndex, slot, person){
+  if(typeof window === 'undefined' || typeof window.confirm !== 'function') return true;
+  if(!isSharedMealChangeAffectingBoth(weekStartDate, dayIndex, slot)) return true;
+  if(sharedMealChangeAcknowledged) return true;
+  const otherKey = person === 'elena' ? 'partner' : 'elena';
+  const otherName = (typeof resolveDisplayName === 'function') ? resolveDisplayName(otherKey) : 'your partner';
+  const slotLabel = (SLOT_LABEL[slot] || slot).toLowerCase();
+  const ok = window.confirm('This is a shared ' + slotLabel + ' — changing it changes ' + otherName + '’s ' + slotLabel + ' too. Continue?');
+  if(ok) sharedMealChangeAcknowledged = true;
+  return ok;
+}
+
 /* ---------------- Botanical log rewards ----------------
    These are deliberately presentation-only: call sites mutate and refresh first, then
    hand the successful action to this controller. Keeping completion reads directly on

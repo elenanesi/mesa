@@ -175,6 +175,12 @@ function mealPageSetExtraRecipePortion(recipeId, newPortion){
   const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
   const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
   const person = recipeServingCtx.person || currentProf;
+  // Owner request: an extra mirrors to BOTH sides of a shared cell (mutateMealExtras), even
+  // from the 'logged' branch above (its plan-side mirror call a few lines down still hits a
+  // shared cell) — see render.js:confirmSharedMealChange's doc. This is the single funnel
+  // both the +/- stepper (adjMealPageExtra) and the typed commit
+  // (commitMealPageExtraRecipePortion) go through, so gating here covers both taps.
+  if(!confirmSharedMealChange(weekStartDate, dayIndex, recipeServingCtx.slot, person)) return;
   if(recipeServingCtx.source === 'logged'){
     if(!setExtraPortionInLoggedMeal(dateISO, person, recipeServingCtx.slot, recipeId, newPortion)) return;
     setExtraRecipePortion(weekStartDate, dayIndex, recipeServingCtx.slot, person, recipeId, newPortion);
@@ -191,6 +197,9 @@ function mealPageSetExtraFoodGrams(foodId, newGrams){
   const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
   const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
   const person = recipeServingCtx.person || currentProf;
+  // Same shared-mirror confirm as mealPageSetExtraRecipePortion above — the single funnel
+  // for both the +/- stepper and the typed commit (commitMealPageExtraFoodGrams).
+  if(!confirmSharedMealChange(weekStartDate, dayIndex, recipeServingCtx.slot, person)) return;
   if(recipeServingCtx.source === 'logged'){
     if(!setFoodExtraGramsInLoggedMeal(dateISO, person, recipeServingCtx.slot, foodId, newGrams)) return;
     setExtraFoodGrams(weekStartDate, dayIndex, recipeServingCtx.slot, person, foodId, newGrams);
@@ -235,6 +244,10 @@ function removeMealPageExtra(i){
   const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
   const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
   const person = recipeServingCtx.person || currentProf;
+  // Owner request: removing an extra mirrors to both sides of a shared cell too (same
+  // funnel as the add/adjust handlers above) — ask after the permanent-delete confirm,
+  // before either mutator below runs.
+  if(!confirmSharedMealChange(weekStartDate, dayIndex, recipeServingCtx.slot, person)) return;
   const title = c.recipeId ? (RECIPES_DB[c.recipeId] ? RECIPES_DB[c.recipeId].title : 'item') : (FOODS[c.foodId] ? FOODS[c.foodId].name : 'item');
   let removed;
   if(recipeServingCtx.source === 'logged'){
@@ -990,6 +1003,13 @@ function commitMealCompPortion(i, raw){
   if(!recipeMealCompsCtx || !recipeMealCompsCtx[i]){ updateMealDetail(); return; }
   const clamped = clampMealCompPortionInput(raw);
   if(clamped === null){ updateMealDetail(); return; }
+  // Owner request: only the PLAN branch of applyMealCompsOverride (below) mirrors this
+  // sub-recipe portion onto both sides of a shared cell — the 'logged' branch writes only
+  // the viewer's own log entry (log.js:logPlanEntry is per-person) — so gate only when
+  // source is 'plan', before recipeMealCompsCtx is mutated (a cancel must leave the shown
+  // portions untouched, not just the persisted ones).
+  if(recipeServingCtx && recipeServingCtx.source === 'plan'
+    && !confirmSharedMealChange(recipeServingCtx.weekStartDate, recipeServingCtx.dayIndex, recipeServingCtx.slot, recipeServingCtx.person)) return;
   recipeMealCompsCtx[i].portion = clamped;
   updateMealDetail();
   applyMealCompsOverride();
@@ -999,6 +1019,9 @@ function commitMealCompPortion(i, raw){
 // nutrition and, for an already-logged meal, writes the tweak straight back to that log entry.
 function adjMealComp(i, delta){
   if(!recipeMealCompsCtx || !recipeMealCompsCtx[i]) return;
+  // Same shared-mirror confirm as commitMealCompPortion above.
+  if(recipeServingCtx && recipeServingCtx.source === 'plan'
+    && !confirmSharedMealChange(recipeServingCtx.weekStartDate, recipeServingCtx.dayIndex, recipeServingCtx.slot, recipeServingCtx.person)) return;
   const c = recipeMealCompsCtx[i];
   const cur = (typeof c.portion === 'number') ? c.portion : 0;
   c.portion = Math.min(3, Math.max(0, +((cur + delta).toFixed(1))));

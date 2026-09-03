@@ -713,6 +713,11 @@ function onMealFoodSearch(value){
 function chooseMealExtraRecipe(recipeId){
   if(!addMealCtx || !RECIPES_DB[recipeId]) return;
   const ctx = addMealCtx;
+  // Owner request: an added extra mirrors onto both sides of a shared cell even when this
+  // slot is already logged (the plan-side addExtraRecipeToMeal call below still hits a
+  // shared cell) — render.js:confirmSharedMealChange only asks once per session and is a
+  // no-op for a solo household/meal/non-browser context.
+  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
     // Symmetric with removeMealExtraRecipe below: update BOTH the log entry AND the plan
@@ -741,6 +746,8 @@ function chooseMealExtraRecipe(recipeId){
 function chooseMealExtraFood(foodId, gramsOverride){
   if(!addMealCtx || !FOODS[foodId]) return;
   const ctx = addMealCtx;
+  // Same shared-mirror confirm as chooseMealExtraRecipe above.
+  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const grams = (typeof gramsOverride === 'number' && gramsOverride > 0) ? gramsOverride : defaultMealFoodGrams(foodId);
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
@@ -778,6 +785,9 @@ function removeMealExtraRecipe(recipeId){
   if(!addMealCtx) return;
   if(!confirmDeletion()) return;
   const ctx = addMealCtx;
+  // Owner request: removing an extra mirrors to both sides of a shared cell too — ask after
+  // the permanent-delete confirm, before either mutator below runs.
+  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = RECIPES_DB[recipeId] ? RECIPES_DB[recipeId].title : 'item';
   if(ctx.logged){
@@ -801,6 +811,8 @@ function removeMealExtraFood(foodId){
   if(!addMealCtx) return;
   if(!confirmDeletion()) return;
   const ctx = addMealCtx;
+  // Same shared-mirror confirm as removeMealExtraRecipe above.
+  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = FOODS[foodId] ? FOODS[foodId].name : 'item';
   if(ctx.logged){
@@ -921,6 +933,9 @@ function setFoodExtraGramsInLoggedMeal(dateISO, person, slot, foodId, grams){
 function stepMealExtraPortion(recipeId, delta){
   if(!addMealCtx) return;
   const ctx = addMealCtx;
+  // Owner request: an extra's portion mirrors to both sides of a shared cell (same funnel
+  // as chooseMealExtraRecipe above) — ask before either mutator below runs.
+  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const loggedComp = ctx.logged ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
   let current = 1;
@@ -984,6 +999,10 @@ function currentMealExtraFoodGrams(foodId){
 function applyMealExtraFoodGrams(foodId, newGrams){
   if(!addMealCtx || !FOODS[foodId]) return;
   const ctx = addMealCtx;
+  // Same shared-mirror confirm as stepMealExtraPortion above — this is the single funnel
+  // both the +/- stepper (stepMealExtraFoodGrams) and the typed commits
+  // (commitMealExtraFoodGrams/commitMealExtraFoodAmount) go through.
+  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   newGrams = Math.max(1, Math.min(2000, Math.round(newGrams)));
   if(ctx.logged){
@@ -2349,6 +2368,16 @@ function commitLogPickerAdd(){
   const dateISO = currentLogDateISO();
   const amount = ctx.kind === 'recipe' ? ctx.portion : ctx.grams;
   if(!ctx.slot && !ctx.unassigned){ toast('Pick a meal, or choose No meal'); return; }
+  // Owner request: this is the picker's real UI action (the "Add" tap) — applyLogPickerAdd
+  // below is the pure/DOM-free write path tools/check.js exercises directly (see its own
+  // doc comment), so the confirm belongs here, not there. An unassigned add never touches a
+  // plan slot (it logs standalone, bypassing the meal-plan extras funnel entirely per
+  // applyUnassignedLogPickerAdd's doc), so only the slot-targeted branch can be both-affecting.
+  if(ctx.slot && !ctx.unassigned){
+    const weekStartDate = mondayOfWeek(dateISO);
+    const dayIndex = diffDaysISO(dateISO, weekStartDate);
+    if(!confirmSharedMealChange(weekStartDate, dayIndex, ctx.slot, currentProf)) return;
+  }
   const result = ctx.unassigned
     ? applyUnassignedLogPickerAdd(dateISO, ctx.kind, ctx.id, amount, currentProf)
     : applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
