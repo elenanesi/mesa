@@ -3701,21 +3701,43 @@ function testSwapCravingFilter(ctx){
       "onSwapCravingFreeText: funnels the typed text into the existing swapCtx.searchQuery search state");
 
     // buildSwapSheet: resets swapCtx.craving to null on every fresh open (mirrors
-    // swapCtx.includeOtherMeals's existing reset), and renders the chip row wired to
-    // toggleSwapCraving for each of the five preset keys.
+    // swapCtx.includeOtherMeals's existing reset). Panel-approved de-clutter (2026-09):
+    // the craving section is now collapsed by default behind one "what are you feeling?"
+    // toggle — Best matches used to start off-screen because this section always rendered
+    // fully expanded. The chips are still exactly as wired, just one tap away.
     run(ctx, "swapCtx = {dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: '" + wsd + "', craving: 'fruit'};");
     const sheetHtml = call(ctx, 'buildSwapSheet', [{dayIndex: 0, slot: 'snack', person: 'elena', weekStartDate: wsd}]);
     assert(get(ctx, 'swapCtx.craving') === null,
       'buildSwapSheet: resets swapCtx.craving to null on every fresh open, same as includeOtherMeals');
+    assert(get(ctx, 'swapCravingExpanded') === false,
+      'buildSwapSheet: the craving section is collapsed by default on every fresh open');
+    assert(sheetHtml.indexOf('toggleSwapCravingExpanded()') !== -1,
+      'buildSwapSheet: renders the collapsed "what are you feeling?" toggle');
     ['fruit', 'veg', 'protein', 'light', 'quick'].forEach(function(key){
-      assert(sheetHtml.indexOf("toggleSwapCraving('" + key + "')") !== -1,
-        'buildSwapSheet: renders a "' + key + '" craving chip wired to toggleSwapCraving');
+      assert(sheetHtml.indexOf("toggleSwapCraving('" + key + "')") === -1,
+        'buildSwapSheet: does NOT render the "' + key + '" craving chip while collapsed');
     });
-    assert(sheetHtml.indexOf('What do you feel like?') !== -1,
-      'buildSwapSheet: renders the "What do you feel like?" craving section');
+
+    // Tapping the toggle expands it — same chip row, fully functional, just revealed on
+    // demand. toggleSwapCravingExpanded() no-ops its DOM repaint under the harness's
+    // getElementById stub, so swapCravingChipsHtml() is read directly afterward, same as the
+    // sheet would after a real repaint.
+    call(ctx, 'toggleSwapCravingExpanded', []);
+    assert(get(ctx, 'swapCravingExpanded') === true,
+      'toggleSwapCravingExpanded: expands the craving section on tap');
+    const expandedHtml = call(ctx, 'swapCravingChipsHtml', []);
+    ['fruit', 'veg', 'protein', 'light', 'quick'].forEach(function(key){
+      assert(expandedHtml.indexOf("toggleSwapCraving('" + key + "')") !== -1,
+        'swapCravingChipsHtml (expanded): renders a "' + key + '" craving chip wired to toggleSwapCraving');
+    });
+    assert(expandedHtml.indexOf('What do you feel like?') !== -1,
+      'swapCravingChipsHtml (expanded): renders the "What do you feel like?" craving section');
+    call(ctx, 'toggleSwapCravingExpanded', []);
+    assert(get(ctx, 'swapCravingExpanded') === false,
+      'toggleSwapCravingExpanded: collapses again on a second tap');
   } finally {
     ctx.weekPlans = savedWeekPlans;
-    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; swapCtx = " + (savedSwapCtx ? JSON.stringify(savedSwapCtx) : 'null') + ";");
+    run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; swapCtx = " + (savedSwapCtx ? JSON.stringify(savedSwapCtx) : 'null') + "; swapCravingExpanded = false;");
   }
 }
 
@@ -9302,6 +9324,46 @@ function testWeekEatenOutToggleWiring(){
   assert(weekFn.indexOf('chip-computed') !== -1, 'renderWeek(): the eaten-out pill reuses the chip-computed style', weekFn);
 }
 
+/* ---------------- Engagement/UX panel item 3: add-meal sheet de-clutter ----------------
+   The ate-out / save-as-recipe / share-toggle buttons now sit behind one collapsed "Meal
+   options" affordance so the sheet opens straight into "In this meal" + "Sides" (the actual
+   task) instead of piling every secondary action above the fold. Source-structure guard
+   (same reasoning as testWeekEatenOutToggleWiring above): this only asserts DISCLOSURE
+   changed, not that any of the three actions' own wiring did — those stay covered by
+   testWeekEatenOutToggleWiring/testAteOutQuickAddWiring/the share-toggle tests elsewhere,
+   unmodified, and still pass unchanged (proof the buttons' onclick handlers are byte-
+   identical, only their default visibility moved). */
+function testAddMealMetaDisclosure(ctx){
+  const renderSrc = readAllRenderSrc();
+  const fnBody = function(name){
+    const m = renderSrc.match(new RegExp('function ' + name + '\\([^)]*\\)\\{[\\s\\S]*?\\n\\}\\n'));
+    return m ? m[0] : '';
+  };
+
+  assert(get(ctx, 'addMealMetaExpanded') === false,
+    'addMealMetaExpanded: starts collapsed');
+
+  const sheetFn = fnBody('openAddMealSheetForContext');
+  assert(sheetFn.length > 0, 'wiring setup: openAddMealSheetForContext() function body found', 'not found');
+  assert(sheetFn.indexOf('toggleAddMealMeta()') !== -1,
+    'openAddMealSheetForContext(): renders the collapsed "Meal options" toggle', sheetFn);
+  assert(/if\(addMealMetaExpanded\)\{[\s\S]*ateOutToggleDirect[\s\S]*openSaveComposedMealSheet[\s\S]*toggleMealShareFromSheet[\s\S]*?\}/.test(sheetFn),
+    'openAddMealSheetForContext(): the ate-out/save/share actions are gated behind addMealMetaExpanded, in that order', sheetFn);
+  // The gate must sit BEFORE the "In this meal" section is built, so a collapsed sheet's
+  // first screenful is the toggle line immediately followed by the actual task. Matched
+  // against the literal markup marker (not the phrase alone, which also appears in this
+  // function's own doc comments).
+  assert(sheetFn.indexOf('toggleAddMealMeta()') < sheetFn.indexOf('shop-cat">In this meal'),
+    'openAddMealSheetForContext(): the Meal-options gate renders before the "In this meal" section, so collapsing it moves the task up, not down', sheetFn);
+
+  const toggleFn = fnBody('toggleAddMealMeta');
+  assert(toggleFn.length > 0, 'wiring setup: toggleAddMealMeta() function body found', 'not found');
+  assert(toggleFn.indexOf('addMealMetaExpanded = !addMealMetaExpanded') !== -1,
+    'toggleAddMealMeta(): flips the flag', toggleFn);
+  assert(toggleFn.indexOf('openAddMealSheetForContext(addMealCtx)') !== -1,
+    'toggleAddMealMeta(): repaints the sheet in place via the existing addMealCtx, same pattern as toggleMealShareFromSheet', toggleFn);
+}
+
 /* ===================================================================
    ATE-OUT-QUICK-ADD: a ~15-second "restaurant / delivery" log path — a one-off custom
    food built from typed macro totals (library.js:createAteOutFood), logged eaten-out via
@@ -12080,8 +12142,13 @@ function testBotanicalStampReward(ctx){
   const completionFn = functionSource(renderSrc, 'playDayCompletionReward');
   const clearFn = functionSource(renderSrc, 'clearLogReward');
   const startFn = functionSource(renderSrc, 'startLogReward');
-  assert(startFn.indexOf('clearLogReward()') !== -1 && /textContent\s*=/.test(rewardFn),
-    'Botanical reward: a new stamp replaces an active instance and writes dynamic copy with textContent', rewardFn);
+  // playLogReward/playSwapReward both build their DOM via the shared logRewardNode() helper
+  // (2026-09 swap-reward refactor: same botanical stamp, different message per call site),
+  // so the "writes dynamic copy with textContent" behavior now lives there rather than
+  // inline in playLogReward itself.
+  const nodeFn = functionSource(renderSrc, 'logRewardNode');
+  assert(startFn.indexOf('clearLogReward()') !== -1 && /textContent\s*=/.test(nodeFn) && rewardFn.indexOf('logRewardNode(') !== -1,
+    'Botanical reward: a new stamp replaces an active instance and writes dynamic copy with textContent', rewardFn + nodeFn);
   assert(/setTimeout/.test(startFn) && /clearTimeout/.test(clearFn),
     'Botanical reward: active cleanup timers are centrally managed for rapid taps', clearFn + rewardFn);
   assert(/logRewardCompletionKeys\s*=\s*new Set\(/.test(renderSrc) && /dateISO/.test(completionFn) && /person/.test(completionFn),
@@ -12160,6 +12227,77 @@ function testBotanicalStampReward(ctx){
   assert(/recorded\s*·/.test(rewardFn) && /Today.s record is complete\./.test(renderSrc)
       && /dayCompletionClosingLine|dayCompletionRewardPlan/.test(completionFn),
     'Botanical reward: result copy is factual and contains no food-quality judgment', completionFn);
+}
+
+/* ---------------- Engagement/UX panel item 4: swap micro-reward ----------------
+   Tending the plan (swapping a meal) had no payoff of its own. playSwapReward (render.js)
+   reuses the SAME botanical stamp playLogReward uses (via the shared logRewardNode()
+   builder), fired once from chooseSwapRecipe (planner.js) — the swap sheet's single apply
+   path — after the mutation and every re-render. swapRewardShouldFire is the pure,
+   DOM-free idempotency guard: pinned directly here, the same way dayCompletionRewardPlan's
+   trigger/suppression logic is pinned above without touching the DOM-painting reward
+   itself. */
+function testSwapReward(ctx){
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const plannerSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'planner.js'), 'utf8');
+  const weekSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-week.js'), 'utf8');
+  const todaySrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render-today.js'), 'utf8');
+  function functionSource(src, name){
+    const start = src.indexOf('function ' + name + '(');
+    if(start === -1) return '';
+    const next = src.indexOf('\nfunction ', start + 1);
+    return src.slice(start, next === -1 ? src.length : next);
+  }
+
+  assert(call(ctx, 'swapRewardKey', ['2026-09-03', 'elena', 'dinner', 'rx']) === 'swap|2026-09-03|elena|dinner|rx',
+    'swapRewardKey: a namespaced date+person+slot+recipe composite key');
+
+  // logRewardCompletionKeys is shared, persistent module state (same Set the day-completion
+  // reward dedupes through) — save and restore it so this test can't leak a key into, or
+  // pick one up from, any other test in this shared vm context.
+  const savedKeys = get(ctx, 'Array.from(logRewardCompletionKeys)');
+  try{
+    run(ctx, 'logRewardCompletionKeys.clear();');
+    assert(call(ctx, 'swapRewardShouldFire', ['2026-09-03', 'elena', 'dinner', 'rx']) === true,
+      'swapRewardShouldFire: a genuinely new (date, person, slot, recipe) fires');
+    assert(call(ctx, 'swapRewardShouldFire', ['2026-09-03', 'elena', 'dinner', 'rx']) === false,
+      'swapRewardShouldFire: the identical swap action again is refused — idempotent, never double-fires');
+    assert(call(ctx, 'swapRewardShouldFire', ['2026-09-03', 'elena', 'dinner', 'ry']) === true,
+      'swapRewardShouldFire: a DIFFERENT target recipe for the same slot/date/person still fires (not a blanket per-slot lock)');
+    assert(call(ctx, 'swapRewardShouldFire', ['2026-09-04', 'elena', 'dinner', 'rx']) === true,
+      'swapRewardShouldFire: the same recipe swapped in on a different date fires again (not a permanent global lock)');
+    assert(call(ctx, 'swapRewardShouldFire', [null, 'elena', 'dinner', 'rx']) === false,
+      'swapRewardShouldFire: refuses (without throwing) on a missing dateISO');
+    assert(call(ctx, 'swapRewardShouldFire', ['2026-09-05', '', 'dinner', 'rx']) === false,
+      'swapRewardShouldFire: refuses (without throwing) on a missing person');
+  } finally {
+    run(ctx, 'logRewardCompletionKeys.clear(); ' + savedKeys.map(function(k){ return 'logRewardCompletionKeys.add(' + JSON.stringify(k) + ');'; }).join(' '));
+  }
+
+  // Source guards (same reasoning as testWeekEatenOutToggleWiring's doc comment: this DOM
+  // path can't run under the harness's document stub): playSwapReward is gated by the guard
+  // BEFORE it builds anything, and reuses the shared stamp builder rather than a duplicate.
+  const swapRewardFn = functionSource(renderSrc, 'playSwapReward');
+  assert(swapRewardFn.length > 0, 'wiring setup: playSwapReward() function body found in render.js', 'not found');
+  assert(swapRewardFn.indexOf('swapRewardShouldFire(') !== -1,
+    'playSwapReward: gated by the idempotency guard before touching the DOM', swapRewardFn);
+  assert(swapRewardFn.indexOf('logRewardNode(') !== -1,
+    'playSwapReward: reuses the shared botanical-stamp builder (same reduced-motion CSS path as playLogReward)', swapRewardFn);
+
+  // chooseSwapRecipe is the swap sheet's single apply path (both the "Best matches"/search
+  // rows and the Week/Today/recipe-screen entry points funnel through it) — the reward call
+  // must live there, exactly once, after the mutation + re-renders, never inside a render
+  // function (which would fire on every plain repaint instead of once per genuine swap).
+  const chooseSwapRecipeFn = functionSource(plannerSrc, 'chooseSwapRecipe');
+  assert(chooseSwapRecipeFn.length > 0, 'wiring setup: chooseSwapRecipe() function body found in planner.js', 'not found');
+  assert((chooseSwapRecipeFn.match(/playSwapReward\(/g) || []).length === 1,
+    'chooseSwapRecipe: calls playSwapReward exactly once', chooseSwapRecipeFn);
+  assert(chooseSwapRecipeFn.indexOf('playSwapReward(') > chooseSwapRecipeFn.indexOf('persist();'),
+    'chooseSwapRecipe: the reward fires after the swap is applied and persisted, not before', chooseSwapRecipeFn);
+  assert((plannerSrc.match(/playSwapReward\(/g) || []).length === 1,
+    'playSwapReward is called from exactly one place in planner.js (chooseSwapRecipe) — not from buildSwapSheet/buildSwapAlternatives/any re-render helper');
+  assert(weekSrc.indexOf('playSwapReward(') === -1 && todaySrc.indexOf('playSwapReward(') === -1,
+    'playSwapReward is never called from a render-*.js render path (renderWeek/renderTodayMeals/etc.) — only from the swap-apply action boundary');
 }
 
 /* ===================================================================
@@ -12513,6 +12651,8 @@ function main(){
   runTest('Profile settings hub: four destinations, Back actions, reachable controls, no jump-nav regressions', function(){ testProfileSettingsHub(); });
   runTest('UX-REVIEW-plan.md P3: Library ingredient count tracks an active search', function(){ testLibraryIngredientCountTracksSearch(ctx); });
   runTest('Botanical Stamp reward: mounts, animation contract, logging wiring, completion, and neutral paths', function(){ testBotanicalStampReward(ctx); });
+  runTest('Swap micro-reward: idempotency guard + single-call-site wiring', function(){ testSwapReward(ctx); });
+  runTest('Add-meal sheet: ate-out/save/share collapsed behind a "Meal options" disclosure', function(){ testAddMealMetaDisclosure(ctx); });
   runTest('Day-completion quality variant + all-skip suppression + persistent Week closed-day glyph', function(){ testDayCompletionQualityVariant(ctx); });
   runTest('Neutral over-target macro popover copy + compact one-line Today macro summary', function(){ testNeutralOverTargetAndCompactMacroLine(ctx); });
   runTest('build-stamp guard: sw.js CACHE === auth.js AUTH_BUILD', function(){ testBuildStampMatch(); });

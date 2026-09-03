@@ -3713,13 +3713,21 @@ function swapTagsHtml(tags){
 // options" look identical (same emoji/title/kcal-delta/protein-delta/tags layout); `i` is
 // the row's index into the COMBINED alts array swapCtx.alts holds, so chooseSwap(i) works
 // identically no matter which section the tap came from.
+// i is the row's index into the COMBINED alts array (swapCtx.alts) — see the doc comment
+// above. Row 0 of "Best matches" is always the closest fit, so it heros visually (bigger,
+// a "Top pick" badge, a warmer card) instead of reading as one of five identical rows —
+// same data/same onclick, purely a presentation distinction (panel-approved swap-sheet
+// de-clutter). Every other row (i > 0, and every search-result row via swapRecipeRowHtml)
+// is unaffected.
 function swapAltRowHtml(a, i){
   const r = swapRecipeDisplay(a.id);
   const kd = (a.kcalDelta >= 0 ? '+' : '') + Math.round(a.kcalDelta) + ' kcal';
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
-  return '<div class="altrow" onclick="chooseSwap(' + i + ')">'
+  const isHero = i === 0;
+  const heroBadge = isHero ? '<span class="pill gold altrow-hero-badge">✿ Top pick</span>' : '';
+  return '<div class="altrow' + (isHero ? ' altrow-hero' : '') + '" onclick="chooseSwap(' + i + ')">'
     + '<div class="ae">' + r.emoji + '</div>'
-    + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
+    + '<div class="at">' + heroBadge + '<div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
     + '<div class="tags">' + swapTagsHtml(r.tags) + '</div>'
     + '</div></div>';
@@ -3851,13 +3859,36 @@ const SWAP_CRAVING_OPTIONS = [
   {key: 'quick', label: '⏱️ Quick'}
 ];
 
+// Panel-approved swap-sheet de-clutter: the craving chips are a real, useful filter but they
+// used to render always-expanded and pushed "Best matches" off the first screenful. Now they
+// sit behind one calm toggle line, collapsed by default; tapping it reveals the exact same
+// chip row/protein sub-row/free-text field, fully functional. Reset to collapsed on every
+// fresh sheet open (buildSwapSheet), same lifetime as swapCtx.craving itself.
+let swapCravingExpanded = false;
+
+function swapCravingSummaryLabel(){
+  const craving = swapCtx ? swapCtx.craving : null;
+  const active = craving && SWAP_CRAVING_OPTIONS.filter(function(o){ return o.key === craving; })[0];
+  return active ? ('🍃 Feeling: ' + active.label + ' — tap to change') : '🍃 What are you feeling? (optional)';
+}
+
+function toggleSwapCravingExpanded(){
+  swapCravingExpanded = !swapCravingExpanded;
+  const el = document.getElementById('swapCravingChips');
+  if(el) el.innerHTML = swapCravingChipsHtml();
+}
+
 function swapCravingChipsHtml(){
+  if(!swapCravingExpanded){
+    return '<button type="button" class="backbtn" style="margin:8px 0" onclick="toggleSwapCravingExpanded()">' + escapeHtml(swapCravingSummaryLabel()) + '</button>';
+  }
   const craving = swapCtx ? swapCtx.craving : null;
   const chips = SWAP_CRAVING_OPTIONS.map(function(o){
     const on = craving === o.key;
     return '<button type="button" class="pill ghost chip-preset' + (on ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="toggleSwapCraving(\'' + o.key + '\')">' + o.label + '</button>';
   }).join('');
-  return '<div class="shop-cat">What do you feel like?</div>'
+  return '<button type="button" class="backbtn" style="margin:8px 0" onclick="toggleSwapCravingExpanded()">︿ Hide "what are you feeling?"</button>'
+    + '<div class="shop-cat">What do you feel like?</div>'
     + '<div class="chiprow">' + chips + '</div>'
     + '<div id="swapProteinSubrow">' + swapProteinSubrowHtml() + '</div>'
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="search" id="swapCravingFreeText" placeholder="Or type what you feel like..." autocomplete="off" oninput="onSwapCravingFreeText(this.value)">';
@@ -3960,6 +3991,7 @@ function buildSwapSheet(ctx){
     swapCtx.proteinType = null;
     swapCtx.proteinFilterEmpty = false;
   }
+  swapCravingExpanded = false; // collapsed by default on every fresh sheet open
   const best = buildSwapAlternatives(ctx.dayIndex, ctx.slot, ctx.person, ctx.weekStartDate);
   if(swapCtx){
     swapCtx.alts = best;
@@ -4043,6 +4075,13 @@ function chooseSwapRecipe(recipeId, alt){
   persist();
   closeSheet();
   toast('🔁 Swapped to ' + view.title + ' (' + (alt.kcalDelta >= 0 ? '+' : '') + Math.round(alt.kcalDelta) + ' kcal)');
+  // Panel item 4: tending the plan gets its own tiny cue→reward, same botanical stamp the
+  // meal-log reward uses — see swapRewardShouldFire's doc comment (render.js) for the
+  // idempotency guard. Fires after the swap is fully applied and every surface repainted, so
+  // it never runs ahead of (or instead of) the actual mutation above.
+  if(typeof playSwapReward === 'function'){
+    playSwapReward({dateISO: swapDateISO, person: swapCtx.person, slot: swapCtx.slot, recipeId: alt.id, title: view.title});
+  }
 }
 
 /* ---------------- re-balance (task C2 item 4) ---------------- */

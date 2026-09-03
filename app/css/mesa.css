@@ -764,6 +764,12 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .altrow{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid rgba(176,146,105,.38);border-radius:14px;margin-top:10px;cursor:pointer;background:rgba(255,250,240,.9);min-height:44px;}
 .altrow:active{transform:scale(.98);}
 .altrow .ae{font-size:26px;width:48px;text-align:center;flex:0 0 48px;}
+/* Swap sheet "top pick" — row 0 of Best matches heros visually (same data/onclick) so the
+   sheet reads as "here's your best match, or browse" instead of five identical rows. */
+.altrow-hero{padding:17px;border-color:rgba(199,154,72,.55);background:linear-gradient(180deg,rgba(199,154,72,.12),rgba(255,250,240,.95));box-shadow:var(--shadow-soft);}
+.altrow-hero .ae{font-size:34px;width:56px;flex:0 0 56px;}
+.altrow-hero .at .an{font-size:16px;}
+.altrow-hero-badge{display:inline-block;margin:0 0 4px;}
 .ingredient-icon{width:48px;height:48px;display:block;object-fit:cover;border-radius:10px;background:#fbf5e8;}
 .ingredient-icon-lg{width:112px;height:112px;display:block;object-fit:cover;border-radius:20px;background:#fbf5e8;}
 .detail-title-row h1,.detail-title-row h2{min-width:0;margin:0;overflow-wrap:anywhere;}

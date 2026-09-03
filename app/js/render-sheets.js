@@ -312,7 +312,7 @@ function renderRebalanceSheet(){
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
   if(!rebalanceProposal.suggestions.length){
     html += '<p class="sub">' + (mode === 'none'
-      ? 'Nothing to fix — every weekly coverage target is met and your days are already even. Nicely balanced.'
+      ? 'This week is already a good fit — every weekly coverage target is met and your days are already even.'
       : spread
         ? 'Every weekly target is already met; a day or two runs a little rich or light, but no small swap evens them out further right now.'
         : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal suggestion improves it for this week.')
@@ -483,7 +483,7 @@ function renderTodayRebalanceSheet(){
   const suggestions = todayRebalanceProposal.suggestions || [];
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance today</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
   if(!suggestions.length){
-    html += '<p class="sub">Nothing to fix for today. Your current menu already fits the remaining day as well as Mesa can nudge it.</p>'
+    html += '<p class="sub">Today’s plan is already a good fit — Mesa doesn’t see a nudge worth making.</p>'
       + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
     return html;
   }

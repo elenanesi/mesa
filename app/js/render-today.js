@@ -18,6 +18,17 @@ function openSwap(mealKey, targetElId){
 // way openWeekSwap already does.
 let addMealCtx = null;
 let addMealFoodQuery = '';
+// Collapsed-by-default state for the add-meal sheet's "Meal options" disclosure (ate-out /
+// save-as-recipe / share toggle) — see openAddMealSheetForContext below. Same
+// persists-across-this-sheet's-own-re-renders convention as addMealFoodQuery above.
+let addMealMetaExpanded = false;
+function addMealMetaToggleLabel(){
+  return addMealMetaExpanded ? '︿ Hide meal options' : '⋯ Meal options — ate out, save, share';
+}
+function toggleAddMealMeta(){
+  addMealMetaExpanded = !addMealMetaExpanded;
+  if(addMealCtx) openAddMealSheetForContext(addMealCtx);
+}
 // "Save a composed meal as a recipe" (#5b follow-up): draft name text for the composer's
 // own 💾 Save to My recipes name-entry step (openSaveComposedMealSheet/
 // buildSaveComposedMealSheet/confirmSaveComposedMeal below) — same "one module-level draft
@@ -142,17 +153,6 @@ function openAddMealSheetForContext(ctx){
   // of opening a sheet the user then has to complete — the reported "I tapped it but it stayed
   // un-clicked" confusion. "Log something different" stays as a secondary link for the estimate path.
   const hasPlannedMeal = !!(entry && entry.recipeId) || !!logged;
-  if(hasPlannedMeal){
-    html += '<button class="cta ghostbtn" onclick="ateOutToggleDirect()">'
-      + (isEatenOut ? '🍴 Eaten out — tap to change' : '🍴 Ate out / eating out')
-      + '</button>'
-      + '<p class="sub" style="margin-top:4px;text-align:center"><button class="week-standalone-link" onclick="openAteOutSheet(addMealCtx)">…or log something different you ate</button></p>';
-  } else {
-    html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">'
-      + '🍴 Ate out / eating out'
-      + '</button>';
-  }
-
   // "Save a composed meal as a recipe" (#5b follow-up): flattens this meal's base recipe +
   // extras into a new custom recipe (library.js:saveComposedMealAsRecipe) — only worth
   // offering once there's actually a meal composed here (allComponents mirrors the "In this
@@ -161,12 +161,6 @@ function openAddMealSheetForContext(ctx){
   // kept as structure (saveSlotAsMeal). A slot that's just one dish + food extras still saves the old
   // way (flattened into one recipe). Same entry point, wording adapts to what's actually here.
   const recipeDishes = allComponents.filter(function(c){ return c && c.recipeId; }).length;
-  if(recipeDishes >= 2){
-    html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">🍽️ Save as a Meal</button>';
-  } else if(allComponents.length){
-    html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">💾 Save to My recipes</button>';
-  }
-
   // Per-meal share toggle (2026-07-22): split a shared meal into two separate dishes ("eat
   // different tonight") or merge two back into one ("eat together"), for THIS occurrence only
   // — the household default (Profile → Meal sharing) is untouched, and the choice persists
@@ -176,17 +170,49 @@ function openAddMealSheetForContext(ctx){
   // Task B3: this control (and mergeMealCell, which it can trigger) only makes sense with a
   // real second person — a one-person household never sees it, so mergeMealCell can never
   // be reached to write a real recipe into the (intentionally empty) partner cell.
-  if(!(typeof isSoloHousehold === 'function' && isSoloHousehold())){
-    const cellShared = (function(){
-      const pl = ensureWeekPlan(addMealCtx.weekStartDate);
-      const mm = pl.days[addMealCtx.dayIndex] && pl.days[addMealCtx.dayIndex].meals[addMealCtx.slot];
-      return !!(mm && mm.shared);
-    })();
-    const slotWord = (SLOT_LABEL[addMealCtx.slot] || addMealCtx.slot).toLowerCase();
-    html += '<button class="cta ghostbtn" onclick="toggleMealShareFromSheet()">'
-      + (cellShared ? '🍽️ Eat different — split into two ' + slotWord + 's'
-                    : '👥 Eat together — one ' + slotWord + ' for both')
-      + '</button>';
+  const canShareToggle = !(typeof isSoloHousehold === 'function' && isSoloHousehold());
+
+  // Panel-approved de-clutter: these three are meta-actions about the meal (ate-out, save,
+  // share), not the actual task of composing it — so they sit behind one collapsed "Meal
+  // options" affordance and the sheet opens straight into "In this meal" + "Sides" below.
+  // Nothing here changes what any of the three DO, only their default visibility; every one
+  // stays reachable with a single extra tap. addMealMetaExpanded is a module-level flag (like
+  // addMealFoodQuery above) that survives this function's own re-renders — e.g. tapping
+  // ateOutToggleDirect() re-invokes openAddMealSheetForContext, and the section should stay
+  // open across that repaint rather than snapping shut.
+  html += '<button type="button" class="backbtn" id="addMealMetaToggle" style="margin:8px 0" onclick="toggleAddMealMeta()">' + escapeHtml(addMealMetaToggleLabel()) + '</button>';
+  if(addMealMetaExpanded){
+    html += '<div id="addMealMetaSection">';
+    if(hasPlannedMeal){
+      html += '<button class="cta ghostbtn" onclick="ateOutToggleDirect()">'
+        + (isEatenOut ? '🍴 Eaten out — tap to change' : '🍴 Ate out / eating out')
+        + '</button>'
+        + '<p class="sub" style="margin-top:4px;text-align:center"><button class="week-standalone-link" onclick="openAteOutSheet(addMealCtx)">…or log something different you ate</button></p>';
+    } else {
+      html += '<button class="cta ghostbtn" onclick="openAteOutSheet(addMealCtx)">'
+        + '🍴 Ate out / eating out'
+        + '</button>';
+    }
+
+    if(recipeDishes >= 2){
+      html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">🍽️ Save as a Meal</button>';
+    } else if(allComponents.length){
+      html += '<button class="cta ghostbtn" onclick="openSaveComposedMealSheet()">💾 Save to My recipes</button>';
+    }
+
+    if(canShareToggle){
+      const cellShared = (function(){
+        const pl = ensureWeekPlan(addMealCtx.weekStartDate);
+        const mm = pl.days[addMealCtx.dayIndex] && pl.days[addMealCtx.dayIndex].meals[addMealCtx.slot];
+        return !!(mm && mm.shared);
+      })();
+      const slotWord = (SLOT_LABEL[addMealCtx.slot] || addMealCtx.slot).toLowerCase();
+      html += '<button class="cta ghostbtn" onclick="toggleMealShareFromSheet()">'
+        + (cellShared ? '🍽️ Eat different — split into two ' + slotWord + 's'
+                      : '👥 Eat together — one ' + slotWord + ' for both')
+        + '</button>';
+    }
+    html += '</div>';
   }
 
   html += '<div class="shop-cat">In this meal</div>';

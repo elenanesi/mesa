@@ -174,12 +174,12 @@ function startLogReward(node, message, duration){
   return true;
 }
 
-function playLogReward(payload){
-  payload = payload || {};
-  const point = rewardPoint(payload.anchorRect || payload.anchorEl);
-  const title = String(payload.title || 'Meal');
-  const kcal = Math.round(Number(payload.kcal) || 0);
-  const message = title + ' recorded · ' + kcal + ' kcal.';
+// Shared DOM for every "botanical stamp" reward (playLogReward, playSwapReward below) —
+// same seal + leaf-scatter + message chrome, just a different message per call site. Kept
+// as a single builder so the reduced-motion CSS (mesa.css .log-reward* under
+// prefers-reduced-motion) and the leaf/seal visual language stay identical everywhere this
+// fires, rather than drifting across near-duplicate copies.
+function logRewardNode(point, message){
   const node = document.createElement('div');
   node.className = 'log-reward';
   node.style.setProperty('--reward-x', point.x + 'px');
@@ -189,7 +189,53 @@ function playLogReward(payload){
     + rewardLeafHtml(0) + rewardLeafHtml(1) + rewardLeafHtml(2) + rewardLeafHtml(3) + rewardLeafHtml(4) + rewardLeafHtml(5)
     + '<div class="log-reward-message"></div>';
   node.querySelector('.log-reward-message').textContent = message;
-  return startLogReward(node, message, 1550);
+  return node;
+}
+
+function playLogReward(payload){
+  payload = payload || {};
+  const point = rewardPoint(payload.anchorRect || payload.anchorEl);
+  const title = String(payload.title || 'Meal');
+  const kcal = Math.round(Number(payload.kcal) || 0);
+  const message = title + ' recorded · ' + kcal + ' kcal.';
+  return startLogReward(logRewardNode(point, message), message, 1550);
+}
+
+// ---- Swap micro-reward (engagement/UX panel item 4) ----
+// Tending the plan (swapping a meal) had no payoff of its own — the only cue→reward loop in
+// the app was the bedtime day-complete wreath. This reuses the SAME botanical stamp (calm,
+// not gamified — no streak/count, no new animation) as a tiny acknowledgment right after a
+// swap lands, so "tending the plan" gets its own small reward instead of borrowing meaning
+// from an unrelated action.
+//
+// Idempotency: chooseSwapRecipe (planner.js) is the sheet's single apply path and calls this
+// once per genuine swap, but the guard below still exists as a real safety net — the exact
+// same key (date+person+slot+the recipe just switched TO) is refused a second time, so a
+// stray duplicate event dispatch (e.g. a double-tap on the alt row before the sheet closes)
+// or a future caller that accidentally wires this into a render path instead of the action
+// handler can never double- or endlessly-fire it. It is namespaced ('swap|...') in the same
+// logRewardCompletionKeys Set the day-completion reward already uses — same pattern, see
+// that reward's own doc comment above.
+function swapRewardKey(dateISO, person, slot, recipeId){
+  return 'swap|' + String(dateISO) + '|' + String(person) + '|' + String(slot) + '|' + String(recipeId);
+}
+
+// Pure decision (DOM-free, like dayCompletionRewardPlan above) so tools/check.js can pin the
+// dedup logic directly without touching the DOM-painting playSwapReward below.
+function swapRewardShouldFire(dateISO, person, slot, recipeId){
+  if(!dateISO || !person || !slot || !recipeId) return false;
+  const key = swapRewardKey(dateISO, person, slot, recipeId);
+  if(logRewardCompletionKeys.has(key)) return false;
+  logRewardCompletionKeys.add(key);
+  return true;
+}
+
+function playSwapReward(payload){
+  payload = payload || {};
+  if(!swapRewardShouldFire(payload.dateISO, payload.person, payload.slot, payload.recipeId)) return false;
+  const point = rewardPoint(payload.anchorRect || payload.anchorEl);
+  const message = 'Swapped to ' + String(payload.title || 'meal') + '.';
+  return startLogReward(logRewardNode(point, message), message, 1550);
 }
 
 // How many of the REQUIRED slots are GENUINELY confirmed (a real kind:'plan' entry) —
