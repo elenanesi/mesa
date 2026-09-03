@@ -13,6 +13,33 @@ Prod: **https://mesa-9y5.pages.dev/app/** (invite-only Google sign-in; Cloudflar
 
 ## Shipped
 
+**Planner panel review — safe wave (2026-09-03, all deployed).** Full 5-persona panel on the weekly
+planner (see the memory `project-planner-safe-wave-2026-09.md`). Four deploys, each shipped separately:
+- **Reward** — the day-complete wreath now splits *completion* (guaranteed, skip-inclusive — never
+  punishes the keystone) from a warmer *quality* variant shown only when `dayBalanceOverall==='balanced'`;
+  deterministic presentation variability (closing line keyed off dateISO); all-skip suppression (settled
+  text, no animation unless ≥1 real confirm); a persistent quiet leaf glyph on closed Week days; removed
+  the `⚠ over target` red flag (neutral bold, keeps the number); fixed the Today macro-line wrap.
+- **Engagement** — swap sheet heroes the top match + collapses craving chips; add-meal sheet folds
+  ate-out/save/share behind "Meal options"; a swap now plays an idempotent micro-reward; "Nothing to
+  fix" → "already a good fit".
+- **Boost chip (manual v1)** — a calm forward-only "add a boost" chip on an unconfirmed Today card when
+  the day's running fibre/protein is light (chia/lentils/chickpeas/pumpkin-seeds, tagged `boostFor`;
+  whey excluded); reuses `addExtraFoodToMeal`; composed-meals invariant now walks all `entry.extras`.
+- **Portions (re-role)** — 2 genuine protein-mains (`polpette-tacchino-yogurt-menta`,
+  `broccoli-ricotta-patties`) flipped full→main so big appetites compose sides instead of scaling one
+  dish; the other 7 panel candidates already carry a plated starch, so left as `full`. Surgical 2-row D1
+  `json_set` UPDATE (not a full reseed). Tests 1969 → 2094 green.
+- **Fibre/kcal MEASURED 2026-09-03 — generation is FINE** (0% of days under WHO 25g fibre in every
+  config; kcal max day dev 9.4% @2150, 1.8% @3000). The over-cal/under-fibre experience is user-injected
+  manual adds, NOT generation — do not add fibre steering. See the calorie-investigation memory.
+- **Deferred (not yet owner-approved):** author hearty new `main` recipes; a SOFT per-dish over-scaling
+  down-weight (never a hard bestPortion/mealScore filter); auto-boost v2; a behaviour-preserving
+  `pickSharedMeal`/`pickSoloMeal` candidate-builder extraction.
+- **NB — D1 is IN SYNC with `data/recipes.js`** (176 live global = 176 file recipes; quality-pass dishes
+  present). The 2026-08-30 note below ("quality pass NOT yet reseeded/deployed") is STALE — it is live.
+
+
 **Recipe Market + UX batch (2026-08-27–29, all deployed).** Panel-driven; see the memory
 `project-recipe-market.md` for the full detail.
 - **Recipe Market** — a household starts with a small, diet-appropriate **starter book** (positive
