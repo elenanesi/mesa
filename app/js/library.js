@@ -206,7 +206,7 @@ const AUTO_STYLE_THRESHOLDS = {
 // most three times, fish at least twice. ANIMAL_FOOD_IDS below is derived from these three
 // rather than listed again, so the veggie-tagging behaviour that already reads it stays
 // byte-identical and a new food can only ever be added in one place.
-const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck'];
+const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck', 'beef-shin'];
 const POULTRY_FOOD_IDS = ['turkey-breast', 'chicken-breast', 'chicken-thigh'];
 const FISH_FOOD_IDS = [
   'salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'clams', 'mussels',
@@ -214,8 +214,8 @@ const FISH_FOOD_IDS = [
 ];
 const ANIMAL_FOOD_IDS = RED_MEAT_FOOD_IDS.concat(POULTRY_FOOD_IDS).concat(FISH_FOOD_IDS);
 // Per the task brief's exact list.
-const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats', 'wheat-wrapper', 'breadcrumbs'];
-const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds', 'almond-flour', 'pistachios'];
+const GLUTEN_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'wholegrain-pasta', 'pasta', 'couscous', 'barley', 'granola', 'muesli', 'oats', 'wheat-wrapper', 'breadcrumbs', 'bulgur-cooked'];
+const NUT_FOOD_IDS = ['walnuts', 'almonds', 'brazil-nuts', 'pumpkin-seeds', 'pumpkin-chia-seeds', 'almond-flour', 'pistachios', 'tahini'];
 // Diet-filtering food-id lists (multi-select diets batch) — same hand-picked-by-real-
 // ingredient-content pattern as RED_MEAT_FOOD_IDS/POULTRY_FOOD_IDS/FISH_FOOD_IDS above,
 // each food defined in exactly one place here. Deliberately NOT derived from

@@ -395,6 +395,29 @@ const FOODS = {
     kcal: 131, protein: 8.7, carbs: 22.8, fat: 0.5, satFat: 0.1, fiber: 6.3,
     flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Protein', iconKey: 'cannellini-beans', src: 'USDA FDC 173743-style (white/cannellini beans, cooked)'
   },
+  // Recipe-batch addition (expert panel, 2026-09-03: big-appetite anchors + plant-based
+  // texture gap). A braising cut (shank/shin) — leaner than mince, high in connective
+  // tissue that melts down slow-braised, distinct texture from the existing legume mains.
+  'beef-shin': {
+    name: 'Beef shin (shank), lean, raw', per: 100, unit: 'g',
+    kcal: 131, protein: 20.7, carbs: 0, fat: 5.4, satFat: 2.1, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', src: 'USDA FDC 174017-style (beef, shank crosscuts, lean, trimmed, raw); kcal per 4/4/9'
+  },
+  // Fermented soy cake — the textural anchor for the "hearty plant-based main" gap (crispy
+  // pan-seared edges, distinct bite from tofu/legumes). Naturally gluten-free (plain
+  // soybean tempeh, no grain fillers).
+  'tempeh': {
+    name: 'Tempeh, raw', per: 100, unit: 'g',
+    kcal: 216, protein: 20.3, carbs: 9.4, fat: 10.8, satFat: 1.8, fiber: 4.9,
+    flags: ['fermented', 'glutenFree', 'highFiber'], cat: 'Protein', src: 'USDA FDC 174303-style (tempeh); kcal per 4/4/9'
+  },
+  // Shelled soybeans — a real vegan protein bump for the miso aubergine main (whole
+  // aubergine alone falls short of the 12g/serving protein floor a role:'main' needs).
+  'edamame': {
+    name: 'Edamame, shelled, cooked', per: 100, unit: 'g',
+    kcal: 134, protein: 11.9, carbs: 10.0, fat: 5.2, satFat: 0.6, fiber: 5.2,
+    flags: ['highFiber', 'glutenFree'], cat: 'Protein', src: 'USDA FDC 173435-style (edamame, frozen, prepared); kcal per 4/4/9'
+  },
 
   /* ---------------- Dairy ---------------- */
 
@@ -598,6 +621,14 @@ const FOODS = {
     kcal: 133, protein: 5.0, carbs: 26.0, fat: 1.0, satFat: 0.2, fiber: 3.5,
     flags: ['highFiber', 'lowGI'], cat: 'Pantry', iconKey: 'farro-cooked', src: 'CREA-style Italian food table (farro, cooked)'
   },
+  // Recipe-batch addition (expert panel, 2026-09-03): mixed into the köfte patties
+  // (a filler technique, not just a side grain) for body and fibre. Shares the
+  // farro-cooked icon (visually close — a similar cooked whole-grain).
+  'bulgur-cooked': {
+    name: 'Bulgur wheat, cooked', per: 100, unit: 'g',
+    kcal: 89, protein: 3.1, carbs: 18.6, fat: 0.2, satFat: 0.0, fiber: 4.5,
+    flags: ['highFiber', 'lowGI'], cat: 'Pantry', iconKey: 'farro-cooked', src: 'USDA FDC-style (bulgur, cooked); kcal per 4/4/9'
+  },
   'pasta': {
     name: 'Pasta, dry (durum wheat)', per: 100, unit: 'g',
     kcal: 364, protein: 13.0, carbs: 74.7, fat: 1.5, satFat: 0.3, fiber: 3.2,
@@ -627,6 +658,30 @@ const FOODS = {
     name: 'Tomato passata', per: 100, unit: 'g',
     kcal: 29, protein: 1.4, carbs: 5.0, fat: 0.2, satFat: 0.0, fiber: 1.4, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: [], cat: 'Pantry', iconKey: 'cherry-tomatoes', src: 'USDA FDC-style (tomato puree / passata, unsalted)'
+  },
+  // Recipe-batch addition (expert panel, 2026-09-03): the glaze/umami base for the
+  // miso-aubergine main. Naturally fermented; sugars here are the koji-fermentation
+  // sugars, not an added sweetener, hence sugarQuality 'intrinsic'.
+  'miso-paste': {
+    name: 'Miso paste (white/yellow)', per: 100, unit: 'g',
+    kcal: 186, protein: 12.0, carbs: 21.0, fat: 6.0, satFat: 0.9, fiber: 5.4, sugars: 6.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['fermented'], cat: 'Pantry', src: 'USDA FDC-style (miso paste); kcal per 4/4/9'
+  },
+  // Recipe-batch addition: the sauce for the tahini-roasted cauliflower steak. Used in
+  // real weighed grams (not toTaste) since it materially contributes calories/fat here,
+  // per this file's own oil/dressing convention. NUT_FOOD_IDS in js/library.js also lists
+  // it (sesame is a top allergen, same reasoning that already put pumpkin seeds there).
+  'tahini': {
+    name: 'Tahini (sesame paste)', per: 100, unit: 'g',
+    kcal: 637, protein: 17.0, carbs: 21.2, fat: 53.8, satFat: 7.5, fiber: 9.3, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Pantry', src: 'USDA FDC-style (sesame butter / tahini); kcal per 4/4/9'
+  },
+  // Recipe-batch addition: the harissa chicken thighs' marinade. A jarred/oil-based chili
+  // paste — genuinely spicy (avoid:['spicy'] on the recipe, not derived from this food).
+  'harissa-paste': {
+    name: 'Harissa paste', per: 100, unit: 'g',
+    kcal: 179, protein: 2.0, carbs: 9.0, fat: 15.0, satFat: 2.0, fiber: 4.0, sugars: 3.0, freeSugars: 1.0, sugarQuality: 'mixed',
+    flags: [], cat: 'Pantry', src: 'USDA FDC-style (harissa / oil-based chili paste); kcal per 4/4/9'
   },
   'tomato-puree': {
     name: 'Tomato purée, concentrated', per: 100, unit: 'g',

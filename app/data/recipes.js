@@ -2102,6 +2102,154 @@ const RECIPES_DB = {
     steps: ['Rub cold butter into the flours, sugar and lemon zest; bring together with a little iced water and chill.', 'Whisk cream cheese, mascarpone, sugar, egg and vanilla; toss strawberries with sugar and cornstarch.', 'Roll the pastry, spread the cream, pile on the berries, fold the edges, egg-wash and bake at ~190°C for 40–50 min. A per-slice serving.'],
     tags: ['veggie'],
     avoid: ['gluten', 'lactose', 'nuts']
+  },
+
+  /* ================= EXPERT PANEL 2026-09-03 — big-appetite anchors +
+     hearty plant-based texture gap =================
+     Two gaps flagged by the panel: (1) too few role:'main'/'full' dishes big enough
+     that a ~3000kcal eater reaches slot target at ~1-1.3x instead of scaling one dish
+     2.5-3x; (2) the vegan/vegetarian mains were almost all legume-in-tomato-sauce —
+     same texture three ways. This batch adds hearty anchors (beef-shin ragù, köfte,
+     harissa chicken, salmon/farro bowl) AND textural plant-based variety (crispy
+     tempeh, tahini-roasted cauliflower "steak", miso-glazed aubergine, stuffed
+     peppers) rather than another braise. */
+
+  'braised-beef-shin-ragu': {
+    title: 'Slow-braised beef shin ragù', emoji: '🥘', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 95,
+    ingredients: [['beef-shin', 260], ['tomato-passata', 150], ['carrots', 70], ['red-onion', 40], ['olive-oil', 12]],
+    toTaste: ['garlic', 'bay leaf', 'rosemary', 'black pepper', 'a splash of red wine'],
+    steps: [
+      'Season the beef shin and sear hard in the olive oil until deep brown on all sides.',
+      'Add the onion and carrots and soften for a few minutes.',
+      'Pour in the passata, tuck in the bay leaf and rosemary, and add a splash of water (or wine) to just cover.',
+      'Cover and braise low and slow for 2.5-3 hours until the meat falls apart, then shred it back into the sauce.',
+      'Season with black pepper and serve over farro, polenta or mashed potato.'
+    ],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'turkish-kofte-garlic-yogurt': {
+    title: 'Turkish köfte with garlic yogurt', emoji: '🧆', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
+    // Bulgur mixed INTO the patty (Anatolian filler technique, not a side note) — adds
+    // body and fibre without needing a separate grain side.
+    ingredients: [['beef-mince-lean', 220], ['bulgur-cooked', 40], ['red-onion', 30], ['eggs', 30], ['olive-oil', 10], ['greek-yogurt', 80]],
+    toTaste: ['garlic', 'cumin', 'smoked paprika', 'parsley', 'mint', 'black pepper', 'lemon'],
+    steps: [
+      'Grate the onion and squeeze out the excess liquid; mix into the beef mince with the bulgur, egg, garlic, cumin and paprika.',
+      'Shape into oval patties and chill for 10 minutes so they hold together.',
+      'Sear in the olive oil until deeply browned and cooked through.',
+      'Stir garlic and lemon into the yogurt for the sauce.',
+      'Serve the köfte with the garlic yogurt, mint and parsley.'
+    ],
+    tags: ['muscle'],
+    avoid: ['lactose', 'gluten']
+  },
+  'miso-glazed-aubergine': {
+    title: 'Miso-glazed aubergine with edamame', emoji: '🍆', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 30,
+    ingredients: [['aubergine', 400], ['edamame', 120], ['miso-paste', 25], ['soy-sauce', 10], ['olive-oil', 14]],
+    toTaste: ['ginger', 'garlic', 'chilli flakes', 'spring onion', 'toasted sesame', 'lime'],
+    steps: [
+      'Halve the aubergine, score the flesh, brush with olive oil and roast cut-side up at 200°C until tender.',
+      'Whisk the miso with soy sauce, ginger and garlic to make the glaze.',
+      'Brush the glaze over the roasted aubergine and return to the oven (or under the grill) until deeply caramelised.',
+      'Warm the edamame through and pile alongside.',
+      'Finish with chilli, sesame, spring onion and a squeeze of lime.'
+    ],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+  'tahini-cauliflower-chickpea-steak': {
+    title: 'Tahini-roasted cauliflower steak & spiced chickpeas', emoji: '🥦', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 35,
+    ingredients: [['cauliflower', 350], ['chickpeas', 150], ['tahini', 20], ['olive-oil', 12], ['lemon', 10]],
+    toTaste: ['cumin', 'smoked paprika', 'garlic', 'parsley', 'chilli flakes', 'black pepper'],
+    steps: [
+      'Slice the cauliflower into thick steaks through the core; toss the chickpeas with cumin, paprika and olive oil.',
+      'Roast the cauliflower steaks and spiced chickpeas at 210°C until the cauliflower is deeply golden and tender.',
+      'Whisk the tahini with lemon juice and a little water to a pourable sauce.',
+      'Plate the cauliflower steaks over the chickpeas.',
+      'Drizzle with the tahini sauce and scatter parsley and chilli flakes.'
+    ],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+  'harissa-chicken-thighs': {
+    title: 'Harissa chicken thighs', emoji: '🍗', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
+    ingredients: [['chicken-thigh', 260], ['harissa-paste', 22], ['olive-oil', 10], ['lemon', 10]],
+    toTaste: ['garlic', 'coriander', 'cumin', 'black pepper'],
+    steps: [
+      'Rub the chicken thighs with harissa, garlic, olive oil and a squeeze of lemon; marinate briefly if time allows.',
+      'Sear skin-side down until deeply charred, then turn.',
+      'Finish in the oven at 200°C until cooked through.',
+      'Rest briefly, then squeeze over more lemon and scatter coriander.'
+    ],
+    tags: ['muscle'],
+    avoid: ['spicy']
+  },
+  'crispy-tempeh-rice-bowl': {
+    title: 'Crispy tempeh & charred broccoli rice bowl', emoji: '🥢', slot: 'dinner', role: 'full',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['tempeh', 180], ['rice', 50], ['broccoli', 150], ['carrots', 60], ['soy-sauce', 10], ['olive-oil', 10]],
+    toTaste: ['ginger', 'garlic', 'chilli flakes', 'toasted sesame', 'lime', 'spring onion'],
+    steps: [
+      'Cook the rice until tender.',
+      'Slice the tempeh and sear hard in the olive oil until deep golden and crisp on all sides.',
+      'Glaze with the soy, ginger and garlic off the heat so it lacquers the tempeh.',
+      'Char the broccoli and carrots in a hot pan or under the grill.',
+      'Build the bowl over rice and finish with chilli, sesame, spring onion and lime.'
+    ],
+    tags: ['veggie', 'highFiber', 'muscle'],
+    avoid: []
+  },
+  'greek-stuffed-peppers': {
+    title: 'Greek-style stuffed peppers', emoji: '🫑', slot: 'lunch', role: 'main',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 45,
+    ingredients: [['bell-pepper', 240], ['rice', 40], ['cooked-lentils', 150], ['feta-cheese', 40], ['tomato-passata', 60], ['olive-oil', 12]],
+    toTaste: ['garlic', 'oregano', 'mint', 'parsley', 'black pepper'],
+    steps: [
+      'Halve the peppers and remove the seeds.',
+      'Cook the rice, then mix with the lentils, half the passata, garlic, oregano and half the feta.',
+      'Fill the pepper halves with the mixture and top with the remaining passata and feta.',
+      'Drizzle with olive oil and bake at 190°C, covered, until the peppers are tender, then uncover to brown the top.',
+      'Finish with mint and parsley.'
+    ],
+    tags: ['veggie', 'highFiber', 'muscle'],
+    avoid: ['lactose']
+  },
+  'salmon-farro-charred-greens-bowl': {
+    title: 'Salmon, farro & charred greens bowl', emoji: '🐟', slot: 'dinner', role: 'full',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['salmon-fillet', 200], ['farro-cooked', 130], ['broccoli', 150], ['asparagus', 100], ['olive-oil', 12], ['lemon', 10]],
+    toTaste: ['garlic', 'parsley', 'black pepper', 'chilli flakes'],
+    steps: [
+      'Warm the farro through.',
+      'Season the salmon and pan-sear or bake until just cooked through.',
+      'Char the broccoli and asparagus in a hot pan or under the grill.',
+      'Build the bowl over farro and flake over the salmon.',
+      'Finish with olive oil, lemon, garlic and parsley.'
+    ],
+    tags: ['omega3', 'muscle'],
+    avoid: ['gluten']
   }
 
 };
