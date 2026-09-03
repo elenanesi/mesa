@@ -5,6 +5,15 @@ let recipeServingCtx = null;
 // — [{recipeId, portion, opts}], portion 0 = that sub-recipe removed. Lets the user log e.g.
 // "McDonald's without nuggets" or "a full menu with only 2 nuggets". Null for a normal recipe.
 let recipeMealCompsCtx = null;
+// Owner gap fix: for a NORMAL recipe planned/logged with manually-added extras (a side recipe
+// or an added food, stored on the PLAN ENTRY as `.extras` / on the LOG ENTRY as `.components`
+// index ≥1 — see recipeDetailExtrasFor below), the extras currently painted into the "made of"
+// list — [{recipeId,portion,opts}] or [{foodId,grams}], same shape planEntryComponents/
+// loggedMealComponents already use. Set fresh by updateServings() on every render; null when
+// there's nothing to show (native-components recipe, library-only open, or no extras). Lets
+// adjMealPageExtra/removeMealPageExtra address a row by index without re-deriving it from the
+// DOM or interpolating a user-authored recipe/food id into an inline onclick.
+let recipeDetailExtrasCtx = null;
 
 function recipeServingContextFor(key){
   const person = (recipeDayCtx && recipeDayCtx.person) || currentProf;
@@ -43,6 +52,166 @@ function recipeServingContextFor(key){
     if(ctx) return ctx;
   }
   return null;
+}
+
+// Owner gap fix: resolves the EXTRAS (sides + added foods) for whichever plan/logged slot
+// `ctx` (a recipeServingContextFor result) points at, so the meal detail screen can show them
+// without sending the user into "manage" just to see what's actually in the meal. Reads the
+// SAME underlying data planEntryComponents (plan entries) / loggedMealComponents (logged
+// entries) already resolve for every other surface (Today/Week titles, the add-meal sheet,
+// shopping) — just slices off index 0 (the base dish), since the meal page already shows the
+// base recipe as itself, not as a "made of" row. Pure read: never mutates weekPlans/
+// logHistory. Returns [] for a library-only open (ctx null), or when the resolved base entry
+// doesn't actually match currentKey (defensive — should always match, since ctx is always
+// produced by recipeServingContextFor(currentKey)). Deliberately NOT consulted for a native-
+// components recipe (Chinese-dinner-style) — that "made of" list comes from the recipe's own
+// r.components via recipeMealCompsCtx/updateMealDetail, untouched by this.
+function recipeDetailExtrasFor(ctx, currentKey){
+  if(!ctx || !ctx.slot || !currentKey) return [];
+  const dateISO = ctx.dateISO || todayISO();
+  const person = ctx.person || currentProf;
+  if(ctx.source === 'logged'){
+    const logged = (typeof loggedPlanEntryForSlot === 'function') ? loggedPlanEntryForSlot(dateISO, person, ctx.slot) : null;
+    if(!logged || logged.ref !== currentKey) return [];
+    return loggedMealComponents(logged).slice(1);
+  }
+  const weekStartDate = ctx.weekStartDate || mondayOfWeek(dateISO);
+  const dayIndex = typeof ctx.dayIndex === 'number' ? ctx.dayIndex : todayDayIndex();
+  const plan = ensureWeekPlan(weekStartDate);
+  const day = plan && plan.days && plan.days[dayIndex];
+  const meal = day && day.meals && day.meals[ctx.slot];
+  const entry = meal && meal[person];
+  if(!entry || entry.recipeId !== currentKey) return [];
+  return planEntryComponents(entry).slice(1);
+}
+
+// Pure HTML-string builder for one editable "made of" row (an extra recipe or food), addressed
+// by its index into the currently-rendered recipeDetailExtrasCtx array (never by interpolating
+// a user-authored recipe/food id into an inline onclick). Mirrors the visual language of the
+// native-components row above (updateServings' isComponentsRecipe branch) and the add-meal
+// sheet's own extras rows (render-today.js), reusing the same .madeof-*/.meal-extra-remove
+// classes so the meal page never introduces a new visual pattern for the same concept.
+function recipeDetailExtraRowHtml(c, i){
+  const isRecipe = !!(c && c.recipeId);
+  const isFood = !isRecipe && !!(c && c.foodId);
+  if(!isRecipe && !isFood) return '';
+  const sub = isRecipe
+    ? (RECIPES_DB[c.recipeId] || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[c.recipeId]) || (typeof customRecipes !== 'undefined' && customRecipes[c.recipeId]))
+    : FOODS[c.foodId];
+  if(!sub) return '';
+  const title = isRecipe ? sub.title : sub.name;
+  const emoji = isRecipe ? (sub.emoji || '') : '';
+  const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
+  const grams = (typeof c.grams === 'number' && c.grams > 0) ? c.grams : 100;
+  const nut = isRecipe
+    ? roundedNutritionTotals(recipeNutrition(c.recipeId, portion, c.opts).totals)
+    : roundedNutritionTotals(foodMacros(c.foodId, grams));
+  const nameHtml = isRecipe
+    ? '<span class="madeof-name" onclick="openRecipe(\'' + c.recipeId + '\',\'libraryRecipes\')">' + (emoji ? emoji + ' ' : '') + escapeHtml(title) + '</span>'
+    : '<span class="madeof-name">' + escapeHtml(title) + '</span>';
+  const valLabel = isRecipe ? (portion + '×') : (Math.round(grams) + ' g');
+  const stepper = '<span class="madeof-step">'
+    + '<button type="button" class="madeof-btn" onclick="adjMealPageExtra(' + i + ',-1)" aria-label="' + (isRecipe ? 'Fewer servings of ' : 'Less ') + htmlAttr(title) + '">−</button>'
+    + '<span class="madeof-portion">' + valLabel + '</span>'
+    + '<button type="button" class="madeof-btn" onclick="adjMealPageExtra(' + i + ',1)" aria-label="' + (isRecipe ? 'More servings of ' : 'More ') + htmlAttr(title) + '">+</button>'
+    + '</span>';
+  const removeBtn = '<button type="button" class="tag-undo meal-extra-remove" onclick="removeMealPageExtra(' + i + ')" aria-label="Remove ' + htmlAttr(title) + '">✕</button>';
+  return '<li class="madeof-row">' + nameHtml + '<span class="madeof-right">' + stepper + '<span class="madeof-kcal">' + nut.kcal + ' kcal</span>' + removeBtn + '</span></li>';
+}
+
+// Steps an extra's amount by one +/- tap (dir: 1 or -1) — 0.5 servings for a recipe extra
+// (same granularity the add-meal sheet's stepper uses), 10g for a food extra. Addresses the
+// item via its index into recipeDetailExtrasCtx (set by updateServings on every render).
+function adjMealPageExtra(i, dir){
+  if(!recipeDetailExtrasCtx || !recipeDetailExtrasCtx[i]) return;
+  const c = recipeDetailExtrasCtx[i];
+  if(c.recipeId){
+    const cur = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
+    mealPageSetExtraRecipePortion(c.recipeId, Math.min(4, Math.max(0.5, +(cur + dir * 0.5).toFixed(1))));
+  } else if(c.foodId){
+    const cur = (typeof c.grams === 'number' && c.grams > 0) ? c.grams : 100;
+    mealPageSetExtraFoodGrams(c.foodId, Math.max(1, Math.min(2000, Math.round(cur + dir * 10))));
+  }
+}
+
+// Writes an extra RECIPE's new portion back to whichever plan/logged slot the meal detail
+// screen is currently showing (recipeServingCtx) — reuses planner.js:setExtraRecipePortion
+// (plan) and render-today.js:setExtraPortionInLoggedMeal (logged), the SAME mutators the
+// add-meal sheet's stepMealExtraPortion() already writes through. A logged slot also gets a
+// best-effort mirror onto the still-live plan entry — same dual-write render-today.js's own
+// extras editors do (see stepMealExtraPortion's doc) — so the shopping list and a later
+// undo+reconfirm don't silently diverge from what's shown here.
+function mealPageSetExtraRecipePortion(recipeId, newPortion){
+  if(!recipeServingCtx || !recipeServingCtx.slot) return;
+  const dateISO = recipeServingCtx.dateISO || todayISO();
+  const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
+  const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+  const person = recipeServingCtx.person || currentProf;
+  if(recipeServingCtx.source === 'logged'){
+    if(!setExtraPortionInLoggedMeal(dateISO, person, recipeServingCtx.slot, recipeId, newPortion)) return;
+    setExtraRecipePortion(weekStartDate, dayIndex, recipeServingCtx.slot, person, recipeId, newPortion);
+  } else {
+    if(!setExtraRecipePortion(weekStartDate, dayIndex, recipeServingCtx.slot, person, recipeId, newPortion)) return;
+  }
+  refreshMealPageAfterExtraChange(dateISO);
+}
+
+// Same as above for a FOOD extra's grams (setExtraFoodGrams / setFoodExtraGramsInLoggedMeal).
+function mealPageSetExtraFoodGrams(foodId, newGrams){
+  if(!recipeServingCtx || !recipeServingCtx.slot) return;
+  const dateISO = recipeServingCtx.dateISO || todayISO();
+  const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
+  const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+  const person = recipeServingCtx.person || currentProf;
+  if(recipeServingCtx.source === 'logged'){
+    if(!setFoodExtraGramsInLoggedMeal(dateISO, person, recipeServingCtx.slot, foodId, newGrams)) return;
+    setExtraFoodGrams(weekStartDate, dayIndex, recipeServingCtx.slot, person, foodId, newGrams);
+  } else {
+    if(!setExtraFoodGrams(weekStartDate, dayIndex, recipeServingCtx.slot, person, foodId, newGrams)) return;
+  }
+  refreshMealPageAfterExtraChange(dateISO);
+}
+
+// Removes one extra (recipe or food) — same confirm-then-remove-from-both-log-and-plan pattern
+// as render-today.js:removeMealExtraRecipe/removeMealExtraFood, reusing
+// removeExtraRecipeFromMeal/removeExtraFoodFromMeal (plan) and removeExtraFromLoggedMeal/
+// removeFoodExtraFromLoggedMeal (logged) rather than new mutation logic.
+function removeMealPageExtra(i){
+  if(!recipeDetailExtrasCtx || !recipeDetailExtrasCtx[i] || !recipeServingCtx || !recipeServingCtx.slot) return;
+  if(!confirmDeletion()) return;
+  const c = recipeDetailExtrasCtx[i];
+  const dateISO = recipeServingCtx.dateISO || todayISO();
+  const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
+  const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
+  const person = recipeServingCtx.person || currentProf;
+  const title = c.recipeId ? (RECIPES_DB[c.recipeId] ? RECIPES_DB[c.recipeId].title : 'item') : (FOODS[c.foodId] ? FOODS[c.foodId].name : 'item');
+  let removed;
+  if(recipeServingCtx.source === 'logged'){
+    removed = c.recipeId
+      ? removeExtraFromLoggedMeal(dateISO, person, recipeServingCtx.slot, c.recipeId)
+      : removeFoodExtraFromLoggedMeal(dateISO, person, recipeServingCtx.slot, c.foodId);
+    if(!removed) return;
+    if(c.recipeId) removeExtraRecipeFromMeal(weekStartDate, dayIndex, recipeServingCtx.slot, person, c.recipeId);
+    else removeExtraFoodFromMeal(weekStartDate, dayIndex, recipeServingCtx.slot, person, c.foodId);
+  } else {
+    removed = c.recipeId
+      ? removeExtraRecipeFromMeal(weekStartDate, dayIndex, recipeServingCtx.slot, person, c.recipeId)
+      : removeExtraFoodFromMeal(weekStartDate, dayIndex, recipeServingCtx.slot, person, c.foodId);
+    if(!removed) return;
+  }
+  refreshMealPageAfterExtraChange(dateISO);
+  toast('✕ Removed ' + title);
+}
+
+// One shared refresh funnel for every extras edit above: reuses
+// refreshAfterRecipeServingOverride (the exact "today" recompute + Log/Week repaint the
+// servings stepper already triggers) then persists and fully re-renders THIS recipe screen —
+// renderRecipe() re-derives recipeServingCtx/recipeDetailExtrasCtx fresh from the just-mutated
+// state, so the made-of list, steppers and total nutrition all pick up the change in one pass.
+function refreshMealPageAfterExtraChange(dateISO){
+  refreshAfterRecipeServingOverride(dateISO);
+  persist();
+  renderRecipe(currentRecipeKey);
 }
 
 // Per-serving ingredient display rows: [displayName, qty, unit] — moved verbatim from the
@@ -797,6 +966,14 @@ function updateServings(){
   // flat raw-ingredient list, which would otherwise repeat shared items (cabbage, soy, oil).
   const ingSection = document.getElementById('ingredientsSection');
   if(ingSection) ingSection.style.display = isComponentsRecipe ? 'none' : '';
+  // Owner gap fix: a normal recipe (not a native-components Meal) planned/logged with
+  // manually-added extras — a side recipe or an added food, previously invisible here and
+  // only reachable via "manage" — now shows those extras in the SAME "made of" area,
+  // editable/removable in place (recipeDetailExtraRowHtml/adjMealPageExtra/
+  // removeMealPageExtra above). Never consulted when isComponentsRecipe is true — that
+  // branch keeps its own native r.components list, untouched.
+  const extrasList = (!isComponentsRecipe && recipeServingCtx) ? recipeDetailExtrasFor(recipeServingCtx, currentRecipeKey) : [];
+  recipeDetailExtrasCtx = extrasList.length ? extrasList : null;
   if(madeOfSection && madeOfList){
     if(isComponentsRecipe){
       madeOfSection.style.display = '';
@@ -812,6 +989,9 @@ function updateServings(){
         const portionLabel = portion === 1 ? '' : ' · ' + portion + '×';
         return '<li class="madeof-row" style="cursor:pointer" onclick="openRecipe(\'' + c.recipeId + '\',\'libraryRecipes\')"><span>' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + portionLabel + '</span><span>' + subKcal + ' kcal ›</span></li>';
       }).join('');
+    } else if(extrasList.length){
+      madeOfSection.style.display = '';
+      madeOfList.innerHTML = extrasList.map(function(c, i){ return recipeDetailExtraRowHtml(c, i); }).join('');
     } else {
       madeOfSection.style.display = 'none';
       madeOfList.innerHTML = '';
@@ -824,7 +1004,7 @@ function updateServings(){
     const scaled = +(qty * total).toFixed(1);
     return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
   }).join('');
-  updateNutritionGrid(nutServings, nutHeader);
+  updateNutritionGrid(nutServings, nutHeader, extrasList);
   syncServeHighlight();
 }
 
@@ -836,15 +1016,24 @@ function updateServings(){
 // a shared dish, not the pot total), and `headerText` is the caption updateServings already
 // computed for it ("Your portion (Elena · 1×)" for shared, the per-serving/scaled label for
 // solo). Kept as a param rather than re-derived here so the grid and the header can never
-// disagree about how many servings they describe.
-function updateNutritionGrid(servings, headerText){
+// disagree about how many servings they describe. `extraComponents` (owner gap fix, optional
+// — [{recipeId,portion,opts}]/[{foodId,grams}]) are this slot's plan/logged EXTRAS
+// (recipeDetailExtrasFor); when present the grid totals the base dish (at `servings`) PLUS
+// every extra, through the same nutritionForRecipeComponents() every other composed-meal
+// surface (Today/Week/log) already reads — so "the meal" on this screen means the same thing
+// everywhere, not just the bare recipe.
+function updateNutritionGrid(servings, headerText, extraComponents){
+  const hasExtras = Array.isArray(extraComponents) && extraComponents.length > 0;
   const header = document.getElementById('nutriHeader');
-  if(header) header.textContent = headerText || ((servings === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + servings + ' servings');
+  const baseHeader = headerText || ((servings === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + servings + ' servings');
+  if(header) header.textContent = baseHeader + (hasExtras ? ' + extras' : '');
   // A Meal's nutrition is the sum of its INCLUDED sub-recipes (per the per-component steppers),
   // not the fixed recipe default — so a removed/rescaled sub-recipe is reflected live.
   const nut = recipeMealCompsCtx
     ? nutritionForRecipeComponents(recipeMealCompsCtx.filter(function(c){ return c.portion > 0; }))
-    : recipeNutrition(currentRecipeKey, servings, recipeOptsCtx).totals;
+    : hasExtras
+      ? nutritionForRecipeComponents([{recipeId: currentRecipeKey, portion: servings, opts: recipeOptsCtx}].concat(extraComponents))
+      : recipeNutrition(currentRecipeKey, servings, recipeOptsCtx).totals;
   const topKcal = document.getElementById('rsKcal');
   const topProt = document.getElementById('rsProt');
   if(topKcal) topKcal.textContent = '🔥 ' + fmtKcal(Math.round(nut.kcal)) + ' kcal';
@@ -942,30 +1131,17 @@ function renderRecipeEatenState(){
 // with sides) — resolved exactly like renderRecipeEatenState() (same slot/planned check),
 // scoped further to only paint when todaySlotView(slot) actually has extras. All numbers
 // come from recipeNutrition()/todaySlotView(), nothing hand-set.
+// Owner gap fix (superseded): this used to be the ONLY place a planned meal's extras showed
+// up on the recipe screen — a read-only "This meal" summary, and only for TODAY's active-menu
+// slot. The "made of" section above (updateServings' extrasList branch, fed by
+// recipeDetailExtrasFor) now surfaces the same extras — editable, and for ANY plan/logged
+// context (not just today) — so this panel would just duplicate them. Kept as a no-op (rather
+// than deleted, with its call sites) so nothing breaks; always hides its card.
 function renderRecipeMealStrip(){
   const wrap = document.getElementById('recipeMealStrip');
   if(!wrap) return;
-  const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey];
-  const planned = slot && displayedTodayRecipeId(slot) === currentRecipeKey;
-  const view = planned ? todaySlotView(slot) : null;
-  // This panel only explains a composed meal. The single top-level “Manage meal” action
-  // is the edit entry point; repeating it here made the Today-origin detail feel noisy.
-  if(!view || !view.extras || !view.extras.length){
-    wrap.style.display = 'none';
-    wrap.innerHTML = '';
-    return;
-  }
-  let rows = '<div class="row"><b style="font-size:14px">This meal</b></div>';
-  const baseNut = roundedNutritionTotals(recipeNutrition(view.recipeId, view.portion, view.opts).totals);
-  rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(view.recipeId, view.opts)) + ' (base)<small>' + baseNut.kcal + ' kcal</small></div></div>';
-  view.extras.forEach(function(c){
-    if(!RECIPES_DB[c.recipeId]) return;
-    const nut = roundedNutritionTotals(recipeNutrition(c.recipeId, (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1, c.opts).totals);
-    rows += '<div class="logitem"><div class="li-t">' + escapeHtml(recipeDisplayTitle(c.recipeId, c.opts)) + '<small>' + nut.kcal + ' kcal</small></div></div>';
-  });
-  rows += '<div class="logitem" style="border-bottom:0"><div class="li-t"><b>Meal total</b><small><b>' + view.kcal + ' kcal</b></small></div></div>';
-  wrap.innerHTML = rows;
-  wrap.style.display = 'block';
+  wrap.style.display = 'none';
+  wrap.innerHTML = '';
 }
 
 // Distinct from undoLogSlot() (which reverses whatever day the Log screen's Today/

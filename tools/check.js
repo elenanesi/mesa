@@ -5551,6 +5551,95 @@ function testMealExtras(ctx){
   })();
 }
 
+/* ---------------- meal-page extras (owner gap fix, 2026-09-03) ----------------
+   The meal detail screen's "made of" section now surfaces a normal recipe's PLAN/LOG extras
+   (sides + added foods) instead of only showing them inside "manage" — render-recipe.js:
+   recipeDetailExtrasFor is the one pure (non-DOM) piece of that change: given a
+   recipeServingContextFor()-shaped ctx, it must resolve to EXACTLY
+   planEntryComponents(entry).slice(1) (plan) / loggedMealComponents(logged).slice(1) (logged)
+   — the same data every other composed-meal surface (Today/Week/log/shopping) already reads —
+   so this is a parity test against the real functions, not a reimplementation. The actual row
+   rendering (recipeDetailExtraRowHtml) and the edit/remove wiring (adjMealPageExtra/
+   mealPageSetExtraRecipePortion/mealPageSetExtraFoodGrams/removeMealPageExtra) are DOM-bound
+   (document.getElementById) and thin wrappers over the already-covered planner.js/
+   render-today.js mutators above — not usefully testable headlessly beyond what's here. */
+function testRecipeDetailExtrasFor(ctx){
+  function freshPlan(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {};");
+    const plan = call(ctx, 'ensureWeekPlan', []);
+    // Same day0-lunch(solo)/dinner(shared) reset testMealExtras relies on — see its own doc.
+    run(ctx, "['lunch','dinner'].forEach(function(slot){ var m = weekPlans['" + plan.weekStartDate + "'].days[0].meals[slot]; delete m.elena.extras; delete m.partner.extras; });");
+    return {wk: plan.weekStartDate, date: get(ctx, "weekPlans['" + plan.weekStartDate + "'].days[0].date")};
+  }
+  function cell(s, slot){ return get(ctx, "weekPlans['" + s.wk + "'].days[0].meals['" + slot + "']"); }
+  function entry(s, slot, person){ return cell(s, slot)[person]; }
+
+  // -------- plan source: SOLO (lunch) --------
+  (function(){
+    const s = freshPlan();
+    const e = entry(s, 'lunch', 'elena');
+    const planCtx = {weekStartDate: s.wk, dayIndex: 0, dateISO: s.date, slot: 'lunch', shared: false, person: 'elena', source: 'plan'};
+    assert(JSON.stringify(call(ctx, 'recipeDetailExtrasFor', [planCtx, e.recipeId])) === '[]',
+      'recipeDetailExtrasFor (plan/solo): [] when the entry has no extras', '');
+
+    call(ctx, 'addExtraRecipeToMeal', [s.wk, 0, 'lunch', 'elena', 'yogurt']);
+    call(ctx, 'addExtraFoodToMeal', [s.wk, 0, 'lunch', 'elena', 'spinach', 40]);
+    const e2 = entry(s, 'lunch', 'elena');
+    const got = call(ctx, 'recipeDetailExtrasFor', [planCtx, e2.recipeId]);
+    const want = call(ctx, 'planEntryComponents', [e2]).slice(1);
+    assert(JSON.stringify(got) === JSON.stringify(want),
+      'recipeDetailExtrasFor (plan/solo): matches planEntryComponents(entry).slice(1) exactly (base dropped, extras kept in order)',
+      'got=' + JSON.stringify(got) + ' want=' + JSON.stringify(want));
+    assert(got.length === 2 && got[0].recipeId === 'yogurt' && got[1].foodId === 'spinach',
+      'recipeDetailExtrasFor (plan/solo): a recipe extra + a food extra both come through, in insertion order', JSON.stringify(got));
+  })();
+
+  // -------- plan source: SHARED (dinner) --------
+  (function(){
+    const s = freshPlan();
+    call(ctx, 'addExtraRecipeToMeal', [s.wk, 0, 'dinner', 'elena', 'yogurt']);
+    const e = entry(s, 'dinner', 'elena');
+    const sharedCtx = {weekStartDate: s.wk, dayIndex: 0, dateISO: s.date, slot: 'dinner', shared: true, person: 'elena', source: 'plan'};
+    const got = call(ctx, 'recipeDetailExtrasFor', [sharedCtx, e.recipeId]);
+    assert(got.length === 1 && got[0].recipeId === 'yogurt',
+      'recipeDetailExtrasFor (plan/shared): resolves the acting person\'s extras (mirrored to both by addExtraRecipeToMeal)', JSON.stringify(got));
+  })();
+
+  // -------- defensive guards --------
+  (function(){
+    const s = freshPlan();
+    call(ctx, 'addExtraRecipeToMeal', [s.wk, 0, 'lunch', 'elena', 'yogurt']);
+    const planCtx = {weekStartDate: s.wk, dayIndex: 0, dateISO: s.date, slot: 'lunch', shared: false, person: 'elena', source: 'plan'};
+    assert(JSON.stringify(call(ctx, 'recipeDetailExtrasFor', [planCtx, 'not-the-planned-recipe'])) === '[]',
+      'recipeDetailExtrasFor: [] when currentKey does not match the slot\'s actual base recipe', '');
+  })();
+  assert(JSON.stringify(call(ctx, 'recipeDetailExtrasFor', [null, 'omelette'])) === '[]',
+    'recipeDetailExtrasFor: [] for a null ctx (library-only open)', '');
+  assert(JSON.stringify(call(ctx, 'recipeDetailExtrasFor', [{}, 'omelette'])) === '[]',
+    'recipeDetailExtrasFor: [] for a ctx with no slot', '');
+
+  // -------- logged source --------
+  (function(){
+    const s = freshPlan();
+    const e = entry(s, 'lunch', 'elena');
+    const components = call(ctx, 'planEntryComponents', [e]).concat([{recipeId: 'yogurt', portion: 1}, {foodId: 'spinach', grams: 40}]);
+    run(ctx, "logPlanEntry('" + s.date + "', 'elena', 'lunch', '" + e.recipeId + "', " + e.portion + ", " + JSON.stringify(components) + ", {tNull:true});");
+    const loggedCtx = {weekStartDate: s.wk, dayIndex: 0, dateISO: s.date, slot: 'lunch', shared: false, person: 'elena', source: 'logged'};
+    const got = call(ctx, 'recipeDetailExtrasFor', [loggedCtx, e.recipeId]);
+    const logged = call(ctx, 'loggedPlanEntryForSlot', [s.date, 'elena', 'lunch']);
+    const want = call(ctx, 'loggedMealComponents', [logged]).slice(1);
+    assert(JSON.stringify(got) === JSON.stringify(want),
+      'recipeDetailExtrasFor (logged): matches loggedMealComponents(logged).slice(1) exactly',
+      'got=' + JSON.stringify(got) + ' want=' + JSON.stringify(want));
+    assert(got.length === 2 && got[0].recipeId === 'yogurt' && got[1].foodId === 'spinach',
+      'recipeDetailExtrasFor (logged): a logged meal\'s own components (recipe + food) come through, base dropped', JSON.stringify(got));
+
+    const wrongKeyGot = call(ctx, 'recipeDetailExtrasFor', [loggedCtx, 'not-the-logged-recipe']);
+    assert(JSON.stringify(wrongKeyGot) === '[]',
+      'recipeDetailExtrasFor (logged): [] when currentKey does not match the logged entry\'s ref', JSON.stringify(wrongKeyGot));
+  })();
+}
+
 /* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------
    Panel-approved feature: pins (a) the eligibility predicate (boostChipTargetSlot/
    boostNutrientForDay, render-today.js) — light/low on a live running day, forward-looking
@@ -12947,6 +13036,7 @@ function main(){
   runTest('PERSONAL-PREFS: D1 mirror flattening + never read back', function(){ testFlattenRecipePrefsForMirror(ctx); });
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
+  runTest('meal-page extras: recipeDetailExtrasFor (owner gap fix, 2026-09-03)', function(){ testRecipeDetailExtrasFor(ctx); });
   runTest('BOOST CHIP (v1, manual-only nudge): eligibility predicate, suggested-food selection, extended composed-extras invariant', function(){ testBoostChip(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
