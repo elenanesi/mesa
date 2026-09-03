@@ -5827,6 +5827,182 @@ function testRecipeDetailExtrasFor(ctx){
   })();
 }
 
+/* ---------------- keyboard-editable portion controls (owner request, 2026-09-03) ----------------
+   Three "made of"/servings steppers gained a typeable input alongside their +/- buttons:
+   (1) a composite recipe's per-sub-recipe portion (updateMealDetail/adjMealComp), (2) a normal
+   recipe's manually-added extras (recipeDetailExtraRowHtml/adjMealPageExtra), (3) the whole-
+   dish serving steppers (svElenaVal/svAndreaVal/svSoloVal/adjServe). Each gained a pure
+   clamp*Input(raw) helper (parseDecimalInput -> the SAME numeric bounds its sibling +/-
+   stepper already enforces, null for unparseable input) and a commit*(...) function that
+   applies a valid value through the EXACT SAME funnel the +/- buttons use (so persistence,
+   shared-meal mirroring and nutrition refresh can never drift from the stepper path) and
+   leaves state untouched on an invalid value (the caller's job is to just repaint). */
+function testPortionKeyboardEntry(ctx){
+  // -------- pure clamp helpers: valid / out-of-range / invalid --------
+  assert(call(ctx, 'clampMealCompPortionInput', ['2']) === 2,
+    'clampMealCompPortionInput: a valid in-range value passes through', String(call(ctx, 'clampMealCompPortionInput', ['2'])));
+  assert(call(ctx, 'clampMealCompPortionInput', ['10']) === 3,
+    'clampMealCompPortionInput: clamps above the 0-3 ceiling', String(call(ctx, 'clampMealCompPortionInput', ['10'])));
+  assert(call(ctx, 'clampMealCompPortionInput', ['-1']) === 0,
+    'clampMealCompPortionInput: clamps below 0 (0 = removed)', String(call(ctx, 'clampMealCompPortionInput', ['-1'])));
+  assert(call(ctx, 'clampMealCompPortionInput', ['1,5']) === 1.5,
+    'clampMealCompPortionInput: accepts a comma decimal (parseDecimalInput)', String(call(ctx, 'clampMealCompPortionInput', ['1,5'])));
+  assert(call(ctx, 'clampMealCompPortionInput', ['abc']) === null,
+    'clampMealCompPortionInput: unparseable input returns null (caller reverts)', String(call(ctx, 'clampMealCompPortionInput', ['abc'])));
+  assert(call(ctx, 'clampMealCompPortionInput', ['']) === null,
+    'clampMealCompPortionInput: blank input returns null', '');
+
+  assert(call(ctx, 'clampMealExtraRecipePortionInput', ['2']) === 2,
+    'clampMealExtraRecipePortionInput: a valid in-range value passes through', '');
+  assert(call(ctx, 'clampMealExtraRecipePortionInput', ['10']) === 4,
+    'clampMealExtraRecipePortionInput: clamps above the 0.5-4 ceiling', String(call(ctx, 'clampMealExtraRecipePortionInput', ['10'])));
+  assert(call(ctx, 'clampMealExtraRecipePortionInput', ['0']) === 0.5,
+    'clampMealExtraRecipePortionInput: clamps below the 0.5 floor (an extra can\'t be typed to 0 — the ✕ button removes it)', String(call(ctx, 'clampMealExtraRecipePortionInput', ['0'])));
+  assert(call(ctx, 'clampMealExtraRecipePortionInput', ['nope']) === null,
+    'clampMealExtraRecipePortionInput: unparseable input returns null', '');
+
+  assert(call(ctx, 'clampMealExtraFoodGramsInput', ['250']) === 250,
+    'clampMealExtraFoodGramsInput: a valid in-range value passes through', '');
+  assert(call(ctx, 'clampMealExtraFoodGramsInput', ['5000']) === 2000,
+    'clampMealExtraFoodGramsInput: clamps above the 2000g ceiling', String(call(ctx, 'clampMealExtraFoodGramsInput', ['5000'])));
+  assert(call(ctx, 'clampMealExtraFoodGramsInput', ['0']) === 1,
+    'clampMealExtraFoodGramsInput: clamps below the 1g floor', String(call(ctx, 'clampMealExtraFoodGramsInput', ['0'])));
+  assert(call(ctx, 'clampMealExtraFoodGramsInput', ['12.6']) === 13,
+    'clampMealExtraFoodGramsInput: rounds to whole grams', String(call(ctx, 'clampMealExtraFoodGramsInput', ['12.6'])));
+  assert(call(ctx, 'clampMealExtraFoodGramsInput', ['—']) === null,
+    'clampMealExtraFoodGramsInput: unparseable input returns null', '');
+
+  assert(call(ctx, 'clampServePortionInput', ['2', 'elena']) === 2,
+    'clampServePortionInput: a valid in-range value passes through (elena)', '');
+  assert(call(ctx, 'clampServePortionInput', ['10', 'elena']) === 3,
+    'clampServePortionInput: clamps above the 3x ceiling for elena/andrea', String(call(ctx, 'clampServePortionInput', ['10', 'elena'])));
+  assert(call(ctx, 'clampServePortionInput', ['10', 'solo']) === 4,
+    'clampServePortionInput: solo gets the wider 4x ceiling adjServe uses', String(call(ctx, 'clampServePortionInput', ['10', 'solo'])));
+  assert(call(ctx, 'clampServePortionInput', ['0', 'andrea']) === 0.5,
+    'clampServePortionInput: clamps below the 0.5x floor', String(call(ctx, 'clampServePortionInput', ['0', 'andrea'])));
+  assert(call(ctx, 'clampServePortionInput', ['abc', 'solo']) === null,
+    'clampServePortionInput: unparseable input returns null', '');
+
+  // -------- wiring: typed entry applies through the SAME funnel the +/- buttons use --------
+  // renderRecipe()/updateServings()/updateMealDetail() paint straight into DOM elements the
+  // base document stub doesn't provide (getElementById always null there). Swap in the richer
+  // element-double this harness already built for onboarding (makeObFakeDocument — a reusable
+  // fake element per id, accepts any property write) for exactly this block, then restore —
+  // same stub-then-restore bracketing the goal-audit mutual-exclusivity test above uses.
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try {
+  function freshPlan(){
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {}; recipeDayCtx = null; currentProf = 'elena'; householdSize = 2;");
+    const plan = call(ctx, 'ensureWeekPlan', []);
+    return plan.weekStartDate;
+  }
+  function cell(wk, slot){ return get(ctx, "weekPlans['" + wk + "'].days[0].meals['" + slot + "']"); }
+
+  // (a) a composite recipe's per-sub-recipe portion (a "Chinese dinner"-style Meal,
+  // cena-cinese) — typed entry mutates recipeMealCompsCtx and writes back through
+  // applyMealCompsOverride (setMealComponentsOverride), exactly like adjMealComp.
+  (function(){
+    const wk = freshPlan();
+    run(ctx, "weekPlans['" + wk + "'].days[0].meals.dinner.shared = false; weekPlans['" + wk + "'].days[0].meals.dinner.elena = {recipeId:'cena-cinese', portion:1}; delete weekPlans['" + wk + "'].days[0].meals.dinner.t;");
+    call(ctx, 'renderRecipe', ['cena-cinese']);
+    const comps = get(ctx, 'recipeMealCompsCtx');
+    const idx = comps.findIndex(function(c){ return c.recipeId === 'fried-rice-veg'; });
+    assert(idx !== -1, 'setup: fried-rice-veg is one of cena-cinese\'s components', JSON.stringify(comps));
+
+    call(ctx, 'commitMealCompPortion', [idx, '2']);
+    assert(get(ctx, 'recipeMealCompsCtx')[idx].portion === 2,
+      'commitMealCompPortion: a typed valid value applies (recipeMealCompsCtx)', JSON.stringify(get(ctx, 'recipeMealCompsCtx')[idx]));
+    const storedComps = cell(wk, 'dinner').elena.components;
+    const stored = storedComps.filter(function(c){ return c.recipeId === 'fried-rice-veg'; })[0];
+    assert(stored && stored.portion === 2,
+      'commitMealCompPortion: persists to the plan entry\'s components override, same as adjMealComp', JSON.stringify(storedComps));
+
+    call(ctx, 'commitMealCompPortion', [idx, '10']);
+    assert(get(ctx, 'recipeMealCompsCtx')[idx].portion === 3,
+      'commitMealCompPortion: an out-of-range typed value clamps to the stepper\'s ceiling (3x)', String(get(ctx, 'recipeMealCompsCtx')[idx].portion));
+
+    call(ctx, 'commitMealCompPortion', [idx, 'garbage']);
+    assert(get(ctx, 'recipeMealCompsCtx')[idx].portion === 3,
+      'commitMealCompPortion: an invalid typed value reverts (no change) rather than zeroing/erroring', String(get(ctx, 'recipeMealCompsCtx')[idx].portion));
+  })();
+
+  // (b) a normal recipe's manually-added extras (recipe portion + food grams) on the "made of"
+  // list — typed entry writes through mealPageSetExtraRecipePortion/mealPageSetExtraFoodGrams,
+  // exactly like adjMealPageExtra.
+  (function(){
+    const wk = freshPlan();
+    run(ctx, "['lunch'].forEach(function(slot){ var m = weekPlans['" + wk + "'].days[0].meals[slot]; delete m.elena.extras; delete m.partner.extras; });");
+    const baseRecipeId = cell(wk, 'lunch').elena.recipeId;
+    call(ctx, 'addExtraRecipeToMeal', [wk, 0, 'lunch', 'elena', 'yogurt']);
+    call(ctx, 'addExtraFoodToMeal', [wk, 0, 'lunch', 'elena', 'spinach', 40]);
+    call(ctx, 'renderRecipe', [baseRecipeId]);
+    const extras = get(ctx, 'recipeDetailExtrasCtx');
+    assert(extras && extras.length === 2 && extras[0].recipeId === 'yogurt' && extras[1].foodId === 'spinach',
+      'setup: recipeDetailExtrasCtx has the yogurt recipe extra + spinach food extra', JSON.stringify(extras));
+
+    call(ctx, 'commitMealPageExtraRecipePortion', [0, '3']);
+    assert(cell(wk, 'lunch').elena.extras[0].portion === 3,
+      'commitMealPageExtraRecipePortion: a typed valid value persists to entry.extras, same as adjMealPageExtra', JSON.stringify(cell(wk, 'lunch').elena.extras));
+    call(ctx, 'commitMealPageExtraRecipePortion', [0, '10']);
+    assert(cell(wk, 'lunch').elena.extras[0].portion === 4,
+      'commitMealPageExtraRecipePortion: clamps to the 4x ceiling', String(cell(wk, 'lunch').elena.extras[0].portion));
+    call(ctx, 'commitMealPageExtraRecipePortion', [0, 'nope']);
+    assert(cell(wk, 'lunch').elena.extras[0].portion === 4,
+      'commitMealPageExtraRecipePortion: an invalid value reverts (no change)', String(cell(wk, 'lunch').elena.extras[0].portion));
+
+    call(ctx, 'commitMealPageExtraFoodGrams', [1, '120']);
+    assert(cell(wk, 'lunch').elena.extras[1].grams === 120,
+      'commitMealPageExtraFoodGrams: a typed valid value persists to entry.extras, same as adjMealPageExtra', JSON.stringify(cell(wk, 'lunch').elena.extras));
+    call(ctx, 'commitMealPageExtraFoodGrams', [1, '9999']);
+    assert(cell(wk, 'lunch').elena.extras[1].grams === 2000,
+      'commitMealPageExtraFoodGrams: clamps to the 2000g ceiling', String(cell(wk, 'lunch').elena.extras[1].grams));
+    call(ctx, 'commitMealPageExtraFoodGrams', [1, '???']);
+    assert(cell(wk, 'lunch').elena.extras[1].grams === 2000,
+      'commitMealPageExtraFoodGrams: an invalid value reverts (no change)', String(cell(wk, 'lunch').elena.extras[1].grams));
+  })();
+
+  // (c) the whole-dish serving steppers (shared: svE/svM; solo: svS) — commitServe applies
+  // through the SAME updateServings()/applyRecipeServingOverride()/persist() sequence
+  // adjServe() uses, just setting an absolute value instead of stepping by delta.
+  (function(){
+    const wk = freshPlan();
+    const dinnerCell = cell(wk, 'dinner');
+    assert(dinnerCell.shared === true, 'setup: today\'s dinner slot is shared by default (two-person household)', JSON.stringify(dinnerCell));
+    call(ctx, 'renderRecipe', [dinnerCell.recipeId]);
+
+    call(ctx, 'commitServe', ['elena', '2']);
+    assert(get(ctx, 'svE') === 2, 'commitServe: a typed valid value sets svE', String(get(ctx, 'svE')));
+    assert(cell(wk, 'dinner').elena.portion === 2,
+      'commitServe: persists svE to the shared meal\'s elena portion, same as adjServe', JSON.stringify(cell(wk, 'dinner').elena));
+
+    call(ctx, 'commitServe', ['andrea', '1']);
+    assert(get(ctx, 'svM') === 1, 'commitServe: a typed valid value sets svM (partner)', String(get(ctx, 'svM')));
+    assert(cell(wk, 'dinner').partner.portion === 1,
+      'commitServe: persists svM to the shared meal\'s partner portion, same as adjServe', JSON.stringify(cell(wk, 'dinner').partner));
+
+    call(ctx, 'commitServe', ['elena', '99']);
+    assert(get(ctx, 'svE') === 3, 'commitServe: clamps svE to the 3x ceiling (elena/andrea)', String(get(ctx, 'svE')));
+    call(ctx, 'commitServe', ['elena', 'xx']);
+    assert(get(ctx, 'svE') === 3, 'commitServe: an invalid value reverts (no change)', String(get(ctx, 'svE')));
+
+    // solo bound (0.5-4x, wider than shared's 3x) — a one-person-household lunch slot.
+    const lunchRecipeId = cell(wk, 'lunch').elena.recipeId;
+    run(ctx, "householdSize = 1;");
+    call(ctx, 'renderRecipe', [lunchRecipeId]);
+    call(ctx, 'commitServe', ['solo', '4']);
+    assert(get(ctx, 'svS') === 4, 'commitServe (solo): a typed valid value sets svS', String(get(ctx, 'svS')));
+    assert(cell(wk, 'lunch').elena.portion === 4,
+      'commitServe (solo): persists svS to the solo meal\'s portion, same as adjServe', JSON.stringify(cell(wk, 'lunch').elena));
+    call(ctx, 'commitServe', ['solo', '99']);
+    assert(get(ctx, 'svS') === 4, 'commitServe (solo): clamps svS to the 4x ceiling (wider than shared\'s 3x)', String(get(ctx, 'svS')));
+    run(ctx, "householdSize = 2;");
+  })();
+  } finally {
+    ctx.document = savedDocument;
+  }
+}
+
 /* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------
    Panel-approved feature: pins (a) the eligibility predicate (boostChipTargetSlot/
    boostNutrientForDay, render-today.js) — light/low on a live running day, forward-looking
@@ -13326,6 +13502,7 @@ function main(){
   runTest('composed meals (task B2 part 2)', function(){ testComposedMeals(ctx); });
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('meal-page extras: recipeDetailExtrasFor (owner gap fix, 2026-09-03)', function(){ testRecipeDetailExtrasFor(ctx); });
+  runTest('keyboard-editable portion controls: clamp helpers + typed-entry wiring (owner request, 2026-09-03)', function(){ testPortionKeyboardEntry(ctx); });
   runTest('BOOST CHIP (v1, manual-only nudge): eligibility predicate, suggested-food selection, extended composed-extras invariant', function(){ testBoostChip(ctx); });
   runTest('TRIM CHIP (v1, boost chip\'s rich-day sibling): eligibility predicate, one-tap skip, mutual exclusion with boost chip', function(){ testTrimChip(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });

@@ -109,14 +109,42 @@ function recipeDetailExtraRowHtml(c, i){
   const nameHtml = isRecipe
     ? '<span class="madeof-name" onclick="openRecipe(\'' + c.recipeId + '\',\'libraryRecipes\')">' + (emoji ? emoji + ' ' : '') + escapeHtml(title) + '</span>'
     : '<span class="madeof-name">' + escapeHtml(title) + '</span>';
-  const valLabel = isRecipe ? (portion + '×') : (Math.round(grams) + ' g');
+  // Keyboard entry (owner request, 2026-09-03): the value is now a typeable input (unit
+  // suffix — × or g — stays a separate label so the user only ever types the number), wired
+  // to commitMealPageExtraRecipePortion/commitMealPageExtraFoodGrams on blur/Enter (NOT on
+  // every keystroke, so the periodic re-render below never fights an in-progress edit). The
+  // +/- buttons are untouched and still call adjMealPageExtra directly.
+  const inputVal = isRecipe ? portion : Math.round(grams);
+  const unitLabel = isRecipe ? '×' : 'g';
+  const commitFn = isRecipe ? 'commitMealPageExtraRecipePortion' : 'commitMealPageExtraFoodGrams';
   const stepper = '<span class="madeof-step">'
     + '<button type="button" class="madeof-btn" onclick="adjMealPageExtra(' + i + ',-1)" aria-label="' + (isRecipe ? 'Fewer servings of ' : 'Less ') + htmlAttr(title) + '">−</button>'
-    + '<span class="madeof-portion">' + valLabel + '</span>'
+    + '<input type="text" inputmode="decimal" class="madeof-portion-input" value="' + inputVal + '"'
+    + ' onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="' + commitFn + '(' + i + ',this.value)"'
+    + ' aria-label="' + (isRecipe ? 'Servings of ' : 'Amount of ') + htmlAttr(title) + '">'
+    + '<span class="madeof-unit">' + unitLabel + '</span>'
     + '<button type="button" class="madeof-btn" onclick="adjMealPageExtra(' + i + ',1)" aria-label="' + (isRecipe ? 'More servings of ' : 'More ') + htmlAttr(title) + '">+</button>'
     + '</span>';
   const removeBtn = '<button type="button" class="tag-undo meal-extra-remove" onclick="removeMealPageExtra(' + i + ')" aria-label="Remove ' + htmlAttr(title) + '">✕</button>';
   return '<li class="madeof-row">' + nameHtml + '<span class="madeof-right">' + stepper + '<span class="madeof-kcal">' + nut.kcal + ' kcal</span>' + removeBtn + '</span></li>';
+}
+
+// Typed-input clamp for an extra RECIPE's portion — the SAME bounds adjMealPageExtra's ±1
+// (×0.5-per-tap) stepper enforces (0.5-4×; the row's ✕ button is how you remove an extra, so
+// typing can't go to 0). Pure; returns null for unparseable input so the caller can treat it
+// as "no change" (revert on blur) rather than guessing.
+function clampMealExtraRecipePortionInput(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null) return null;
+  return Math.min(4, Math.max(0.5, +n.toFixed(1)));
+}
+// Typed-input clamp for an extra FOOD's grams — the same 1-2000g bounds adjMealPageExtra's
+// stepper enforces, rounded to whole grams (same unit every other food-amount field in Mesa
+// stores at).
+function clampMealExtraFoodGramsInput(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null) return null;
+  return Math.max(1, Math.min(2000, Math.round(n)));
 }
 
 // Steps an extra's amount by one +/- tap (dir: 1 or -1) — 0.5 servings for a recipe extra
@@ -170,6 +198,29 @@ function mealPageSetExtraFoodGrams(foodId, newGrams){
     if(!setExtraFoodGrams(weekStartDate, dayIndex, recipeServingCtx.slot, person, foodId, newGrams)) return;
   }
   refreshMealPageAfterExtraChange(dateISO);
+}
+
+// Typed-entry commit for an extra RECIPE's portion input (recipeDetailExtraRowHtml, above) —
+// fires on blur/Enter, not on every keystroke, so the row's own re-render never fights an
+// in-progress edit. Clamps through clampMealExtraRecipePortionInput and, on a valid value,
+// applies via the exact SAME mealPageSetExtraRecipePortion() funnel the +/- buttons use (so
+// persistence, shared-meal mirroring and nutrition refresh stay identical). An invalid/blank
+// value is treated as "no change" — just repaint the row so it snaps back to the last real
+// value; updateServings() re-derives the same recipeDetailExtrasCtx, so nothing here mutates
+// state on the invalid path.
+function commitMealPageExtraRecipePortion(i, raw){
+  if(!recipeDetailExtrasCtx || !recipeDetailExtrasCtx[i] || !recipeDetailExtrasCtx[i].recipeId){ updateServings(); return; }
+  const clamped = clampMealExtraRecipePortionInput(raw);
+  if(clamped === null){ updateServings(); return; }
+  mealPageSetExtraRecipePortion(recipeDetailExtrasCtx[i].recipeId, clamped);
+}
+
+// Same as above for an extra FOOD's grams input.
+function commitMealPageExtraFoodGrams(i, raw){
+  if(!recipeDetailExtrasCtx || !recipeDetailExtrasCtx[i] || !recipeDetailExtrasCtx[i].foodId){ updateServings(); return; }
+  const clamped = clampMealExtraFoodGramsInput(raw);
+  if(clamped === null){ updateServings(); return; }
+  mealPageSetExtraFoodGrams(recipeDetailExtrasCtx[i].foodId, clamped);
 }
 
 // Removes one extra (recipe or food) — same confirm-then-remove-from-both-log-and-plan pattern
@@ -734,6 +785,34 @@ function adjServe(who, delta){
   persist();
 }
 
+// Typed-input clamp for a whole-dish serving value — the SAME bounds adjServe's ±0.5 stepper
+// enforces per person (0.5-3× for elena/andrea, 0.5-4× solo). Pure; returns null for
+// unparseable input.
+function clampServePortionInput(raw, who){
+  const n = parseDecimalInput(raw);
+  if(n === null) return null;
+  const max = who === 'solo' ? 4 : 3;
+  return Math.min(max, Math.max(0.5, +n.toFixed(1)));
+}
+
+// Typed-entry commit for the svElenaVal/svAndreaVal/svSoloVal inputs (app/index.html) — fires
+// on blur/Enter (see the inputs' onkeydown/onblur), clamps via clampServePortionInput, and
+// then applies through the EXACT same updateServings()/applyRecipeServingOverride()/persist()
+// sequence adjServe() uses above, just setting an absolute value instead of stepping by delta
+// — so persistence, shared-meal mirroring and nutrition refresh are identical to the +/-
+// buttons. An invalid/blank value is "no change": just repaint so the input snaps back to the
+// current sv*/svS value.
+function commitServe(who, raw){
+  const clamped = clampServePortionInput(raw, who);
+  if(clamped === null){ updateServings(); return; }
+  if(who === 'elena') svE = clamped;
+  else if(who === 'andrea') svM = clamped;
+  else svS = clamped;
+  updateServings();
+  applyRecipeServingOverride();
+  persist();
+}
+
 function applyRecipeServingOverride(){
   if(!recipeServingCtx || !recipeServingCtx.slot) return;
   const dateISO = recipeServingCtx.dateISO || todayISO();
@@ -869,9 +948,16 @@ function updateMealDetail(){
       const removed = !(c.portion > 0);
       const kcal = removed ? 0 : Math.round(recipeNutrition(cid, c.portion, c.opts).totals.kcal);
       const nameHtml = '<span class="madeof-name" onclick="openRecipe(\'' + cid + '\',\'libraryRecipes\')">' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + '</span>';
+      // Keyboard entry (owner request, 2026-09-03): a typeable input replaces the plain value
+      // span (0 = removed, same as the stepper's floor) — committed on blur/Enter via
+      // commitMealCompPortion so the per-keystroke re-render below never fights the cursor.
+      // The +/- buttons are untouched.
       const stepper = '<span class="madeof-step">'
         + '<button type="button" class="madeof-btn" onclick="adjMealComp(' + i + ',-0.5)" aria-label="Less ' + escapeHtml(sub.title) + '">−</button>'
-        + '<span class="madeof-portion">' + (removed ? 'none' : (c.portion + '×')) + '</span>'
+        + '<input type="text" inputmode="decimal" class="madeof-portion-input" value="' + (removed ? 0 : c.portion) + '"'
+        + ' onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitMealCompPortion(' + i + ',this.value)"'
+        + ' aria-label="Portion of ' + htmlAttr(sub.title) + '">'
+        + '<span class="madeof-unit">×</span>'
         + '<button type="button" class="madeof-btn" onclick="adjMealComp(' + i + ',0.5)" aria-label="More ' + escapeHtml(sub.title) + '">+</button>'
         + '</span>';
       const right = canEdit
@@ -882,6 +968,31 @@ function updateMealDetail(){
   }
   const anyIncluded = recipeMealCompsCtx.some(function(c){ return c.portion > 0; });
   updateNutritionGrid(1, anyIncluded ? 'Nutrition · your meal' : 'Nutrition · nothing selected');
+}
+
+// Typed-input clamp for a sub-recipe component's portion — the SAME bounds adjMealComp's ±0.5
+// stepper enforces (0-3×; 0 = removed). Pure; returns null for unparseable input so the caller
+// can treat it as "no change" (revert on blur) rather than guessing.
+function clampMealCompPortionInput(raw){
+  const n = parseDecimalInput(raw);
+  if(n === null) return null;
+  return Math.min(3, Math.max(0, +n.toFixed(1)));
+}
+
+// Typed-entry commit for a "made of" component's portion input (updateMealDetail, above) —
+// fires on blur/Enter, not on every keystroke, so the per-render input never fights an
+// in-progress edit. Clamps via clampMealCompPortionInput and, on a valid value, applies
+// through the exact same updateMealDetail()/applyMealCompsOverride() sequence adjMealComp()
+// uses (just setting an absolute value instead of stepping by delta), so persistence and
+// shared-meal mirroring stay identical. An invalid/blank value is "no change" — repaint only,
+// so the input snaps back to the current portion.
+function commitMealCompPortion(i, raw){
+  if(!recipeMealCompsCtx || !recipeMealCompsCtx[i]){ updateMealDetail(); return; }
+  const clamped = clampMealCompPortionInput(raw);
+  if(clamped === null){ updateMealDetail(); return; }
+  recipeMealCompsCtx[i].portion = clamped;
+  updateMealDetail();
+  applyMealCompsOverride();
 }
 
 // Step one sub-recipe's portion by ±0.5 (clamped 0–3; 0 = removed). Re-renders the meal detail +
@@ -964,8 +1075,8 @@ function updateServings(){
   // the PLANNED shared case that used to show both people's nutrition summed.)
   let total, nutServings, nutHeader;
   if(shared){
-    document.getElementById('svElenaVal').textContent = svE + '×';
-    document.getElementById('svAndreaVal').textContent = svM + '×';
+    document.getElementById('svElenaVal').value = svE;
+    document.getElementById('svAndreaVal').value = svM;
     total = +(svE + svM).toFixed(1);
     const viewerIsPartner = (recipeServingCtx && recipeServingCtx.person)
       ? recipeServingCtx.person === 'partner' : currentProf === 'partner';
@@ -981,7 +1092,7 @@ function updateServings(){
     document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once for both; nutrition below is your ' + nutServings + '× portion';
     nutHeader = 'Your portion (' + viewerName + ' · ' + nutServings + '×)';
   } else {
-    document.getElementById('svSoloVal').textContent = svS + '×';
+    document.getElementById('svSoloVal').value = svS;
     total = svS;
     nutServings = svS;
     const label = total === 1 ? 'serving' : 'servings';

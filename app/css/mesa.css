@@ -421,6 +421,14 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .madeof-kcal{font-size:13px;color:var(--muted);min-width:56px;text-align:right;}
 .madeof-removed{opacity:.5;}
 .madeof-removed .madeof-name{text-decoration:line-through;}
+/* Keyboard entry (owner request, 2026-09-03): the "made of" value is now a typeable input
+   (component portion, extra portion/grams) — same look-and-feel treatment as the
+   `.sv-stepper input.sv-val` convention just above (centered, bold, no chrome), font-size
+   forced to >=16px so iPhone Safari doesn't auto-zoom on focus. The unit (× or g) is a
+   separate static label so only the number itself is editable. */
+.madeof-step input.madeof-portion-input{font-size:16px;font-weight:700;width:2.6em;border:0;background:transparent;color:inherit;text-align:center;padding:2px 0;box-sizing:border-box;-webkit-appearance:none;appearance:none;}
+.madeof-step input.madeof-portion-input:focus{outline:2px solid var(--sage);outline-offset:1px;border-radius:6px;background:#fff;}
+.madeof-unit{font-size:12px;font-weight:600;color:var(--muted);}
 /* FIX 2 (feedback): the stepper's value is now directly typeable (owner: "permetti di
    scrivere direttamente l'importo"). Same look as the plain .sv-val span it replaces
    (centered, bold, no chrome) except font-size is forced to >=16px — iPhone Safari

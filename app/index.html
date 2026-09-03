@@ -271,9 +271,14 @@
         <div class="serve-row" id="serveRowShared">
         <div class="serve-card" id="serveElena">
           <div class="sv-name">You</div>
+          <!-- Keyboard entry (owner request, 2026-09-03): typeable input, committed on
+               blur/Enter via commitServe (render-recipe.js) — not on every keystroke, so the
+               steppers' own re-render never fights an in-progress edit. Unit (×) is a separate
+               static label so only the number is editable. -->
           <div class="sv-stepper">
             <button onclick="adjServe('elena',-0.5)" aria-label="Decrease your portion">–</button>
-            <span class="sv-val" id="svElenaVal">1×</span>
+            <input class="sv-val" id="svElenaVal" type="text" inputmode="decimal" value="1" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitServe('elena',this.value)" aria-label="Your portion">
+            <span class="sv-unit">×</span>
             <button onclick="adjServe('elena',0.5)" aria-label="Increase your portion">+</button>
           </div>
         </div>
@@ -281,7 +286,8 @@
           <div class="sv-name">Partner</div>
           <div class="sv-stepper">
             <button onclick="adjServe('andrea',-0.5)" aria-label="Decrease your partner’s portion">–</button>
-            <span class="sv-val" id="svAndreaVal">1.5×</span>
+            <input class="sv-val" id="svAndreaVal" type="text" inputmode="decimal" value="1.5" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitServe('andrea',this.value)" aria-label="Partner’s portion">
+            <span class="sv-unit">×</span>
             <button onclick="adjServe('andrea',0.5)" aria-label="Increase your partner’s portion">+</button>
           </div>
         </div>
@@ -293,7 +299,8 @@
           <div class="sv-name">Servings</div>
           <div class="sv-stepper">
             <button onclick="adjServe('solo',-0.5)" aria-label="Decrease servings">–</button>
-            <span class="sv-val" id="svSoloVal">1×</span>
+            <input class="sv-val" id="svSoloVal" type="text" inputmode="decimal" value="1" onfocus="this.select()" onkeydown="if(event.key==='Enter'){this.blur();}" onblur="commitServe('solo',this.value)" aria-label="Servings">
+            <span class="sv-unit">×</span>
             <button onclick="adjServe('solo',0.5)" aria-label="Increase servings">+</button>
           </div>
         </div>
