@@ -33,9 +33,16 @@ planner (see the memory `project-planner-safe-wave-2026-09.md`). Four deploys, e
 - **Fibre/kcal MEASURED 2026-09-03 — generation is FINE** (0% of days under WHO 25g fibre in every
   config; kcal max day dev 9.4% @2150, 1.8% @3000). The over-cal/under-fibre experience is user-injected
   manual adds, NOT generation — do not add fibre steering. See the calorie-investigation memory.
-- **Deferred (not yet owner-approved):** author hearty new `main` recipes; a SOFT per-dish over-scaling
-  down-weight (never a hard bestPortion/mealScore filter); auto-boost v2; a behaviour-preserving
-  `pickSharedMeal`/`pickSoloMeal` candidate-builder extraction.
+- **Follow-up wave SHIPPED same day (owner: "proceed with 1,2,3"):** (1) **over-scaling down-weight**
+  `portionScalePenalty` (soft, bounded, measured: @3000kcal ≥2.5x slots −33%, day-fibre max 91→82g;
+  zero movement/starvation elsewhere); (2) **8 hearty recipes** (big-appetite anchors + vegan/veg
+  texture variety) + 7 new foods, **D1 reseeded** (184 live); (3) **DRY refactor** of
+  pickShared/pickSolo preamble (byte-identical, verified). Plus **15 watercolor ingredient icons**
+  integrated from the codex worktree (incl. the long-pending `lime`). Tests → **2109 green**.
+- **Auto-boost v2 HELD (contraindicated):** the fibre measurement shows generation is already
+  fibre-rich, so auto-adding boosters would be noise + nag-risk; the manual boost chip suffices.
+- **Still deferred:** more big-appetite recipes as desired; a target-aware meal builder + "trim this
+  day" for the user-injected-manual-add calorie/fibre cause (the real remaining lever, UX not gen).
 - **NB — D1 is IN SYNC with `data/recipes.js`** (176 live global = 176 file recipes; quality-pass dishes
   present). The 2026-08-30 note below ("quality pass NOT yet reseeded/deployed") is STALE — it is live.
 
