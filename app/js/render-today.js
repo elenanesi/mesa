@@ -260,15 +260,27 @@ function openAddMealSheetForContext(ctx){
       + '</span>');
     const removeBtn = isBase ? '' : '<button class="tag-undo meal-extra-remove" data-act="remove" aria-label="Remove ' + htmlAttr(title) + '">✕</button>';
     if(isRecipe){
-      // Recipe / base component: the portion stepper (or nothing, for the base) sits compactly on
-      // the right — no unit picker to make room for, so the single row fits fine.
-      html += '<div class="altrow" style="cursor:default" data-recipe-id="' + htmlAttr(c.recipeId) + '">'
-        + '<div class="ae">' + emoji + '</div>'
-        + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
-        + '<div class="ad">' + (isBase ? 'Base · ' : '') + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
-        + (stepperInner ? '<span class="meal-extra-side">' + stepperInner + '</span>' : '')
-        + removeBtn
-        + '</div>';
+      if(isBase){
+        // Base component: no stepper/remove (its own steppers live elsewhere on the serving
+        // screen) — nothing to crowd the row, so the plain single line fits fine.
+        html += '<div class="altrow" style="cursor:default" data-recipe-id="' + htmlAttr(c.recipeId) + '">'
+          + '<div class="ae">' + emoji + '</div>'
+          + '<div class="at"><div class="an">' + escapeHtml(title) + '</div>'
+          + '<div class="ad">Base · ' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
+          + '</div>';
+      } else {
+        // Recipe extra: same stacked layout as the food-extra row below — name (+ a compact
+        // remove) on top, the portion stepper on its own full-width line. A long recipe title
+        // crushed against the stepper/remove on one flex line at 375px (owner feedback).
+        html += '<div class="altrow meal-extra-row" style="cursor:default" data-recipe-id="' + htmlAttr(c.recipeId) + '">'
+          + '<div class="ae">' + emoji + '</div>'
+          + '<div class="at">'
+          +   '<div class="an-row"><span class="an">' + escapeHtml(title) + '</span>' + removeBtn + '</div>'
+          +   '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div>'
+          +   '<div class="meal-extra-controls">' + stepperInner + '</div>'
+          + '</div>'
+          + '</div>';
+      }
     } else {
       // Food extra: the name (+ a compact ✕) goes on top; the amount stepper and unit picker get
       // their OWN full-width line below. Cramming them onto the name's row crushed it into ugly
@@ -1268,24 +1280,32 @@ function removeMealBuilderRow(i){
 // ✕ Remove. Row index `i` is a controlled loop counter (not user text), so a plain inline
 // onclick is safe here — same convention library.js:stepRecipeIngredientGrams already uses
 // for its own by-index ingredient rows.
+// Owner feedback (375px, 2026-09-04): a long food name ("Gran bauletto integrale e noci")
+// crushed into 4 lines and fought the stepper/remove button for space when everything sat on
+// one flex line. Adopts the same stacked layout the food-EXTRA row above already uses (name +
+// compact remove on top, the stepper on its own full-width line below) via the same
+// .meal-extra-row/.an-row/.meal-extra-controls/.meal-extra-remove classes, so this row and
+// that one share one proven pattern instead of two.
 function mealBuilderRowHtml(row, i){
   const food = FOODS[row.foodId];
   if(!food) return '';
   const nut = roundedNutritionTotals(foodMacros(row.foodId, row.grams));
   const isPiece = food.unit === 'piece' && Number(food.avgG) > 0;
   const step = isPiece ? Number(food.avgG) : 10;
-  return '<div class="altrow" style="cursor:default">'
+  return '<div class="altrow meal-extra-row" style="cursor:default">'
     + '<div class="ae">' + foodIconHtml(row.foodId) + '</div>'
-    + '<div class="at"><div class="an">' + escapeHtml(food.name) + '</div>'
-    + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
-    + '<span class="sv-stepper" style="margin-left:8px;flex:0 0 auto">'
-    + '<button onclick="stepMealBuilderRowGrams(' + i + ',-' + step + ')" aria-label="Less ' + htmlAttr(food.name) + '">-</button>'
-    // Typeable grams (grams stay the deterministic anchor); +/- kept. Mirrors the recipe-builder
-    // ingredient input (library.js) and log picker (parseDecimalInput + a commit handler).
-    + '<input class="sv-val" type="text" inputmode="decimal" value="' + row.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitMealBuilderRowGrams(' + i + ',this.value)" aria-label="Grams of ' + htmlAttr(food.name) + '"><span class="sv-unit">g</span>'
-    + '<button onclick="stepMealBuilderRowGrams(' + i + ',' + step + ')" aria-label="More ' + htmlAttr(food.name) + '">+</button>'
-    + '</span>'
-    + '<button class="tag-undo" style="margin-left:8px;flex:0 0 auto" onclick="removeMealBuilderRow(' + i + ')">✕ Remove</button>'
+    + '<div class="at">'
+    +   '<div class="an-row"><span class="an">' + escapeHtml(food.name) + '</span>'
+    +     '<button class="tag-undo meal-extra-remove" onclick="removeMealBuilderRow(' + i + ')" aria-label="Remove ' + htmlAttr(food.name) + '">✕</button></div>'
+    +   '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div>'
+    +   '<div class="meal-extra-controls"><span class="sv-stepper">'
+    +     '<button onclick="stepMealBuilderRowGrams(' + i + ',-' + step + ')" aria-label="Less ' + htmlAttr(food.name) + '">-</button>'
+        // Typeable grams (grams stay the deterministic anchor); +/- kept. Mirrors the recipe-builder
+        // ingredient input (library.js) and log picker (parseDecimalInput + a commit handler).
+    +     '<input class="sv-val" type="text" inputmode="decimal" value="' + row.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitMealBuilderRowGrams(' + i + ',this.value)" aria-label="Grams of ' + htmlAttr(food.name) + '"><span class="sv-unit">g</span>'
+    +     '<button onclick="stepMealBuilderRowGrams(' + i + ',' + step + ')" aria-label="More ' + htmlAttr(food.name) + '">+</button>'
+    +   '</span></div>'
+    + '</div>'
     + '</div>';
 }
 

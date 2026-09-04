@@ -316,6 +316,11 @@
 
       <section class="recipe-section" id="ingredientsSection">
         <h2 id="ingHeader">Ingredients · scaled for 2.5 servings</h2>
+        <!-- Owner request (2026-09-04): toggle between whole-dish and one-serving quantities.
+             Buttons/labels are painted by updateServings() (render-recipe.js) since the
+             "Whole dish (N)" label carries the live serving count; hidden (empty + display:none)
+             when a 1-serving dish has nothing to toggle. -->
+        <div class="seg" id="ingScaleSeg" style="display:none;width:max-content;max-width:100%;margin:10px 0 2px"></div>
         <ul class="ing" id="ingList"></ul>
       </section>
 

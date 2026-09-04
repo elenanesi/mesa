@@ -448,15 +448,16 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .quick button.on{border-color:var(--sage);background:var(--sage-tint);color:var(--sage-deep);}
 /* Inline unit picker on the add-meal food extras (item / tbsp / tsp / cup / g) — small chips under
    the row's macros, plus the live "= N g" so grams (the anchor) stay visible. */
-/* Food extra in the "In this meal" sheet: name + compact ✕ on top, amount stepper + unit picker
-   on a full-width line below (render-today.js) — stops the controls crushing the name. */
+/* An extra row in an "In this meal" list (a food extra/recipe extra in the add-meal sheet, or a
+   meal-builder row): name + compact ✕ on top, amount/portion stepper (+ unit picker, where one
+   applies) on a full-width line below (render-today.js) — stops the controls crushing the name
+   at narrow widths. Shared by openAddMealSheetForContext's extras and mealBuilderRowHtml. */
 .altrow.meal-extra-row{align-items:flex-start;flex-wrap:wrap;}
 .meal-extra-row .an-row{display:flex;align-items:center;justify-content:space-between;gap:8px;}
 .meal-extra-row .an-row .an{min-width:0;overflow-wrap:anywhere;}
 .meal-extra-controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px;margin-top:9px;}
 .meal-extra-controls .sv-stepper{margin:0;}
 .meal-extra-remove{flex:0 0 auto;padding:4px 8px;line-height:1;}
-.meal-extra-side{flex:0 0 auto;margin-left:8px;}
 .meal-extra-units{display:flex;flex-wrap:wrap;gap:5px;margin-top:0;align-items:center;}
 .meal-extra-units button{border:1px solid var(--line);background:#fff;border-radius:10px;padding:3px 9px;font:inherit;font-size:10.5px;font-weight:600;color:var(--ink-soft);cursor:pointer;min-height:0;}
 .meal-extra-units button.on{border-color:var(--sage);background:var(--sage-tint);color:var(--sage-deep);}

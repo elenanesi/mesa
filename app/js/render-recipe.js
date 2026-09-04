@@ -14,6 +14,12 @@ let recipeMealCompsCtx = null;
 // adjMealPageExtra/removeMealPageExtra address a row by index without re-deriving it from the
 // DOM or interpolating a user-authored recipe/food id into an inline onclick.
 let recipeDetailExtrasCtx = null;
+// Owner request (2026-09-04): the ingredient list defaults to whole-dish quantities (what to
+// buy/cook), but a viewer sometimes wants just their own single-serving amount. This flag
+// drives updateServings()'s ingredient-quantity scale + header text; it never touches the
+// nutrition grid (that already shows the viewer's own portion via nutServings) or the serving
+// steppers. Reset to false in renderRecipe() so every fresh recipe open defaults to whole-dish.
+let ingShowPerServing = false;
 
 function recipeServingContextFor(key){
   const person = (recipeDayCtx && recipeDayCtx.person) || currentProf;
@@ -561,6 +567,7 @@ function renderRecipe(key){
   const r = resolved || RECIPES_DB.omelette;
   currentRecipeKey = resolved ? key : 'omelette';
   svE = 1; svM = 1.5; svS = 1;
+  ingShowPerServing = false;
   recipeServingCtx = recipeServingContextFor(currentRecipeKey);
   if(recipeServingCtx){
     if(recipeServingCtx.shared){
@@ -1072,6 +1079,14 @@ function applyMealCompsOverride(){
   }
 }
 
+// Owner request (2026-09-04): flips the ingredient list between whole-dish and one-serving
+// quantities (the toggle updateServings() paints into #ingScaleSeg). Re-runs updateServings()
+// so the header/quantities/toggle labels all repaint together.
+function setIngShowPerServing(v){
+  ingShowPerServing = !!v;
+  updateServings();
+}
+
 function updateServings(){
   // A MEAL (recipe-of-recipes) uses its own detail path: per-component portion steppers replace
   // the whole-dish serving stepper (they ARE the scaling), so short-circuit here.
@@ -1109,8 +1124,11 @@ function updateServings(){
     // (further down this file) needs one.
     const viewerName = viewerIsPartner ? resolveDisplayName('partner') : resolveDisplayName('elena');
     nutServings = viewerIsPartner ? svM : svE;
+    // Owner request (ingredient toggle): a 1-serving dish has nothing to toggle between —
+    // force the flag off so the header/scale below can never disagree with a hidden control.
+    if(total === 1) ingShowPerServing = false;
     document.getElementById('rsServesMeta').textContent = '👥 ' + total + ' servings';
-    document.getElementById('ingHeader').innerHTML = 'Ingredients · for the whole dish (' + total + ' servings)';
+    document.getElementById('ingHeader').innerHTML = 'Ingredients · ' + (ingShowPerServing ? 'for one serving' : 'for the whole dish (' + total + ' servings)');
     const slot = (recipeServingCtx && recipeServingCtx.slot) || RECIPE_SLOT_DB[currentRecipeKey] || 'meal';
     document.getElementById('sharedCaption').textContent = 'Shared ' + slot + ' — cooked once for both; nutrition below is your ' + nutServings + '× portion';
     nutHeader = 'Your portion (' + viewerName + ' · ' + nutServings + '×)';
@@ -1118,9 +1136,10 @@ function updateServings(){
     document.getElementById('svSoloVal').value = svS;
     total = svS;
     nutServings = svS;
+    if(total === 1) ingShowPerServing = false;
     const label = total === 1 ? 'serving' : 'servings';
     document.getElementById('rsServesMeta').textContent = '🍽️ ' + total + ' ' + label;
-    document.getElementById('ingHeader').innerHTML = 'Ingredients · scaled for ' + total + ' ' + label;
+    document.getElementById('ingHeader').innerHTML = 'Ingredients · ' + (ingShowPerServing ? 'for one serving' : 'scaled for ' + total + ' ' + label);
     nutHeader = (total === 1) ? 'Nutrition (per serving)' : 'Nutrition · scaled for ' + total + ' servings';
   }
   // Recipe-of-recipes (aggregate dinner): list the sub-dishes it's made of, each tappable to
@@ -1165,11 +1184,29 @@ function updateServings(){
       madeOfList.innerHTML = '';
     }
   }
+  // Owner request (2026-09-04): toggle between whole-dish and one-serving ingredient
+  // quantities. `ingScale` is the only thing that changes between the two modes — the
+  // whole-dish figure (`total`) shown elsewhere on the screen (rsServesMeta, the toggle's
+  // own "Whole dish (N)" label, nutHeader) is untouched. Only shown when it would change
+  // anything (total !== 1 — see the `ingShowPerServing = false` resets above).
+  const ingScaleSeg = document.getElementById('ingScaleSeg');
+  if(ingScaleSeg){
+    if(total === 1){
+      ingScaleSeg.style.display = 'none';
+      ingScaleSeg.innerHTML = '';
+    } else {
+      ingScaleSeg.style.display = 'flex';
+      ingScaleSeg.innerHTML =
+          '<button class="' + (ingShowPerServing ? '' : 'on') + '" onclick="setIngShowPerServing(false)">Whole dish (' + total + ')</button>'
+        + '<button class="' + (ingShowPerServing ? 'on' : '') + '" onclick="setIngShowPerServing(true)">One serving</button>';
+    }
+  }
+  const ingScale = ingShowPerServing ? 1 : total;
   const ingredients = recipeDisplayIngredients(currentRecipeKey, recipeOptsCtx);
   document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
     const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
     if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
-    const scaled = +(qty * total).toFixed(1);
+    const scaled = +(qty * ingScale).toFixed(1);
     return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
   }).join('');
   updateNutritionGrid(nutServings, nutHeader, extrasList);

@@ -785,10 +785,14 @@ function testSharedRecipeViewerNutrition(ctx){
     'updateServings: a shared meal scales NUTRITION by the viewer\'s own portion (svM if partner, else svE), not svE+svM', usFn);
   assert(/updateNutritionGrid\(nutServings/.test(usFn),
     'updateServings: passes the viewer portion (nutServings) to updateNutritionGrid, not the whole-dish total', usFn);
-  // Ingredients must STILL scale to the whole dish (cooked once for both) — that half was
-  // correct and must not regress to the per-person portion.
-  assert(/const\s+scaled\s*=\s*\+\(qty\s*\*\s*total\)/.test(usFn),
-    'updateServings: the INGREDIENT list still scales by the whole-dish total (both people cook once)', usFn);
+  // Ingredients must STILL scale to the whole dish by default (cooked once for both) — that
+  // half was correct and must not regress to the per-person portion. The ingredient toggle
+  // (owner request 2026-09-04) only overrides this to 1 (one serving) when ingShowPerServing
+  // is set — verified functionally in testIngredientServingToggle below.
+  assert(/const\s+ingScale\s*=\s*ingShowPerServing\s*\?\s*1\s*:\s*total/.test(usFn),
+    'updateServings: the ingredient scale defaults to the whole-dish total, and is 1 (one serving) only when the toggle is on', usFn);
+  assert(/const\s+scaled\s*=\s*\+\(qty\s*\*\s*ingScale\)/.test(usFn),
+    'updateServings: the INGREDIENT list scales by ingScale (whole-dish total by default, both people cook once)', usFn);
   assert(/total\s*=\s*\+\(svE\s*\+\s*svM\)/.test(usFn),
     'updateServings: total is still svE+svM for a shared dish (ingredient/cooking amount)', usFn);
 
@@ -799,6 +803,100 @@ function testSharedRecipeViewerNutrition(ctx){
   const potKcal = call(ctx, 'recipeNutrition', [rid, 3.5]).totals.kcal;    // svE(1) + svM(2.5)
   assert(potKcal > viewerKcal + 1e-6,
     'recipeNutrition: the whole-dish (3.5x) kcal exceeds a single viewer portion (1x) — the two figures the fix keeps separate', 'viewer=' + viewerKcal + ' pot=' + potKcal);
+}
+
+/* ---------------- ingredient serving toggle (owner request 2026-09-04) ----------------
+   updateServings() paints #ingScaleSeg (the "Whole dish (N)" / "One serving" toggle) and
+   scales #ingList by ingScale = ingShowPerServing ? 1 : total (render-recipe.js). Unlike
+   testSharedRecipeViewerNutrition's source-text regexes above, this drives the REAL
+   renderRecipe()/setIngShowPerServing() against the makeObFakeDocument() double (same pattern
+   the typed-serving-entry block further down this file uses) so it covers actual painted
+   output: the toggle's visibility, its labels, and the ingredient quantities in both modes —
+   plus the reset-on-open guarantee. */
+function testIngredientServingToggle(ctx){
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try {
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {}; recipeDayCtx = null; currentProf = 'elena'; householdSize = 2;");
+    const wk = call(ctx, 'ensureWeekPlan', []).weekStartDate;
+    const dinnerCell = get(ctx, "weekPlans['" + wk + "'].days[0].meals.dinner");
+    assert(dinnerCell.shared === true,
+      'setup: today\'s dinner slot is shared by default (two-person household)', JSON.stringify(dinnerCell));
+    const recipeId = dinnerCell.recipeId;
+
+    // (1) A multi-serving shared dish: total !== 1, so the toggle shows, defaulting to
+    // whole-dish (off) — the fresh-open default.
+    call(ctx, 'renderRecipe', [recipeId]);
+    assert(get(ctx, 'ingShowPerServing') === false,
+      'renderRecipe: resets ingShowPerServing to false on every fresh recipe open', String(get(ctx, 'ingShowPerServing')));
+    const svE = get(ctx, 'svE'), svM = get(ctx, 'svM');
+    const total = +(svE + svM).toFixed(1);
+    assert(total !== 1, 'setup: a shared dinner (svE+svM) has something to toggle (total !== 1)', String(total));
+
+    const seg = function(){ return get(ctx, "document.getElementById('ingScaleSeg')"); };
+    assert(seg().style.display === 'flex',
+      'updateServings: the ingredient toggle is shown when total !== 1', JSON.stringify(seg()));
+    assert(seg().innerHTML.indexOf('Whole dish (' + total + ')') !== -1 && seg().innerHTML.indexOf('One serving') !== -1,
+      'updateServings: the toggle\'s two states are labelled "Whole dish (N)" and "One serving"', seg().innerHTML);
+    assert(/^<button class="on"[^>]*>Whole dish/.test(seg().innerHTML),
+      'updateServings: "Whole dish" is the selected (.on) state by default', seg().innerHTML);
+
+    const ingredientsBase = call(ctx, 'recipeDisplayIngredients', [recipeId, get(ctx, 'recipeOptsCtx')]);
+    const firstIng = ingredientsBase.filter(function(i){ return i[1] !== null; })[0];
+    assert(firstIng, 'setup: the dish has at least one numeric-quantity ingredient', JSON.stringify(ingredientsBase));
+    const unit = String(firstIng[2]);
+    const expectedWhole = +(firstIng[1] * total).toFixed(1);
+    const expectedOne = +(firstIng[1] * 1).toFixed(1);
+    assert(expectedWhole !== expectedOne,
+      'setup: the whole-dish and one-serving amounts genuinely differ for this ingredient (a real behavioural check, not just a relabel)',
+      'whole=' + expectedWhole + ' one=' + expectedOne);
+
+    const ingListHtml = function(){ return get(ctx, "document.getElementById('ingList').innerHTML"); };
+    const ingHeaderHtml = function(){ return get(ctx, "document.getElementById('ingHeader').innerHTML"); };
+    assert(ingListHtml().indexOf('<span>' + expectedWhole + ' ' + unit + '</span>') !== -1,
+      'updateServings (default/whole-dish): the ingredient list shows the whole-dish quantity', ingListHtml());
+    assert(ingHeaderHtml().indexOf('for the whole dish (' + total + ' servings)') !== -1,
+      'updateServings (default/whole-dish): the header reads "for the whole dish (N servings)"', ingHeaderHtml());
+
+    // (2) Flip to one-serving — quantities and header switch, whole-dish figures elsewhere
+    // (rsServesMeta) are untouched.
+    call(ctx, 'setIngShowPerServing', [true]);
+    assert(get(ctx, 'ingShowPerServing') === true,
+      'setIngShowPerServing(true): sets the flag', String(get(ctx, 'ingShowPerServing')));
+    assert(ingListHtml().indexOf('<span>' + expectedOne + ' ' + unit + '</span>') !== -1,
+      'updateServings (one-serving): the ingredient list now shows the per-serving quantity (scale=1), not the whole-dish one', ingListHtml());
+    assert(ingHeaderHtml().indexOf('for one serving') !== -1,
+      'updateServings (one-serving): the header reads "for one serving"', ingHeaderHtml());
+    assert(/^<button class=""[^>]*>Whole dish/.test(seg().innerHTML) && /<button class="on"[^>]*>One serving/.test(seg().innerHTML),
+      'updateServings (one-serving): the toggle\'s selected (.on) state moves to "One serving"', seg().innerHTML);
+    assert(get(ctx, "document.getElementById('rsServesMeta').textContent").indexOf(String(total)) !== -1,
+      'updateServings (one-serving): rsServesMeta (the whole-dish serving count elsewhere on the screen) is untouched by the toggle', get(ctx, "document.getElementById('rsServesMeta').textContent"));
+
+    // (3) Flip back — whole-dish quantities return.
+    call(ctx, 'setIngShowPerServing', [false]);
+    assert(ingListHtml().indexOf('<span>' + expectedWhole + ' ' + unit + '</span>') !== -1,
+      'updateServings: toggling back to whole-dish restores the original quantities', ingListHtml());
+
+    // (4) Reset-on-open: leaving the toggle on one-serving, then opening ANY recipe fresh
+    // (renderRecipe) must default back to whole-dish — never leaks across recipe opens.
+    call(ctx, 'setIngShowPerServing', [true]);
+    call(ctx, 'renderRecipe', [recipeId]);
+    assert(get(ctx, 'ingShowPerServing') === false,
+      'renderRecipe: reopening the SAME recipe resets ingShowPerServing to false (no cross-open leak)', String(get(ctx, 'ingShowPerServing')));
+    assert(ingHeaderHtml().indexOf('for the whole dish') !== -1,
+      'renderRecipe: reopened recipe\'s header is back to whole-dish', ingHeaderHtml());
+
+    // (5) A 1-serving dish has nothing to toggle — the control is hidden entirely (not just
+    // disabled), per the `total !== 1` show/hide rule.
+    run(ctx, "recipeDayCtx = null; currentProf = 'elena'; householdSize = 1;");
+    call(ctx, 'renderRecipe', [recipeId]);
+    assert(get(ctx, 'svS') === 1, 'setup: a fresh library-context solo open defaults svS to 1x (nothing to toggle)', String(get(ctx, 'svS')));
+    assert(seg().style.display === 'none' && seg().innerHTML === '',
+      'updateServings: the toggle is hidden (empty + display:none) for a 1-serving dish (total === 1)', JSON.stringify(seg()));
+    run(ctx, "householdSize = 2;");
+  } finally {
+    ctx.document = savedDocument;
+  }
 }
 
 function testFoodDetailMarkup(ctx){
@@ -13674,6 +13772,7 @@ function main(){
   runTest('editable food amounts & measures (avgG + tbsp/tsp/cup survive save)', function(){ testEditableFoodMeasures(ctx); });
   runTest('supplement foods: fibre>carbs allowed for supplements, blocked for regular foods', function(){ testSupplementFood(ctx); });
   runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
+  runTest('ingredient serving toggle (whole dish <-> one serving)', function(){ testIngredientServingToggle(ctx); });
   runTest('soft lunch=carbs / dinner=protein bias', function(){ testSlotCompositionBias(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
