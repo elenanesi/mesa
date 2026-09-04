@@ -6048,6 +6048,51 @@ function testRecipeDetailExtrasFor(ctx){
    applies a valid value through the EXACT SAME funnel the +/- buttons use (so persistence,
    shared-meal mirroring and nutrition refresh can never drift from the stepper path) and
    leaves state untouched on an invalid value (the caller's job is to just repaint). */
+/* ---------------- recipe drill-down back navigation (owner bug, 2026-09-04) ----------------
+   Tapping a sub-recipe inside a composite meal ("made of" list) used to call
+   openRecipe(cid,'libraryRecipes'), so Back went to the Library recipe list — an unrendered,
+   empty screen when you'd arrived from Today/Week. Fixed with a nav stack: openSubRecipe pushes
+   the recipe you're leaving; backFromRecipe pops back to it (then, once empty, to the origin
+   screen). renderRecipe/go paint into DOM ids, so swap in makeObFakeDocument for this block. */
+function testRecipeNavStack(ctx){
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  // go()/captureAppScroll read document.querySelector('.app').scrollTop; the base fake returns
+  // null from querySelector, so hand back a minimal scrollable/classList-bearing element.
+  ctx.document.querySelector = function(){ return {scrollTop: 0, style: {}, classList: {add: function(){}, remove: function(){}, contains: function(){ return false; }}}; };
+  const savedStack = cloneJSON(get(ctx, 'recipeNavStack'));
+  try {
+    // openRecipe/openSubRecipe/backFromRecipe/go live in app.js, which APP_SCRIPT_ORDER skips
+    // (its boot call would fetch) — load its function DEFINITIONS the same way the onboarding
+    // and jump-nav tests do (readAppJsDefsOnlySrc strips the bootMesaApp() tail).
+    run(ctx, readAppJsDefsOnlySrc());
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; recipeDayCtx = null; currentProf = 'elena'; householdSize = 2; recipeNavStack = [];");
+    call(ctx, 'ensureWeekPlan', []);
+    // Enter the composite from a screen (Today): a fresh entry clears the drill-down stack.
+    call(ctx, 'openRecipe', ['cena-cinese', 'today', null]);
+    assert(get(ctx, 'recipeNavStack').length === 0,
+      'openRecipe from a screen clears the nav stack', JSON.stringify(get(ctx, 'recipeNavStack')));
+    assert(get(ctx, 'currentRecipeKey') === 'cena-cinese', 'openRecipe sets the composite as current');
+    // Drill into a sub-recipe: pushes the composite so Back can return to it.
+    call(ctx, 'openSubRecipe', ['fried-rice-veg']);
+    const stack = get(ctx, 'recipeNavStack');
+    assert(stack.length === 1 && stack[0].key === 'cena-cinese' && stack[0].origin === 'today',
+      'openSubRecipe pushes the parent recipe (key + origin) onto the stack', JSON.stringify(stack));
+    assert(get(ctx, 'currentRecipeKey') === 'fried-rice-veg', 'openSubRecipe opens the sub-recipe');
+    // Back returns to the PARENT composite (not a screen), and empties the stack.
+    call(ctx, 'backFromRecipe', []);
+    assert(get(ctx, 'currentRecipeKey') === 'cena-cinese',
+      'backFromRecipe returns to the parent composite, not the Library list', get(ctx, 'currentRecipeKey'));
+    assert(get(ctx, 'recipeNavStack').length === 0, 'backFromRecipe pops the stack frame');
+    // Back again with an empty stack leaves the recipe screen for the origin (no throw).
+    call(ctx, 'backFromRecipe', []);
+    assert(get(ctx, 'recipeNavStack').length === 0, 'a second Back with an empty stack is a clean screen exit');
+  } finally {
+    ctx.document = savedDocument;
+    run(ctx, "recipeNavStack = " + JSON.stringify(savedStack || []) + ";");
+  }
+}
+
 function testPortionKeyboardEntry(ctx){
   // -------- pure clamp helpers: valid / out-of-range / invalid --------
   assert(call(ctx, 'clampMealCompPortionInput', ['2']) === 2,
@@ -13716,6 +13761,7 @@ function main(){
   runTest('planner meal-extras', function(){ testMealExtras(ctx); });
   runTest('meal-page extras: recipeDetailExtrasFor (owner gap fix, 2026-09-03)', function(){ testRecipeDetailExtrasFor(ctx); });
   runTest('keyboard-editable portion controls: clamp helpers + typed-entry wiring (owner request, 2026-09-03)', function(){ testPortionKeyboardEntry(ctx); });
+  runTest('recipe drill-down: Back returns to the parent composite, not an empty Library screen (owner bug, 2026-09-04)', function(){ testRecipeNavStack(ctx); });
   runTest('BOOST CHIP (v1, manual-only nudge): eligibility predicate, suggested-food selection, extended composed-extras invariant', function(){ testBoostChip(ctx); });
   runTest('TRIM CHIP (v1, boost chip\'s rich-day sibling): eligibility predicate, one-tap skip, mutual exclusion with boost chip', function(){ testTrimChip(ctx); });
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });

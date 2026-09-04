@@ -417,6 +417,12 @@ let recipeReturnScroll = null;
 // person}), so the recipe screen's swap button targets THAT day, not today. null for
 // every other origin (Today/Log/library) — those really do mean today.
 let recipeDayCtx = null;
+// Drill-down history for the recipe screen: opening a SUB-recipe from within a recipe (a
+// composite meal's "made of" list, or a side inside a meal) pushes the recipe you're
+// leaving here, so Back returns THERE (and eventually to the real origin screen) instead of
+// jumping to a screen you were never on. Each frame is {key, origin, dayCtx, scroll}. A
+// fresh openRecipe from a screen clears it. See openSubRecipe/backFromRecipe (app.js).
+let recipeNavStack = [];
 let currentRecipeKey = 'omelette';
 let svE = 1, svM = 1.5, svS = 1;
 

@@ -76,6 +76,7 @@ function openHowMesaPlans(sectionId){
 
 /* ---------------- open a recipe from a tap ---------------- */
 function openRecipe(key, origin, dayCtx){
+  recipeNavStack = []; // fresh entry from a screen — clear any drill-down history
   recipeOrigin = origin || 'today';
   recipeDayCtx = dayCtx || null;
   recipeReturnScroll = captureAppScroll();
@@ -83,7 +84,34 @@ function openRecipe(key, origin, dayCtx){
   go('recipe');
 }
 
+// Drill into a SUB-recipe from WITHIN a recipe view — a composite meal's "made of" list, or
+// a side inside a meal. Remembers the recipe you're leaving (recipeNavStack) so Back returns
+// to it, then to the real origin screen. Fixes the blank-page bug: the made-of taps used to
+// call openRecipe(cid,'libraryRecipes'), which sent Back to the Library recipe list — an
+// unrendered, empty screen when you'd arrived from Today/Week. A sub-recipe is viewed
+// standalone (recipeDayCtx null), not tied to the parent's plan slot.
+function openSubRecipe(key){
+  if(currentRecipeKey){
+    recipeNavStack.push({key: currentRecipeKey, origin: recipeOrigin, dayCtx: recipeDayCtx, scroll: captureAppScroll()});
+  }
+  recipeDayCtx = null;
+  recipeReturnScroll = captureAppScroll();
+  renderRecipe(key);
+  go('recipe');
+}
+
 function backFromRecipe(){
+  // If we drilled into a sub-recipe, Back returns to the PARENT recipe (restoring its origin
+  // + day context), staying on the recipe screen — only once the stack is empty does Back
+  // leave the recipe screen for the originating screen (Today/Week/Library).
+  if(recipeNavStack.length){
+    const parent = recipeNavStack.pop();
+    recipeOrigin = parent.origin;
+    recipeDayCtx = parent.dayCtx;
+    renderRecipe(parent.key);
+    go('recipe', null, {preserveScroll: parent.scroll});
+    return;
+  }
   go(recipeOrigin || 'today', null, {preserveScroll: recipeReturnScroll});
 }
 

@@ -107,7 +107,7 @@ function recipeDetailExtraRowHtml(c, i){
     ? roundedNutritionTotals(recipeNutrition(c.recipeId, portion, c.opts).totals)
     : roundedNutritionTotals(foodMacros(c.foodId, grams));
   const nameHtml = isRecipe
-    ? '<span class="madeof-name" onclick="openRecipe(\'' + c.recipeId + '\',\'libraryRecipes\')">' + (emoji ? emoji + ' ' : '') + escapeHtml(title) + '</span>'
+    ? '<span class="madeof-name" onclick="openSubRecipe(\'' + c.recipeId + '\')">' + (emoji ? emoji + ' ' : '') + escapeHtml(title) + '</span>'
     : '<span class="madeof-name">' + escapeHtml(title) + '</span>';
   // Keyboard entry (owner request, 2026-09-03): the value is now a typeable input (unit
   // suffix — × or g — stays a separate label so the user only ever types the number), wired
@@ -960,7 +960,7 @@ function updateMealDetail(){
       if(!sub) return '';
       const removed = !(c.portion > 0);
       const kcal = removed ? 0 : Math.round(recipeNutrition(cid, c.portion, c.opts).totals.kcal);
-      const nameHtml = '<span class="madeof-name" onclick="openRecipe(\'' + cid + '\',\'libraryRecipes\')">' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + '</span>';
+      const nameHtml = '<span class="madeof-name" onclick="openSubRecipe(\'' + cid + '\')">' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + '</span>';
       // Keyboard entry (owner request, 2026-09-03): a typeable input replaces the plain value
       // span (0 = removed, same as the stepper's floor) — committed on blur/Enter via
       // commitMealCompPortion so the per-keystroke re-render below never fights the cursor.
@@ -1155,7 +1155,7 @@ function updateServings(){
         const portion = (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1;
         const subKcal = Math.round(recipeNutrition(c.recipeId, portion, c.opts).totals.kcal);
         const portionLabel = portion === 1 ? '' : ' · ' + portion + '×';
-        return '<li class="madeof-row" style="cursor:pointer" onclick="openRecipe(\'' + c.recipeId + '\',\'libraryRecipes\')"><span>' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + portionLabel + '</span><span>' + subKcal + ' kcal ›</span></li>';
+        return '<li class="madeof-row" style="cursor:pointer" onclick="openSubRecipe(\'' + c.recipeId + '\')"><span>' + (sub.emoji ? sub.emoji + ' ' : '') + escapeHtml(sub.title) + portionLabel + '</span><span>' + subKcal + ' kcal ›</span></li>';
       }).join('');
     } else if(extrasList.length){
       madeOfSection.style.display = '';
