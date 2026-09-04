@@ -117,7 +117,20 @@ const PER_DAY_BANDS = {
   protein:    {floorMult: 0.8},               // no single day below 0.8x the daily protein target
   fiber:      {floorMult: 0.6, ceilMult: 1.7},// ~15g floor, ~43g comfort ceiling at a 25g/day goal
   freeSugars: {ceilMult: 1.5},                // no day above ~1.5x the daily free-sugar share
-  satFat:     {ceilMult: 1.8}                 // no day above ~1.8x the daily sat-fat share
+  satFat:     {ceilMult: 1.8},                // no day above ~1.8x the daily sat-fat share
+  // TOTAL fat, unlike the others above, is judged against the person's OWN macro-split
+  // target (PROF[person].defaultSplit.F, a % of energy) rather than a multiple of a
+  // WHO grams/day figure — Mesa has no separate "total fat" WHO guideline distinct from
+  // the sat-fat one NUTRITION_GUIDANCE already covers. Added points, not a multiplier, so
+  // the band stays additive on the % scale a split target already lives on. Calibrated
+  // 2026-09-04/05 against MEASURED distributions: generation was landing a ~40% energy-from-
+  // fat median (100% of days over the 35% guideline, some 49-51%); the new steering term
+  // (dayImbalanceForPerson) pulls that to a ~37% median with the worst days capped near 45%.
+  // Against a ~33% split target the amber line sits at target+7 (~40%) — high enough that a
+  // normal Mediterranean ~37% day stays green and only genuinely fat-heavy days flag (a
+  // target+5 line ambered ~half the days, which is noise, not signal); target+12 (~45%)
+  // reserves the red/'over' accent for the standout days the owner actually saw.
+  fat:        {richAddPts: 7, overAddPts: 12}
 };
 
 /* Deterministic, factual "Why Mesa picked this" explanations. */

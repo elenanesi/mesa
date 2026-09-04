@@ -3068,12 +3068,22 @@ function classifyMaxBand(value, max){
   return (max > 0 && value > max) ? 'over' : 'in';
 }
 
+// Person's macro-split fat target (% of energy) — the anchor PER_DAY_BANDS.fat's
+// richAddPts/overAddPts (state.js) add onto. Falls back to 33 (Mesa's own long-standing
+// default split — see PROF's literals in state.js) if a profile is missing/malformed, so
+// a bad profile object degrades to a sane band instead of NaN comparisons everywhere this
+// is read.
+function fatSplitTargetFor(person){
+  const p = (typeof PROF !== 'undefined') && PROF[person];
+  return (p && p.defaultSplit && typeof p.defaultSplit.F === 'number') ? p.defaultSplit.F : 33;
+}
+
 // Directional per-day balance for the Week view (display-only). Covers every tracked daily
 // target. States are DESCRIPTORS, never verdicts. Any target whose data is missing (no
 // calorie goal yet) resolves to 'ok' so the app never invents a warning. Grams ceilings are
 // single-sourced off the person's calorie goal, same derivation as weekNutriSummary.
 function perDayBalanceState(dayTotals, person){
-  const out = {kcal:'ok', protein:'ok', fiber:'ok', freeSugars:'ok', satFat:'ok'};
+  const out = {kcal:'ok', protein:'ok', fiber:'ok', freeSugars:'ok', satFat:'ok', fat:'ok'};
   if(!dayTotals) return out;
   const calGoal = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].calGoalNum) || 0;
   const proteinTarget = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].targetP) || 0;
@@ -3098,13 +3108,23 @@ function perDayBalanceState(dayTotals, person){
     const satCeil = ((NUTRITION_GUIDANCE.satFat.target/100)*calGoal/9) * PER_DAY_BANDS.satFat.ceilMult;
     if(classifyMaxBand(dayTotals.satFat, satCeil) === 'over') out.satFat = 'rich';
   }
+  // TOTAL fat: ceiling only, judged as % of THIS day's actual energy (not the calorie
+  // goal — a day that ran light on calories but still skewed fat-heavy should still
+  // flag) against the person's own split target, +richAddPts/+overAddPts (state.js
+  // PER_DAY_BANDS.fat) — see that constant's header comment for the calibration.
+  if(typeof dayTotals.fat === 'number' && dayTotals.kcal > 0){
+    const fatPct = (dayTotals.fat * 9 / dayTotals.kcal) * 100;
+    const fatTarget = fatSplitTargetFor(person);
+    if(fatPct > fatTarget + PER_DAY_BANDS.fat.overAddPts) out.fat = 'over';
+    else if(fatPct > fatTarget + PER_DAY_BANDS.fat.richAddPts) out.fat = 'rich';
+  }
   return out;
 }
 // One holistic per-day state for the collapsed day header: 'balanced' when every tracked
 // target is in band, else 'off'. Keeps the overview to a single calm signal per day.
 function dayBalanceOverall(dayTotals, person){
   const s = perDayBalanceState(dayTotals, person);
-  return (s.kcal==='ok' && s.protein==='ok' && s.fiber==='ok' && s.freeSugars==='ok' && s.satFat==='ok') ? 'balanced' : 'off';
+  return (s.kcal==='ok' && s.protein==='ok' && s.fiber==='ok' && s.freeSugars==='ok' && s.satFat==='ok' && s.fat==='ok') ? 'balanced' : 'off';
 }
 
 /* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------
@@ -3157,18 +3177,20 @@ function boostSuggestionsFor(nutrient){
 }
 
 // autoBalancePlan (post-generation balancing pass, below): a person's whole-day fiber/
-// free-sugars/sat-fat/kcal/protein totals, summed straight off the assembled plan's raw
-// entries via planEntryNutrition — NOT the display/log-aware view weekDayNutriViews
+// free-sugars/sat-fat/fat/kcal/protein totals, summed straight off the assembled plan's
+// raw entries via planEntryNutrition — NOT the display/log-aware view weekDayNutriViews
 // builds, since there's no day log yet on a plan fresh out of generateWeek and this must
-// stay pure/deterministic.
+// stay pure/deterministic. `fat` (TOTAL fat, distinct from satFat above) backs the
+// total-fat day band (perDayBalanceState) and its generation-time ceiling term
+// (dayImbalanceForPerson) added 2026-09-04.
 function personDayNutriTotals(day, person){
-  const totals = {kcal: 0, protein: 0, fiber: 0, freeSugars: 0, satFat: 0};
+  const totals = {kcal: 0, protein: 0, fiber: 0, freeSugars: 0, satFat: 0, fat: 0};
   SLOT_ORDER.forEach(function(slot){
     const m = day.meals[slot];
     if(!m) return;
     const nut = planEntryNutrition(m[person]);
     totals.kcal += nut.kcal; totals.protein += nut.protein; totals.fiber += nut.fiber;
-    totals.freeSugars += nut.freeSugars; totals.satFat += nut.satFat;
+    totals.freeSugars += nut.freeSugars; totals.satFat += nut.satFat; totals.fat += nut.fat;
   });
   return totals;
 }
@@ -3179,7 +3201,14 @@ function personDayNutriTotals(day, person){
 // magnitude). Calories/protein are deliberately excluded from the sum: the generator
 // already balances those per day, and autoBalancePlan's own calorie-safe guard (reusing
 // dailyBandState, same rule sideCandidatesForUnit already applies) protects them from ever
-// regressing — this objective is fiber/free-sugars/sat-fat only.
+// regressing — this objective is fiber/free-sugars/sat-fat/TOTAL-fat only.
+// TOTAL-fat term added 2026-09-04 (MEASURED problem: generation was landing a ~40%
+// energy-from-fat median, 100% of days over the 35% WHO-style guideline) — symmetric to
+// the sat-fat term below, but the ceiling is grams-of-fat at the person's split-target+
+// richAddPts (the perDayBalanceState AMBER line, PER_DAY_BANDS.fat state.js) rather than a
+// WHO grams/day figure, since Mesa has no separate WHO total-fat target. Steering to the
+// amber line (not the red one) means a fixed day should land closer to on-target, not
+// merely under the red flag.
 function dayImbalanceForPerson(dayTotals, person){
   if(!dayTotals) return 0;
   const calGoal = (PROF[person] && PROF[person].calGoalNum) || 0;
@@ -3187,6 +3216,7 @@ function dayImbalanceForPerson(dayTotals, person){
   const fiberCeil = fiberFloor * PER_DAY_BANDS.fiber.ceilMult;
   const sugarCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4) * PER_DAY_BANDS.freeSugars.ceilMult : 0;
   const satCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.satFat.target / 100) * calGoal / 9) * PER_DAY_BANDS.satFat.ceilMult : 0;
+  const fatCeil = calGoal > 0 ? ((fatSplitTargetFor(person) + PER_DAY_BANDS.fat.richAddPts) / 100) * calGoal / 9 : 0;
   let imb = 0;
   if(fiberFloor > 0 && dayTotals.fiber < fiberFloor){
     imb += (fiberFloor - dayTotals.fiber) / fiberFloor;
@@ -3198,6 +3228,9 @@ function dayImbalanceForPerson(dayTotals, person){
   }
   if(satCeil > 0 && dayTotals.satFat > satCeil){
     imb += (dayTotals.satFat - satCeil) / satCeil;
+  }
+  if(fatCeil > 0 && typeof dayTotals.fat === 'number' && dayTotals.fat > fatCeil){
+    imb += (dayTotals.fat - fatCeil) / fatCeil;
   }
   return imb;
 }
@@ -4748,6 +4781,34 @@ function autoBalanceUsedMainIds(plan, unit, unitPeople){
   return used;
 }
 
+// Day-wide variety guard (VARIETY-plan.md P1) for the ADD-SIDE move specifically. Every id
+// already present ANYWHERE else that day for the affected person(s) — another slot's main
+// dish OR one of its composed extras — same shape tools/check.js's own day-wide-variety
+// test (idsForDay) checks against. autoBalanceUsedMainIds above is the SWAP guard's tool:
+// week-wide, main-dish-id-only (a swap's own unit-local extras filter, next to its call
+// site, covers the rest). addSide never had an equivalent same-day check of its own — it
+// only excluded the current unit's own main/extras — which a day with plenty of OTHER
+// slots sharing the side pool could still slip past. Surfaced 2026-09-04: the new
+// total-fat steering term (dayImbalanceForPerson) reached an addSide move on a day/pool
+// combination no earlier objective had picked, and it happened to duplicate that day's
+// already-planned snack. `excludeSlot` is the unit's own slot — its own entry/extras are
+// checked separately, right where currentEntry/currentExtras are already in scope.
+function autoBalanceUsedIdsForDay(day, unitPeople, excludeSlot){
+  const used = {};
+  SLOT_ORDER.forEach(function(slot){
+    if(slot === excludeSlot) return;
+    const m = day.meals[slot];
+    if(!m) return;
+    unitPeople.forEach(function(person){
+      const entry = m.shared ? m.elena : m[person];
+      if(!entry) return;
+      if(entry.recipeId) used[entry.recipeId] = true;
+      (entry.extras || []).forEach(function(x){ if(x && x.recipeId) used[x.recipeId] = true; });
+    });
+  });
+  return used;
+}
+
 // applySwapToPlan/addSideToPlan stamp Date.now() onto the entry/cell they touch (the real
 // swap-sheet's sync.js:mergePlansSection conflict marker) — exactly what a freshly
 // generated plan must never carry. generateWeek is otherwise zero-Date.now/zero-
@@ -4962,15 +5023,25 @@ function autoBalancePlan(plan){
         if(!best || autoBalanceCandidateBetter(candidate, best)) best = candidate;
       }
 
+      // Day-wide variety guard shared by BOTH moves below: every id already planned in ANOTHER
+      // slot that same day for the affected person(s) — a main OR a composed extra. The swap's
+      // other guard (autoBalanceUsedMainIds) is WEEK-wide and main-id-only, so without this a
+      // swap could set a slot to a recipe already on that day's plate elsewhere (e.g. the day's
+      // snack) — the same-day duplicate the total-fat steering term surfaced (2026-09-04). The
+      // unit's own slot is excluded (its own entry/extras are checked inline in each move).
+      const usedElsewhereToday = autoBalanceUsedIdsForDay(plan.days[unit.dayIndex], unitPeople, unit.slot);
+
       // (a) ADD SIDE — the same avoid/season-filtered role:'side' pool sideCandidatesForUnit
-      // draws from, excluding whatever's already the main or an extra in this unit. ONLY on
+      // draws from, excluding whatever's already the main or an extra in this unit, AND
+      // (usedElsewhereToday) whatever's already planned in any OTHER slot that same day for the
+      // affected person(s) — the day-wide variety invariant, not just a this-unit one. ONLY on
       // lunch/dinner: those are the slots that compose a main with a role:'side' (the
-      // generator's own contract). Breakfast composes only from the breakfastPair whitelist
-      // and snack never composes, so adding a bare side there would produce an
-      // ill-formed composed unit (the "composed meals" invariant in tools/check.js).
+      // generator's own contract). Breakfast composes only from the breakfastPair whitelist and
+      // snack never composes, so adding a bare side there would produce an ill-formed composed
+      // unit (the "composed meals" invariant in tools/check.js).
       if(unit.slot === 'lunch' || unit.slot === 'dinner'){
         sidePoolFor(avoidL, unitPeople).filter(function(id){
-          return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; });
+          return id !== currentEntry.recipeId && currentExtras.every(function(extra){ return !extra || extra.recipeId !== id; }) && !usedElsewhereToday[id];
         }).forEach(function(sideId){
           consider('addSide', sideId, function(trial){ addSideToPlan(trial, unit, sideId); });
         });
@@ -4978,11 +5049,12 @@ function autoBalancePlan(plan){
 
       // (b) SWAP — the same avoid/diet-filtered style pool candidatesFor() draws from,
       // narrowed to the unit's composition contract (autoBalanceSwapCandidateIds) and the
-      // variety guard, excluding the current main.
+      // variety guards (week-wide usedElsewhere + same-day usedElsewhereToday), excluding the
+      // current main.
       const usedElsewhere = autoBalanceUsedMainIds(plan, unit, unitPeople);
       const rawSwapIds = candidatesFor(unit.slot, styleKey, avoidL, unitPeople);
       autoBalanceSwapCandidateIds(unit, rawSwapIds, currentExtras.length > 0).filter(function(id){
-        return id !== currentId && !usedElsewhere[id];
+        return id !== currentId && !usedElsewhere[id] && !usedElsewhereToday[id];
       }).forEach(function(candId){
         consider('swap', candId, function(trial){ applySwapToPlan(trial, unit, candId); });
       });

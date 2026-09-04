@@ -6871,7 +6871,7 @@ function testPerDayBalanceState(ctx){
   assert(proteinTarget > 0, 'test setup: PROF.elena.targetP is positive (otherwise the protein fixtures below prove nothing)', 'got ' + proteinTarget);
 
   const baseDay = function(overrides){
-    return Object.assign({kcal: calGoal, protein: proteinTarget, fiber: 26, freeSugars: 0, satFat: 0}, overrides || {});
+    return Object.assign({kcal: calGoal, protein: proteinTarget, fiber: 26, freeSugars: 0, satFat: 0, fat: 0}, overrides || {});
   };
 
   // Fiber: light (below floor), ok (in band), rich (above the Mesa comfort ceiling).
@@ -6920,14 +6920,35 @@ function testPerDayBalanceState(ctx){
   const satOk = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.floor(satCeil * 0.5)}), person]);
   assert(satOk.satFat === 'ok', 'perDayBalanceState: sat fat well under the ' + Math.round(satCeil) + 'g ceiling is "ok" (quiet, no cue)', JSON.stringify(satOk));
 
+  // TOTAL fat (2026-09-04, MEASURED problem: generation was landing a ~40% energy-from-fat
+  // median): ceiling only, judged as % of THIS day's own kcal against the person's macro
+  // split target (PROF.elena.defaultSplit.F) + PER_DAY_BANDS.fat's richAddPts/overAddPts —
+  // NOT a WHO grams/day figure like the other nutrients above (Mesa has no separate total-
+  // fat WHO guidance). baseDay() sets kcal === calGoal, so fat grams -> energy % converts
+  // via the same 9 kcal/g the app uses everywhere (kcal = 4p+4c+9f).
+  const fatSplitTarget = get(ctx, "PROF['" + person + "'].defaultSplit.F");
+  const fatRichAddPts = get(ctx, 'PER_DAY_BANDS.fat.richAddPts');
+  const fatOverAddPts = get(ctx, 'PER_DAY_BANDS.fat.overAddPts');
+  assert(fatSplitTarget > 0 && fatOverAddPts > fatRichAddPts,
+    'test setup: fat split target + band add-points are the expected single-sourced shape', 'target=' + fatSplitTarget + ' rich=' + fatRichAddPts + ' over=' + fatOverAddPts);
+  const fatOkG = ((fatSplitTarget - 2) / 100) * calGoal / 9;
+  const fatRichG = ((fatSplitTarget + fatRichAddPts + 1) / 100) * calGoal / 9;
+  const fatOverG = ((fatSplitTarget + fatOverAddPts + 1) / 100) * calGoal / 9;
+  const fatOk = call(ctx, 'perDayBalanceState', [baseDay({fat: fatOkG}), person]);
+  assert(fatOk.fat === 'ok', 'perDayBalanceState: total fat a couple points under the split target is "ok" (quiet, no cue)', JSON.stringify(fatOk));
+  const fatRich = call(ctx, 'perDayBalanceState', [baseDay({fat: fatRichG}), person]);
+  assert(fatRich.fat === 'rich', 'perDayBalanceState: total fat just above split target +' + fatRichAddPts + 'pt is "rich" (amber)', JSON.stringify(fatRich));
+  const fatOver = call(ctx, 'perDayBalanceState', [baseDay({fat: fatOverG}), person]);
+  assert(fatOver.fat === 'over', 'perDayBalanceState: total fat above split target +' + fatOverAddPts + 'pt is "over" (the stronger, red-accent cue)', JSON.stringify(fatOver));
+
   // A fully in-range day is quiet on every axis.
   const allOk = call(ctx, 'perDayBalanceState', [baseDay(), person]);
-  assert(allOk.kcal === 'ok' && allOk.protein === 'ok' && allOk.fiber === 'ok' && allOk.freeSugars === 'ok' && allOk.satFat === 'ok',
-    'perDayBalanceState: an in-range day is quiet on kcal/protein/fiber/free-sugars/sat-fat', JSON.stringify(allOk));
+  assert(allOk.kcal === 'ok' && allOk.protein === 'ok' && allOk.fiber === 'ok' && allOk.freeSugars === 'ok' && allOk.satFat === 'ok' && allOk.fat === 'ok',
+    'perDayBalanceState: an in-range day is quiet on kcal/protein/fiber/free-sugars/sat-fat/fat', JSON.stringify(allOk));
 
   // Missing dayTotals (e.g. an unresolved slot) degrades to the quiet default, never a crash.
   const nullDay = call(ctx, 'perDayBalanceState', [null, person]);
-  assert(nullDay.kcal === 'ok' && nullDay.protein === 'ok' && nullDay.fiber === 'ok' && nullDay.freeSugars === 'ok' && nullDay.satFat === 'ok',
+  assert(nullDay.kcal === 'ok' && nullDay.protein === 'ok' && nullDay.fiber === 'ok' && nullDay.freeSugars === 'ok' && nullDay.satFat === 'ok' && nullDay.fat === 'ok',
     'perDayBalanceState: null dayTotals degrades to the quiet all-"ok" default', JSON.stringify(nullDay));
 
   // dayBalanceOverall: the single holistic dot for the collapsed day header. 'balanced' only
@@ -6940,6 +6961,51 @@ function testPerDayBalanceState(ctx){
   assert(overallOffKcal === 'off', 'dayBalanceOverall: kcal alone out of band is enough to make the day "off"', overallOffKcal);
   const overallOffSatFat = call(ctx, 'dayBalanceOverall', [baseDay({satFat: Math.ceil(satCeil + 5)}), person]);
   assert(overallOffSatFat === 'off', 'dayBalanceOverall: sat fat alone out of band is enough to make the day "off"', overallOffSatFat);
+  // A day that is otherwise perfectly fine but runs fat-heavy now reads "off" too — this is
+  // the whole point of the guard (owner: "generation drifted fat-heavy while every OTHER
+  // tracked target looked fine") and is expected to lower the Week screen's "N of 7
+  // balanced" count.
+  const overallOffFat = call(ctx, 'dayBalanceOverall', [baseDay({fat: fatOverG}), person]);
+  assert(overallOffFat === 'off', 'dayBalanceOverall: an otherwise-fine but fat-heavy day is now "off" (the new total-fat guard)', overallOffFat);
+}
+
+/* ---------------- dayImbalanceForPerson: total-fat steering term ----------------
+   dayImbalanceForPerson (planner.js) is the continuous "how far off" scalar autoBalancePlan
+   greedily drives toward 0 across a whole generated week — added 2026-09-04, symmetric to
+   the pre-existing sat-fat ceiling term, after MEASURING generation land a ~40% energy-from-
+   fat median (100% of sampled days over a 35% guideline). This is the pure-function unit
+   test for that one new term's effect DIRECTION (the full plan-level before/after is measured
+   separately with the scratchpad harness, per AGENT-HANDOVER's "MEASURE before shipping a
+   generation change" discipline — this just proves the scoring signal itself is real and
+   monotonic, independent of which candidates end up available during generation). */
+function testDayImbalanceFatTerm(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
+  call(ctx, 'ensureWeekPlan', []);
+  const person = 'elena';
+  call(ctx, 'recomputeProf', [person]);
+  const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
+  const fatSplitTarget = get(ctx, "PROF['" + person + "'].defaultSplit.F");
+  const richAddPts = get(ctx, 'PER_DAY_BANDS.fat.richAddPts');
+  const fiberFloor = get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay');
+  assert(calGoal > 0 && fatSplitTarget > 0, 'test setup: calGoal/fat split target are positive', 'calGoal=' + calGoal + ' split=' + fatSplitTarget);
+  const fatCeilG = ((fatSplitTarget + richAddPts) / 100) * calGoal / 9;
+
+  // Every OTHER term's inputs are set safely inside their own bands (fiber comfortably
+  // between the WHO floor and the comfort ceiling, zero free sugars/sat fat) so the only
+  // thing driving a nonzero result is the new fat term. Protein/kcal are irrelevant here —
+  // dayImbalanceForPerson deliberately excludes them (the comment above the function).
+  const goodDay = {kcal: calGoal, protein: 1, fiber: fiberFloor + 5, freeSugars: 0, satFat: 0, fat: fatCeilG * 0.5};
+  const imbGood = call(ctx, 'dayImbalanceForPerson', [goodDay, person]);
+  assert(imbGood === 0, 'dayImbalanceForPerson: a day under every ceiling, including the new total-fat one, contributes zero imbalance', imbGood);
+
+  const highFatDay = Object.assign({}, goodDay, {fat: fatCeilG * 1.5});
+  const imbHigh = call(ctx, 'dayImbalanceForPerson', [highFatDay, person]);
+  assert(imbHigh > 0, 'dayImbalanceForPerson: a day over the total-fat ceiling contributes positive imbalance — a real steering signal for autoBalancePlan to swap away from', imbHigh);
+
+  const veryHighFatDay = Object.assign({}, goodDay, {fat: fatCeilG * 2});
+  const imbVeryHigh = call(ctx, 'dayImbalanceForPerson', [veryHighFatDay, person]);
+  assert(imbVeryHigh > imbHigh, 'dayImbalanceForPerson: imbalance grows monotonically with how far a day is over the total-fat ceiling (a bigger overshoot is a stronger pull)', 'imbHigh=' + imbHigh + ' imbVeryHigh=' + imbVeryHigh);
 }
 
 /* ---------------- post-generation balancing pass (autoBalancePlan) ----------------
@@ -13866,6 +13932,7 @@ function main(){
   runTest('week catch-up logging (task B5)', function(){ testWeekCatchupLogging(ctx); });
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });
+  runTest('dayImbalanceForPerson: total-fat steering term (direction/monotonicity)', function(){ testDayImbalanceFatTerm(ctx); });
   runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });

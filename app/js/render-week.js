@@ -276,8 +276,15 @@ function renderWeek(){
     // sat-fat notes appended since they aren't itemized figures on this line.
     const bal = perDayBalanceState(totals, person);
     const cue = function(state){ return (state==='ok') ? '' : ' <span class="day-cue">· ' + state + '</span>'; };
+    // Total-fat cue: same calm "· fat high" wording for both severities (the number
+    // itself already lives in the macro line just before it) — only the color escalates,
+    // amber .day-cue for 'rich', the stronger .day-cue-over (--terra) reserved for 'over'
+    // (perDayBalanceState/state.js PER_DAY_BANDS.fat), so a routine drift and a genuinely
+    // high day read differently without the line ever shouting.
+    const fatCue = bal.fat==='ok' ? '' : ' <span class="day-cue'+(bal.fat==='over'?' day-cue-over':'')+'">· fat high</span>';
     const extraCues = (bal.kcal!=='ok' ? ' <span class="day-cue">· kcal '+bal.kcal+'</span>' : '')
-                    + (bal.satFat==='rich' ? ' <span class="day-cue">· sat fat rich</span>' : '');
+                    + (bal.satFat==='rich' ? ' <span class="day-cue">· sat fat rich</span>' : '')
+                    + fatCue;
     const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g'+cue(bal.protein)+' · C '+Math.round(totals.carbs)
       +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g'+cue(bal.fiber)
       +' · free sugars '+Math.round(totals.freeSugars)+'g'+cue(bal.freeSugars)+extraCues+'</div>';

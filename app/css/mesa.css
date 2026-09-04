@@ -63,6 +63,12 @@ h1{font-family:var(--font-script);font-size:34px;line-height:1.04;margin:6px 0 2
 h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:500;color:#3c3228;}
 .sub{color:var(--muted);font-size:13.5px;margin:0 0 4px;}
 .day-cue{color:var(--gold);font-weight:500;}
+/* Stronger day-cue variant for a genuinely high reading (currently: total-fat 'over',
+   PER_DAY_BANDS.fat state.js) — reuses --terra, the app's existing over/high accent
+   (.ring-over, .spark .col.over), so this introduces no new color, just a second calm
+   tone alongside the amber .day-cue default. Never the whole app going red — one inline
+   word, same weight/size as .day-cue. */
+.day-cue-over{color:var(--terra);font-weight:500;}
 .day-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle;}
 .day-dot-ok{background:var(--sage-deep);}
 .day-dot-off{background:var(--gold);}
