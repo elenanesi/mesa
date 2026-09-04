@@ -1162,7 +1162,7 @@ const RECIPES_DB = {
     styles: ['balanced', 'highprotein'], time: 15,
     ingredients: [['rice', 35], ['salmon-fillet', 50]],
     toTaste: ['rice vinegar', 'wasabi', 'pickled ginger'],
-    steps: ['Cook the rice, season with a splash of rice vinegar and let it cool to warm.', 'Slice the salmon into thin, even pieces.', 'Shape the rice into small ovals and press a slice of salmon over each — about 2 pieces per portion.'],
+    steps: ['Cook the rice, season with a splash of rice vinegar and let it cool to warm.', 'Slice the salmon into thin, even pieces.', 'Shape the rice into small ovals and press a slice of salmon over each — about 5 pieces per portion.'],
     tags: ['quick'], avoid: []
   },
   'uramaki-salmon-philadelphia-avocado': {
@@ -1171,7 +1171,7 @@ const RECIPES_DB = {
     styles: ['balanced'], time: 25,
     ingredients: [['rice', 45], ['nori', 5], ['salmon-fillet', 28], ['cream-cheese', 20], ['avocado', 28]],
     toTaste: ['rice vinegar', 'sesame seeds', 'soy sauce to serve'],
-    steps: ['Cook and season the rice with rice vinegar; lay it over a nori sheet on a bamboo mat.', 'Flip the nori rice-side down and lay strips of salmon, cream cheese and avocado along the centre.', 'Roll tightly, then slice into pieces — about 4 pieces per portion.'],
+    steps: ['Cook and season the rice with rice vinegar; lay it over a nori sheet on a bamboo mat.', 'Flip the nori rice-side down and lay strips of salmon, cream cheese and avocado along the centre.', 'Roll tightly, then slice into pieces — about 6 pieces per portion.'],
     tags: [], avoid: ['lactose']
   },
   'uramaki-eel-fried-shrimp': {
@@ -1180,8 +1180,17 @@ const RECIPES_DB = {
     styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['rice', 45], ['nori', 5], ['eel', 28], ['prawns', 35], ['breadcrumbs', 10], ['olive-oil', 5], ['soy-sauce', 5]],
     toTaste: ['rice vinegar', 'ginger', 'sesame seeds'],
-    steps: ['Cook and season the rice with rice vinegar; warm the eel through with a little soy sauce.', 'Coat the prawns in breadcrumbs and pan-fry in the olive oil until crisp and golden.', 'Lay the rice over a nori sheet, flip rice-side down, add the eel and fried prawns, then roll tightly and slice — about 4 pieces per portion.'],
+    steps: ['Cook and season the rice with rice vinegar; warm the eel through with a little soy sauce.', 'Coat the prawns in breadcrumbs and pan-fry in the olive oil until crisp and golden.', 'Lay the rice over a nori sheet, flip rice-side down, add the eel and fried prawns, then roll tightly and slice — about 6 pieces per portion.'],
     tags: [], avoid: ['gluten', 'shellfish']
+  },
+  'edamame-pods': {
+    title: 'Edamame', emoji: '🫛', slot: 'side', role: 'side',
+    slots: ['side', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 8,
+    ingredients: [['edamame', 90]],
+    toTaste: ['flaky sea salt'],
+    steps: ['Bring a pan of water to the boil (or set up a steamer).', 'Cook the edamame for 4-5 minutes until bright green and tender.', 'Drain, toss with a little flaky sea salt, and serve warm to pod at the table.'],
+    tags: ['veggie'], avoid: []
   },
   takoyaki: {
     title: 'Takoyaki', emoji: '🐙', slot: 'snack', role: 'side',
@@ -1203,10 +1212,11 @@ const RECIPES_DB = {
       {recipeId: 'nigiri-salmon', portion: 1},
       {recipeId: 'uramaki-salmon-philadelphia-avocado', portion: 0.75},
       {recipeId: 'uramaki-eel-fried-shrimp', portion: 0.75},
-      {recipeId: 'takoyaki', portion: 1}
+      {recipeId: 'takoyaki', portion: 1},
+      {recipeId: 'edamame-pods', portion: 1}
     ],
     toTaste: ['soy sauce', 'wasabi', 'pickled ginger'],
-    steps: ['Make the five sub-dishes: gyoza, salmon nigiri, salmon-avocado uramaki, eel & fried shrimp uramaki, and takoyaki.', 'Plate 3-4 gyoza and 2 nigiri each, with three-quarters of a portion of each uramaki roll.', 'Add the takoyaki and serve everything together as one shared spread, with soy sauce, wasabi and pickled ginger on the side.'],
+    steps: ['Make the sub-dishes: gyoza, salmon nigiri, salmon-avocado uramaki (with a nori sheet), eel & fried shrimp uramaki, takoyaki, and a bowl of edamame.', 'Plate a few gyoza and nigiri each, with three-quarters of a portion of each uramaki roll.', 'Add the takoyaki and the warm salted edamame, and serve everything together as one shared spread, with soy sauce, wasabi and pickled ginger on the side.'],
     tags: [],
     avoid: ['gluten', 'shellfish', 'lactose']
   },
