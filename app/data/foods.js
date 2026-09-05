@@ -494,6 +494,15 @@ const FOODS = {
     kcal: 166, protein: 8.8, carbs: 3.5, fat: 13.0, satFat: 8.3, fiber: 0,
     flags: [], cat: 'Dairy', iconKey: 'ricotta', src: 'USDA FDC 173439 (cheese, ricotta, whole milk)'
   },
+  // Panel Wave 4 (2026-09-05): the catalog had no low-fat cheese/dairy lever — every cheese
+  // ingredient (feta/mozzarella/ricotta/parmesan) runs 13-25g fat/100g. Cottage cheese gives
+  // generation a genuinely lean protein-dense dairy option. No watercolor asset yet, so no
+  // iconKey (falls back to the default icon, same as 'eel'/'octopus' above).
+  'cottage-cheese': {
+    name: 'Cottage cheese, creamed', per: 100, unit: 'g',
+    kcal: 98, protein: 11.1, carbs: 3.4, fat: 4.3, satFat: 2.7, fiber: 0,
+    flags: [], cat: 'Dairy', src: 'USDA FDC 173420 (cheese, cottage, creamed, large or small curd)'
+  },
   'butter': {
     name: 'Butter, salted', per: 100, unit: 'g',
     kcal: 717, protein: 0.9, carbs: 0.1, fat: 81.0, satFat: 51.4, fiber: 0, sugars: 0.1, freeSugars: 0, sugarQuality: 'intrinsic',

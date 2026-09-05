@@ -330,7 +330,11 @@ const RECIPES_DB = {
     title: 'Tuna & avocado chopped salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 12,
-    ingredients: [['tuna-in-olive-oil', 120], ['avocado', 80], ['cherry-tomatoes', 100], ['cucumber', 50], ['olive-oil', 5]],
+    // Panel Wave 4 (2026-09-05): default tuna switched to water-packed (was tuna-in-olive-oil)
+    // — near-identical protein, ~8g less fat/100g, and this dish already dresses with its own
+    // olive-oil line so nothing is lost. The swap alone dropped this to 349 kcal, under the
+    // lunch band (400-750) — tuna 120->160g and avocado 80->100g restore it to ~429 kcal.
+    ingredients: [['tuna', 160], ['avocado', 100], ['cherry-tomatoes', 100], ['cucumber', 50], ['olive-oil', 5]],
     toTaste: ['lemon'],
     steps: ['Chop tomatoes, cucumber and avocado.', 'Flake the tuna over the top.', 'Dress with olive oil and lemon just before serving.'],
     tags: ['muscle', 'omega3', 'heart'],
@@ -349,7 +353,9 @@ const RECIPES_DB = {
   'prawn-courgette-salad': {
     title: 'Prawn & courgette salad', emoji: '🦐', slot: 'lunch', role: 'full',
     styles: ['lowcarb', 'highprotein'], time: 15,
-    ingredients: [['prawns', 180], ['courgette', 150], ['cherry-tomatoes', 60], ['avocado', 80], ['olive-oil', 12]],
+    // Panel Wave 4 (2026-09-05): oil trimmed 12 -> 6g (avocado already carries the dish's
+    // fat/creaminess; the extra oil was redundant) — part of the targeted oil-trim pass.
+    ingredients: [['prawns', 180], ['courgette', 150], ['cherry-tomatoes', 60], ['avocado', 80], ['olive-oil', 6]],
     toTaste: ['lemon', 'garlic'],
     steps: ['Ribbon the courgette with a peeler.', 'Pan-sear the prawns with garlic until pink, 2-3 min.', 'Toss courgette ribbons with tomatoes, sliced avocado and olive oil.', 'Top with the warm prawns and a squeeze of lemon.'],
     tags: ['muscle', 'lowGI'],
@@ -359,7 +365,10 @@ const RECIPES_DB = {
     title: 'Tuna & white bean salad', emoji: '🐟', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 10,
-    ingredients: [['tuna-in-olive-oil', 120], ['cannellini-beans', 100], ['rocket-arugula', 30], ['cherry-tomatoes', 60], ['olive-oil', 5]],
+    // Panel Wave 4 (2026-09-05): default tuna switched to water-packed (was tuna-in-olive-oil).
+    // The swap alone dropped this to 332 kcal, under the lunch band (400-750) — beans bumped
+    // 100->160g (fits the highFiber tag) to restore it to ~410 kcal.
+    ingredients: [['tuna', 120], ['cannellini-beans', 160], ['rocket-arugula', 30], ['cherry-tomatoes', 60], ['olive-oil', 5]],
     toTaste: ['lemon'],
     steps: ['Drain and rinse the white beans.', 'Toss beans with rocket and tomatoes.', 'Flake the tuna over the top.', 'Dress with olive oil and lemon.'],
     tags: ['thyroid', 'omega3', 'heart', 'highFiber'],
@@ -393,7 +402,10 @@ const RECIPES_DB = {
     title: 'Tuna & egg salad', emoji: '🥗', slot: 'lunch', role: 'full',
     slots: ['lunch', 'dinner'],
     styles: ['lowcarb', 'highprotein'], time: 12,
-    ingredients: [['tuna-in-olive-oil', 100], ['eggs', 100], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 5]],
+    // Panel Wave 4 (2026-09-05): default tuna switched to water-packed (was tuna-in-olive-oil).
+    // The swap alone dropped this to 328 kcal, under the lunch band (400-750) — eggs bumped
+    // 100->160g (a 3rd egg) to restore it to ~412 kcal.
+    ingredients: [['tuna', 100], ['eggs', 160], ['cucumber', 80], ['cherry-tomatoes', 80], ['olive-oil', 5]],
     toTaste: ['lemon'],
     steps: ['Hard-boil the eggs (8-9 min), cool and quarter.', 'Chop cucumber and tomatoes.', 'Flake the tuna over the veg and top with the eggs.', 'Dress with olive oil and lemon.'],
     tags: ['muscle', 'omega3'],
@@ -438,7 +450,9 @@ const RECIPES_DB = {
     title: 'Baked cod, lemon-caper greens', emoji: '🐟', slot: 'dinner', role: 'main',
     slots: ['dinner', 'lunch', 'side'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
-    ingredients: [['cod', 220], ['broccoli', 200], ['spinach', 80], ['capers', 10], ['olive-oil', 15]],
+    // Panel Wave 4 (2026-09-05): oil trimmed 15 -> 8g — the capers/lemon/garlic already carry
+    // the dish's flavour; the cod stays lean, this was pure added fat.
+    ingredients: [['cod', 220], ['broccoli', 200], ['spinach', 80], ['capers', 10], ['olive-oil', 8]],
     toTaste: ['lemon', 'garlic', 'chilli flakes', 'parsley'],
     steps: ['Rub the cod with olive oil, lemon and garlic; bake at 200C for 12-15 min.', 'Char the broccoli in a hot pan.', 'Wilt the spinach with the capers and a pinch of chilli.', 'Plate the greens with the cod on top, finished with lemon and parsley.'],
     tags: ['thyroid', 'muscle', 'lowGI'],
@@ -848,6 +862,17 @@ const RECIPES_DB = {
     slots: ['side', 'lunch', 'dinner'],
     season: 'spring/summer',
     styles: ['balanced', 'lowcarb'], time: 30,
+    // Panel Wave 4 (2026-09-05): TRIED trimming this oil 12 -> 7g as part of the targeted
+    // oil-trim pass, then MEASURED the couple-household impact (10-week vm harness, see
+    // AGENT-HANDOVER.md-style before/after) — REVERTED. This one side is such a heavily
+    // reused generation filler that a 5g cut flips it across a scoring threshold: it drags
+    // Andrea's fat:rich down (27.1% -> 10.0%) but ALSO wrecks Elena's balance (95.7% -> 84.3%,
+    // new fiber:rich + protein:low off-days), because the changed kcal reshuffles what
+    // water-fill picks across the whole week for BOTH people. Bisected 8-12g: no effect at
+    // any of those (identical to baseline) — only 7g crosses the cliff, and bulking the veg
+    // to restore the same kcal at 7g oil killed Andrea's gain too. Left at 12g; the other two
+    // named oil trims (baked-cod-greens, prawn-courgette-salad) measured zero effect on
+    // Elena either way, kept trimmed. Don't re-attempt this specific cut without re-measuring.
     ingredients: [['courgette', 90], ['bell-pepper', 90], ['aubergine', 90], ['red-onion', 45], ['olive-oil', 12]],
     toTaste: ['garlic', 'oregano', 'black pepper'],
     steps: ['Cut the vegetables into similar chunks.', 'Toss with olive oil and seasonings.', 'Roast until tender and lightly browned.'],
@@ -1449,22 +1474,41 @@ const RECIPES_DB = {
     // Panel recipe pass (2026-08-30): 130g ricotta carried ~12g saturated fat (half a day's
     // ceiling) in a snack, with no fibre. Trimmed ricotta and added pear for fibre + natural
     // sweetness — reads as a dessert-y snack. sat 12 -> ~7.
+    // Panel Wave 4 (2026-09-05): still 61.5% fat-cal after the first trim. Ricotta 80->56g,
+    // walnuts 12->10g, pear bulked 80->110g. fat% 61.5 -> ~54.
     title: 'Snack: Ricotta, pear & walnuts', emoji: '🍐', slot: 'snack', role: 'full',
     imageKey: 'snack-board',
     styles: ['highprotein'], time: 3,
-    ingredients: [['ricotta', 80], ['walnuts', 12], ['pears', 80]],
+    ingredients: [['ricotta', 56], ['walnuts', 10], ['pears', 110]],
     toTaste: ['black pepper'],
     steps: ['Spoon the ricotta into a small bowl.', 'Slice the pear and add alongside.', 'Top with walnuts and a twist of black pepper.'],
     tags: ['muscle'],
     avoid: ['lactose', 'nuts']
   },
+  'cottage-cheese-berries-snack': {
+    // Panel Wave 4 (2026-09-05): new lean dairy snack built on the new cottage-cheese FOOD —
+    // 31.5% fat-cal and 17g protein, a genuine lean option next to the nut/cheese snacks
+    // above. season pinned evergreen (mixed-berries alone would otherwise lock this to
+    // spring/summer).
+    title: 'Snack: Cottage cheese & berries', emoji: '🫐', slot: 'snack', role: 'full', season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 3,
+    ingredients: [['cottage-cheese', 150], ['mixed-berries', 100]],
+    toTaste: [],
+    steps: ['Spoon the cottage cheese into a bowl.', 'Top with the mixed berries.', 'Serve straight away.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['lactose']
+  },
   'almonds-cheese-cubes': {
-    title: 'Snack: Almonds & cheese cubes', emoji: '🥜', slot: 'snack', role: 'full',
+    // Panel Wave 4 (2026-09-05): this was a 71.9% fat-cal snack (almonds + mozzarella, no
+    // volume). Almonds 20->13g, mozzarella 40->26g, added cherry tomatoes for bulk/freshness.
+    // fat% 71.9 -> ~64. season pinned evergreen (cherry-tomatoes alone would otherwise
+    // season-lock this to spring/summer).
+    title: 'Snack: Almonds, cheese & tomatoes', emoji: '🥜', slot: 'snack', role: 'full', season: 'evergreen',
     imageKey: 'snack-board',
     styles: ['lowcarb'], time: 3,
-    ingredients: [['almonds', 20], ['mozzarella', 40]],
+    ingredients: [['almonds', 13], ['mozzarella', 26], ['cherry-tomatoes', 100]],
     toTaste: [],
-    steps: ['Portion the almonds.', 'Cube the mozzarella.', 'Serve together.'],
+    steps: ['Portion the almonds.', 'Cube the mozzarella and halve the cherry tomatoes.', 'Serve together.'],
     tags: ['muscle'],
     avoid: ['lactose', 'nuts']
   },
@@ -1539,10 +1583,12 @@ const RECIPES_DB = {
   'olives-feta-snack': {
     // Panel recipe pass (2026-08-30): 60g feta gave a 200 kcal snack ~10g saturated fat.
     // Trimmed feta to 40g and added cherry tomatoes for volume, colour and freshness. sat -> ~7.
+    // Panel Wave 4 (2026-09-05): still 70.3% fat-cal. Feta 40->25g, cherry tomatoes bulked
+    // 80->140g. fat% 70.3 -> ~64.
     title: 'Snack: Feta, tomato & olives', emoji: '🫒', slot: 'snack', role: 'full',
     season: 'evergreen',
     styles: ['balanced', 'lowcarb'], time: 3,
-    ingredients: [['feta-cheese', 40], ['olives', 30], ['cherry-tomatoes', 80]],
+    ingredients: [['feta-cheese', 25], ['olives', 30], ['cherry-tomatoes', 140]],
     toTaste: ['oregano', 'olive oil'],
     steps: ['Cube the feta and halve the cherry tomatoes.', 'Toss with the olives and a scatter of oregano.', 'Finish with a little olive oil and serve.'],
     tags: ['quick'],
@@ -1552,7 +1598,9 @@ const RECIPES_DB = {
     title: 'Snack: Tuna & white bean bowl', emoji: '🐟', slot: 'snack', role: 'full',
     season: 'evergreen',
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 5,
-    ingredients: [['tuna-in-olive-oil', 90], ['cannellini-beans', 80], ['lemon', 8]],
+    // Panel Wave 4 (2026-09-05): default tuna switched to water-packed (was tuna-in-olive-oil)
+    // — this snack has no other fat/oil at all, so the switch is a clean fat cut.
+    ingredients: [['tuna', 90], ['cannellini-beans', 80], ['lemon', 8]],
     toTaste: ['black pepper'],
     steps: ['Drain and rinse the beans.', 'Flake the tuna over the beans.', 'Dress with lemon juice and black pepper.'],
     tags: ['muscle', 'omega3', 'highFiber'],
@@ -1922,7 +1970,9 @@ const RECIPES_DB = {
   'spaghetti-puttanesca-tonno': {
     title: 'Spaghetti puttanesca with tuna', emoji: '🍝', slot: 'dinner', role: 'full',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 22,
-    ingredients: [['spaghetti', 80], ['tuna-in-olive-oil', 80], ['tomato-passata', 120], ['olives', 25], ['capers', 12], ['olive-oil', 6]],
+    // Panel Wave 4 (2026-09-05): default tuna switched to water-packed (was tuna-in-olive-oil)
+    // — the dish already carries its own olive-oil + olives, so no character is lost.
+    ingredients: [['spaghetti', 80], ['tuna', 80], ['tomato-passata', 120], ['olives', 25], ['capers', 12], ['olive-oil', 6]],
     toTaste: ['garlic', 'chilli flakes', 'parsley', 'oregano'],
     steps: ['Cook the spaghetti until al dente.', 'Warm the passata with garlic and chilli, then stir in the olives, capers and flaked tuna.', 'Toss the pasta through the sauce and finish with parsley.'],
     tags: ['muscle', 'omega3'],
@@ -1992,9 +2042,11 @@ const RECIPES_DB = {
     avoid: []
   },
   'caprese-skewers-snack': {
+    // Panel Wave 4 (2026-09-05): 71.2% fat-cal. Mozzarella 50->32g, oil 4->3g, cherry
+    // tomatoes bulked 80->140g. fat% 71.2 -> ~64.
     title: 'Snack: Caprese skewers', emoji: '🍅', slot: 'snack', role: 'full',
     season: 'evergreen', styles: ['balanced', 'lowcarb'], time: 5,
-    ingredients: [['mozzarella', 50], ['cherry-tomatoes', 80], ['olive-oil', 4]],
+    ingredients: [['mozzarella', 32], ['cherry-tomatoes', 140], ['olive-oil', 3]],
     toTaste: ['basil', 'balsamic glaze', 'black pepper'],
     steps: ['Thread the mozzarella and cherry tomatoes onto skewers with basil leaves.', 'Drizzle with olive oil and a little balsamic.', 'Finish with black pepper and serve.'],
     tags: ['veggie', 'quick'],
@@ -2320,6 +2372,43 @@ const RECIPES_DB = {
     ],
     tags: ['omega3', 'muscle'],
     avoid: ['gluten']
+  },
+
+  // Panel Wave 4 (2026-09-05): lean-bulk mains styled on the catalog's own best-behaved
+  // big dishes (chicken-vegetable-egg-fried-rice ~26% fat-cal, chicken-couscous-salad
+  // ~17%) — lean protein + a sensible carb + veg + a light 5-8g oil pour, so generation has
+  // a leaner way to hit Andrea's 3000 kcal without piling on cheese/nuts/oil. season set
+  // explicitly to evergreen (not derived) so these stay planner-eligible year-round — the
+  // one seasonal ingredient (green-beans) would otherwise season-lock the pork dish.
+  'turkey-rice-pak-choy-bowl': {
+    title: 'Turkey, rice & pak choy bowl', emoji: '🍚', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['turkey-breast', 180], ['rice', 70], ['pak-choy', 200], ['carrots', 80], ['soy-sauce', 15], ['olive-oil', 6]],
+    toTaste: ['ginger', 'garlic'],
+    steps: ['Cook the rice.', 'Stir-fry the carrots in the olive oil until just softening, then add the pak choy until wilted.', 'Add the turkey and warm through, then stir in the soy sauce with ginger and garlic.', 'Serve over the rice.'],
+    tags: ['muscle', 'quick'],
+    avoid: []
+  },
+  'prawn-pasta-cherry-tomato': {
+    title: 'Prawn & cherry tomato pasta', emoji: '🍝', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['prawns', 200], ['pasta', 90], ['cherry-tomatoes', 120], ['olive-oil', 8]],
+    toTaste: ['garlic', 'chilli flakes', 'parsley'],
+    steps: ['Cook the pasta until al dente.', 'Warm the olive oil with garlic and chilli, then add the cherry tomatoes and cook until they start to collapse.', 'Add the prawns and cook until pink, 2-3 min.', 'Toss the pasta through the sauce and finish with parsley.'],
+    tags: ['muscle', 'quick'],
+    avoid: ['gluten', 'shellfish']
+  },
+  'pork-loin-potatoes-green-beans': {
+    title: 'Pork loin, roast potatoes & green beans', emoji: '🥔', slot: 'dinner', role: 'full', season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 35,
+    ingredients: [['pork-loin', 210], ['potatoes', 260], ['green-beans', 100], ['olive-oil', 5]],
+    toTaste: ['garlic', 'rosemary', 'black pepper'],
+    steps: ['Toss the potato chunks with the olive oil and roast at 200C until golden, 25-30 min.', 'Season the pork loin with garlic and rosemary and roast or pan-sear until cooked through.', 'Steam or boil the green beans until just tender.', 'Slice the pork and plate with the potatoes and beans.'],
+    tags: ['muscle'],
+    avoid: []
   }
 
 };
