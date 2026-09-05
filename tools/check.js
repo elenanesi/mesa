@@ -6849,9 +6849,11 @@ function testWeekNutriSummary(ctx){
    quiet per-nutrient "light"/"rich"/"low"/"high" descriptors — display-only, never a pass/fail
    grade (see PER_DAY_BANDS' header comment in state.js). Now covers ALL five tracked daily
    targets (kcal, protein, fiber, free sugars, sat fat), not just fiber/free-sugars, using the
-   SAME single-sourced targets (WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay, the person's PROF
-   calGoalNum/targetP) the Week/Insights screens already share. dayBalanceOverall folds all
-   five into the single calm dot the collapsed day header shows. */
+   person's PROF calGoalNum/targetP the Week/Insights screens already share. Fiber is the one
+   exception: since 2026-09-05 its floor+ceiling are calorie-scaled off calGoalNum
+   (fiberBandBaseFor), NOT WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay's flat WHO 25g/day figure
+   (that constant stays the week-summary/Insights/coverage-gap MESSAGING floor). dayBalanceOverall
+   folds all five into the single calm dot the collapsed day header shows. */
 function testPerDayBalanceState(ctx){
   run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
   run(ctx, 'weekPlans = {}; weekPlan = null; logHistory = {};');
@@ -6859,28 +6861,38 @@ function testPerDayBalanceState(ctx){
   const person = 'elena';
   call(ctx, 'recomputeProf', [person]); // fresh calGoalNum/targetP before reading them
 
-  const fiberFloor = get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay');
-  const fiberCeilMult = get(ctx, 'PER_DAY_BANDS.fiber.ceilMult');
-  const fiberCeil = fiberFloor * fiberCeilMult;
-  assert(fiberFloor === 25 && fiberCeil > fiberFloor,
-    'test setup: fiber floor/ceiling are the expected single-sourced band', 'floor=' + fiberFloor + ' ceil=' + fiberCeil);
-
   const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
   const proteinTarget = get(ctx, "PROF['" + person + "'].targetP");
   assert(calGoal > 0, 'test setup: PROF.elena.calGoalNum is positive (otherwise the calorie/sugar/sat-fat fixtures below prove nothing)', 'got ' + calGoal);
   assert(proteinTarget > 0, 'test setup: PROF.elena.targetP is positive (otherwise the protein fixtures below prove nothing)', 'got ' + proteinTarget);
 
+  // Fiber's floor+ceiling are calorie-scaled (2026-09-05 recalibration): 14g fibre / 1000kcal
+  // (IOM/NAM adequate-intake rule, fiberBandBaseFor(person)) x floorMult/ceilMult — NOT
+  // WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay's flat WHO 25g/day figure (that stays the week-
+  // summary/coverage-gap/Insights adequacy-floor MESSAGING, covered by testWeekNutriSummary/
+  // testComputeInsights instead).
+  const fiberBase = call(ctx, 'fiberBandBaseFor', [person]);
+  const fiberFloorMult = get(ctx, 'PER_DAY_BANDS.fiber.floorMult');
+  const fiberCeilMult = get(ctx, 'PER_DAY_BANDS.fiber.ceilMult');
+  const fiberFloor = fiberBase * fiberFloorMult;
+  const fiberCeil = fiberBase * fiberCeilMult;
+  assert(Math.abs(fiberBase - 14 * calGoal / 1000) < 1e-9 && fiberCeil > fiberFloor && fiberFloor > 0,
+    'test setup: fibre band base is calorie-scaled (14g/1000kcal off calGoalNum) and ceiling > floor',
+    'base=' + fiberBase + ' floor=' + fiberFloor + ' ceil=' + fiberCeil);
+
   const baseDay = function(overrides){
-    return Object.assign({kcal: calGoal, protein: proteinTarget, fiber: 26, freeSugars: 0, satFat: 0, fat: 0}, overrides || {});
+    return Object.assign({kcal: calGoal, protein: proteinTarget, fiber: Math.round((fiberFloor + fiberCeil) / 2), freeSugars: 0, satFat: 0, fat: 0}, overrides || {});
   };
 
-  // Fiber: light (below floor), ok (in band), rich (above the Mesa comfort ceiling).
-  const light = call(ctx, 'perDayBalanceState', [baseDay({fiber: 10}), person]);
-  assert(light.fiber === 'light', 'perDayBalanceState: fiber 10g (below the ' + fiberFloor + 'g floor) is "light"', JSON.stringify(light));
-  const okFiber = call(ctx, 'perDayBalanceState', [baseDay({fiber: 26}), person]);
-  assert(okFiber.fiber === 'ok', 'perDayBalanceState: fiber 26g (inside the band) is "ok" (quiet, no cue)', JSON.stringify(okFiber));
-  const rich = call(ctx, 'perDayBalanceState', [baseDay({fiber: 50}), person]);
-  assert(rich.fiber === 'rich', 'perDayBalanceState: fiber 50g (above the ' + fiberCeil + 'g comfort ceiling) is "rich"', JSON.stringify(rich));
+  // Fiber: light (below floor), ok (in band), rich (above the calorie-scaled comfort ceiling).
+  const fiberLightG = Math.max(0, Math.floor(fiberFloor - 5));
+  const light = call(ctx, 'perDayBalanceState', [baseDay({fiber: fiberLightG}), person]);
+  assert(light.fiber === 'light', 'perDayBalanceState: fiber ' + fiberLightG + 'g (below the ' + fiberFloor.toFixed(1) + 'g calorie-scaled floor) is "light"', JSON.stringify(light));
+  const okFiber = call(ctx, 'perDayBalanceState', [baseDay(), person]);
+  assert(okFiber.fiber === 'ok', 'perDayBalanceState: fiber at the floor/ceiling midpoint is "ok" (quiet, no cue)', JSON.stringify(okFiber));
+  const fiberRichG = Math.ceil(fiberCeil + 5);
+  const rich = call(ctx, 'perDayBalanceState', [baseDay({fiber: fiberRichG}), person]);
+  assert(rich.fiber === 'rich', 'perDayBalanceState: fiber ' + fiberRichG + 'g (above the ' + fiberCeil.toFixed(1) + 'g calorie-scaled comfort ceiling) is "rich"', JSON.stringify(rich));
 
   // Free sugars: single-sourced ceiling off this person's calorie goal, same derivation as
   // weekNutriSummary's sugarTargetG (NUTRITION_GUIDANCE.freeSugars.target/100 * calGoal/4).
@@ -6987,15 +6999,22 @@ function testDayImbalanceFatTerm(ctx){
   const calGoal = get(ctx, "PROF['" + person + "'].calGoalNum");
   const fatSplitTarget = get(ctx, "PROF['" + person + "'].defaultSplit.F");
   const richAddPts = get(ctx, 'PER_DAY_BANDS.fat.richAddPts');
-  const fiberFloor = get(ctx, 'WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay');
+  // Fiber's floor/ceiling are calorie-scaled (fiberBandBaseFor) since 2026-09-05 — NOT
+  // WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay's flat WHO 25g/day messaging figure. Use the
+  // midpoint of the actual band this function reads so the fixture stays "safely inside"
+  // regardless of the person's calorie goal.
+  const fiberBase = call(ctx, 'fiberBandBaseFor', [person]);
+  const fiberFloorMult = get(ctx, 'PER_DAY_BANDS.fiber.floorMult');
+  const fiberCeilMult = get(ctx, 'PER_DAY_BANDS.fiber.ceilMult');
+  const fiberSafeG = (fiberBase * fiberFloorMult + fiberBase * fiberCeilMult) / 2;
   assert(calGoal > 0 && fatSplitTarget > 0, 'test setup: calGoal/fat split target are positive', 'calGoal=' + calGoal + ' split=' + fatSplitTarget);
   const fatCeilG = ((fatSplitTarget + richAddPts) / 100) * calGoal / 9;
 
   // Every OTHER term's inputs are set safely inside their own bands (fiber comfortably
-  // between the WHO floor and the comfort ceiling, zero free sugars/sat fat) so the only
-  // thing driving a nonzero result is the new fat term. Protein/kcal are irrelevant here —
-  // dayImbalanceForPerson deliberately excludes them (the comment above the function).
-  const goodDay = {kcal: calGoal, protein: 1, fiber: fiberFloor + 5, freeSugars: 0, satFat: 0, fat: fatCeilG * 0.5};
+  // between the calorie-scaled floor and comfort ceiling, zero free sugars/sat fat) so the
+  // only thing driving a nonzero result is the new fat term. Protein/kcal are irrelevant
+  // here — dayImbalanceForPerson deliberately excludes them (the comment above the function).
+  const goodDay = {kcal: calGoal, protein: 1, fiber: fiberSafeG, freeSugars: 0, satFat: 0, fat: fatCeilG * 0.5};
   const imbGood = call(ctx, 'dayImbalanceForPerson', [goodDay, person]);
   assert(imbGood === 0, 'dayImbalanceForPerson: a day under every ceiling, including the new total-fat one, contributes zero imbalance', imbGood);
 
@@ -7006,6 +7025,87 @@ function testDayImbalanceFatTerm(ctx){
   const veryHighFatDay = Object.assign({}, goodDay, {fat: fatCeilG * 2});
   const imbVeryHigh = call(ctx, 'dayImbalanceForPerson', [veryHighFatDay, person]);
   assert(imbVeryHigh > imbHigh, 'dayImbalanceForPerson: imbalance grows monotonically with how far a day is over the total-fat ceiling (a bigger overshoot is a stronger pull)', 'imbHigh=' + imbHigh + ' imbVeryHigh=' + imbVeryHigh);
+}
+
+/* ---------------- Fiber per-day BAND is calorie-scaled (2026-09-05 recalibration) ----------------
+   Panel finding, MEASURED: the per-day balance rate was Elena 53% / Andrea 27% "balanced"
+   almost entirely because the fibre band's ceiling was a FLAT WHO-25g-derived figure (~42.5g)
+   applied to every person regardless of how many calories they eat — so Andrea (a ~3000kcal
+   eater) tripped the ceiling on ordinary whole-food fibre (~50g/day) just from eating more
+   food, not because his fibre was actually extreme. fiberBandBaseFor(person) (planner.js)
+   fixes this with the IOM/NAM adequate-intake rule (14g fibre / 1000 kcal), so a higher-
+   calorie eater's ceiling (and floor) sit higher than a lower-calorie eater's. This proves
+   that core claim end to end: the formula, the ordering (partner's band > elena's), and the
+   practical effect (an ordinary ~50g fibre day now reads "ok" for BOTH people, not "rich"
+   for the higher-calorie one). */
+function testFiberBandCalorieScaled(ctx){
+  const savedHouseholdSize = get(ctx, 'householdSize');
+  const savedHouseholdSizeManual = get(ctx, 'householdSizeManual');
+  const savedCalCustomElena = get(ctx, 'PROF.elena.calCustom');
+  const savedCalCustomPartner = get(ctx, 'PROF.partner.calCustom');
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; householdSize = 2; householdSizeManual = true;");
+    call(ctx, 'ensureWeekPlan', []);
+    run(ctx, 'PROF.elena.calCustom = 2150; PROF.partner.calCustom = 3000;');
+    call(ctx, 'recomputeProf', ['elena']);
+    call(ctx, 'recomputeProf', ['partner']);
+
+    const calGoalElena = get(ctx, 'PROF.elena.calGoalNum');
+    const calGoalPartner = get(ctx, 'PROF.partner.calGoalNum');
+    assert(calGoalElena === 2150 && calGoalPartner === 3000,
+      'test setup: calCustom overrides took effect on both profiles (a couple household with genuinely different calorie goals)',
+      'elena=' + calGoalElena + ' partner=' + calGoalPartner);
+
+    // The formula itself: 14g fibre / 1000 kcal, off EACH person's own calGoalNum.
+    const baseElena = call(ctx, 'fiberBandBaseFor', ['elena']);
+    const basePartner = call(ctx, 'fiberBandBaseFor', ['partner']);
+    assert(Math.abs(baseElena - 14 * 2150 / 1000) < 1e-9,
+      'fiberBandBaseFor: elena (2150kcal) base === 14 * 2150 / 1000 (IOM/NAM formula)', baseElena);
+    assert(Math.abs(basePartner - 14 * 3000 / 1000) < 1e-9,
+      'fiberBandBaseFor: partner (3000kcal) base === 14 * 3000 / 1000 (IOM/NAM formula)', basePartner);
+
+    // The core claim: the higher-calorie eater gets a higher band, both floor and ceiling.
+    const floorMult = get(ctx, 'PER_DAY_BANDS.fiber.floorMult');
+    const ceilMult = get(ctx, 'PER_DAY_BANDS.fiber.ceilMult');
+    const elenaFloor = baseElena * floorMult, partnerFloor = basePartner * floorMult;
+    const elenaCeil = baseElena * ceilMult, partnerCeil = basePartner * ceilMult;
+    assert(partnerCeil > elenaCeil,
+      'fibre band: partner\'s (3000kcal) comfort ceiling (' + partnerCeil.toFixed(1) + 'g) is higher than elena\'s (2150kcal, ' + elenaCeil.toFixed(1) + 'g) — Andrea eating more food no longer trips the same ceiling Elena does',
+      'elenaCeil=' + elenaCeil.toFixed(1) + ' partnerCeil=' + partnerCeil.toFixed(1));
+    assert(partnerFloor > elenaFloor,
+      'fibre band: partner\'s floor is also higher than elena\'s (both scale off the same per-person formula)',
+      'elenaFloor=' + elenaFloor.toFixed(1) + ' partnerFloor=' + partnerFloor.toFixed(1));
+
+    // The practical effect the panel measured: an ordinary ~50g whole-food fibre day used to
+    // read "rich" under the old flat ~42.5g (25 x 1.7) ceiling for EVERYONE. Under the
+    // recalibrated band it must read "ok" for both people (elena's ceiling ~60g, partner's
+    // ~84g — both comfortably above 50g).
+    const wholeFoodFiberDay = function(personKey){
+      return {
+        kcal: get(ctx, "PROF['" + personKey + "'].calGoalNum"),
+        protein: get(ctx, "PROF['" + personKey + "'].targetP"),
+        fiber: 50, freeSugars: 0, satFat: 0, fat: 0
+      };
+    };
+    const elenaState = call(ctx, 'perDayBalanceState', [wholeFoodFiberDay('elena'), 'elena']);
+    const partnerState = call(ctx, 'perDayBalanceState', [wholeFoodFiberDay('partner'), 'partner']);
+    assert(elenaState.fiber === 'ok',
+      'perDayBalanceState: elena at 50g fibre (ordinary whole-food intake) reads "ok" under her recalibrated ~' + elenaCeil.toFixed(0) + 'g ceiling', JSON.stringify(elenaState));
+    assert(partnerState.fiber === 'ok',
+      'perDayBalanceState: partner at 50g fibre reads "ok" under his recalibrated ~' + partnerCeil.toFixed(0) + 'g ceiling — this is exactly the false "rich" flag the flat 25g band used to produce for a higher-calorie eater', JSON.stringify(partnerState));
+
+    // dayImbalanceForPerson (the generation-time steering term) must agree with the display
+    // cue above: zero imbalance from fiber for both people at this same ordinary intake.
+    const imbElena = call(ctx, 'dayImbalanceForPerson', [wholeFoodFiberDay('elena'), 'elena']);
+    const imbPartner = call(ctx, 'dayImbalanceForPerson', [wholeFoodFiberDay('partner'), 'partner']);
+    assert(imbElena === 0, 'dayImbalanceForPerson: elena at 50g fibre (nothing else off-band) contributes zero imbalance, agreeing with perDayBalanceState', imbElena);
+    assert(imbPartner === 0, 'dayImbalanceForPerson: partner at 50g fibre (nothing else off-band) contributes zero imbalance, agreeing with perDayBalanceState', imbPartner);
+  } finally {
+    run(ctx, 'PROF.elena.calCustom = ' + JSON.stringify(savedCalCustomElena) + '; PROF.partner.calCustom = ' + JSON.stringify(savedCalCustomPartner) + ';');
+    call(ctx, 'recomputeProf', ['elena']);
+    call(ctx, 'recomputeProf', ['partner']);
+    run(ctx, 'householdSize = ' + JSON.stringify(savedHouseholdSize) + '; householdSizeManual = ' + JSON.stringify(savedHouseholdSizeManual) + '; weekPlans = {}; weekPlan = null; logHistory = {};');
+  }
 }
 
 /* ---------------- post-generation balancing pass (autoBalancePlan) ----------------
@@ -13933,6 +14033,7 @@ function main(){
   runTest('week nutrient summary (task B4)', function(){ testWeekNutriSummary(ctx); });
   runTest('Week view: directional per-day balance cue (perDayBalanceState)', function(){ testPerDayBalanceState(ctx); });
   runTest('dayImbalanceForPerson: total-fat steering term (direction/monotonicity)', function(){ testDayImbalanceFatTerm(ctx); });
+  runTest('fibre per-day band is calorie-scaled (2026-09-05 recalibration): partner\'s ceiling > elena\'s', function(){ testFiberBandCalorieScaled(ctx); });
   runTest('post-generation balancing pass (autoBalancePlan)', function(){ testAutoBalancePlan(ctx); });
   runTest('Re-balance button: per-day spread objective (Phase 2)', function(){ testRebalanceSpreadObjective(ctx); });
   runTest('Today daily-confirm keystone (Phase 3 D1)', function(){ testTodayKeystone(ctx); });

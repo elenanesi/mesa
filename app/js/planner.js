@@ -3078,6 +3078,21 @@ function fatSplitTargetFor(person){
   return (p && p.defaultSplit && typeof p.defaultSplit.F === 'number') ? p.defaultSplit.F : 33;
 }
 
+// Calorie-scaled fibre-BAND base (floor+ceiling), IOM/NAM adequate-intake rule of ~14g
+// fibre per 1000 kcal — the anchor PER_DAY_BANDS.fiber's floorMult/ceilMult (state.js)
+// multiply onto, mirroring fatSplitTargetFor's pattern for the fat band above. Deliberately
+// DISTINCT from WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay (the flat WHO 25g/day adequacy floor
+// used for week-summary/coverage-gap/Insights MESSAGING — "did you get enough fibre this
+// week", unchanged) because this BAND answers a different question ("is a single day
+// unusually light or rich relative to how much this person eats"), and a 3000kcal eater
+// eating adequately-more food should not trip the same fixed-for-everyone ceiling a
+// 2150kcal eater does. Returns 0 (band disabled, matches the other calGoal-gated bands
+// below) if calGoalNum isn't known yet.
+function fiberBandBaseFor(person){
+  const calGoal = (typeof PROF !== 'undefined' && PROF[person] && PROF[person].calGoalNum) || 0;
+  return calGoal > 0 ? 14 * calGoal / 1000 : 0; // IOM/NAM: 14g fibre / 1000 kcal
+}
+
 // Directional per-day balance for the Week view (display-only). Covers every tracked daily
 // target. States are DESCRIPTORS, never verdicts. Any target whose data is missing (no
 // calorie goal yet) resolves to 'ok' so the app never invents a warning. Grams ceilings are
@@ -3094,10 +3109,12 @@ function perDayBalanceState(dayTotals, person){
   }
   // protein: floor only
   if(proteinTarget > 0 && classifyMinBand(dayTotals.protein, proteinTarget * PER_DAY_BANDS.protein.floorMult) === 'under') out.protein = 'low';
-  // fiber: floor + comfort ceiling
-  const fiberFloor = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
-  if(classifyMinBand(dayTotals.fiber, fiberFloor) === 'under') out.fiber = 'light';
-  else if(classifyMaxBand(dayTotals.fiber, fiberFloor * PER_DAY_BANDS.fiber.ceilMult) === 'over') out.fiber = 'rich';
+  // fiber: floor + comfort ceiling, calorie-scaled off THIS person's calGoal
+  // (fiberBandBaseFor) — NOT WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay's flat WHO 25g/day
+  // figure, which stays the week-summary/coverage-gap/Insights adequacy-floor messaging.
+  const fiberBase = fiberBandBaseFor(person);
+  if(classifyMinBand(dayTotals.fiber, fiberBase * PER_DAY_BANDS.fiber.floorMult) === 'under') out.fiber = 'light';
+  else if(classifyMaxBand(dayTotals.fiber, fiberBase * PER_DAY_BANDS.fiber.ceilMult) === 'over') out.fiber = 'rich';
   // free sugars: ceiling
   if(calGoal > 0){
     const sugarCeil = ((NUTRITION_GUIDANCE.freeSugars.target/100)*calGoal/4) * PER_DAY_BANDS.freeSugars.ceilMult;
@@ -3212,8 +3229,13 @@ function personDayNutriTotals(day, person){
 function dayImbalanceForPerson(dayTotals, person){
   if(!dayTotals) return 0;
   const calGoal = (PROF[person] && PROF[person].calGoalNum) || 0;
-  const fiberFloor = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay;
-  const fiberCeil = fiberFloor * PER_DAY_BANDS.fiber.ceilMult;
+  // fiber: calorie-scaled band (fiberBandBaseFor), NOT WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay's
+  // flat WHO 25g/day messaging floor — see perDayBalanceState's matching comment. Same
+  // derivation as that display function so generation steering and the Week-view display
+  // cue never disagree about what "light"/"rich" fibre means for this person.
+  const fiberBase = fiberBandBaseFor(person);
+  const fiberFloor = fiberBase * PER_DAY_BANDS.fiber.floorMult;
+  const fiberCeil = fiberBase * PER_DAY_BANDS.fiber.ceilMult;
   const sugarCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4) * PER_DAY_BANDS.freeSugars.ceilMult : 0;
   const satCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.satFat.target / 100) * calGoal / 9) * PER_DAY_BANDS.satFat.ceilMult : 0;
   const fatCeil = calGoal > 0 ? ((fatSplitTargetFor(person) + PER_DAY_BANDS.fat.richAddPts) / 100) * calGoal / 9 : 0;

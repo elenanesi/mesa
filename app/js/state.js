@@ -115,7 +115,18 @@ const NUTRITION_GUIDANCE = {
 const PER_DAY_BANDS = {
   kcal:       {tol: 0.25},                    // any single day within +/-25% of the daily calorie goal
   protein:    {floorMult: 0.8},               // no single day below 0.8x the daily protein target
-  fiber:      {floorMult: 0.6, ceilMult: 1.7},// ~15g floor, ~43g comfort ceiling at a 25g/day goal
+  // Fiber's floor+ceiling are NOT off the flat WHO 25g/day figure (that stays
+  // WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay — the week-summary/coverage-gap/Insights daily-
+  // ADEQUACY-floor messaging, unchanged). This BAND is calorie-scaled per the IOM/NAM
+  // adequate-intake rule (~14g fibre / 1000 kcal), computed in planner.js's
+  // fiberBandBaseFor(person) off PROF[person].calGoalNum, so a 3000kcal eater's ceiling is
+  // higher than a 2150kcal eater's — the flat-25g version flagged whole-food fibre at
+  // ~50g/day as "rich" purely because the eater eats more food, not because fibre was
+  // actually extreme. Recalibrated 2026-09-05 against MEASURED per-day balance (Elena 53%,
+  // Andrea 27% "balanced" almost entirely from this one flat band): floorMult 0.6 unchanged
+  // (~0.6x the calorie-scaled base); ceilMult raised 1.7 -> 2.0 (~60g Elena / ~84g Andrea) so
+  // only genuinely-extreme fibre days flag, not ordinary whole-food-heavy ones.
+  fiber:      {floorMult: 0.6, ceilMult: 2.0},
   freeSugars: {ceilMult: 1.5},                // no day above ~1.5x the daily free-sugar share
   satFat:     {ceilMult: 1.8},                // no day above ~1.8x the daily sat-fat share
   // TOTAL fat, unlike the others above, is judged against the person's OWN macro-split
@@ -124,13 +135,14 @@ const PER_DAY_BANDS = {
   // the sat-fat one NUTRITION_GUIDANCE already covers. Added points, not a multiplier, so
   // the band stays additive on the % scale a split target already lives on. Calibrated
   // 2026-09-04/05 against MEASURED distributions: generation was landing a ~40% energy-from-
-  // fat median (100% of days over the 35% guideline, some 49-51%); the new steering term
+  // fat median (100% of days over the 35% guideline, some 49-51%); the steering term
   // (dayImbalanceForPerson) pulls that to a ~37% median with the worst days capped near 45%.
-  // Against a ~33% split target the amber line sits at target+7 (~40%) — high enough that a
-  // normal Mediterranean ~37% day stays green and only genuinely fat-heavy days flag (a
-  // target+5 line ambered ~half the days, which is noise, not signal); target+12 (~45%)
-  // reserves the red/'over' accent for the standout days the owner actually saw.
-  fat:        {richAddPts: 7, overAddPts: 12}
+  // Loosened further 2026-09-05 (owner: the ~40% amber line was flagging healthy unsaturated
+  // Mediterranean ~37-40% days when the clinically-relevant SATURATED fat was already fine):
+  // richAddPts 7 -> 11, overAddPts 12 -> 17. Against a ~33% split target the amber line now
+  // sits at target+11 (~44%) and the red line at target+17 (~50%) — normal Mediterranean days
+  // stay green; only genuinely fat-heavy days flag.
+  fat:        {richAddPts: 11, overAddPts: 17}
 };
 
 /* Deterministic, factual "Why Mesa picked this" explanations. */
