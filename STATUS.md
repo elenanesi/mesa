@@ -13,6 +13,26 @@ Prod: **https://mesa-9y5.pages.dev/app/** (invite-only Google sign-in; Cloudflar
 
 ## Shipped
 
+**Weekly-balance panel + Wave 1 recalibration (2026-09-05, deployed).** Owner: planner makes too many
+"unbalanced" days, esp. Andrea (3000 kcal). Full 5-persona panel + MEASUREMENT found the cause was
+MIS-CALIBRATED bands, not bad food: (a) fibre was the ONLY band not scaled to calories (flat 25g/42.5g),
+so a big eater tripped the ceiling just by eating more; (b) total-fat flagged healthy unsaturated
+Mediterranean ~37-40% days when saturated fat (the real lever) was already fine. **Wave 1 (shipped):**
+fibre band now IOM/NAM 14g/1000kcal-scaled (`fiberBandBaseFor`, floor 0.6x / ceiling 2.0x that base) in
+BOTH `perDayBalanceState` and `dayImbalanceForPerson` (display + steering agree; kills the fat<->fibre
+objective deadlock); total fat loosened (PER_DAY_BANDS.fat richAddPts 7->11, overAddPts 12->17: amber
+~44% / red ~50%). WHO 25g/day floor kept for week-summary/coverage/insights messaging. MEASURED balanced%
+(same harness as baseline): Elena 53->96%, Andrea 27->73%, fiber:rich ->0%. Owner decisions: keep a
+scaled fibre ceiling, loosen fat, keep counting eaten-out days. 2266 tests green, determinism preserved,
+no D1. See `project-weekly-balance-panel.md`.
+- **Remaining waves (panel-recommended, NOT yet done):** W2 honest signal/framing (UX+psych: tier the
+  day dot generous-vs-off; retire/soften the live "N of 7" degrading count; "fibre rich" shouldn't read
+  as a warning). W3 a one-tap "lighten this day" (generalize `proposeTodayRebalanceSuggestions` beyond
+  today + point it at `dayImbalanceForPerson`). W4 catalog for Andrea's GENUINE residual high-fat days
+  (~27%): chef's lean-bulk mains (lean protein + sensible carb + light oil), trim oil in worst dishes,
+  default tuna-in-water not oil, de-fat worst snacks — needs a D1 reseed; do AFTER W1 (don't tune to a
+  miscalibrated target). Contested: whey in the boost allowlist (chef pro; supplement-rule + nutritionist con).
+
 **Planner panel review — safe wave (2026-09-03, all deployed).** Full 5-persona panel on the weekly
 planner (see the memory `project-planner-safe-wave-2026-09.md`). Four deploys, each shipped separately:
 - **Reward** — the day-complete wreath now splits *completion* (guaranteed, skip-inclusive — never
