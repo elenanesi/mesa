@@ -25,7 +25,12 @@ objective deadlock); total fat loosened (PER_DAY_BANDS.fat richAddPts 7->11, ove
 (same harness as baseline): Elena 53->96%, Andrea 27->73%, fiber:rich ->0%. Owner decisions: keep a
 scaled fibre ceiling, loosen fat, keep counting eaten-out days. 2266 tests green, determinism preserved,
 no D1. See `project-weekly-balance-panel.md`.
-- **Remaining waves (panel-recommended, NOT yet done):** W2 honest signal/framing (UX+psych: tier the
+- **Wave 4 SHIPPED 2026-09-05** (catalog + D1 reseed, 194 live recipes): 3 lean-bulk mains
+  (turkey-rice-pak-choy-bowl, prawn-pasta-cherry-tomato, pork-loin-potatoes-green-beans) + cottage-cheese
+  FOOD + snack; oil trims (baked-cod-greens, prawn-courgette-salad; roasted-mixed-veg reverted — regressed
+  Elena); tuna-in-water default across 5 recipes; de-fatted the 4 worst snacks. MEASURED: **Andrea
+  73->83% balanced (fat:rich 27->17%), Elena 100%.** Full arc: Andrea 27->83%, Elena 53->100%.
+- **Remaining waves (panel-recommended, NOT yet done — LOWER value now days mostly balance):** W2 honest signal/framing (UX+psych: tier the
   day dot generous-vs-off; retire/soften the live "N of 7" degrading count; "fibre rich" shouldn't read
   as a warning). W3 a one-tap "lighten this day" (generalize `proposeTodayRebalanceSuggestions` beyond
   today + point it at `dayImbalanceForPerson`). W4 catalog for Andrea's GENUINE residual high-fat days
