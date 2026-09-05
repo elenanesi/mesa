@@ -9129,6 +9129,18 @@ function testRecipeOptions(ctx){
     run(ctx, 'weekPlans = {}; weekPlan = null;');
     const plan = call(ctx, 'ensureWeekPlan', []);
     const wk = plan.weekStartDate;
+    // Neutralize the slot we're about to overwrite BEFORE snapshotting "before" — otherwise
+    // whatever the generator happened to auto-pick for this exact (day, slot, person) could
+    // itself carry prawns/potatoes (the catalog's composition shifts this pick over time as
+    // recipes are added/removed elsewhere), which would corrupt the differential this test
+    // relies on. The differential already isolates a coincidental prawns/potatoes use
+    // ELSEWHERE in the week; this closes the one gap it doesn't cover — a coincidental use in
+    // the SAME slot. Use emptyPlanEntry()'s shape (recipeId:null, still an object), not a bare
+    // `null` — planReferencesMissingRecipe (planner.js) treats a bare-null meals.slot.person as
+    // a dangling reference and forces ensureWeekPlan to fully regenerate the plan on the next
+    // read (computeShoppingList calls it again internally), which would silently refill this
+    // slot with a fresh (and equally catalog-dependent) pick, defeating the point.
+    run(ctx, "weekPlans['" + wk + "'].days[0].meals.lunch.elena = {recipeId: null, portion: 1, kcal: 0, protein: 0};");
     const before = call(ctx, 'computeShoppingList', [wk]);
     const prawnsName = FOODS.prawns.name, potatoesName = FOODS.potatoes.name;
     const beforePrawns = (before.totals[prawnsName] && before.totals[prawnsName].qty) || 0;

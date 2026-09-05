@@ -2409,6 +2409,181 @@ const RECIPES_DB = {
     steps: ['Toss the potato chunks with the olive oil and roast at 200C until golden, 25-30 min.', 'Season the pork loin with garlic and rosemary and roast or pan-sear until cooked through.', 'Steam or boil the green beans until just tender.', 'Slice the pork and plate with the potatoes and beans.'],
     tags: ['muscle'],
     avoid: []
+  },
+
+  /* ================= Recipe Market batch — diet-coverage pass (2026-09-05) =================
+     Coverage audit (validateData()-style: non-occasional recipes per diet x slot) found the
+     thinnest pools were vegan breakfast (8), vegan+gluten-free breakfast (5), and vegan /
+     vegan+gluten-free lunch+dinner and snack generally — pescatarian was checked too and is
+     already well covered (31/51/58/18 across breakfast/lunch/dinner/snack) so this batch does
+     NOT target it beyond one bonus dinner. Chef + nutritionist lens together: Turkish/Middle-
+     Eastern + Asian flavour (owner taste), lean protein + sensible carb + veg + a light hand on
+     oil (no fat bombs — every non-occasional recipe below lands under ~40% energy from fat). */
+
+  'congee-crispy-tofu-chilli-oil': {
+    title: 'Silky rice congee, crispy tofu & chilli-scallion oil', emoji: '🥣', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['rice', 45], ['tofu', 150], ['pak-choy', 60], ['soy-sauce', 8], ['olive-oil', 6]],
+    toTaste: ['ginger', 'garlic', 'spring onion', 'chilli flakes', 'toasted sesame', 'white pepper'],
+    steps: [
+      'Simmer the rice in plenty of water, stirring occasionally, until it breaks down into a silky, thick porridge (25-30 min).',
+      'Sear the tofu cubes in the olive oil until deep golden and crisp on every side.',
+      'Fold the pak choy through the hot congee in the last minute so it just wilts.',
+      'Season the congee with soy sauce, ginger and garlic.',
+      'Spoon into bowls, top with the crispy tofu and finish with chilli, sesame, spring onion and white pepper.'
+    ],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'chickpea-tomato-breakfast-braise': {
+    title: 'Turkish-spiced chickpea & tomato breakfast braise', emoji: '🍅', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced'], time: 18,
+    ingredients: [['chickpeas', 200], ['tomato-passata', 120], ['spinach', 60], ['red-onion', 30], ['olive-oil', 10]],
+    toTaste: ['cumin', 'smoked paprika', 'garlic', 'chilli flakes', 'parsley', 'black pepper', 'lemon'],
+    steps: [
+      'Soften the red onion in the olive oil, then stir in the cumin and smoked paprika until fragrant.',
+      'Add the tomato passata and garlic, and simmer 5-6 min until it deepens in colour.',
+      'Stir in the chickpeas and simmer another 6-8 min until the sauce clings to them.',
+      'Fold in the spinach just until wilted.',
+      'Finish with black pepper, parsley and a squeeze of lemon.'
+    ],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'turkish-red-lentil-soup': {
+    title: 'Turkish red lentil soup with sizzled cumin-paprika oil', emoji: '🍲', slot: 'lunch', role: 'full',
+    imageKey: 'soup',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 25,
+    ingredients: [['cooked-lentils', 220], ['carrots', 80], ['potatoes', 60], ['tomato-passata', 40], ['olive-oil', 10], ['lemon', 8]],
+    toTaste: ['cumin', 'garlic', 'paprika', 'mint', 'chilli flakes'],
+    steps: [
+      'Simmer the lentils, carrots and potatoes with the tomato passata and a little water until the vegetables are tender.',
+      'Blend smooth (or leave rustic) and thin to a pourable soup consistency.',
+      'Sizzle the cumin and paprika in the olive oil until fragrant.',
+      'Ladle the soup into bowls and swirl the spiced oil over the top.',
+      'Finish with a squeeze of lemon, mint and chilli flakes.'
+    ],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'turkish-white-bean-stew': {
+    title: 'Zeytinyagli-style white beans braised with carrot & dill', emoji: '🫘', slot: 'lunch', role: 'full',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 25,
+    ingredients: [['cannellini-beans', 220], ['carrots', 100], ['tomato-passata', 80], ['red-onion', 40], ['olive-oil', 12]],
+    toTaste: ['garlic', 'dill', 'black pepper', 'lemon', 'chilli flakes'],
+    steps: [
+      'Soften the red onion and carrots in the olive oil over gentle heat, 6-8 min.',
+      'Stir in the garlic and tomato passata and simmer a few minutes.',
+      'Add the beans and enough water to just cover; braise gently 12-15 min until the sauce thickens.',
+      'Season with black pepper and a squeeze of lemon.',
+      'Finish with plenty of chopped dill and chilli flakes if wanted; this is traditionally served room-temperature.'
+    ],
+    tags: ['veggie', 'highFiber', 'heart'],
+    avoid: []
+  },
+  'harissa-cauliflower-saffron-rice': {
+    title: 'Harissa-roasted cauliflower over golden rice & crispy chickpeas', emoji: '🌶️', slot: 'lunch', role: 'full',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced'], time: 35,
+    ingredients: [['cauliflower', 250], ['chickpeas', 150], ['rice', 50], ['harissa-paste', 15], ['olive-oil', 12], ['lemon', 8]],
+    toTaste: ['garlic', 'turmeric', 'parsley', 'cumin'],
+    steps: [
+      'Toss the cauliflower florets and chickpeas with the harissa paste and half the olive oil.',
+      'Roast at 210C, turning once, until the cauliflower is deeply golden and the chickpeas are crisp, 25-30 min.',
+      'Cook the rice with a pinch of turmeric until tender and golden.',
+      'Pile the rice into bowls and top with the roasted cauliflower and chickpeas.',
+      'Finish with the remaining olive oil, a squeeze of lemon and a scatter of parsley.'
+    ],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+  'smoky-pepper-walnut-dip-snack': {
+    title: 'Snack: Smoky red pepper & walnut dip with crunchy vegetables', emoji: '🫑', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced'], time: 12,
+    ingredients: [['cannellini-beans', 60], ['walnuts', 10], ['bell-pepper', 150], ['lemon', 8], ['carrots', 100], ['cucumber', 80]],
+    toTaste: ['garlic', 'smoked paprika', 'cumin', 'chilli flakes', 'parsley'],
+    steps: [
+      'Char or roast the pepper until soft and blistered.',
+      'Blitz the pepper with the cannellini beans, walnuts, garlic, lemon, smoked paprika and cumin to a coarse, muhammara-style dip.',
+      'Cut the carrots and cucumber into batons.',
+      'Serve the dip with the vegetable batons and a scatter of parsley and chilli flakes.'
+    ],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['nuts']
+  },
+  'turkish-menemen-peppers-feta': {
+    title: 'Menemen: Turkish peppers, tomato & eggs with feta', emoji: '🍳', slot: 'breakfast', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced'], time: 18,
+    ingredients: [['eggs', 100], ['bell-pepper', 150], ['tomatoes', 150], ['feta-cheese', 15], ['olive-oil', 4], ['potatoes', 150]],
+    toTaste: ['garlic', 'chilli flakes', 'black pepper', 'parsley'],
+    steps: [
+      'Dice and pan-fry the potatoes in the olive oil until golden and tender.',
+      'Add the peppers and soften a few minutes, then add the tomatoes and garlic and simmer until they break down.',
+      'Pour in the beaten eggs and stir gently until just set and still glossy.',
+      'Crumble the feta over the top and season with chilli and black pepper.',
+      'Scatter with parsley and serve straight from the pan.'
+    ],
+    tags: ['veggie', 'highFiber'],
+    avoid: ['lactose']
+  },
+  'miso-ginger-baked-cod-bok-choy': {
+    title: 'Miso-ginger baked cod with bok choy & rice', emoji: '🐟', slot: 'dinner', role: 'full',
+    season: 'evergreen',
+    slots: ['lunch', 'dinner'],
+    styles: ['balanced', 'highprotein'], time: 22,
+    ingredients: [['cod', 180], ['pak-choy', 150], ['carrots', 60], ['rice', 50], ['miso-paste', 15], ['soy-sauce', 8], ['olive-oil', 6]],
+    toTaste: ['ginger', 'garlic', 'chilli', 'lime', 'spring onion', 'toasted sesame'],
+    steps: [
+      'Whisk the miso with soy sauce, ginger and garlic and brush over the cod.',
+      'Bake or grill the cod until just cooked through and lightly caramelised, 10-12 min.',
+      'Cook the rice until tender.',
+      'Steam or stir-fry the bok choy and carrots until just tender-crisp.',
+      'Plate the cod over the rice with the vegetables, finished with chilli, lime, spring onion and sesame.'
+    ],
+    tags: ['muscle'],
+    avoid: []
+  },
+  'ginger-lime-edamame-cucumber-snack': {
+    title: 'Snack: Ginger-lime edamame & cucumber smash', emoji: '🫛', slot: 'snack', role: 'full',
+    season: 'evergreen',
+    styles: ['balanced', 'highprotein', 'lowcarb'], time: 8,
+    ingredients: [['edamame', 100], ['cucumber', 100], ['lime', 15], ['soy-sauce', 6], ['olive-oil', 2]],
+    toTaste: ['ginger', 'chilli flakes', 'coriander', 'toasted sesame'],
+    steps: [
+      'Lightly crush the cucumber and cut into rough chunks.',
+      'Toss with the warmed or chilled edamame.',
+      'Whisk the lime juice, soy sauce and olive oil with grated ginger.',
+      'Dress the edamame and cucumber, and finish with chilli, coriander and sesame.'
+    ],
+    tags: ['veggie', 'highFiber'],
+    avoid: []
+  },
+  'banana-peanut-butter-choc-bites': {
+    // Occasional treat (owner taste: baking/desserts) — flagged occasional so it never enters
+    // automatic planning and is exempt from the KCAL_BAND check; still kept lean by panel
+    // standards (fat ~38% energy, sat fat well under the 12g catalog ceiling per serving).
+    title: 'Banana, peanut butter & dark chocolate energy bites', emoji: '🍌', slot: 'snack', role: 'full',
+    season: 'evergreen', occasional: true,
+    servings: 3,
+    styles: ['balanced'], time: 15,
+    ingredients: [['bananas', 100], ['oats', 40], ['peanut-butter', 15], ['dark-chocolate-85', 15]],
+    toTaste: ['cinnamon', 'vanilla'],
+    steps: [
+      'Mash the banana and stir through the oats, peanut butter and cinnamon until it forms a sticky dough.',
+      'Chop the dark chocolate into small chunks and fold through.',
+      'Roll into bites (makes about 3) and chill until firm, at least 20 min.'
+    ],
+    tags: ['veggie'],
+    avoid: ['gluten']
   }
 
 };
