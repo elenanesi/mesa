@@ -560,6 +560,7 @@ function setScannerScreenHtml(html){ return setLibraryScreenHtml('libraryScanner
 function setPantryScreenHtml(html){ return setLibraryScreenHtml('libraryPantry', 'libraryPantryBody', html); }
 
 function openFoodLibrary(){
+  hideEditorActionBar(); // leaving the ingredient editor for the list
   libFoodListReturn = null;
   libFoodQuery = '';
   libFoodFilters = {cats: new Set(), flags: new Set(), seasons: new Set()};
@@ -582,6 +583,7 @@ function rememberFoodListReturn(){
   }
 }
 function returnToFoodLibrary(){
+  hideEditorActionBar(); // leaving the ingredient editor back to the list
   if(!libFoodListReturn){ openFoodLibrary(); return; }
   const saved = libFoodListReturn;
   libFoodListReturn = null;
@@ -1369,8 +1371,8 @@ let newFoodComponentPickerReturnScroll = null;
 
 function openNewFoodForm(){
   rememberFoodListReturn();
-  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, supplement: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: [], avgG: null, measures: {}};
-  renderNewFoodFormSheet(false);
+  newFoodForm = {editingId: null, name: '', cat: 'Produce', season: 'evergreen', protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown', flags: [], breakfastPair: false, supplement: false, iconKey: null, iconPickerOpen: false, isComposite: false, components: [], yieldG: 100, bought: false, variants: [], avgG: null, measures: {}, panelOpen: {}};
+  renderNewFoodFormSheet(false, true);
 }
 
 function openEditFoodForm(id){
@@ -1417,19 +1419,30 @@ function openEditFoodForm(id){
         components: normalizeComponentRows(v.components),
         yieldG: (typeof v.yieldG === 'number' && v.yieldG > 0) ? v.yieldG : 100
       };
-    })
+    }),
+    panelOpen: {}
   };
-  renderNewFoodFormSheet(false);
+  renderNewFoodFormSheet(false, true);
 }
 // Re-attaches the icon grid's delegated click handler every time (setIngredientsScreenHtml
 // replaces #libraryIngredientsBody's innerHTML wholesale, so any prior listener on the old
 // grid element is gone) — same per-render re-attach pattern as renderFoodLibraryList's
 // attachLibFoodListHandler call.
-function renderNewFoodFormSheet(preserveScroll){
-  rememberNewFoodFormPanels();
+// `freshSession` (owner 2026-09-05, panel-contamination fix) — true ONLY from
+// openNewFoodForm/openEditFoodForm's first render: skips rememberNewFoodFormPanels so a
+// brand-new editing session can't inherit panel open/closed states scraped from a DIFFERENT,
+// still-stale `[data-food-panel]` DOM left behind when a PREVIOUS session was abandoned
+// without Cancel/Save (e.g. the user tab-switched away mid-edit). Every other re-render
+// (chip taps, field commits, returning from the component picker) omits it and keeps
+// remembering the CURRENT session's own live DOM exactly as before.
+function renderNewFoodFormSheet(preserveScroll, freshSession){
+  if(!freshSession) rememberNewFoodFormPanels();
   setIngredientsScreenHtml(buildNewFoodFormSheet(), preserveScroll !== false);
   attachNewFoodIconGridHandler();
   attachNewFoodComponentHandlers();
+  // setIngredientsScreenHtml may have called go() (first open), which hides the bar — show it
+  // AFTER, same ordering as renderRecipeBuilderSheet's showEditorActionBar call.
+  showFoodEditorActionBar();
 }
 
 // A tag tap redraws this form so selected chips and computed nutrition update immediately.
@@ -1586,12 +1599,12 @@ function buildNewFoodFormSheet(){
     + (f.iconPickerOpen ? buildNewFoodIconGrid(currentIconKey) : '')
     + '</div></div></details>';
 
-  // Sticky Save/Cancel bar (pinned above the tab bar) — same reachable-without-scrolling
-  // treatment as the recipe builder (owner: save-only-at-the-bottom is confusing).
-  html += '<div class="editor-actionbar">'
-    + '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>'
-    + '<button class="cta editor-save" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>'
-    + '</div><div class="editor-actionbar-spacer"></div>';
+  // Save/Cancel live in a bar pinned above the tab bar (showFoodEditorActionBar) so they're
+  // reachable without scrolling to the end of a long form. The bar is a GLOBAL element
+  // (#editorActionBar, outside the scrolling screen — see its comment in index.html for the
+  // iOS scroll/keyboard bug this avoids); only this spacer stays in the scroll flow, reserving
+  // room so the last field clears the bar. Mirrors the recipe builder's identical treatment.
+  html += '<div class="editor-actionbar-spacer"></div>';
   return html;
 }
 
@@ -3438,7 +3451,7 @@ function duplicateRecipe(id){
   draft.name = 'Copy of ' + (src.title || 'recipe');
   rememberRecipeListReturn();
   recipeBuilder = draft;
-  renderRecipeBuilderSheet(false);
+  renderRecipeBuilderSheet(false, true);
 }
 
 /* ---------------- recipe builder ---------------- */
@@ -3497,14 +3510,15 @@ function recipeToBuilder(id, recipeObj){
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
     optionGroups: recipeOptionGroupsToBuilder(r),
     stepsText: (r.steps || []).join('\n'),
-    pickerQuery: ''
+    pickerQuery: '',
+    panelOpen: {}
   };
 }
 
 function openNewRecipeForm(){
   rememberRecipeListReturn();
-  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: ''};
-  renderRecipeBuilderSheet(false);
+  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: '', panelOpen: {}};
+  renderRecipeBuilderSheet(false, true);
 }
 
 function openEditRecipeForm(id){
@@ -3512,7 +3526,7 @@ function openEditRecipeForm(id){
   if(!draft){ toast('Recipe not found'); return; }
   rememberRecipeListReturn();
   recipeBuilder = draft;
-  renderRecipeBuilderSheet(false);
+  renderRecipeBuilderSheet(false, true);
 }
 
 function openRecipeImageForm(id){
@@ -3520,11 +3534,18 @@ function openRecipeImageForm(id){
   if(!draft){ toast('Recipe not found'); return; }
   draft.imagePickerOpen = true;
   recipeBuilder = draft;
-  renderRecipeBuilderSheet();
+  renderRecipeBuilderSheet(false, true);
 }
 
-function renderRecipeBuilderSheet(preserveScroll){
-  rememberRecipeBuilderPanels();
+// `freshSession` (owner 2026-09-05, panel-contamination fix — mirrors renderNewFoodFormSheet)
+// — true ONLY from a brand-new draft's first render (openNewRecipeForm / openEditRecipeForm /
+// openRecipeImageForm / duplicateRecipe): skips rememberRecipeBuilderPanels so the new session
+// can't inherit panel states scraped from a DIFFERENT, still-stale `[data-recipe-panel]` DOM
+// left behind when a PREVIOUS session was abandoned without Cancel/Save. Every other
+// re-render (chip taps, field commits, returning from the ingredient picker) omits it and
+// keeps remembering the CURRENT session's own live DOM exactly as before.
+function renderRecipeBuilderSheet(preserveScroll, freshSession){
+  if(!freshSession) rememberRecipeBuilderPanels();
   setRecipesScreenHtml(buildRecipeBuilderSheet(), preserveScroll !== false);
   attachRecipeImageGridHandler();
   // setRecipesScreenHtml may have called go() (first open), which hides the bar — show it AFTER.
@@ -3745,6 +3766,9 @@ function buildRecipeBuilderSheet(){
 // Populate + show the global recipe-editor Save/Cancel bar (#editorActionBar, in index.html — a
 // sibling of the tab bar, NOT inside the scrolling screen; see that element's comment for the iOS
 // bug this avoids). Idempotent — safe to call on every builder re-render.
+// #editorActionBar is SHARED with the ingredient editor (showFoodEditorActionBar below) — only
+// one of the two editors is ever on screen at a time, and go()/hideEditorActionBar clears it on
+// any nav, so the two populate functions never fight over its contents.
 function showEditorActionBar(){
   const bar = document.getElementById('editorActionBar');
   if(!bar) return;
@@ -3753,7 +3777,20 @@ function showEditorActionBar(){
     + '<button class="cta editor-save" onclick="saveRecipeBuilder()">' + (editing ? 'Save changes' : 'Save recipe') + '</button>';
   bar.setAttribute('aria-hidden', 'false');
 }
-// Hide it whenever the recipe editor closes (emptying it triggers the :empty display:none).
+// Populate + show the SAME global bar for the ingredient editor (owner 2026-09-05 fix — the
+// ingredient editor used to render its own in-content `.editor-actionbar` INSIDE the scrolling
+// #libraryIngredientsBody, which is `position:absolute` and disappears during iOS momentum
+// scroll / when the keyboard opens, same bug the recipe editor already fixed by pinning outside
+// the scroll container. Mirrors showEditorActionBar exactly.
+function showFoodEditorActionBar(){
+  const bar = document.getElementById('editorActionBar');
+  if(!bar) return;
+  const editing = !!(newFoodForm && newFoodForm.editingId);
+  bar.innerHTML = '<button class="cta ghostbtn" onclick="returnToFoodLibrary()">Cancel</button>'
+    + '<button class="cta editor-save" onclick="saveNewFood()">' + (editing ? 'Save changes' : 'Save ingredient') + '</button>';
+  bar.setAttribute('aria-hidden', 'false');
+}
+// Hide it whenever either editor closes (emptying it triggers the :empty display:none).
 function hideEditorActionBar(){
   const bar = document.getElementById('editorActionBar');
   if(!bar) return;
