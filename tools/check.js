@@ -4519,6 +4519,25 @@ function testDominantIngredientVariety(ctx){
     'ingredientDiversityPenalty: a different-vegetable dish is NOT penalized');
   assert(call(ctx, 'ingredientDiversityPenalty', ['cumin-roasted-carrots', {}, [], history, 'partner', 0]) === 0,
     'ingredientDiversityPenalty: per-person - partner has no carrots logged today, so no penalty for them');
+
+  // (3) WITHIN-UNIT side diversity (owner 2026-09-06 "too many carrots"): pushComposedSideCandidates
+  // must not pair a side sharing the MAIN's dominant produce, nor two sides sharing a dominant —
+  // unless that would leave no composed pair (then it falls back so the slot never starves).
+  const carrotMain = call(ctx, 'dominantIngredientKey', [get(ctx, "RECIPES_DB['cumin-roasted-carrots']")]);
+  assert(carrotMain === 'carrots', 'setup: cumin-roasted-carrots is carrot-dominant', String(carrotMain));
+  // main = a carrot dish; veg pool offers a carrot side AND a non-carrot side -> the carrot
+  // side must be dropped (a diverse alternative exists, so no fallback).
+  assert(call(ctx, 'dominantIngredientKey', [get(ctx, "RECIPES_DB['spinach-garlic-lemon']")]) === 'spinach',
+    'setup: spinach-garlic-lemon is spinach-dominant (a non-carrot alternative)');
+  run(ctx, "__pcs = []; pushComposedSideCandidates(function(id,k,p,ex){ __pcs.push(ex.map(function(c){return c.recipeId;})); }, 'cumin-roasted-carrots', dbBaseNutrition('cumin-roasted-carrots'), 600, 1, 3, ['steamed-green-beans'], ['cumin-roasted-carrots','spinach-garlic-lemon']);");
+  const pairs = get(ctx, '__pcs');
+  const anyCarrotSide = pairs.some(function(p){ return p.indexOf('cumin-roasted-carrots') !== -1; });
+  assert(pairs.length > 0 && !anyCarrotSide,
+    'pushComposedSideCandidates: drops the side that duplicates the carrot main (keeps the non-carrot side)', JSON.stringify(pairs));
+  // fallback: if the ONLY sides available both duplicate, it still emits pairs (never starves).
+  run(ctx, "__pcs2 = []; pushComposedSideCandidates(function(id,k,p,ex){ __pcs2.push(ex.map(function(c){return c.recipeId;})); }, 'cumin-roasted-carrots', dbBaseNutrition('cumin-roasted-carrots'), 600, 1, 3, ['cumin-roasted-carrots'], ['carrots-over-hummus']);");
+  assert(get(ctx, '__pcs2').length > 0,
+    'pushComposedSideCandidates: falls back to unfiltered pairs when no diverse side exists (never starves the slot)');
 }
 
 // Over-scale comfort penalty (2026-09-03, panel-approved): a SOFT, bounded, always-on score

@@ -2441,18 +2441,43 @@ function pushBreakfastPairCandidates(push, mainId, mainBase, bp, desired, foodPo
 // main portion re-searched via bestPortion against (desired − side kcal at that step).
 // `push` is called once per (side, sidePortion) candidate.
 function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, maxPortion, carbIds, vegIds){
-  carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
-    if(carbId === vegId) return;
-    const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
-    [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){
-      const extrasKcal = carbBase.kcal * carbPortion + vegBase.kcal * vegPortion;
-      const extrasProtein = carbBase.protein * carbPortion + vegBase.protein * vegPortion;
-      const bp = bestPortion(mainBase.kcal, desired - extrasKcal, anchor, maxPortion);
-      push(mainId + '|carb|' + carbId + '@' + carbPortion + '|veg|' + vegId + '@' + vegPortion,
-        bp.kcal + extrasKcal, mainBase.protein * bp.portion + extrasProtein,
-        [{recipeId: carbId, portion: carbPortion}, {recipeId: vegId, portion: vegPortion}], bp.portion);
+  // Within-unit ingredient diversity (owner 2026-09-06: "too many portions of carrots" — a
+  // carrot main was landing with a carrot side and a carrot salad on ONE plate). Skip any
+  // (carb, veg) pair where a side's DOMINANT produce/dairy matches the MAIN's, or where the
+  // two sides share a dominant — so a single meal varies rather than tripling one vegetable.
+  // Soft/deterministic and NEVER starves the slot: if no diverse pair exists for this main,
+  // fall back to the unfiltered pairs (the ingredientDiversityPenalty still handles the
+  // cross-slot case). dominantIngredientKey is opts-less here — a fine approximation for a
+  // diversity heuristic (the dominant veg rarely flips across a recipe's option variants).
+  const mainKey = (typeof dominantIngredientKey === 'function' && RECIPES_DB[mainId]) ? dominantIngredientKey(RECIPES_DB[mainId]) : null;
+  const keyCache = {};
+  function sideKey(id){
+    if(!(id in keyCache)) keyCache[id] = (typeof dominantIngredientKey === 'function' && RECIPES_DB[id]) ? dominantIngredientKey(RECIPES_DB[id]) : null;
+    return keyCache[id];
+  }
+  function pass(diverseOnly){
+    let pushed = 0;
+    carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
+      if(carbId === vegId) return;
+      if(diverseOnly){
+        const ck = sideKey(carbId), vk = sideKey(vegId);
+        if(mainKey && (ck === mainKey || vk === mainKey)) return;
+        if(ck && ck === vk) return;
+      }
+      const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
+      [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){
+        const extrasKcal = carbBase.kcal * carbPortion + vegBase.kcal * vegPortion;
+        const extrasProtein = carbBase.protein * carbPortion + vegBase.protein * vegPortion;
+        const bp = bestPortion(mainBase.kcal, desired - extrasKcal, anchor, maxPortion);
+        push(mainId + '|carb|' + carbId + '@' + carbPortion + '|veg|' + vegId + '@' + vegPortion,
+          bp.kcal + extrasKcal, mainBase.protein * bp.portion + extrasProtein,
+          [{recipeId: carbId, portion: carbPortion}, {recipeId: vegId, portion: vegPortion}], bp.portion);
+        pushed++;
+      }); });
     }); });
-  }); });
+    return pushed;
+  }
+  if(pass(true) === 0) pass(false);
 }
 
 // DRY refactor (code-health, zero behaviour change): the four candidate-pool "preamble"
