@@ -5260,6 +5260,38 @@ function todayRebalanceSideCandidateIds(plan, unit){
   });
 }
 
+// The nutrient a re-balance move improves for one person — drives the human "why" line on the
+// suggestion ("so you get more fibre"). Compares the day's per-nutrient BAND state before vs
+// after the move (perDayBalanceState): first a nutrient that moved OUT of an off state (light/
+// low/rich/over), else the biggest favourable gram shift. Returns {nutrient, dir} or null (the
+// sheet then falls back to a neutral "to even out today"). Pure/deterministic.
+function rebalanceMoveFix(beforeP, afterP, person){
+  if(!beforeP || !afterP || typeof perDayBalanceState !== 'function') return null;
+  const b = perDayBalanceState(beforeP, person), a = perDayBalanceState(afterP, person);
+  const checks = [
+    {nutrient: 'fiber', dir: 'up', off: ['light']},
+    {nutrient: 'protein', dir: 'up', off: ['low']},
+    {nutrient: 'satFat', dir: 'down', off: ['rich']},
+    {nutrient: 'fat', dir: 'down', off: ['rich', 'over']},
+    {nutrient: 'freeSugars', dir: 'down', off: ['over', 'rich']}
+  ];
+  for(let i = 0; i < checks.length; i++){
+    const c = checks[i];
+    const wasOff = b[c.nutrient] && c.off.indexOf(b[c.nutrient]) !== -1;
+    const improved = wasOff && (!a[c.nutrient] || a[c.nutrient] === 'ok' || a[c.nutrient] !== b[c.nutrient]);
+    if(improved) return {nutrient: c.nutrient, dir: c.dir};
+  }
+  // No state flip — fall back to the biggest favourable gram move.
+  const g = function(k){ return (typeof beforeP[k] === 'number' ? beforeP[k] : 0); };
+  const d = function(k){ return (typeof afterP[k] === 'number' ? afterP[k] : 0) - g(k); };
+  if(d('fiber') >= 3) return {nutrient: 'fiber', dir: 'up'};
+  if(d('protein') >= 5) return {nutrient: 'protein', dir: 'up'};
+  if(d('satFat') <= -3) return {nutrient: 'satFat', dir: 'down'};
+  if(d('fat') <= -5) return {nutrient: 'fat', dir: 'down'};
+  if(d('freeSugars') <= -3) return {nutrient: 'freeSugars', dir: 'down'};
+  return null;
+}
+
 function proposeTodayRebalanceSuggestions(dateISO, personKey){
   dateISO = dateISO || todayISO();
   personKey = personKey || currentProf;
@@ -5307,9 +5339,13 @@ function proposeTodayRebalanceSuggestions(dateISO, personKey){
       if(better) best = c;
     });
     if(!best) break;
+    // Which nutrient this move actually improves for the viewer — so the sheet can say WHY
+    // ("so you get more fibre") instead of a bare "Swap". Computed against the person's own
+    // bands (rebalanceMoveFix) from the day totals before vs after THIS move.
+    const fixes = rebalanceMoveFix(baseTotals[personKey], todayRebalanceTotals(best.trial, dateISO)[personKey], personKey);
     planCopy = best.trial;
-    if(best.kind === 'swap') applied.push({kind: 'swap', unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement});
-    else applied.push({kind: 'addSide', unit: best.unit, sideRecipeId: best.sideRecipeId, improvement: best.improvement});
+    if(best.kind === 'swap') applied.push({kind: 'swap', unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement, fixes: fixes});
+    else applied.push({kind: 'addSide', unit: best.unit, sideRecipeId: best.sideRecipeId, improvement: best.improvement, fixes: fixes});
   }
   return {dateISO: dateISO, personKey: personKey, suggestions: applied, before: beforeTotals, after: todayRebalanceTotals(planCopy, dateISO), resultPlan: planCopy};
 }

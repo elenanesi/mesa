@@ -266,6 +266,22 @@ function rebalanceProposalLabel(){
   return rebalanceProposal && rebalanceProposal.weekStartDate === nextMondayISO() ? 'next week' : 'this week';
 }
 
+// Plain-language "why" for a re-balance suggestion — turns the computed {nutrient,dir}
+// (rebalanceMoveFix, planner.js) into the reason the owner asked for ("so you get more
+// fibre") rather than a bare "Swap"/"Add side". Neutral fallback when the move just evens
+// the day without one standout nutrient.
+function rebalanceReasonText(fixes){
+  if(!fixes || !fixes.nutrient) return 'to even out today';
+  switch(fixes.nutrient){
+    case 'fiber': return 'so you get more fibre';
+    case 'protein': return 'so you get more protein';
+    case 'satFat': return 'to ease off saturated fat';
+    case 'fat': return 'to ease off the fat';
+    case 'freeSugars': return 'to lower free sugars';
+    default: return 'to even out today';
+  }
+}
+
 function rebalanceSuggestionLabel(s){
   if(s.kind === 'swap'){
     const to = RECIPES_DB[s.toRecipeId];
@@ -336,7 +352,7 @@ function renderRebalanceSheet(){
     const last = i === rebalanceProposal.suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'swap' : 'side';
     const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
-    const note = (kind === 'swap' ? 'Swap' : 'Add side') + ' · ' + (spread ? 'evens the days' : '+' + g.label);
+    const note = (kind === 'swap' ? 'Swap' : 'Add side') + ' · ' + (spread ? 'to even out the week' : 'so you get more ' + g.label);
     html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + icon + '</div>'
       + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
       + '<small>' + note + '</small></div>'
@@ -497,10 +513,11 @@ function renderTodayRebalanceSheet(){
     const disabled = canApply ? '' : ' disabled';
     const last = i === suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'Swap' : 'Add side';
+    const reason = ' · ' + rebalanceReasonText(s.fixes);
     const lockedNote = canApply ? '' : ' · Locked';
     html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + todayRebalanceSuggestionIcon(s) + '</div>'
       + '<div class="li-t">' + todayRebalanceSuggestionLabel(s)
-      + '<small>' + kind + lockedNote + '</small></div>'
+      + '<small>' + kind + reason + lockedNote + '</small></div>'
       + '<div class="row" style="gap:8px">'
       + '<button class="backbtn' + (accepted && canApply ? ' on' : '') + '"' + disabled + ' onclick="setTodayRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
       + '<button class="backbtn' + (!accepted || !canApply ? ' on' : '') + '" onclick="setTodayRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'

@@ -2905,8 +2905,11 @@ function boostChipInviteLine(suggestions){
   const names = suggestions.slice(0, 2).map(function(s){
     return FOODS[s.foodId] ? FOODS[s.foodId].name.split(',')[0].toLowerCase() : '';
   }).filter(Boolean);
-  if(!names.length) return 'A little something extra would round out today nicely.';
-  return 'A little ' + names.join(' or ') + ' would round out today nicely.';
+  // Name the nutrient this boost adds, so it's clear WHAT it's for (owner ask) — kept as an
+  // invitation of abundance ("a bit more fibre"), never a "gap/low/missing" framing.
+  const nutrient = (suggestions.length && suggestions[0].nutrient === 'protein') ? 'protein' : 'fibre';
+  if(!names.length) return 'A little something extra would add a bit more ' + nutrient + ' to today.';
+  return 'A little ' + names.join(' or ') + ' would add a bit more ' + nutrient + ' to today.';
 }
 
 function renderBoostChip(){

@@ -2591,6 +2591,32 @@ function testPinnedRebalanceDoesNotTouchPinnedUnit(ctx){
    their half. These checks deliberately avoid exact recipe assertions: the planner's
    catalog/ranking can evolve, but locks, stale guards, frozen nutrition, score direction,
    and date boundaries must not. */
+// Owner ask (2026-09-06): re-balance + boost should explain WHY ("so you get more fibre").
+// Covers the pure reason plumbing: rebalanceMoveFix (planner) picks the nutrient a move
+// improves; rebalanceReasonText (render-sheets) turns it into copy; boostChipInviteLine
+// (render-today) names the boost's nutrient.
+function testRebalanceReasons(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "';");
+  const full = "{kcal:2000, protein:100, carbs:200, fiber:8, freeSugars:5, satFat:10, fat:60}";
+  // fibre climbs from below-floor to in-band -> the move is "for more fibre"
+  const fixFiber = call(ctx, 'rebalanceMoveFix', [get(ctx, "(" + full + ")"), get(ctx, "Object.assign(" + full + ",{fiber:34})"), 'elena']);
+  assert(fixFiber && fixFiber.nutrient === 'fiber',
+    'rebalanceMoveFix: a move that lifts fibre out of "light" is attributed to fibre', JSON.stringify(fixFiber));
+  assert(call(ctx, 'rebalanceReasonText', [{nutrient: 'fiber', dir: 'up'}]) === 'so you get more fibre',
+    'rebalanceReasonText: fibre -> "so you get more fibre"');
+  assert(call(ctx, 'rebalanceReasonText', [null]) === 'to even out today',
+    'rebalanceReasonText: no standout nutrient -> neutral "to even out today"');
+  assert(call(ctx, 'rebalanceReasonText', [{nutrient: 'satFat', dir: 'down'}]) === 'to ease off saturated fat',
+    'rebalanceReasonText: satFat -> "to ease off saturated fat"');
+  // boost invite names its nutrient
+  const invite = call(ctx, 'boostChipInviteLine', [[{foodId: 'chia-seeds', nutrient: 'fiber', kcal: 60, protein: 2, fiber: 4}]]);
+  assert(invite.indexOf('fibre') !== -1,
+    'boostChipInviteLine: a fibre boost says "fibre" so the WHY is clear', invite);
+  const inviteP = call(ctx, 'boostChipInviteLine', [[{foodId: 'pumpkin-seeds', nutrient: 'protein', kcal: 90, protein: 5, fiber: 1}]]);
+  assert(inviteP.indexOf('protein') !== -1,
+    'boostChipInviteLine: a protein boost says "protein"', inviteP);
+}
+
 function testTodayRebalance(ctx){
   const TODAY = FIXED_MONDAY;
   const TOMORROW = call(ctx, 'addDaysISO', [TODAY, 1]);
@@ -14001,6 +14027,7 @@ function main(){
   runTest('mealRules pinFromDate sync apply', function(){ testMealRulePinFromDateSyncApply(ctx); });
   runTest('pinned re-balance unit exclusion', function(){ testPinnedRebalanceDoesNotTouchPinnedUnit(ctx); });
   runTest('today re-balance regressions', function(){ testTodayRebalance(ctx); });
+  runTest('re-balance + boost explain WHY (nutrient reason copy)', function(){ testRebalanceReasons(ctx); });
   runTest('pinned future regeneration contract', function(){ testPinnedFutureMealSurvivesRegenerationContract(ctx); });
   runTest('routine pin helper contracts', function(){ testRoutinePinHelperContracts(ctx); });
   runTest('pinned meals re-balance immutability (2026-07-19)', function(){ testPinnedMealsRebalanceImmutability(ctx); });
