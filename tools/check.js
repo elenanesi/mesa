@@ -4540,6 +4540,50 @@ function testDominantIngredientVariety(ctx){
     'pushComposedSideCandidates: falls back to unfiltered pairs when no diverse side exists (never starves the slot)');
 }
 
+// Per-day per-ingredient QUANTITY cap (owner 2026-09-06 "no ~1kg carrots / 6 eggs a day"): a
+// SOFT, bounded, purely-additive score term that grows with how far a candidate pushes a single
+// food's DAILY total past its ceiling. Distinct from ingredientDiversityPenalty (same KEY across
+// slots, flat) — this is about summed GRAMS of one food id. See planner.js for the full design.
+function testDailyGramCap(ctx){
+  const WMAX = get(ctx, 'DAILY_FOOD_GRAM_PENALTY_MAX');
+  const W1 = get(ctx, 'DAILY_FOOD_GRAM_PENALTY');
+  // (1) dailyFoodGramCeiling: explicit egg override, Produce/Dairy defaults, uncapped elsewhere.
+  assert(call(ctx, 'dailyFoodGramCeiling', ['eggs']) === 180,
+    'dailyFoodGramCeiling: eggs carry the explicit 180g/day override (~3-4 eggs)');
+  assert(call(ctx, 'dailyFoodGramCeiling', ['carrots']) === 500,
+    'dailyFoodGramCeiling: a non-fruit Produce item (carrots) defaults to 500g/day');
+  assert(call(ctx, 'dailyFoodGramCeiling', ['olive-oil']) === Infinity,
+    'dailyFoodGramCeiling: Pantry (olive-oil) is uncapped — grains/oils scale legitimately for big appetites');
+  // (2) dailyGramCapPenalty: 0 under the ceiling, negative and MARGINAL-overage-scaled above it.
+  const emptyHist = {elena: {dayUseFoodGrams: {}}, partner: {dayUseFoodGrams: {}}};
+  assert(call(ctx, 'dailyGramCapPenalty', [[{foodId: 'carrots', grams: 300}], emptyHist, 'elena', 0]) === 0,
+    'dailyGramCapPenalty: a candidate under the day ceiling (300g carrots) scores exactly 0');
+  const over = call(ctx, 'dailyGramCapPenalty', [[{foodId: 'carrots', grams: 600}], emptyHist, 'elena', 0]);
+  assert(over < 0 && Math.abs(over - (-W1 * 100 / 500)) < 1e-9,
+    'dailyGramCapPenalty: 600g carrots (100g over the 500g line) scores the marginal-overage fraction of the weight', 'got=' + over);
+  // (3) marginal, not absolute: already-500 carrots + 200 more penalizes only the 200 above the line.
+  const hist = {elena: {dayUseFoodGrams: {0: {carrots: 450}}}, partner: {dayUseFoodGrams: {}}};
+  const marg = call(ctx, 'dailyGramCapPenalty', [[{foodId: 'carrots', grams: 200}], hist, 'elena', 0]);
+  assert(Math.abs(marg - (-W1 * 150 / 500)) < 1e-9,
+    'dailyGramCapPenalty: judged on the MARGINAL grams above the ceiling (150 of the 200 added), not the whole candidate', 'got=' + marg);
+  assert(call(ctx, 'dailyGramCapPenalty', [[{foodId: 'carrots', grams: 200}], hist, 'partner', 0]) === 0,
+    'dailyGramCapPenalty: per-person — partner has no carrots logged today, so no penalty for them');
+  // (4) bounded: one absurd food caps at the single-food weight; many over-cap foods cap at the sum clamp.
+  assert(call(ctx, 'dailyGramCapPenalty', [[{foodId: 'carrots', grams: 5000}], emptyHist, 'elena', 0]) === -W1,
+    'dailyGramCapPenalty: a single wildly-over food saturates at exactly -DAILY_FOOD_GRAM_PENALTY (bounded)');
+  const many = call(ctx, 'dailyGramCapPenalty', [[{foodId: 'carrots', grams: 5000}, {foodId: 'eggs', grams: 5000}, {foodId: 'spinach', grams: 5000}], emptyHist, 'elena', 0]);
+  assert(many === -WMAX,
+    'dailyGramCapPenalty: the summed term is clamped at -DAILY_FOOD_GRAM_PENALTY_MAX no matter how many foods are over', 'got=' + many);
+  // (5) candidateFoodGramRows: real per-serving grams, scaling with portion; extras included.
+  const rows1 = call(ctx, 'candidateFoodGramRows', ['veg-frittata', {}, 1, []]);
+  const eggs1 = (rows1.filter(function(r){ return r.foodId === 'eggs'; })[0] || {}).grams || 0;
+  assert(eggs1 > 0, 'candidateFoodGramRows: a real egg recipe reports positive egg grams at 1x', 'eggs=' + eggs1);
+  const rows2 = call(ctx, 'candidateFoodGramRows', ['veg-frittata', {}, 2, []]);
+  const eggs2 = (rows2.filter(function(r){ return r.foodId === 'eggs'; })[0] || {}).grams || 0;
+  assert(Math.abs(eggs2 - eggs1 * 2) <= 1,
+    'candidateFoodGramRows: doubling the portion doubles the per-food grams (portion scaling flows through flatten)', eggs1 + ' -> ' + eggs2);
+}
+
 // Over-scale comfort penalty (2026-09-03, panel-approved): a SOFT, bounded, always-on score
 // term (sibling to tuningBonus/ingredientDiversityPenalty above) that discourages tripling ONE
 // dish to hit a high-calorie lunch/dinner target instead of picking a denser recipe. See
@@ -14081,6 +14125,7 @@ function main(){
   runTest('day-wide variety (VARIETY-plan.md P1)', function(){ testDayWideVariety(ctx); });
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
   runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
+  runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
   runTest('recipe-of-recipes (components aggregate)', function(){ testRecipeComponents(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

@@ -916,6 +916,16 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
       history[person].dayUseFood[dayIndex].push(c.foodId);
     }
   });
+  // Per-day per-food gram tally (dailyGramCapPenalty reads this at scoring). Uses the SAME
+  // flatten helper as nutrition/shopping/candidate-scoring so "grams eaten" is one number
+  // everywhere — this person's OWN portions (the entry passed in is already their own).
+  if(history[person].dayUseFoodGrams){
+    if(!history[person].dayUseFoodGrams[dayIndex]) history[person].dayUseFoodGrams[dayIndex] = {};
+    const bag = history[person].dayUseFoodGrams[dayIndex];
+    flattenComponentsToIngredientRows(planEntryComponents(entry)).forEach(function(r){
+      if(r.grams > 0) bag[r.foodId] = (bag[r.foodId] || 0) + r.grams;
+    });
+  }
 }
 
 // task D1: component[0] (the base dish) carries `.opts` when `entry.opts` is set (the
@@ -1939,6 +1949,84 @@ function ingredientDiversityPenalty(mainId, opts, extras, history, person, dayIn
   return -penalty;
 }
 
+/* ---------------- per-day per-ingredient QUANTITY cap (2026-09-06, owner request) ----------
+   Owner report: a generated day could pile up an absurd TOTAL of one ingredient — e.g. ~1kg
+   of carrots or ~6 eggs across the day's dishes — which is both monotonous and just too much
+   of one thing. This is DISTINCT from ingredientDiversityPenalty above (which is about the
+   same dominant KEY appearing in two slots, flat and quantity-blind): here we cap the summed
+   GRAMS of a single food id across everything a person eats that day, and the penalty grows
+   with the overage.
+
+   Same contract as every other score term here: a SOFT, bounded, purely-additive penalty
+   scored over the already-built candidate list — never a filter, so it can NEVER empty a pool
+   or starve a slot; deterministic (no Date/random); magnitude in the tuningBonus band so it
+   re-ranks near-ties but never outvotes the kcal/protein promise (kcalErr*1000) or a genuine
+   favorite (prefBoost 90).
+
+   Ceilings are deliberately CONSERVATIVE and narrow — we only cap where we're confident the
+   amount is genuinely excessive, to avoid fighting the big-appetite side-composition work
+   (Andrea ~3000kcal legitimately needs generous grains/legumes). Grains, oils, meat and
+   legumes (Pantry, and Protein by default) are NOT capped: grains scale legitimately for big
+   eaters, legumes/tofu carry the fibre the whole plan leans on, and red-meat frequency is
+   already governed by meatUse. The two owner examples are covered by the explicit override
+   (eggs) and the Produce default (carrots). Widen DAILY_FOOD_GRAM_CAP as new cases surface. */
+const DAILY_FOOD_GRAM_PENALTY = 12;      // max penalty contribution from ONE over-cap food
+const DAILY_FOOD_GRAM_PENALTY_MAX = 22;  // clamp on the summed term (tuningBonus-stack band)
+// Explicit per-food daily ceilings (grams) — override the category default below. Eggs: ~180g
+// is 3-4 eggs (avgG 50), so a day trends toward flagging the 5th/6th egg, not the third.
+const DAILY_FOOD_GRAM_CAP = {
+  eggs: 180
+};
+function dailyFoodGramCeiling(foodId){
+  if(DAILY_FOOD_GRAM_CAP.hasOwnProperty(foodId)) return DAILY_FOOD_GRAM_CAP[foodId];
+  const f = (typeof FOODS !== 'undefined') && FOODS[foodId];
+  if(!f || f.supplement) return Infinity;          // supplements (psyllium/protein powder) never capped
+  if(f.cat === 'Produce') return f.sub === 'fruit' ? 600 : 500; // carrots at ~1kg land well over 500
+  if(f.cat === 'Dairy') return 450;
+  return Infinity;                                  // Pantry/Bakery/Frozen/Protein: not capped (see doc)
+}
+// Penalty for the grams THIS unit adds that push a day's per-food total over its ceiling. Judged
+// on the MARGINAL overage (only the part of the candidate sitting above the line), so a food the
+// day is already over on isn't re-blamed for grams the earlier dish accounts for, and a candidate
+// is penalized in proportion to how far IT pushes past the limit. `rows` are the unit's real
+// per-serving food grams (flattenComponentsToIngredientRows — portion/batch-yield already applied).
+function dailyGramCapPenalty(rows, history, person, dayIndex){
+  if(!rows || !rows.length) return 0;
+  const placed = (history && history[person] && history[person].dayUseFoodGrams && history[person].dayUseFoodGrams[dayIndex]) || null;
+  let penalty = 0;
+  rows.forEach(function(row){
+    const add = row.grams || 0;
+    if(add <= 0) return;
+    const ceiling = dailyFoodGramCeiling(row.foodId);
+    if(!isFinite(ceiling)) return;
+    const already = (placed && placed[row.foodId]) || 0;
+    const marginalOver = Math.max(0, already + add - ceiling) - Math.max(0, already - ceiling);
+    if(marginalOver <= 0) return;
+    penalty += DAILY_FOOD_GRAM_PENALTY * Math.min(1, marginalOver / ceiling);
+  });
+  return -Math.min(DAILY_FOOD_GRAM_PENALTY_MAX, penalty);
+}
+// Build a candidate's real per-food gram rows from its (main + extras) at a given person's
+// portion — the scoring-time counterpart to what recordDayUsage logs at placement time. Mirrors
+// makePlanEntry's extras shape ({recipeId,portion,opts} | {foodId,grams}); a standalone `full`
+// pick simply has no extras. Reuses flattenComponentsToIngredientRows so per-serving/batch-yield
+// scaling is identical to nutrition/shopping/recording — one source of truth for "grams eaten".
+function candidateFoodGramRows(mainId, opts, portion, extras){
+  const base = {recipeId: mainId, portion: (typeof portion === 'number' && portion > 0) ? portion : 1};
+  if(opts && typeof opts === 'object') base.opts = opts;
+  const comps = [base];
+  (extras || []).forEach(function(e){
+    if(e && e.recipeId){
+      const c = {recipeId: e.recipeId, portion: (typeof e.portion === 'number' && e.portion > 0) ? e.portion : 1};
+      if(e.opts && typeof e.opts === 'object') c.opts = e.opts;
+      comps.push(c);
+    } else if(e && e.foodId){
+      comps.push({foodId: e.foodId, grams: (typeof e.grams === 'number' && e.grams > 0) ? e.grams : 100});
+    }
+  });
+  return flattenComponentsToIngredientRows(comps);
+}
+
 /* ---------------- over-scale comfort penalty (2026-09-03, panel-approved) ----------------
    Owner report: a high-calorie eater (~3000kcal) can land one dense dish scaled up toward
    the SLOT_MAX_PORTION lunch/dinner cap (3x) instead of a sensibly-sized plate — e.g. a
@@ -2189,6 +2277,8 @@ function generateWeek(seed){
   // Same-day ingredient-variety log (owner request 2026-08-22): the dominant Produce/Dairy key
   // of every dish placed that day, per person — read by ingredientDiversityPenalty at scoring.
   history.elena.dayUseIngredientKey = {}; history.partner.dayUseIngredientKey = {};
+  // per-day per-food gram tally, keyed [dayIndex][foodId] -> grams (dailyGramCapPenalty)
+  history.elena.dayUseFoodGrams = {}; history.partner.dayUseFoodGrams = {};
   // VARIETY-plan.md P2: per-person WEEK totals per recipe id (main dish + every composed
   // extra), read by applyWeeklyCapFilter. Not keyed by day — this is the whole-week count.
   history.elena.weekUse = {}; history.partner.weekUse = {};
@@ -2694,8 +2784,12 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     const overScaleSlot = (slot === 'lunch' || slot === 'dinner');
     const mainFiberE = c.extras ? c.mainFiberE : (c.totalsE && c.totalsE.fiber);
     const mainFiberA = c.extras ? c.mainFiberA : (c.totalsA && c.totalsA.fiber);
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex) + (overScaleSlot ? portionScalePenalty(c.portionE, mainFiberE) : 0);
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex) + (overScaleSlot ? portionScalePenalty(c.portionA, mainFiberA) : 0);
+    // per-day per-food quantity cap: judged on each person's OWN portion (portionE/portionA),
+    // since a shared dish can be scaled differently for each — see dailyGramCapPenalty doc.
+    const gramCapE = dailyGramCapPenalty(candidateFoodGramRows(c.mainId, c.opts, c.portionE, c.extras), history, 'elena', dayIndex);
+    const gramCapA = dailyGramCapPenalty(candidateFoodGramRows(c.mainId, c.opts, c.portionA, c.extras), history, 'partner', dayIndex);
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex) + gramCapE + (overScaleSlot ? portionScalePenalty(c.portionE, mainFiberE) : 0);
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex) + gramCapA + (overScaleSlot ? portionScalePenalty(c.portionA, mainFiberA) : 0);
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
@@ -2825,7 +2919,11 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     // for why the main-only signal, not the whole plate's.
     const overScaleSlot = (slot === 'lunch' || slot === 'dinner');
     const mainFiber = c.extras ? c.mainFiber : (c.totals && c.totals.fiber);
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex) + (overScaleSlot ? portionScalePenalty(c.portion, mainFiber) : 0);
+    // solo candidates carry EITHER c.extras (composed main+carb+veg) OR c.extra (breakfast
+    // pair food); normalize to one list for the quantity cap so both shapes are accounted.
+    const gramExtras = c.extras || (c.extra ? [c.extra] : []);
+    const gramCap = dailyGramCapPenalty(candidateFoodGramRows(c.mainId, c.opts, c.portion, gramExtras), history, person, dayIndex);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex) + gramCap + (overScaleSlot ? portionScalePenalty(c.portion, mainFiber) : 0);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
   });
