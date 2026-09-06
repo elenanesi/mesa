@@ -2151,7 +2151,7 @@ function testMigrateOverridesToForks(ctx){
     'migrate: the edit becomes a cr- fork carrying the user\'s edited content', JSON.stringify(fork && fork.title));
   assert(call(ctx, 'recipeInBook', ['pollo-al-forno']) === false,
     'migrate: the original built-in returns to the market (out of the book)', '');
-  assert(get(ctx, 'BUILTIN_RECIPES_DB')['pollo-al-forno'].title === 'Roast chicken',
+  assert(get(ctx, 'BUILTIN_RECIPES_DB')['pollo-al-forno'].title === 'Roast chicken thighs',
     'migrate: the original in the market catalog is pristine (unedited)', '');
   assert(call(ctx, 'migrateRecipeOverridesToForks', []) === false,
     'migrate: idempotent — a second run has nothing to migrate', '');
@@ -4582,6 +4582,53 @@ function testDailyGramCap(ctx){
   const eggs2 = (rows2.filter(function(r){ return r.foodId === 'eggs'; })[0] || {}).grams || 0;
   assert(Math.abs(eggs2 - eggs1 * 2) <= 1,
     'candidateFoodGramRows: doubling the portion doubles the per-food grams (portion scaling flows through flatten)', eggs1 + ' -> ' + eggs2);
+}
+
+// Side/pairing appropriateness (owner 2026-09-06: "mashed potato is only ok as a dinner side; a
+// sweet breakfast can't be paired with [savory]"). Two independent, deterministic gates, each
+// with a never-starve fallback. Unit-tests the pure helpers + the two composition entry points.
+function testSideAndPairingAppropriateness(ctx){
+  // -------- (1) side-slot gating --------
+  assert(call(ctx, 'sideAllowedInSlot', ['mashed-potatoes', 'dinner']) === true,
+    'sideAllowedInSlot: mashed potato IS allowed at dinner (its declared sideSlots)');
+  assert(call(ctx, 'sideAllowedInSlot', ['mashed-potatoes', 'lunch']) === false,
+    'sideAllowedInSlot: mashed potato is NOT allowed as a lunch side (sideSlots excludes it)');
+  assert(call(ctx, 'sideAllowedInSlot', ['roasted-potatoes', 'lunch']) === true,
+    'sideAllowedInSlot: a side without sideSlots (roasted potatoes) fits any slot');
+  // buildSidePools honours the gate: mashed potato appears in the dinner carb pool, not the lunch one.
+  const hist = {elena: {dayUseRecipe: {}, sideUse: {}, weekUse: {}}, partner: {dayUseRecipe: {}, sideUse: {}, weekUse: {}}};
+  const dinnerCarbs = call(ctx, 'buildSidePools', [[], ['elena'], hist, 0, 'dinner']).carbPool;
+  const lunchCarbs = call(ctx, 'buildSidePools', [[], ['elena'], hist, 0, 'lunch']).carbPool;
+  assert(dinnerCarbs.indexOf('mashed-potatoes') !== -1,
+    'buildSidePools: mashed potato is offered as a DINNER carb side', JSON.stringify(dinnerCarbs));
+  assert(lunchCarbs.indexOf('mashed-potatoes') === -1,
+    'buildSidePools: mashed potato is NOT offered as a LUNCH carb side', JSON.stringify(lunchCarbs));
+  assert(lunchCarbs.length > 0,
+    'buildSidePools: the lunch carb pool is still non-empty after the gate (never starves — other carbs remain)');
+
+  // -------- (2) breakfast flavor coherence --------
+  assert(call(ctx, 'recipeFlavor', ['almond-skyr-bowl']) === 'sweet',
+    'recipeFlavor: the skyr bowl is tagged sweet');
+  assert(call(ctx, 'recipeFlavor', ['shakshuka']) === 'savory',
+    'recipeFlavor: a savory egg breakfast defaults to savory (no flavor tag)');
+  assert(call(ctx, 'pairFoodFlavor', ['apples']) === 'sweet' && call(ctx, 'pairFoodFlavor', ['bananas']) === 'sweet',
+    'pairFoodFlavor: fruit reads as sweet');
+  assert(call(ctx, 'pairFoodFlavor', ['rye-bread']) === 'savory',
+    'pairFoodFlavor: bread reads as savory');
+  // sweet main -> only fruit pairs; the bread is dropped.
+  run(ctx, "__bfSweet = []; pushBreakfastPairCandidates(function(t,k,p,ex){ __bfSweet.push(ex.foodId); }, 'almond-skyr-bowl', dbBaseNutrition('almond-skyr-bowl'), {portion:1, kcal: dbBaseNutrition('almond-skyr-bowl').kcal}, 400, ['apples','rye-bread','bananas']);");
+  const sweetPairs = get(ctx, '__bfSweet');
+  assert(sweetPairs.length > 0 && sweetPairs.indexOf('rye-bread') === -1 && sweetPairs.indexOf('apples') !== -1,
+    'pushBreakfastPairCandidates: a sweet main pairs with fruit, never bread', JSON.stringify(sweetPairs));
+  // savory main -> only bread; the fruit is dropped.
+  run(ctx, "__bfSav = []; pushBreakfastPairCandidates(function(t,k,p,ex){ __bfSav.push(ex.foodId); }, 'shakshuka', dbBaseNutrition('shakshuka'), {portion:1, kcal: dbBaseNutrition('shakshuka').kcal}, 400, ['apples','rye-bread','bananas']);");
+  const savPairs = get(ctx, '__bfSav');
+  assert(savPairs.length > 0 && savPairs.indexOf('apples') === -1 && savPairs.indexOf('rye-bread') !== -1,
+    'pushBreakfastPairCandidates: a savory main pairs with bread, never fruit', JSON.stringify(savPairs));
+  // never-starve: a sweet main offered ONLY bread still gets a pairing (flavor rule is a preference, not a hard block).
+  run(ctx, "__bfFall = []; pushBreakfastPairCandidates(function(t,k,p,ex){ __bfFall.push(ex.foodId); }, 'almond-skyr-bowl', dbBaseNutrition('almond-skyr-bowl'), {portion:1, kcal: dbBaseNutrition('almond-skyr-bowl').kcal}, 400, ['rye-bread']);");
+  assert(get(ctx, '__bfFall').length > 0,
+    'pushBreakfastPairCandidates: falls back to the full pool when flavor-matching would leave no pairing (never starves)');
 }
 
 // Over-scale comfort penalty (2026-09-03, panel-approved): a SOFT, bounded, always-on score
@@ -14126,6 +14173,7 @@ function main(){
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
   runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
   runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
+  runTest('side/pairing appropriateness (slot + flavor gates, 2026-09-06)', function(){ testSideAndPairingAppropriateness(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
   runTest('recipe-of-recipes (components aggregate)', function(){ testRecipeComponents(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

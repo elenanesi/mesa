@@ -226,6 +226,9 @@ const RECIPES_DB = {
   },
   'almond-skyr-bowl': {
     title: 'Skyr, almonds & chia', emoji: '🥣', slot: 'breakfast', role: 'main',
+    // flavor (owner 2026-09-06): a SWEET breakfast main, so the planner pairs it with fruit, not
+    // bread. Breakfast mains default to savory (eggs -> bread/nuts); tag the sweet-leaning ones.
+    flavor: 'sweet',
     styles: ['lowcarb', 'highprotein'], time: 5,
     ingredients: [['skyr', 200], ['almonds', 25], ['chia-seeds', 10]],
     toTaste: [],
@@ -458,15 +461,19 @@ const RECIPES_DB = {
     tags: ['thyroid', 'muscle', 'lowGI'],
     avoid: []
   },
+  // Owner correction (baked in 2026-09-06, was role:'full' "Pork loin, farro & greens"): a
+  // protein MAIN, not a complete plate — the planner composes it with a carb + veg side, the
+  // same as every other role:'main'. The built-in farro/spinach were dropped so it doesn't
+  // double up on starch/veg once a side is added; the id is kept stable for the D1 override.
   'pork-loin-farro-veg': {
-    title: 'Pork loin, farro & greens', emoji: '🍖', slot: 'dinner', role: 'full',
-    slots: ['dinner', 'lunch'],
-    styles: ['balanced', 'highprotein'], time: 30,
-    ingredients: [['pork-loin', 150], ['farro-cooked', 150], ['spinach', 60], ['olive-oil', 8]],
+    title: 'Pork loin', emoji: '🍖', slot: 'dinner', role: 'main',
+    slots: ['dinner'],
+    styles: ['balanced', 'highprotein'], time: 20,
+    ingredients: [['pork-loin', 150], ['olive-oil', 8]],
     toTaste: ['garlic', 'herbs'],
-    steps: ['Season the pork loin and pan-sear or roast until cooked through.', 'Warm the farro through.', 'Wilt the spinach with garlic in olive oil.', 'Slice the pork and plate over the farro and greens.'],
+    steps: ['Season the pork loin with garlic and herbs.', 'Pan-sear or roast until cooked through.', 'Rest briefly, then slice.'],
     tags: ['muscle'],
-    avoid: ['gluten']
+    avoid: []
   },
 
   /* ================= ELENA RECIPE WISHLIST — BREAKFAST ================= */
@@ -686,13 +693,19 @@ const RECIPES_DB = {
     tags: ['muscle'],
     avoid: []
   },
+  // Re-roled full->main (2026-09-06, owner "plates that are really mains"): a protein main the
+  // planner composes with a carb + veg side (was a fixed roast-chicken-potatoes-carrots plate).
+  // Stripped to the chicken (thigh — the only thigh main, distinct from the breast mains) so it
+  // doesn't double up on starch/veg once a side is added; the roast potatoes/carrots now come
+  // from the composed side pool, varied each time instead of fixed.
   'pollo-al-forno': {
-    title: 'Roast chicken', emoji: '🍗', slot: 'dinner', role: 'full',
+    title: 'Roast chicken thighs', emoji: '🍗', slot: 'dinner', role: 'main',
+    slots: ['dinner'],
     imageKey: 'meat-main',
-    styles: ['balanced', 'highprotein'], time: 40,
-    ingredients: [['chicken-thigh', 180], ['potatoes', 220], ['carrots', 120], ['olive-oil', 12]],
+    styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['chicken-thigh', 180], ['olive-oil', 10]],
     toTaste: ['rosemary', 'garlic', 'lemon'],
-    steps: ['Season chicken, potatoes and carrots.', 'Roast at 200C until golden and cooked through.', 'Finish with lemon.'],
+    steps: ['Season the chicken thighs with rosemary, garlic and a little lemon.', 'Roast at 200C until golden and cooked through.', 'Rest a few minutes, then serve.'],
     tags: ['muscle'],
     avoid: []
   },
@@ -736,12 +749,18 @@ const RECIPES_DB = {
     tags: ['muscle'],
     avoid: []
   },
+  // Re-roled full->main (2026-09-06, owner "plates that are really mains"): a protein main the
+  // planner composes with a carb + veg side (was pork + mushrooms + fixed potatoes). The starchy
+  // potatoes were dropped so a composed carb side doesn't double up; the mushrooms stay as the
+  // dish's signature (a garnish-level veg, like turkey-cutlets-sage keeps its rocket/tomato) and
+  // distinguish it from the plain "Pork loin" main.
   'filetto-maiale': {
-    title: 'Pork tenderloin', emoji: '🍖', slot: 'dinner', role: 'full',
-    styles: ['balanced', 'highprotein'], time: 30,
-    ingredients: [['pork-loin', 170], ['mushrooms', 120], ['potatoes', 200], ['olive-oil', 10]],
+    title: 'Pork tenderloin with mushrooms', emoji: '🍖', slot: 'dinner', role: 'main',
+    slots: ['dinner'],
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['pork-loin', 170], ['mushrooms', 120], ['olive-oil', 10]],
     toTaste: ['sage', 'garlic'],
-    steps: ['Sear pork until golden.', 'Cook mushrooms in the pan juices.', 'Serve with roasted potatoes.'],
+    steps: ['Sear the pork until golden and cooked through.', 'Cook the mushrooms in the pan juices with sage and garlic.', 'Slice the pork and serve with the mushrooms.'],
     tags: ['muscle'],
     avoid: []
   },
@@ -908,7 +927,10 @@ const RECIPES_DB = {
   },
   'mashed-potatoes': {
     title: 'Mashed potatoes', emoji: '🥔', slot: 'side', role: 'side',
-    slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 25,
+    // sideSlots (owner 2026-09-06): which meal slots this side may ACCOMPANY as a composed side
+    // (distinct from `slots`, which is standalone eligibility). Mashed potato reads as a dinner
+    // side, not a lunch one — so the planner only offers it composing a dinner. Absent = both.
+    slots: ['side', 'lunch', 'dinner'], sideSlots: ['dinner'], styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['potatoes', 220], ['olive-oil', 8]],
     toTaste: ['salt', 'black pepper', 'nutmeg'],
     steps: ['Boil the potatoes until very tender.', 'Drain well and mash with olive oil and seasoning.', 'Loosen with a splash of cooking water if needed.'],
@@ -2061,12 +2083,18 @@ const RECIPES_DB = {
     tags: ['veggie', 'highFiber', 'omega3', 'heart'],
     avoid: []
   },
+  // Re-roled full->main (2026-09-06, owner "plates that are really mains"): a protein main the
+  // planner composes with a carb + veg side (was fish + green beans + tomatoes + fixed potatoes).
+  // Stripped to the sea bass so a composed carb + veg side doesn't double up; the greens/potatoes
+  // now come from the side pool, varied each time. Distinct from the generic white-fish "Baked
+  // fish" main; the tomato-poached "Sea bass acqua pazza" stays a full plate (its own identity).
   'sea-bass-greens-potato': {
-    title: 'Sea bass, green beans & new potatoes', emoji: '🐟', slot: 'dinner', role: 'full',
-    season: 'evergreen', styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
-    ingredients: [['sea-bass-fillet', 200], ['green-beans', 150], ['cherry-tomatoes', 120], ['potatoes', 120], ['olive-oil', 10]],
+    title: 'Pan-fried sea bass', emoji: '🐟', slot: 'dinner', role: 'main',
+    slots: ['dinner'],
+    season: 'evergreen', styles: ['balanced', 'highprotein', 'lowcarb'], time: 15,
+    ingredients: [['sea-bass-fillet', 200], ['olive-oil', 10]],
     toTaste: ['lemon', 'garlic', 'parsley'],
-    steps: ['Boil the new potatoes until tender.', 'Pan-fry the sea bass skin-side down until crisp.', 'Blanch the green beans and burst the tomatoes; plate with the fish, lemon and parsley.'],
+    steps: ['Pat the sea bass dry and season.', 'Pan-fry skin-side down until crisp and just cooked through.', 'Finish with lemon, garlic and parsley.'],
     tags: ['muscle', 'thyroid', 'lowGI', 'heart'],
     avoid: []
   },

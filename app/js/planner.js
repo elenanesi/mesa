@@ -2512,7 +2512,25 @@ function generateWeek(seed){
 // whitelisted, avoid/season/variety-filtered breakfastPair food, each at whichever fixed
 // gram/piece step lands closest to the remaining gap (desired − standalone main kcal).
 // `push` is called once per candidate with (tieId, kcalTotal, proteinTotal, extra|null).
+// Flavor coherence for breakfast pairing (owner 2026-09-06: "a sweet breakfast can't be paired
+// with [savory]"). A breakfast main is 'sweet' only when it declares flavor:'sweet' (a yogurt/
+// fruit bowl), else 'savory' (eggs & co) — the safe default. A pairable food is 'sweet' when it's
+// a fruit (FOODS.sub==='fruit'), else 'savory' (breads, everything else). Pure + deterministic.
+function recipeFlavor(recipeId){
+  const r = RECIPES_DB[recipeId];
+  return (r && r.flavor === 'sweet') ? 'sweet' : 'savory';
+}
+function pairFoodFlavor(foodId){
+  const f = (typeof FOODS !== 'undefined') && FOODS[foodId];
+  return (f && f.sub === 'fruit') ? 'sweet' : 'savory';
+}
 function pushBreakfastPairCandidates(push, mainId, mainBase, bp, desired, foodPool){
+  // Keep only pairings whose flavor matches the main (sweet bowl -> fruit; savory eggs -> bread).
+  // Never-starve: if flavor-matching empties the pool, fall back to the full pool so the main
+  // still gets a pairing (a purely additive coherence rule, never a hard block on composition).
+  const wantFlavor = recipeFlavor(mainId);
+  const matched = foodPool.filter(function(id){ return pairFoodFlavor(id) === wantFlavor; });
+  foodPool = matched.length ? matched : foodPool;
   foodPool.forEach(function(foodId){
     let bestStep = null;
     foodPairingSteps(foodId).forEach(function(grams){
@@ -2612,11 +2630,26 @@ function buildBreakfastFoodPool(avoid, persons, history, dayIndex){
     persons.map(function(p){ return history[p].dayUseFood[dayIndex]; }));
 }
 
+// A side may declare `sideSlots` — the meal slots it is appropriate to ACCOMPANY as a composed
+// side (owner 2026-09-06: "mashed potato is only ok as a dinner side"). Absent = fits any slot.
+// Distinct from a recipe's `slots` (its standalone eligibility). Pure + deterministic.
+function sideAllowedInSlot(id, slot){
+  const r = RECIPES_DB[id];
+  return !r || !Array.isArray(r.sideSlots) || !slot || r.sideSlots.indexOf(slot) !== -1;
+}
 // The lunch/dinner side pools (carb + veg), ranked/relaxed by sidePoolLadder for
-// `persons` — same two-line sequence both pickers ran, only `avoid`/`persons` differ.
-function buildSidePools(avoid, persons, history, dayIndex){
+// `persons` — same two-line sequence both pickers ran, only `avoid`/`persons` differ. `slot`
+// (lunch|dinner) drops sides that declare themselves inappropriate here (sideSlots), with a
+// never-starve fallback: if the slot-appropriate set has no carb (or no veg), the unfiltered
+// ranked pool is used for that kind so the composed path is never emptied by the rule.
+function buildSidePools(avoid, persons, history, dayIndex, slot){
   const sidePool = sidePoolLadder(sidePoolFor(avoid, persons), history, persons, dayIndex);
-  return {carbPool: sidePool.filter(isCarbSide), vegPool: sidePool.filter(isVegSide)};
+  const slotOK = sidePool.filter(function(id){ return sideAllowedInSlot(id, slot); });
+  function pool(filterFn){
+    const filtered = slotOK.filter(filterFn);
+    return filtered.length ? filtered : sidePool.filter(filterFn);
+  }
+  return {carbPool: pool(isCarbSide), vegPool: pool(isVegSide)};
 }
 
 // remainingWeight is a per-person object {elena, partner} (owner 2026-08-23): the two can differ
@@ -2731,7 +2764,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     } else if(slot === 'lunch' || slot === 'dinner'){
       // VARIETY-plan.md P1+P2 for sides, as one priority ladder (sidePoolLadder's doc
       // explains why nesting the rules ranked them wrong). Shared slot -> both people.
-      const sides = buildSidePools(avoidBoth, ['elena', 'partner'], history, dayIndex);
+      const sides = buildSidePools(avoidBoth, ['elena', 'partner'], history, dayIndex, slot);
       const carbPool = sides.carbPool, vegPool = sides.vegPool;
       if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
@@ -2886,7 +2919,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
         });
       });
     } else if(slot === 'lunch' || slot === 'dinner'){
-      const sides = buildSidePools(avoidP, [person], history, dayIndex);
+      const sides = buildSidePools(avoidP, [person], history, dayIndex, slot);
       const carbPool = sides.carbPool, vegPool = sides.vegPool;
       if(carbPool.length && vegPool.length){
         mainIds.forEach(function(mainId){
