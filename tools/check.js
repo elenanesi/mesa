@@ -4631,6 +4631,48 @@ function testSideAndPairingAppropriateness(ctx){
     'pushBreakfastPairCandidates: falls back to the full pool when flavor-matching would leave no pairing (never starves)');
 }
 
+// Options-recipe = one recipe per combo (owner 2026-09-06: "make the planner see a
+// recipe-with-options as different recipes, each with one option" — e.g. baked fish's 5 fish,
+// pasta's 7 sauces). The variety machinery keys on a combo token so each combo rotates/caps like
+// its own recipe. Unit-tests the two pure helpers (the generation-loop wiring is exercised by the
+// determinism + full-generation tests, which stay green because an options-LESS recipe's token IS
+// its bare id).
+function testOptionComboVariety(ctx){
+  // (1) comboVarietyKey: options-less -> bare id (byte-identical); option -> distinct per combo.
+  assert(call(ctx, 'comboVarietyKey', ['lemon-herb-chicken-breast', undefined]) === 'lemon-herb-chicken-breast',
+    'comboVarietyKey: an options-less recipe keys on its bare id (so every existing variety lookup is unchanged)');
+  const kSalmon = call(ctx, 'comboVarietyKey', ['baked-fish', {fish: 'salmon'}]);
+  const kCod = call(ctx, 'comboVarietyKey', ['baked-fish', {fish: 'cod'}]);
+  assert(kSalmon !== kCod && kSalmon.indexOf('baked-fish') === 0 && kCod.indexOf('baked-fish') === 0,
+    'comboVarietyKey: two combos of the same recipe get distinct keys, both under the base id', kSalmon + ' / ' + kCod);
+
+  const freshHist = {elena: {dayUseRecipe: {}, weekUse: {}, dinner: []}};
+  const combos = function(hist){ return call(ctx, 'eligibleCombosForVariety', ['baked-fish', [], [], hist, ['elena'], 'dinner', 0]).map(function(o){ return o.fish; }).sort(); };
+  // (2) fresh week: every fish combo is eligible.
+  assert(combos(freshHist).length === 5,
+    'eligibleCombosForVariety: on a fresh week all 5 fish combos are eligible', JSON.stringify(combos(freshHist)));
+  // (3) options-less recipe returns its single {} combo unchanged (byte-identical path).
+  const oneless = call(ctx, 'eligibleCombosForVariety', ['lemon-herb-chicken-breast', [], [], freshHist, ['elena'], 'dinner', 0]);
+  assert(oneless.length === 1 && Object.keys(oneless[0]).length === 0,
+    'eligibleCombosForVariety: an options-less recipe returns exactly [{}] (unchanged, byte-identical)', JSON.stringify(oneless));
+  // (4) a combo used TODAY is dropped (but others remain).
+  const usedTodayHist = {elena: {dayUseRecipe: {0: [kSalmon]}, weekUse: {}, dinner: []}};
+  const afterToday = combos(usedTodayHist);
+  assert(afterToday.indexOf('salmon') === -1 && afterToday.length === 4,
+    'eligibleCombosForVariety: a combo already placed today is dropped; the other fish stay', JSON.stringify(afterToday));
+  // (5) a combo at its weekly cap is dropped.
+  const cap = call(ctx, 'weeklyCapForRecipe', ['baked-fish', ['elena']]);
+  const cappedHist = {elena: {dayUseRecipe: {}, weekUse: {}, dinner: []}};
+  cappedHist.elena.weekUse[kCod] = cap;
+  assert(combos(cappedHist).indexOf('cod') === -1,
+    'eligibleCombosForVariety: a combo already at its weekly cap is dropped', 'cap=' + cap);
+  // (6) never-starve: if EVERY combo was used today, it falls back to all of them (slot never empties).
+  const allTodayHist = {elena: {dayUseRecipe: {0: []}, weekUse: {}, dinner: []}};
+  ['salmon', 'sea-bass', 'sole', 'cod', 'tuna'].forEach(function(f){ allTodayHist.elena.dayUseRecipe[0].push(call(ctx, 'comboVarietyKey', ['baked-fish', {fish: f}])); });
+  assert(combos(allTodayHist).length === 5,
+    'eligibleCombosForVariety: when every combo is used up it falls back to all (never starves the slot)', JSON.stringify(combos(allTodayHist)));
+}
+
 // Over-scale comfort penalty (2026-09-03, panel-approved): a SOFT, bounded, always-on score
 // term (sibling to tuningBonus/ingredientDiversityPenalty above) that discourages tripling ONE
 // dish to hit a high-calorie lunch/dinner target instead of picking a denser recipe. See
@@ -14174,6 +14216,7 @@ function main(){
   runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
   runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
   runTest('side/pairing appropriateness (slot + flavor gates, 2026-09-06)', function(){ testSideAndPairingAppropriateness(ctx); });
+  runTest('options-recipe = one recipe per combo (variety, 2026-09-06)', function(){ testOptionComboVariety(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
   runTest('recipe-of-recipes (components aggregate)', function(){ testRecipeComponents(ctx); });
   runTest('weekly recipe caps (VARIETY-plan.md P2)', function(){ testWeeklyRecipeCaps(ctx); });

@@ -794,6 +794,54 @@ function optsComboSignature(opts){
   return keys.map(function(k){ return k + '=' + opts[k]; }).join(',');
 }
 
+/* ---------------- options-recipe = one recipe PER combo (owner 2026-09-06) ----------------
+   Owner: "the main ingredient is sometimes under options (baked fish -> 5 fish, pasta -> 7
+   sauces). Make the planner see the recipe-with-options as different recipes, each including
+   one option." So the variety machinery (day-use, weekly cap, per-slot gap) must treat a
+   recipe's option-combo as its own identity, not lump all combos under the one recipe id.
+
+   The variety KEY: recipeId for an options-LESS recipe (sig ''), else recipeId + U+0001 + the
+   opts signature. Because every recipe-level variety check (applyLunchDinnerMainRules'
+   lunchDinnerMainUse[id], applyWeeklyCapFilter/sidePoolLadder's weekUse[id], applyVarietyFilter's
+   usedToday[id] + lastUsedGap) looks up the BARE recipe id, keying the history buckets by this
+   token means:
+     - options-less recipe: token === id, so EVERY lookup is unchanged -> byte-identical output.
+     - options recipe: the bare-id lookup never matches a combo token, so the recipe is never
+       removed by the recipe-level filters (it always reaches the candidate stage), and its
+       real per-combo variety is enforced by eligibleCombosForVariety below at candidate build.
+   The U+0001 separator can't occur in a recipe id or an opts signature, so decode is unambiguous. */
+function comboVarietyKey(recipeId, opts){
+  const sig = optsComboSignature(opts);
+  return sig ? recipeId + '' + sig : recipeId;
+}
+// The viable option-combos for a recipe MINUS those a same-day/weekly-cap/recent-gap variety
+// rule would repeat — the combo-level counterpart to applyVarietyFilter, so each combo rotates
+// like its own recipe. Mirrors that function's day -> cap -> gap relax ladder, each stage
+// falling back to the previous so the recipe never contributes zero candidates (never starves a
+// slot). An options-less recipe (<=1 viable combo) returns unchanged, so its candidate set and
+// scoring stay byte-identical. `persons` is [person] for solo, ['elena','partner'] for a shared
+// slot — same convention as applyVarietyFilter's dayUsePersons.
+function eligibleCombosForVariety(recipeId, avoidList, dietList, history, persons, slot, dayIndex){
+  const all = viableRecipeOptionCombos(recipeId, avoidList, dietList);
+  if(all.length <= 1) return all;
+  const key = function(o){ return comboVarietyKey(recipeId, o); };
+  const usedToday = {};
+  persons.forEach(function(p){ (history[p].dayUseRecipe[dayIndex] || []).forEach(function(k){ usedToday[k] = true; }); });
+  const notToday = all.filter(function(o){ return !usedToday[key(o)]; });
+  let base = notToday.length ? notToday : all;
+  const cap = weeklyCapForRecipe(recipeId, persons);
+  const underCap = base.filter(function(o){ return persons.every(function(p){ return (history[p].weekUse[key(o)] || 0) < cap; }); });
+  base = underCap.length ? underCap : base;
+  const vp = persons[0];
+  const gaps = {};
+  base.forEach(function(o){ gaps[key(o)] = lastUsedGap(history, vp, slot, dayIndex, key(o)); });
+  const fresh = base.filter(function(o){ const g = gaps[key(o)]; return g > 3 && (slot !== 'dinner' || g === Infinity); });
+  if(fresh.length) return fresh;
+  let maxGap = -1;
+  base.forEach(function(o){ if(gaps[key(o)] > maxGap) maxGap = gaps[key(o)]; });
+  return base.filter(function(o){ return gaps[key(o)] === maxGap; });
+}
+
 // Decisions Q2 whitelist (breads + fruit) — FOODS[id].breakfastPair === true — filtered by
 // avoid-list and season (a summer breakfast shouldn't default-pair with a winter-only
 // fruit), sorted for deterministic iteration.
@@ -890,7 +938,11 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
   // with a veg side is one poultry meal, not one poultry plus one meatless.
   const kind = entryProteinKind(entry);
   if((slot === 'lunch' || slot === 'dinner') && entry.recipeId){
-    history[person].lunchDinnerMainUse[entry.recipeId] = true;
+    // Keyed by the combo token (options-recipe = one recipe per combo, 2026-09-06): a bare
+    // recipe id for an options-less dish (byte-identical), else recipeId+sig — so a fish main's
+    // "salmon" combo and "cod" combo count as different mains here, exactly as separate recipes
+    // would. See comboVarietyKey / eligibleCombosForVariety.
+    history[person].lunchDinnerMainUse[comboVarietyKey(entry.recipeId, entry.opts)] = true;
     if(kind === 'red' || kind === 'poultry'){
       history[person].meatUse[kind]++;
       history[person].meatUse.total++;
@@ -898,10 +950,12 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
   }
   planEntryComponents(entry).forEach(function(c){
     if(c.recipeId){
+      // Combo-token key (see above): a sideless/optionless component keeps its bare id.
+      const vkey = comboVarietyKey(c.recipeId, c.opts);
       if(!history[person].dayUseRecipe[dayIndex]) history[person].dayUseRecipe[dayIndex] = [];
-      history[person].dayUseRecipe[dayIndex].push(c.recipeId);
+      history[person].dayUseRecipe[dayIndex].push(vkey);
       // VARIETY-plan.md P2: same walk feeds the whole-week tally the cap reads.
-      history[person].weekUse[c.recipeId] = (history[person].weekUse[c.recipeId] || 0) + 1;
+      history[person].weekUse[vkey] = (history[person].weekUse[vkey] || 0) + 1;
       // Same-day ingredient variety: record this dish's dominant Produce/Dairy key so a later
       // slot the same day is nudged away from repeating it (ingredientDiversityPenalty).
       if(history[person].dayUseIngredientKey){
@@ -2403,7 +2457,7 @@ function generateWeek(seed){
         const soloNutE = planEntryNutrition(chE);
         remainingKcal.elena -= soloNutE.kcal;
         remainingProtein.elena -= soloNutE.protein;
-        history.elena[slot][d] = chE.recipeId;
+        history.elena[slot][d] = comboVarietyKey(chE.recipeId, chE.opts);
         recordCompositionUsage(history, chE, 'elena', slot, d);
         recordDayUsage(history, chE, 'elena', d, slot);
       } else if(shared){
@@ -2426,7 +2480,7 @@ function generateWeek(seed){
         const sharedNutE = planEntryNutrition(chosen.elena), sharedNutA = planEntryNutrition(chosen.partner);
         remainingKcal.elena -= sharedNutE.kcal; remainingKcal.partner -= sharedNutA.kcal;
         remainingProtein.elena -= sharedNutE.protein; remainingProtein.partner -= sharedNutA.protein;
-        history.elena[slot][d] = chosen.recipeId; history.partner[slot][d] = chosen.recipeId;
+        history.elena[slot][d] = comboVarietyKey(chosen.recipeId, chosen.elena.opts); history.partner[slot][d] = comboVarietyKey(chosen.recipeId, chosen.partner.opts);
         recordCompositionUsage(history, chosen.elena, 'elena', slot, d);
         recordCompositionUsage(history, chosen.partner, 'partner', slot, d);
         // VARIETY-plan.md P1: a shared dish records into BOTH people's day-wide log — one
@@ -2458,7 +2512,7 @@ function generateWeek(seed){
           const soloNutE = planEntryNutrition(chE);
           remainingKcal.elena -= soloNutE.kcal;
           remainingProtein.elena -= soloNutE.protein;
-          history.elena[slot][d] = chE.recipeId;
+          history.elena[slot][d] = comboVarietyKey(chE.recipeId, chE.opts);
           recordCompositionUsage(history, chE, 'elena', slot, d);
           recordDayUsage(history, chE, 'elena', d, slot);
         }
@@ -2466,7 +2520,7 @@ function generateWeek(seed){
           const soloNutA = planEntryNutrition(chA);
           remainingKcal.partner -= soloNutA.kcal;
           remainingProtein.partner -= soloNutA.protein;
-          history.partner[slot][d] = chA.recipeId;
+          history.partner[slot][d] = comboVarietyKey(chA.recipeId, chA.opts);
           recordCompositionUsage(history, chA, 'partner', slot, d);
           recordDayUsage(history, chA, 'partner', d, slot);
         }
@@ -2703,7 +2757,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
       // task (variant-fit planner): one candidate per viable combo — [{}] for a recipe
       // without optionGroups, so this loop still runs exactly once per id there, byte-
       // identical to before.
-      viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
+      eligibleCombosForVariety(id, avoidBoth, dietBoth, history, ['elena', 'partner'], slot, dayIndex).forEach(function(opts){
         const base = recipeNutrition(id, 1, opts).totals;
         const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
         const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
@@ -2714,7 +2768,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     const split = splitPoolByRole(pool, slot);
     const fullIds = split.fullIds, mainIds = split.mainIds;
     fullIds.forEach(function(id){
-      viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
+      eligibleCombosForVariety(id, avoidBoth, dietBoth, history, ['elena', 'partner'], slot, dayIndex).forEach(function(opts){
         const base = recipeNutrition(id, 1, opts).totals;
         const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
         const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
@@ -2725,7 +2779,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     if(slot === 'breakfast'){
       const foodPool = buildBreakfastFoodPool(avoidBoth, ['elena', 'partner'], history, dayIndex);
       mainIds.forEach(function(id){
-        viableRecipeOptionCombos(id, avoidBoth, dietBoth).forEach(function(opts){
+        eligibleCombosForVariety(id, avoidBoth, dietBoth, history, ['elena', 'partner'], slot, dayIndex).forEach(function(opts){
           const base = recipeNutrition(id, 1, opts).totals;
           const sig = optsComboSignature(opts);
           const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
@@ -2771,7 +2825,7 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
           // task (variant-fit planner): topKSideIds is computed PER combo — a variant's
           // own kcal changes which sides fit it best (e.g. baked-fish's leaner sole vs
           // richer salmon choice wants a different-sized carb/veg pairing).
-          viableRecipeOptionCombos(mainId, avoidBoth, dietBoth).forEach(function(opts){
+          eligibleCombosForVariety(mainId, avoidBoth, dietBoth, history, ['elena', 'partner'], slot, dayIndex).forEach(function(opts){
             const mainBase = recipeNutrition(mainId, 1, opts).totals;
             const sig = optsComboSignature(opts);
             const carbIds = topKSideIds(mainBase.kcal, carbPool, desiredE / 2, SIDE_TOP_K);
@@ -2888,7 +2942,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     pool.forEach(function(id){
       // task (variant-fit planner): one candidate per viable combo — [{}] for a recipe
       // without optionGroups, byte-identical to before.
-      viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
+      eligibleCombosForVariety(id, avoidP, dietP, history, [person], slot, dayIndex).forEach(function(opts){
         const base = recipeNutrition(id, 1, opts).totals;
         pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion), opts);
       });
@@ -2897,7 +2951,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     const split = splitPoolByRole(pool, slot);
     const fullIds = split.fullIds, mainIds = split.mainIds;
     fullIds.forEach(function(id){
-      viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
+      eligibleCombosForVariety(id, avoidP, dietP, history, [person], slot, dayIndex).forEach(function(opts){
         const base = recipeNutrition(id, 1, opts).totals;
         pushFull(id, base, bestPortion(base.kcal, desired, anchor, maxPortion), opts);
       });
@@ -2906,7 +2960,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     if(slot === 'breakfast'){
       const foodPool = buildBreakfastFoodPool(avoidP, [person], history, dayIndex);
       mainIds.forEach(function(id){
-        viableRecipeOptionCombos(id, avoidP, dietP).forEach(function(opts){
+        eligibleCombosForVariety(id, avoidP, dietP, history, [person], slot, dayIndex).forEach(function(opts){
           const base = recipeNutrition(id, 1, opts).totals;
           const sig = optsComboSignature(opts);
           const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
@@ -2925,7 +2979,7 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
         mainIds.forEach(function(mainId){
           // task (variant-fit planner): see pickSharedMeal's matching comment — sides are
           // re-ranked PER combo since a variant's own kcal changes the best-fitting pair.
-          viableRecipeOptionCombos(mainId, avoidP, dietP).forEach(function(opts){
+          eligibleCombosForVariety(mainId, avoidP, dietP, history, [person], slot, dayIndex).forEach(function(opts){
             const mainBase = recipeNutrition(mainId, 1, opts).totals;
             const sig = optsComboSignature(opts);
             const carbIds = topKSideIds(mainBase.kcal, carbPool, desired / 2, SIDE_TOP_K);
