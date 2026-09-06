@@ -276,12 +276,15 @@ function renderWeek(){
     // sat-fat notes appended since they aren't itemized figures on this line.
     const bal = perDayBalanceState(totals, person);
     const cue = function(state){ return (state==='ok') ? '' : ' <span class="day-cue">· ' + state + '</span>'; };
-    // Total-fat cue: same calm "· fat high" wording for both severities (the number
-    // itself already lives in the macro line just before it) — only the color escalates,
-    // amber .day-cue for 'rich', the stronger .day-cue-over (--terra) reserved for 'over'
-    // (perDayBalanceState/state.js PER_DAY_BANDS.fat), so a routine drift and a genuinely
-    // high day read differently without the line ever shouting.
-    const fatCue = bal.fat==='ok' ? '' : ' <span class="day-cue'+(bal.fat==='over'?' day-cue-over':'')+'">· fat high</span>';
+    // Total-fat cue: the WORDING now escalates with severity too (not just the colour) so a
+    // routine drift and a genuinely high day never read the same — amber "· fat rich" for
+    // 'rich' (matching "sat fat rich"), the stronger red .day-cue-over "· fat high" reserved
+    // for 'over' (perDayBalanceState/state.js PER_DAY_BANDS.fat). Suppressed entirely on an
+    // under-target day (perDayBalanceState gates fat on kcal!=='low').
+    const fatCue = bal.fat==='ok' ? ''
+      : (bal.fat==='over'
+          ? ' <span class="day-cue day-cue-over">· fat high</span>'
+          : ' <span class="day-cue">· fat rich</span>');
     const extraCues = (bal.kcal!=='ok' ? ' <span class="day-cue">· kcal '+bal.kcal+'</span>' : '')
                     + (bal.satFat==='rich' ? ' <span class="day-cue">· sat fat rich</span>' : '')
                     + fatCue;

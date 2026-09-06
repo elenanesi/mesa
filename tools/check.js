@@ -6979,6 +6979,18 @@ function testPerDayBalanceState(ctx){
   const fatOver = call(ctx, 'perDayBalanceState', [baseDay({fat: fatOverG}), person]);
   assert(fatOver.fat === 'over', 'perDayBalanceState: total fat above split target +' + fatOverAddPts + 'pt is "over" (the stronger, red-accent cue)', JSON.stringify(fatOver));
 
+  // Owner (2026-09-06): fat/sat-fat are %/ratio judgments, so on an UNDER-target day (kcal
+  // 'low' — usually a day still being filled in) a modest absolute fat load reads as a high
+  // PERCENTAGE of a small denominator and the warning fired harshly/volatilely. They're now
+  // suppressed when kcal is 'low'. Same over-the-line fat grams as fatOver, but on a light day:
+  const lowKcalHighFat = baseDay({fat: fatOverG, satFat: Math.ceil(satCeil + 5), kcal: Math.floor(calGoal * (1 - kcalTol) - 5)});
+  const lightFat = call(ctx, 'perDayBalanceState', [lowKcalHighFat, person]);
+  assert(lightFat.kcal === 'low', 'test setup: the light day is kcal:low', JSON.stringify(lightFat));
+  assert(lightFat.fat === 'ok' && lightFat.satFat === 'ok',
+    'perDayBalanceState: fat + sat-fat are NOT flagged on an under-target (kcal:low) day — a small-denominator artifact, not a real high-fat day', JSON.stringify(lightFat));
+  // Fibre floor / protein floor / kcal still report on a light day (those are about getting ENOUGH).
+  assert(lightFat.kcal === 'low', 'perDayBalanceState: kcal itself still reports low on a light day');
+
   // A fully in-range day is quiet on every axis.
   const allOk = call(ctx, 'perDayBalanceState', [baseDay(), person]);
   assert(allOk.kcal === 'ok' && allOk.protein === 'ok' && allOk.fiber === 'ok' && allOk.freeSugars === 'ok' && allOk.satFat === 'ok' && allOk.fat === 'ok',

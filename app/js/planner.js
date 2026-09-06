@@ -3120,20 +3120,28 @@ function perDayBalanceState(dayTotals, person){
     const sugarCeil = ((NUTRITION_GUIDANCE.freeSugars.target/100)*calGoal/4) * PER_DAY_BANDS.freeSugars.ceilMult;
     if(classifyMaxBand(dayTotals.freeSugars, sugarCeil) === 'over') out.freeSugars = 'rich';
   }
-  // sat fat: ceiling
-  if(calGoal > 0 && typeof dayTotals.satFat === 'number'){
-    const satCeil = ((NUTRITION_GUIDANCE.satFat.target/100)*calGoal/9) * PER_DAY_BANDS.satFat.ceilMult;
-    if(classifyMaxBand(dayTotals.satFat, satCeil) === 'over') out.satFat = 'rich';
-  }
-  // TOTAL fat: ceiling only, judged as % of THIS day's actual energy (not the calorie
-  // goal — a day that ran light on calories but still skewed fat-heavy should still
-  // flag) against the person's own split target, +richAddPts/+overAddPts (state.js
-  // PER_DAY_BANDS.fat) — see that constant's header comment for the calibration.
-  if(typeof dayTotals.fat === 'number' && dayTotals.kcal > 0){
-    const fatPct = (dayTotals.fat * 9 / dayTotals.kcal) * 100;
-    const fatTarget = fatSplitTargetFor(person);
-    if(fatPct > fatTarget + PER_DAY_BANDS.fat.overAddPts) out.fat = 'over';
-    else if(fatPct > fatTarget + PER_DAY_BANDS.fat.richAddPts) out.fat = 'rich';
+  // Sat fat + TOTAL fat are RATIO/%-of-energy judgments, so they're unreliable on an
+  // under-target day (out.kcal === 'low') — which on the Week view is usually a day still
+  // being filled in (some slots logged, others pending) OR a genuinely light day. There, a
+  // modest ABSOLUTE fat load reads as a high PERCENTAGE of a small denominator, so the fat
+  // warning fired harshly and flip-flopped as the day filled (owner: "inconsistent and
+  // sometimes too harsh"). Only judge fat richness once the day has roughly a full day's
+  // calories. (Generation steering in dayImbalanceForPerson is unaffected — it works on full
+  // generated days, not partial running totals.)
+  if(out.kcal !== 'low'){
+    // sat fat: ceiling
+    if(calGoal > 0 && typeof dayTotals.satFat === 'number'){
+      const satCeil = ((NUTRITION_GUIDANCE.satFat.target/100)*calGoal/9) * PER_DAY_BANDS.satFat.ceilMult;
+      if(classifyMaxBand(dayTotals.satFat, satCeil) === 'over') out.satFat = 'rich';
+    }
+    // TOTAL fat: ceiling only, judged as % of the day's energy vs the person's own split
+    // target +richAddPts/+overAddPts (state.js PER_DAY_BANDS.fat — see its header comment).
+    if(typeof dayTotals.fat === 'number' && dayTotals.kcal > 0){
+      const fatPct = (dayTotals.fat * 9 / dayTotals.kcal) * 100;
+      const fatTarget = fatSplitTargetFor(person);
+      if(fatPct > fatTarget + PER_DAY_BANDS.fat.overAddPts) out.fat = 'over';
+      else if(fatPct > fatTarget + PER_DAY_BANDS.fat.richAddPts) out.fat = 'rich';
+    }
   }
   return out;
 }
