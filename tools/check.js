@@ -1299,7 +1299,7 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos']),
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef']),
     'availableRecipeImageKeys: returns curated recipe image set plus approved ad hoc recipe images', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
   assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
     'safeRecipeImageKey: accepts an available recipe image key', '');
@@ -1363,6 +1363,16 @@ function testRecipeImageHelpers(ctx){
     'recipeImageAssetForRecipe: keeps the default image for meat dinners unless explicitly changed', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/salad.png',
     'recipeImageAssetForRecipe: custom recipes in Auto use their slot default image', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Yogurt cake', emoji: '🍰', slot: 'snack', imageKey: 'pasta'}]) === 'assets/recipes/yogurt-cake.png',
+    'recipeImageAssetForRecipe: exact recipe title mapping wins over a generic selected image', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Eggs florentine', emoji: '🍳', slot: 'lunch', imageKey: 'salad'}]) === 'assets/recipes/egg-dishes.png',
+    'recipeImageAssetForRecipe: a recipe named for eggs gets the egg-dish artwork before its meal default', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Eggs, bacon, avocado & beans on toast', emoji: '🍳', slot: 'breakfast'}, 'uova-bacon']) === 'assets/recipes/egg-avocado-bacon-beans-toast.png',
+    'recipeImageAssetForRecipe: the exact breakfast title gets its dedicated ad hoc artwork before the general egg image', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Slow-braised beef shin ragù', emoji: '🥘', slot: 'dinner'}]) === 'assets/recipes/slow-braised-beef.png',
+    'recipeImageAssetForRecipe: exact slow-braised beef title gets its dedicated artwork', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Plain supper', emoji: '🍽️', slot: 'lunch'}]) === 'assets/recipes/salad.png',
+    'recipeImageAssetForRecipe: unnamed dishes still fall back to their meal artwork', '');
 
   const html = call(ctx, 'recipeHeroHtml', [recipe]);
   assert(html.indexOf('<img ') === 0 && html.indexOf('class="recipe-image"') !== -1 && html.indexOf('src="assets/recipes/fish-main.png"') !== -1,

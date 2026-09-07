@@ -2205,6 +2205,15 @@ const RECIPES_DB = {
     tags: ['veggie'],
     avoid: ['lactose']
   },
+  'hot-dog': {
+    title: 'Classic hot dog', emoji: '🌭', slot: 'dinner', role: 'full', occasional: true,
+    imageKey: 'hot-dog', season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced'], time: 12,
+    ingredients: [['hot-dog-bun', 70], ['wiener-sausage', 100], ['ketchup', 15], ['mustard', 8]],
+    toTaste: ['black pepper'],
+    steps: ['Warm the würstel gently in simmering water or a pan until heated through.', 'Toast the cut side of the bun until just crisp.', 'Nestle the würstel in the bun and finish with a neat ribbon of ketchup and mustard.'],
+    tags: ['quick'],
+    avoid: ['gluten']
+  },
 
   // ── Instagram-inspired batch #2 (2026-08-31) ──────────────────────────────
   // Reels 18-25 (see ig-recipes.md). Savoury mains healthy-tweaked (oil trimmed, veg/protein

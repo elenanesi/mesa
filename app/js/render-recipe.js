@@ -358,13 +358,15 @@ const RECIPE_IMAGE_KEYS = [
   'citrus-roast-turkey', 'club-sandwich', 'shakshuka',
   'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure',
   'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast',
-  'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos'
+  'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos',
+  'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast',
+  'slow-braised-beef'
 ];
 
 const RECIPE_IMAGE_GROUPS = [
   {label: 'Everyday meals', keys: ['default-recipe', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main']},
   {label: 'Breakfast, snacks & sweets', keys: ['breakfast-bowl', 'french-toast', 'pancakes', 'onigiri', 'snack-board', 'dessert-sweets', 'ice-cream']},
-  {label: 'Named dishes', keys: ['ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'nachos']}
+  {label: 'Named dishes', keys: ['ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'nachos', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef']}
 ];
 
 function recipeImageLabel(key){
@@ -392,7 +394,12 @@ function recipeImageLabel(key){
     'citrus-roast-turkey': 'Citrus turkey',
     'club-sandwich': 'Club sandwich',
     'shakshuka': 'Shakshuka',
-    'snack-board': 'Snack board'
+    'snack-board': 'Snack board',
+    'hot-dog': 'Hot dog',
+    'yogurt-cake': 'Yogurt cake',
+    'egg-dishes': 'Egg dishes',
+    'egg-avocado-bacon-beans-toast': 'Egg & avocado toast',
+    'slow-braised-beef': 'Slow-braised beef'
   };
   return labels[key] || String(key || '').replace(/-/g, ' ');
 }
@@ -504,9 +511,50 @@ function recipeHasFishIngredient(recipe){
   });
 }
 
+// Image selection is intentionally led by the *recipe name*, not whichever ingredient happens
+// to be most prominent. This keeps a frittata recognisably egg-led and a named dish from being
+// mistaken for a generic lunch salad. Exact named dishes win, then named egg dishes, then the
+// recipe's manually selected art, then the normal name/category and meal fallbacks.
+const EXACT_RECIPE_TITLE_IMAGE_KEYS = {
+  'classic hot dog': 'hot-dog',
+  'hot dog': 'hot-dog',
+  'hotdog': 'hot-dog',
+  'chocolate yogurt cheesecake': 'yogurt-cake',
+  'yogurt cake': 'yogurt-cake',
+  'yoghurt cake': 'yogurt-cake',
+  'eggs bacon avocado and beans on toast': 'egg-avocado-bacon-beans-toast',
+  'eggs bacon avocado beans on toast': 'egg-avocado-bacon-beans-toast',
+  'egg avocado bacon beans on toast': 'egg-avocado-bacon-beans-toast',
+  'egg avocado bacon and beans on toast': 'egg-avocado-bacon-beans-toast',
+  'slow braised beef shin ragu': 'slow-braised-beef',
+  'slow braised beef': 'slow-braised-beef'
+};
+const EXACT_RECIPE_ID_IMAGE_KEYS = {
+  'hot-dog': 'hot-dog',
+  'uova-bacon': 'egg-avocado-bacon-beans-toast',
+  'braised-beef-shin-ragu': 'slow-braised-beef',
+  'choc-yogurt-cheesecake': 'yogurt-cake'
+};
+
+function normalizedRecipeImageTitle(value){
+  return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function exactRecipeImageKey(recipe, recipeId){
+  const byTitle = EXACT_RECIPE_TITLE_IMAGE_KEYS[normalizedRecipeImageTitle(recipe && recipe.title)];
+  if(byTitle) return byTitle;
+  return EXACT_RECIPE_ID_IMAGE_KEYS[String(recipeId || '')] || '';
+}
+
+function recipeTitleRequestsEggImage(recipe){
+  return /\b(egg|eggs|uovo|uova|omelette|omelet|frittata)\b/.test(normalizedRecipeImageTitle(recipe && recipe.title));
+}
+
 function inferredRecipeImageKey(recipe, recipeId){
   if(!recipe) return 'default-recipe';
-  const title = String(recipe.title || '').toLowerCase();
+  const exactKey = exactRecipeImageKey(recipe, recipeId);
+  if(exactKey) return exactKey;
+  const title = normalizedRecipeImageTitle(recipe.title);
   const emoji = String(recipe.emoji || '');
   const tags = Array.isArray(recipe.tags) ? recipe.tags : [];
   const foodIds = Array.isArray(recipe.ingredients) ? recipe.ingredients.map(function(ing){ return ing && ing[0]; }) : [];
@@ -516,6 +564,10 @@ function inferredRecipeImageKey(recipe, recipeId){
   }).join(' ').toLowerCase();
   const haystack = title + ' ' + emoji + ' ' + tags.join(' ') + ' ' + foodText;
 
+  // After an exact named-dish mapping, an egg named in the dish itself is more descriptive
+  // than the ingredient list or the generic breakfast/lunch artwork. Deliberately title-only:
+  // a sauce with egg as a hidden binder should not turn into an omelette image.
+  if(recipeTitleRequestsEggImage(recipe)) return 'egg-dishes';
   if(/ramen/.test(haystack)) return 'ramen';
   if(/butter chicken|curry/.test(haystack)) return 'butter-chicken';
   if(/chinese|spring roll|dumpling|ravioli|almond chicken/.test(haystack)) return 'chinese-dinner';
@@ -547,7 +599,10 @@ function recipeImageAssetForRecipe(recipe, recipeId){
   if(!recipe) return '';
   const imageUri = safeRecipeImageAsset(recipe.imageUri);
   if(imageUri) return imageUri;
-  const imageKey = safeRecipeImageKey(recipe.imageKey) || inferredRecipeImageKey(recipe, recipeId);
+  const imageKey = exactRecipeImageKey(recipe, recipeId)
+    || (recipeTitleRequestsEggImage(recipe) ? 'egg-dishes' : '')
+    || safeRecipeImageKey(recipe.imageKey)
+    || inferredRecipeImageKey(recipe, recipeId);
   const src = safeRecipeImageAsset('assets/recipes/' + imageKey + '.png');
   return src || DEFAULT_RECIPE_IMAGE_ASSET;
 }

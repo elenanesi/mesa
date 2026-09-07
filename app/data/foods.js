@@ -370,6 +370,13 @@ const FOODS = {
     kcal: 315, protein: 16.0, carbs: 1.5, fat: 27.0, satFat: 9.0, fiber: 0, sugars: 0.5, freeSugars: 0.5, sugarQuality: 'added/free',
     flags: ['selenium'], cat: 'Protein', iconKey: 'pork-sausage', src: 'USDA FDC-style (pork sausage, raw); kcal per 4/4/9'
   },
+  // Typical Italian supermarket würstel: a cooked pork-and-beef frankfurter, distinct from
+  // fresh pork sausage above. Values are a rounded label average and use the app's 4/4/9 rule.
+  'wiener-sausage': {
+    name: 'Würstel / wiener sausage, cooked', per: 100, unit: 'g',
+    kcal: 274, protein: 12.5, carbs: 2.0, fat: 24.0, satFat: 8.2, fiber: 0, sugars: 1.0, freeSugars: 1.0, sugarQuality: 'added/free',
+    flags: ['selenium'], cat: 'Protein', iconKey: 'pork-sausage', src: 'Italian supermarket würstel label average (cooked frankfurter); kcal per 4/4/9'
+  },
   'bresaola': {
     name: 'Bresaola (cured beef), sliced', per: 100, unit: 'g',
     kcal: 148, protein: 32.0, carbs: 0.5, fat: 2.0, satFat: 0.8, fiber: 0,
@@ -573,6 +580,11 @@ const FOODS = {
     name: 'White bread / toast bread', per: 100, unit: 'g',
     kcal: 274, protein: 8.9, carbs: 49.0, fat: 3.5, satFat: 0.8, fiber: 2.7,
     flags: [], cat: 'Bakery', breakfastPair: true, iconKey: 'white-bread', src: 'USDA FDC 169230-style (white bread); kcal per 4/4/9'
+  },
+  'hot-dog-bun': {
+    name: 'Hot dog bun', per: 100, unit: 'g',
+    kcal: 264, protein: 8.8, carbs: 50.0, fat: 3.2, satFat: 0.7, fiber: 2.5, sugars: 5.5, freeSugars: 5.0, sugarQuality: 'added/free',
+    avgG: 70, flags: [], cat: 'Bakery', iconKey: 'white-bread', src: 'Italian supermarket panino per hot dog label average; kcal per 4/4/9'
   },
   'pizza-bianca': {
     name: 'Pizza bianca / focaccia romana', per: 100, unit: 'g',

@@ -206,7 +206,7 @@ const AUTO_STYLE_THRESHOLDS = {
 // most three times, fish at least twice. ANIMAL_FOOD_IDS below is derived from these three
 // rather than listed again, so the veggie-tagging behaviour that already reads it stays
 // byte-identical and a new food can only ever be added in one place.
-const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'bresaola', 'speck', 'beef-shin'];
+const RED_MEAT_FOOD_IDS = ['beef-mince-lean', 'pork-loin', 'pork-sausage', 'wiener-sausage', 'bresaola', 'speck', 'beef-shin'];
 const POULTRY_FOOD_IDS = ['turkey-breast', 'chicken-breast', 'chicken-thigh'];
 const FISH_FOOD_IDS = [
   'salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'clams', 'mussels',
