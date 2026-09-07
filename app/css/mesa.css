@@ -10,6 +10,7 @@
   --sage:#7f9364;
   --sage-deep:#566b43;
   --sage-tint:#edf1df;
+  --sage-rgb:127,147,100;
   --terra:#be6c45;
   --terra-tint:#f4dfcf;
   --gold:#c79a48;
@@ -19,6 +20,10 @@
   --radius:14px;
   --font-serif:"Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
   --font-script:"Snell Roundhand","Bradley Hand","Segoe Script",cursive;
+  --monthly-art:none;
+  /* This variable is used as a background-image layer, so its neutral value
+     must be the image keyword `none` (not the color value `transparent`). */
+  --season-wash:none;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;}
@@ -36,13 +41,57 @@ body{
   display:block;
 }
 
+/* Month-specific watercolor artwork is deliberately held behind a warm paper veil.
+   The artwork changes automatically with the calendar while the translucent UI cards
+   retain their quiet, highly legible character. */
+/* Citrus is Mesa's January winter note; February shifts to the softer, more playful
+   artichoke watercolor, while grapes make September's harvest cue unmistakable. */
+/* Every month carries a related accent triad. Existing components consume these
+   tokens for active tabs, confirmation controls, links, and success states. */
+body[data-month="1"]{--monthly-art:url("../assets/monthly-backgrounds/february.png");--sage:#b87346;--sage-deep:#8d4e2e;--sage-tint:#f5e4d6;--sage-rgb:184,115,70;}
+body[data-month="2"]{--monthly-art:url("../assets/monthly-backgrounds/february-artichokes.png");--sage:#876b86;--sage-deep:#654f67;--sage-tint:#efe6ef;--sage-rgb:135,107,134;}
+body[data-month="3"]{--monthly-art:url("../assets/monthly-backgrounds/march.png");--sage:#78966c;--sage-deep:#536e4d;--sage-tint:#eaf0e4;--sage-rgb:120,150,108;}
+body[data-month="4"]{--monthly-art:url("../assets/monthly-backgrounds/april.png");--sage:#b8626d;--sage-deep:#894550;--sage-tint:#f5e3e5;--sage-rgb:184,98,109;}
+body[data-month="5"]{--monthly-art:url("../assets/monthly-backgrounds/may.png");--sage:#b85c69;--sage-deep:#8d3f51;--sage-tint:#f6e0e5;--sage-rgb:184,92,105;}
+body[data-month="6"]{--monthly-art:url("../assets/monthly-backgrounds/june.png");--sage:#4e8b7d;--sage-deep:#32685d;--sage-tint:#dff0eb;--sage-rgb:78,139,125;}
+body[data-month="7"]{--monthly-art:url("../assets/monthly-backgrounds/july.png");--sage:#b96548;--sage-deep:#8b422f;--sage-tint:#f5e2d9;--sage-rgb:185,101,72;}
+body[data-month="8"]{--monthly-art:url("../assets/monthly-backgrounds/august.png");--sage:#827154;--sage-deep:#5f523d;--sage-tint:#f0eadb;--sage-rgb:130,113,84;}
+body[data-month="9"]{--monthly-art:url("../assets/monthly-backgrounds/september-grapes.png");--sage:#95627a;--sage-deep:#6d3f58;--sage-tint:#f2e2e9;--sage-rgb:149,98,122;}
+body[data-month="10"]{--monthly-art:url("../assets/monthly-backgrounds/october.png");--sage:#b46b3d;--sage-deep:#864722;--sage-tint:#f6e2d1;--sage-rgb:180,107,61;}
+body[data-month="11"]{--monthly-art:url("../assets/monthly-backgrounds/november.png");--sage:#89624b;--sage-deep:#644432;--sage-tint:#f1e3da;--sage-rgb:137,98,75;}
+body[data-month="12"]{--monthly-art:url("../assets/monthly-backgrounds/december.png");--sage:#5f8469;--sage-deep:#3e6148;--sage-tint:#e3eee4;--sage-rgb:95,132,105;}
+
+/* The November and December washes are deliberately richer. Lift only the two
+   page-level headings that sit directly on them; card content stays dark on paper. */
+body[data-month="11"] #today .topbar h1,
+body[data-month="12"] #today .topbar h1,
+body[data-month="11"] #today > .row.between h2,
+body[data-month="12"] #today > .row.between h2{color:#fffaf0;text-shadow:0 1px 10px rgba(34,25,17,.42);}
+body[data-month="11"] #today .topbar .eyebrow,
+body[data-month="12"] #today .topbar .eyebrow{color:#f7d99c;text-shadow:0 1px 8px rgba(34,25,17,.35);}
+/* Direct screen subtitles sit on the seasonal wash rather than a paper card. */
+body[data-month="9"] .screen > .sub,
+body[data-month="11"] .screen > .sub,
+body[data-month="12"] .screen > .sub{color:#fffaf0;text-shadow:0 1px 8px rgba(34,25,17,.48);}
+
 /* ---------- App root: fills the real viewport (no more desktop phone frame) ---------- */
 .phone{
   width:100%;height:100vh;height:100dvh;
-  background:
-    linear-gradient(90deg, rgba(155,116,68,.13) 0 1px, transparent 1px) 32px 0/34px 34px,
-    radial-gradient(circle at 10% 20%, rgba(255,255,255,.58), transparent 26%),
-    var(--bg);
+  /* Kept as explicit longhand layers rather than a shorthand with a custom URL.
+     Safari's installed-PWA renderer can discard that shorthand layer, leaving the
+     paper fallback visible but not the monthly illustration. */
+  background-color:var(--bg);
+  background-image:
+    linear-gradient(90deg, rgba(155,116,68,.07) 0 1px, transparent 1px),
+    radial-gradient(circle at 10% 20%, rgba(255,255,255,.44), transparent 28%),
+    linear-gradient(180deg, rgba(255,250,240,.12), rgba(255,250,240,.04)),
+    var(--monthly-art),
+    var(--season-wash);
+  /* Keep motifs clear of the fixed tab bar, with the image edge hidden directly
+     underneath its 88px height rather than leaving a visible paper strip. */
+  background-position:32px 0,center,center,center bottom 88px,center;
+  background-size:34px 34px,auto,auto,cover,cover;
+  background-repeat:repeat,no-repeat,no-repeat,no-repeat,no-repeat;
   position:relative;
   overflow:hidden;
   display:flex;flex-direction:column;
@@ -77,13 +126,13 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    pass/fail color: it only ever marks "every plannable slot here is accounted for". */
 .day-closed-leaf{display:inline-block;width:9px;height:13px;margin-right:5px;vertical-align:middle;opacity:.85;}
 .day-closed-leaf svg{width:100%;height:100%;}
-.day-closed-leaf .leaf-body{fill:var(--sage-deep);stroke:rgba(86,107,67,.4);stroke-width:.6;}
+.day-closed-leaf .leaf-body{fill:var(--sage-deep);stroke:rgba(var(--sage-rgb),.4);stroke-width:.6;}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:1.7px;text-transform:uppercase;color:var(--sage-deep);}
 
-.card{background:rgba(255,250,240,.92);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:16px;margin-top:12px;border:1px solid rgba(176,146,105,.38);}
+.card{background:rgba(255,250,240,.88);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:16px;margin-top:12px;border:1px solid rgba(176,146,105,.38);}
 .row{display:flex;align-items:center;gap:12px;}
 .between{justify-content:space-between;}
-.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:5px 9px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);border:1px solid rgba(127,147,100,.16);}
+.pill{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:700;padding:5px 9px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);border:1px solid rgba(var(--sage-rgb),.16);}
 .pill.terra{background:var(--terra-tint);color:#b25e35;}
 .pill.gold{background:#f6edd6;color:#9a7414;}
 .pill.berry{background:#f1e2ea;color:#7c4360;}
@@ -206,7 +255,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    convention as .basics-banner-card's .bb-x. Both buttons stopPropagation (inline, at the
    call site) so tapping either never also triggers the card's own recipe-open tap. */
 .boost-chip{display:flex;align-items:center;gap:4px;margin-top:9px;}
-.boost-chip-btn{border:1px solid rgba(127,147,100,.28);background:var(--sage-tint);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:700;padding:0 12px;height:36px;border-radius:999px;cursor:pointer;}
+.boost-chip-btn{border:1px solid rgba(var(--sage-rgb),.28);background:var(--sage-tint);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:700;padding:0 12px;height:36px;border-radius:999px;cursor:pointer;}
 .boost-chip-btn:active{transform:scale(.96);}
 .boost-chip-x{border:0;background:none;color:var(--sage-deep);opacity:.55;font-size:13px;cursor:pointer;padding:0 8px;height:36px;line-height:1;}
 
@@ -267,7 +316,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .macro-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex:0 0 9px;}
 .cap-note{font-size:10px;color:var(--muted);margin-top:4px;min-height:13px;}
 .filter-compact{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;}
-.filter-toggle{border:1px solid rgba(126,149,99,.38);background:var(--sage-tint);color:var(--sage-deep);border-radius:999px;min-height:40px;padding:0 14px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;}
+.filter-toggle{border:1px solid rgba(var(--sage-rgb),.38);background:var(--sage-tint);color:var(--sage-deep);border-radius:999px;min-height:40px;padding:0 14px;font:inherit;font-size:12px;font-weight:800;cursor:pointer;}
 .filter-toggle:active{transform:scale(.96);}
 .filter-summary{display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-top:8px;}
 .filter-clear{border:0;background:transparent;color:var(--terra);font:inherit;font-size:12px;font-weight:800;min-height:32px;padding:0 4px;cursor:pointer;}
@@ -282,7 +331,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .recipe-search input::-webkit-search-decoration,.recipe-search input::-webkit-search-cancel-button{-webkit-appearance:none;}
 .recipe-filter-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:10px;position:relative;}
 #libRecipeFilterBar{position:relative;}
-.recipe-filter-toggle{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 12px;border:1px solid rgba(126,149,99,.38);border-radius:12px;background:var(--sage-tint);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:800;cursor:pointer;}
+.recipe-filter-toggle{display:inline-flex;align-items:center;gap:7px;min-height:44px;padding:0 12px;border:1px solid rgba(var(--sage-rgb),.38);border-radius:12px;background:var(--sage-tint);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:800;cursor:pointer;}
 .recipe-filter-toggle svg{width:17px;height:17px;}
 .recipe-filter-toggle:active,.recipe-filter-chip:active,.recipe-filter-summary-chip:active{transform:scale(.97);}
 .recipe-filter-count{font-size:12px;font-weight:700;color:var(--muted);white-space:nowrap;}
@@ -301,7 +350,7 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .recipe-filter-sheet-count{margin-top:5px;font-size:12px;font-weight:700;color:var(--muted);}
 .recipe-filter-sheet-controls{margin-top:11px;}
 .library-action-row{display:flex;gap:8px;margin-top:10px;}
-.library-action{flex:1;min-width:0;min-height:38px;padding:0 10px;border:1px solid rgba(126,149,99,.38);border-radius:10px;background:rgba(255,250,240,.95);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;}
+.library-action{flex:1;min-width:0;min-height:38px;padding:0 10px;border:1px solid rgba(var(--sage-rgb),.38);border-radius:10px;background:rgba(255,250,240,.95);color:var(--sage-deep);font:inherit;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;}
 .library-action:active{transform:scale(.97);}
 .ingredient-filter-toolbar{margin-top:10px;}
 .ingredient-filter-panel{position:relative;left:auto;right:auto;top:auto;max-width:none;max-height:none;margin-top:6px;}
@@ -383,14 +432,14 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    `.on` marks confirmed OR skipped (anything non-null) so the row visually reads as
    "handled" at a glance, same treatment as the pin's `.on` state. */
 .day-meal-row .dm-log{font-size:16px;}
-.day-meal-row .dm-log.on{background:rgba(127,147,100,.16);color:var(--sage-deep);}
+.day-meal-row .dm-log.on{background:rgba(var(--sage-rgb),.16);color:var(--sage-deep);}
 /* B3: sides/extras button — same 34x34 compact convention as pin/routine/swap/log. */
 .day-meal-row .dm-extras{font-size:16px;}
 .day-meal-row .dm-swap:active,.day-meal-row .dm-pin:active,.day-meal-row .dm-rule:active,.day-meal-row .dm-log:active,.day-meal-row .dm-extras:active{background:#e9e4d7;}
 
 /* recipe detail */
 .hero{height:170px;border-radius:18px;margin-top:8px;display:grid;place-items:center;font-size:74px;background:linear-gradient(135deg,#f6efd9,#edf1df);border:1px solid rgba(176,146,105,.38);}
-.why{background:rgba(237,241,223,.86);border-radius:14px;padding:14px;font-size:13px;color:var(--sage-deep);line-height:1.5;border:1px solid rgba(127,147,100,.18);}
+.why{background:rgba(var(--sage-rgb),.12);border-radius:14px;padding:14px;font-size:13px;color:var(--sage-deep);line-height:1.5;border:1px solid rgba(var(--sage-rgb),.18);}
 .why b{color:var(--sage-deep);}
 ul.ing{list-style:none;padding:0;margin:8px 0 0;}
 ul.ing li{display:flex;justify-content:space-between;padding:11px 2px;border-bottom:1px solid var(--line);font-size:14px;}
@@ -519,7 +568,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .band .dl{font-size:10px;color:var(--muted);font-weight:600;}
 
 /* AI vs computed micro-labels */
-.badge-mini{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(127,147,100,.14);color:var(--sage-deep);letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
+.badge-mini{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:rgba(var(--sage-rgb),.14);color:var(--sage-deep);letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
 .chip-computed{display:inline-flex;align-items:center;font-size:10px;font-weight:700;padding:3px 8px;border-radius:999px;background:var(--sage-tint);color:var(--sage-deep);letter-spacing:.2px;margin-left:6px;vertical-align:middle;}
 
 /* T3: small leading line-SVG icon on Profile/Insights <h2> section headers — same stroke
@@ -662,7 +711,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
   animation:log-reward-leaf .98s cubic-bezier(.16,.76,.22,1) var(--leaf-delay) both;
   will-change:transform,opacity;
 }
-.log-reward-leaf .leaf-body{fill:var(--leaf-color,var(--sage));stroke:rgba(86,107,67,.45);stroke-width:.62;}
+.log-reward-leaf .leaf-body{fill:var(--leaf-color,var(--sage));stroke:rgba(var(--sage-rgb),.45);stroke-width:.62;}
 .log-reward-leaf .leaf-vein{fill:none;stroke:rgba(69,88,52,.54);stroke-width:.66;stroke-linecap:round;}
 .log-reward-message{
   position:absolute;left:var(--reward-message-x,0);top:43px;width:max-content;max-width:min(232px,calc(100vw - 32px));
@@ -978,14 +1027,14 @@ body.gate-open{overflow:hidden;}
 /* Phase 3 D2: end-of-week "week in review" card — warm but calm (soft sage wash), never a
    scoreboard. Hidden when empty (rendered only Fri-Sun on the current week with data). */
 .week-review:empty{display:none;}
-.week-review-card{background:var(--sage-tint);border-color:rgba(127,147,100,.3);margin-top:12px;}
+.week-review-card{background:var(--sage-tint);border-color:rgba(var(--sage-rgb),.3);margin-top:12px;}
 .week-review-card .wr-head{display:flex;align-items:center;gap:7px;font-size:14px;font-weight:700;color:var(--sage-deep);}
 .week-review-card .wr-leaf{font-size:15px;}
 .week-review-card .wr-adh{font-size:13.5px;color:var(--ink-soft);margin-top:7px;}
 .week-review-card .wr-adh b{color:var(--sage-deep);}
 .week-review-card .wr-sub{margin:5px 0 0;}
 /* Phase 3 D5: the warm JOINT couple line — aggregate shared outcome, never a comparison. */
-.week-review-card .wr-couple{margin:8px 0 0;padding-top:8px;border-top:1px solid rgba(127,147,100,.22);font-size:13px;font-weight:600;color:var(--sage-deep);}
+.week-review-card .wr-couple{margin:8px 0 0;padding-top:8px;border-top:1px solid rgba(var(--sage-rgb),.22);font-size:13px;font-weight:600;color:var(--sage-deep);}
 
 /* Phase 3 D1: daily-confirm keystone — lives at the top of #todayProgressCard. Its button
    reuses .cta / .cta.ghostbtn; the wrapper just resets .cta's top margin and adds the calm

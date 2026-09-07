@@ -7,6 +7,13 @@
    =================================================================== */
 
 /* ---------------- navigation ---------------- */
+// The visual calendar follows the user's local date.  Keeping this presentation-only
+// means a month change never touches plans, nutrition, or persisted household state.
+function applyMonthlyBackground(){
+  if(!document || !document.body) return;
+  document.body.dataset.month = String(new Date().getMonth() + 1);
+}
+
 // A number of Library flows replace a screen's markup in place (for example a recipe
 // builder re-render after changing an ingredient).  Keeping scroll capture here gives
 // those flows one reliable way to restore the exact reading position after the DOM work.
@@ -753,6 +760,7 @@ function bootMesaApp(){
   }
 }
 
+applyMonthlyBackground();
 bootMesaApp();
 
 /* ---------------- service worker registration (task E1) ---------------- */

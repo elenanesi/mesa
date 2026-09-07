@@ -53,6 +53,7 @@ function buildShellFiles(){
   // directories (skip junk such as .DS_Store).
   const assetsGroup = listDir('assets/ingredients')
     .concat(listDir('assets/recipes'))
+    .concat(listDir('assets/monthly-backgrounds'))
     .filter(function(p){ return p.toLowerCase().endsWith('.png'); })
     .sort();
 
