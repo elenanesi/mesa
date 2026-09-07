@@ -374,10 +374,20 @@ async function handlePost(request, env, code, origin){
     merged[sectionName] = winner(existing[sectionName], incoming);
   });
 
-  try{
-    await env.MESA_KV.put(kvKey(code), JSON.stringify(merged));
-  }catch(e){
-    return json({error: 'storage_failed'}, 500, origin);
+  // Skip the KV write when the merge changed nothing (2026-09-07): the client heartbeats a
+  // push-pull POST every 2 min while foregrounded (app/js/sync.js), and a no-op pull used to
+  // still cost one KV write here — with two phones open that alone burned hundreds of writes/
+  // day and blew the free-tier 1,000-writes/day cap (sync then fails with storage_failed).
+  // KV is the durable sync store, so REAL changes must persist; identical bytes never need a
+  // rewrite. Compared against the pre-merge stored blob (existing) — first POST for a new
+  // household has existing={}, so it always differs and writes.
+  const mergedStr = JSON.stringify(merged);
+  if(mergedStr !== JSON.stringify(existing)){
+    try{
+      await env.MESA_KV.put(kvKey(code), mergedStr);
+    }catch(e){
+      return json({error: 'storage_failed'}, 500, origin);
+    }
   }
 
   return json({sections: merged}, 200, origin);
