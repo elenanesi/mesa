@@ -139,10 +139,20 @@ function regenerate(src, newCacheLine, newShellBlock){
 // produces it — a value that can never converge.
 const AUTH_JS_REL = 'js/auth.js';
 const AUTH_BUILD_RE = /const AUTH_BUILD = '[^']*';/;
+// CSS and the app boot script need a versioned URL: an old service worker is
+// cache-first for subresources, so a fresh network index must not point it at
+// the same cached CSS/boot-script URL after a visual shell deploy.
+const INDEX_REL = 'index.html';
+const INDEX_BUILD_RE = /(\b(?:css\/mesa\.css|js\/app\.js)\?v=)[^"'\s>]+/g;
 
 function authJsForHash(){
   const raw = fs.readFileSync(path.join(APP_DIR, AUTH_JS_REL));
   return Buffer.from(String(raw).replace(AUTH_BUILD_RE, "const AUTH_BUILD = '';"));
+}
+
+function indexForHash(){
+  const raw = fs.readFileSync(path.join(APP_DIR, INDEX_REL));
+  return Buffer.from(String(raw).replace(INDEX_BUILD_RE, '$1'));
 }
 
 // Hash (path + raw bytes) of every shell file in `files`, in order,
@@ -153,7 +163,9 @@ function computeHash(files, swTextForHash){
   files.forEach(function(rel){
     hash.update(rel);
     if(rel !== './'){
-      hash.update(rel === AUTH_JS_REL ? authJsForHash() : fs.readFileSync(path.join(APP_DIR, rel)));
+      hash.update(rel === AUTH_JS_REL ? authJsForHash()
+        : rel === INDEX_REL ? indexForHash()
+        : fs.readFileSync(path.join(APP_DIR, rel)));
     }
   });
   hash.update(swTextForHash);
@@ -173,6 +185,20 @@ function stampAuthBuild(newCache){
   const updated = src.replace(AUTH_BUILD_RE, "const AUTH_BUILD = '" + newCache + "';");
   if(updated === src) return false;
   fs.writeFileSync(authPath, updated);
+  return true;
+}
+
+function stampIndexBuild(newCache){
+  const indexPath = path.join(APP_DIR, INDEX_REL);
+  let src;
+  try{ src = fs.readFileSync(indexPath, 'utf8'); }catch(e){ return false; }
+  if(!INDEX_BUILD_RE.test(src)){
+    console.warn('build-sw: no CSS/app build URLs found in ' + INDEX_REL + ' — skipping');
+    return false;
+  }
+  const updated = src.replace(INDEX_BUILD_RE, '$1' + newCache);
+  if(updated === src) return false;
+  fs.writeFileSync(indexPath, updated);
   return true;
 }
 
@@ -201,6 +227,7 @@ function main(){
   const unchanged = updated === original;
   if(!unchanged) fs.writeFileSync(SW_PATH, updated);
   const stamped = stampAuthBuild(newCache);
+  const indexStamped = stampIndexBuild(newCache);
 
   const oldSet = new Set(oldFiles);
   const newSet = new Set(newFiles);
@@ -209,6 +236,7 @@ function main(){
 
   console.log('CACHE: ' + (oldCache || '(none)') + ' -> ' + (unchanged ? 'unchanged' : newCache));
   console.log('AUTH_BUILD stamp: ' + (stamped ? 'updated to ' + newCache : 'unchanged'));
+  console.log('INDEX_BUILD stamp: ' + (indexStamped ? 'updated to ' + newCache : 'unchanged'));
   console.log('SHELL_FILES: ' + newFiles.length + ' files (was ' + oldFiles.length + ')');
   if(added.length){
     console.log('ADDED (' + added.length + '):');

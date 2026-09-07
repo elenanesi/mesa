@@ -98,6 +98,9 @@ or replace these rules while making an unrelated fix.
   treatment because they sit on dark watercolor washes; text inside paper cards remains dark.
 - Any edit here requires visual QA in a real phone-width browser for September plus December,
   then `node tools/build-sw.js` so every image and stylesheet update reaches installed PWAs.
+  The builder also stamps versioned `mesa.css` and `app.js` URLs in `index.html`; preserve those
+  query strings because they prevent an old cache-first service worker from reusing stale visual
+  shell files after the network has fetched a new index.
 
 If a change appears to remove the art, first inspect `getComputedStyle(document.body)` for
 `--monthly-art` and `getComputedStyle(document.querySelector('.phone')).backgroundImage`.
