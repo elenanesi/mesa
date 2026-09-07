@@ -64,6 +64,7 @@ function go(id, el, opts){
   var tabId = id.indexOf('library') === 0 ? 'library' : (id === 'log' ? 'add' : id);
   var tab = el && el.dataset.tab ? el : document.querySelector('.tab[data-tab="'+tabId+'"]');
   if(tab) tab.classList.add('on');
+  if(typeof syncTodayKeystoneDock === 'function') syncTodayKeystoneDock();
   // Task D1: Insights is cheap to recompute (≤7 days of small arrays) and only ever
   // needs to be fresh at the moment it's shown, so it repaints on every visit rather than
   // needing an eager call from every log-mutating action (confirm/skip/quick-add/swap).

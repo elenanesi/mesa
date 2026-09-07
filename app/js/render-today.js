@@ -2661,42 +2661,10 @@ function renderTodayMeals(){
 // height/weight steppers, activity options, and the daily-target row with its
 // computed/custom state, restore action and transparent formula line.
 
-function renderProgressDots(){
-  var wrap = document.getElementById('progressDots');
-  if(!wrap) return;
-  var slots = ['breakfast', 'lunch', 'dinner', 'snack'];
-  var emojis = {};
-  var bfv = todaySlotView('breakfast');
-  var luv = todaySlotView('lunch');
-  var div_ = todaySlotView('dinner');
-  var snv = todaySlotView('snack');
-  emojis.breakfast = (bfv.recipe || {}).emoji || '🥣';
-  emojis.lunch = (luv.recipe || {}).emoji || '🥗';
-  emojis.dinner = (div_.recipe || {}).emoji || '🍽️';
-  emojis.snack = (snv.recipe || {}).emoji || '🌰';
-  var doneCount = 0;
-  var html = '';
-  slots.forEach(function(slot){
-    var status = slotLogStatus(todayISO(), currentProf, slot);
-    var cls = 'pdot';
-    if(status === 'confirmed'){ cls += ' pdot-done'; doneCount++; }
-    else if(status === 'skipped'){ cls += ' pdot-skipped'; doneCount++; }
-    html += '<div class="' + cls + '" onclick="scrollToMealCard(\'' + slot + '\')" title="' + slot + '">' + emojis[slot] + '</div>';
-  });
-  html += '<span class="pdot-label">' + doneCount + ' of 4 logged</span>';
-  wrap.innerHTML = html;
-}
-
-function scrollToMealCard(slot){
-  var ids = {breakfast:'todayBreakfastCard', lunch:'todayLunchCard', dinner:'todayDinnerCard', snack:'todaySnack'};
-  var el = document.getElementById(ids[slot]);
-  if(el) el.scrollIntoView({behavior:'smooth', block:'center'});
-}
-
 /* ---------------- Phase 3 D1: daily-confirm keystone ----------------
-   The prominent, evening-anchored one-tap "close the day" affordance that lives at the top of
-   #todayProgressCard. Design synthesized from the panel (psychologist + UX):
-   - ONE calm affordance, folded into the existing status card — never a second competing menu.
+   The prominent, evening-anchored one-tap "close the day" affordance docks above the navigation,
+   separate from the nutrition chart. Design synthesized from the panel (psychologist + UX):
+   - ONE calm affordance, given its own bottom dock — never a second competing menu.
      The four per-meal card rows stay the precise tool; this is the coarse "as planned" shortcut.
    - Evening-anchored by PROMINENCE, not visibility: pre-evening it is a quiet ghost button,
      after isEveningHour() it promotes to the filled sage CTA. It is never hidden, never a modal.
@@ -2746,11 +2714,25 @@ function renderTodayKeystone(){
   var st = todayKeystoneState(todayISO(), currentProf, currentHour());
   if(st.phase === 'complete'){
     wrap.innerHTML = '<div class="ks-settled"><span class="ks-check" aria-hidden="true">✓</span>' + st.settledText + '</div>';
+    syncTodayKeystoneDock();
     return;
   }
   var btnCls = st.prominence === 'cta' ? 'cta' : 'cta ghostbtn';
   wrap.innerHTML = '<button class="' + btnCls + ' ks-btn" onclick="confirmTodayAsPlanned(this)">' + st.label + '</button>'
     + '<div class="ks-sub sub">' + st.sub + '</div>';
+  syncTodayKeystoneDock();
+}
+
+// The dock sits outside screen scrollers so it remains stable while Today scrolls.  Its
+// visibility follows navigation explicitly; leaving Today can never leave a floating CTA
+// over another screen, even while a screen transition is still finishing.
+function syncTodayKeystoneDock(){
+  var wrap = document.getElementById('todayKeystone');
+  var today = document.getElementById('today');
+  if(!wrap || !today) return;
+  var visible = today.classList.contains('active') && !!wrap.textContent.trim();
+  wrap.classList.toggle('is-visible', visible);
+  wrap.setAttribute('aria-hidden', visible ? 'false' : 'true');
 }
 
 // The pure logging core (no DOM / no reward) so tools/check.js can pin the HONESTY invariant

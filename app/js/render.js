@@ -587,10 +587,7 @@ function refreshRingAndBars(){
   if(glanceC) glanceC.textContent = Math.round(cEaten) + 'g';
   if(glanceF) glanceF.textContent = Math.round(fEaten) + 'g';
 
-  // --- Progress dots ---
-  renderProgressDots();
-
-  // --- Phase 3 D1: evening-anchored daily-confirm keystone (top of #todayProgressCard) ---
+  // --- Whole-day confirmation is deliberately docked above navigation, separate from the chart. ---
   if(typeof renderTodayKeystone === 'function') renderTodayKeystone();
   // --- Phase 3 D3b: "targets are an estimate" banner (fill-in-later nudge) ---
   if(typeof renderBasicsBanner === 'function') renderBasicsBanner();

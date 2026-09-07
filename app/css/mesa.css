@@ -992,7 +992,7 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .login-gate #loginGateError{color:var(--terra);min-height:0;}
 body.gate-open{overflow:hidden;}
 
-/* ---------- segmented donut ring + arc popover + progress dots + eaten chips
+/* ---------- segmented donut ring + arc popover + eaten chips
    + cute log button + meal state tags + profile tint stripe (home-screen redesign) ---------- */
 
 /* segmented donut ring */
@@ -1036,22 +1036,39 @@ body.gate-open{overflow:hidden;}
 /* Phase 3 D5: the warm JOINT couple line — aggregate shared outcome, never a comparison. */
 .week-review-card .wr-couple{margin:8px 0 0;padding-top:8px;border-top:1px solid rgba(var(--sage-rgb),.22);font-size:13px;font-weight:600;color:var(--sage-deep);}
 
-/* Phase 3 D1: daily-confirm keystone — lives at the top of #todayProgressCard. Its button
-   reuses .cta / .cta.ghostbtn; the wrapper just resets .cta's top margin and adds the calm
-   subtext + settled (day-complete) state. No streak/scoreboard styling; never red. */
-.today-keystone{margin:0 0 14px;}
-.today-keystone:empty{display:none;}
-.today-keystone .ks-btn{margin-top:0;}
-.today-keystone .ks-sub{margin:8px 2px 0;text-align:center;}
-.today-keystone .ks-settled{display:flex;align-items:center;justify-content:center;gap:8px;font-size:14px;font-weight:600;color:var(--sage-deep);padding:4px 0 2px;}
+/* Today's one whole-day action is deliberately OUTSIDE its scrollable screen.  It stays
+   above the tab bar, while chart and meal cards remain information-first. */
+.today-keystone-dock{position:absolute;left:18px;right:18px;bottom:96px;z-index:29;display:none;padding:9px 10px 10px;border:1px solid rgba(var(--sage-rgb),.32);border-radius:18px;background:linear-gradient(135deg,rgba(255,253,247,.96),rgba(var(--sage-rgb),.13));box-shadow:0 12px 28px rgba(73,54,32,.17),inset 0 1px 0 rgba(255,255,255,.72);backdrop-filter:blur(14px);}
+.today-keystone-dock.is-visible{display:block;animation:todayDockIn .22s ease-out;}
+.today-keystone-dock:empty{display:none;}
+.today-keystone .ks-btn{margin:0;min-height:46px;padding:12px 14px;border:1px solid rgba(255,255,255,.38);border-radius:12px;background:linear-gradient(135deg,var(--sage),var(--sage-deep));box-shadow:0 6px 14px rgba(var(--sage-rgb),.28);letter-spacing:.05px;}
+.today-keystone .ks-btn.ghostbtn{background:rgba(255,250,240,.88);color:var(--sage-deep);border:1.5px solid rgba(var(--sage-rgb),.7);box-shadow:none;}
+.today-keystone .ks-sub{margin:7px 4px 0;text-align:center;font-size:11.5px;color:var(--ink-soft);}
+.today-keystone .ks-settled{display:flex;align-items:center;justify-content:center;gap:8px;font-size:13px;font-weight:600;color:var(--sage-deep);padding:5px 3px;}
 .today-keystone .ks-check{display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:var(--sage-tint);color:var(--sage-deep);font-size:12px;font-weight:700;}
+@keyframes todayDockIn{from{opacity:0;transform:translateY(7px)}to{opacity:1;transform:none}}
 
-/* progress dots (meal completion indicators) */
-.progress-dots{display:flex;gap:6px;align-items:center;margin-top:10px;}
-.pdot{width:30px;height:30px;border-radius:50%;display:grid;place-items:center;font-size:13px;border:1.5px solid var(--line);background:#fff;cursor:pointer;transition:all .15s;}
-.pdot.pdot-done{border-color:var(--sage);background:var(--sage-tint);}
-.pdot.pdot-skipped{border-color:var(--muted);background:#eee;opacity:.55;}
-.pdot-label{font-size:9px;color:var(--muted);margin-left:auto;white-space:nowrap;}
+/* Luxury pass: an inset-paper nutrition panel and quieter, tactile meal controls. */
+#today{padding-bottom:188px;}
+#todayProgressCard{position:relative;padding:16px 17px 17px;background:linear-gradient(135deg,rgba(255,253,247,.95),rgba(var(--sage-rgb),.10));border-color:rgba(var(--sage-rgb),.28);box-shadow:0 12px 28px rgba(73,54,32,.11),inset 0 1px 0 rgba(255,255,255,.8);}
+.nutrition-kicker{display:flex;justify-content:space-between;align-items:center;margin:0 1px 11px;color:var(--sage-deep);font-size:11px;font-weight:800;letter-spacing:1.15px;text-transform:uppercase;}
+.nutrition-kicker small{font-size:9px;font-weight:600;letter-spacing:.35px;text-transform:none;color:var(--muted);}
+#todayProgressCard .ring-wrap{gap:16px;}
+#todayProgressCard .ring{border-radius:50%;background:radial-gradient(circle at 36% 28%,rgba(255,255,255,.92),rgba(var(--sage-rgb),.07) 67%,rgba(var(--sage-rgb),.13));box-shadow:inset 0 0 0 1px rgba(var(--sage-rgb),.15),0 6px 15px rgba(73,54,32,.08);}
+#todayProgressCard .ring-track{stroke:rgba(var(--sage-rgb),.13);}
+#todayProgressCard .ring-protein{stroke:var(--sage);}
+#todayProgressCard .ring .big{font-size:28px;letter-spacing:-.8px;color:var(--ink);}
+#todayProgressCard .ring .lbl{font-size:10px;max-width:82px;text-align:center;line-height:1.2;}
+#todayProgressCard .macros{gap:12px;}
+#todayProgressCard .macro .mhead{margin-bottom:6px;font-size:12px;}
+#todayProgressCard .macro .mhead > span{color:var(--ink-soft);font-weight:600;}
+#todayProgressCard .macro .mhead b{font-size:12.5px;color:var(--ink);}
+#todayProgressCard .bar{height:7px;background:rgba(var(--sage-rgb),.10);box-shadow:inset 0 1px 2px rgba(73,54,32,.06);}
+#today .meal{border-color:rgba(176,146,105,.32);box-shadow:0 6px 18px rgba(73,54,32,.075),inset 0 1px 0 rgba(255,255,255,.65);}
+#today .meal .thumb{background:linear-gradient(145deg,#fffaf0,var(--sage-tint));box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 3px 8px rgba(73,54,32,.06);}
+#today .meal .info .t{letter-spacing:.05px;}
+.meal-act-btn{background:rgba(255,253,247,.84);border-color:rgba(176,146,105,.38);box-shadow:0 2px 5px rgba(73,54,32,.05);}
+.meal-log-btn{box-shadow:0 5px 12px rgba(var(--sage-rgb),.28),inset 0 1px 0 rgba(255,255,255,.25);}
 
 /* Today keeps one compact, editable list rather than repeating logged food in a chip strip. */
 #todayRecordsCard{margin-top:14px;padding:12px 14px;}

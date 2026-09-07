@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-<link rel="stylesheet" href="css/mesa.css?v=mesa-6e02cd0f7b48" />
+<link rel="stylesheet" href="css/mesa.css?v=mesa-b32303760512" />
 </head>
 <body>
 
@@ -102,22 +102,18 @@
       </div>
 
       <div class="card" id="todayProgressCard">
-        <!-- Phase 3 D1: evening-anchored daily-confirm keystone. Painted by
-             render-today.js:renderTodayKeystone() into #todayKeystone on every ring refresh /
-             log change (render.js:refreshRingAndBars). One calm affordance that closes the day
-             "as planned" in a single tap (pending slots only); calm settle when complete. -->
-        <div id="todayKeystone" class="today-keystone"></div>
         <!-- Phase 3 D3b: honest "these targets are an estimate" nudge for a user who chose
              "Fill in later" in onboarding (basicsConfirmed false). Painted by
              render-today.js:renderBasicsBanner(); neutral (never red), one-time-dismissible. -->
         <div id="basicsBanner" class="basics-banner"></div>
+        <div class="nutrition-kicker"><span>Today’s balance</span><small>Tap a segment for detail</small></div>
         <div class="ring-wrap">
           <div class="ring">
             <svg width="128" height="128" viewBox="0 0 128 128">
-              <circle cx="64" cy="64" r="56" fill="none" stroke="#eef0ec" stroke-width="13"/>
+              <circle class="ring-track" cx="64" cy="64" r="56" fill="none" stroke-width="13"/>
               <circle id="arcFat" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#be6c45" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('fat',event)"/>
               <circle id="arcCarbs" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#c79a48" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('carbs',event)"/>
-              <circle id="arcProtein" class="ring-arc" cx="64" cy="64" r="56" fill="none" stroke="#7f9364" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('protein',event)"/>
+              <circle id="arcProtein" class="ring-arc ring-protein" cx="64" cy="64" r="56" fill="none" stroke-width="13" stroke-linecap="butt" stroke-dasharray="0 351.8" stroke-dashoffset="0" style="cursor:pointer" onclick="showArcPopover('protein',event)"/>
             </svg>
             <div class="center" style="cursor:pointer" onclick="if(!window._acIdx)window._acIdx=0;showArcPopover(['protein','carbs','fat'][window._acIdx%3],event);window._acIdx++;">
               <span class="big" id="calLeft">1,420</span>
@@ -140,7 +136,6 @@
             </div>
           </div>
         </div>
-        <div class="progress-dots" id="progressDots"></div>
       </div>
 
       <div class="card" id="todayMacroCalCard" style="padding:14px 16px">
@@ -809,6 +804,11 @@
 
   </div><!-- /app -->
 
+  <!-- Today’s only whole-day action lives above the navigation, separate from the chart.
+       Keeping this global (rather than inside the scrollable screen) makes it reliably
+       reachable on iOS and prevents the nutrition card from competing with the action. -->
+  <div id="todayKeystone" class="today-keystone today-keystone-dock" aria-hidden="true"></div>
+
   <!-- bottom sheet (swap / shopping list) -->
   <div class="sheet-backdrop" id="sheetBackdrop" onclick="closeSheet()"></div>
   <div class="sheet" id="sheet">
@@ -1053,6 +1053,6 @@
 <script src="js/library.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/app.js?v=mesa-6e02cd0f7b48"></script>
+<script src="js/app.js?v=mesa-b32303760512"></script>
 </body>
 </html>
