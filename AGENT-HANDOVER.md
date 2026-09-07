@@ -73,6 +73,36 @@ Note: probes that reassign a top-level `let` global (e.g. `swapCtx`) via `window
 do NOT rebind the lexical binding the functions read — drive the real code path instead
 (open the sheet, call the real toggle), or mutate the existing object's properties.
 
+## Seasonal visual system — PRESERVE unless Elena explicitly changes it
+
+The quiet-luxury monthly watercolor treatment is intentional product UI, not decorative
+prototype code. It is implemented by the **committed** `app/assets/monthly-backgrounds/*.png`
+artwork, `app/js/app.js:applyMonthlyBackground()` (sets `body[data-month]`), and the first
+section of `app/css/mesa.css` (monthly artwork + accent tokens). Do **not** remove, flatten,
+or replace these rules while making an unrelated fix.
+
+- The twelve `body[data-month="N"]` rules jointly set the artwork and the `--sage`,
+  `--sage-deep`, `--sage-tint`, and `--sage-rgb` tokens. Those tokens deliberately recolor
+  active tabs, primary buttons, confirmation/success states, links, botanical marks, and
+  light accent surfaces to suit each month. New accent UI must use these variables — do not
+  introduce a fixed green hex value.
+- `.phone` must keep its **explicit longhand** background layers (`background-image`,
+  `-position`, `-size`, `-repeat`). Do not condense it into `background: ...`. Installed
+  Safari PWAs can discard a shorthand containing a custom `url()` layer. Also, because
+  `--season-wash` is used as an image layer, its neutral value must be `none`, never the
+  color value `transparent` (the latter invalidates the entire `background-image`).
+- The monthly motif is offset by the exact fixed tab-bar height (`bottom 88px`) so the
+  illustration is not clipped and no spare paper strip is visible. If the tab-bar height
+  changes, update this offset in the same change and visually verify the September grapes.
+- Direct screen subtitles on September/November/December intentionally use a light shadowed
+  treatment because they sit on dark watercolor washes; text inside paper cards remains dark.
+- Any edit here requires visual QA in a real phone-width browser for September plus December,
+  then `node tools/build-sw.js` so every image and stylesheet update reaches installed PWAs.
+
+If a change appears to remove the art, first inspect `getComputedStyle(document.body)` for
+`--monthly-art` and `getComputedStyle(document.querySelector('.phone')).backgroundImage`.
+Do not delete the feature to make the symptom disappear.
+
 ## Test harness
 
 `node tools/check.js` — zero-dep; loads the app files into a `vm` like `<script>` tags
