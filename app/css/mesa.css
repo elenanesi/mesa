@@ -1071,10 +1071,22 @@ body.gate-open{overflow:hidden;}
 .meal-act-btn{background:rgba(255,253,247,.84);border-color:rgba(176,146,105,.38);box-shadow:0 2px 5px rgba(73,54,32,.05);}
 .meal-log-btn{box-shadow:0 5px 12px rgba(var(--sage-rgb),.28),inset 0 1px 0 rgba(255,255,255,.25);}
 
-/* Today keeps one compact, editable list rather than repeating logged food in a chip strip. */
-#todayRecordsCard{margin-top:14px;padding:12px 14px;}
+/* Today only surfaces stand-alone drinks/quick adds here — planned meals already have a
+   status on their own cards. The details element keeps this pleasant but out of the way. */
+#todayRecordsCard{margin-top:14px;padding:0;overflow:hidden;}
+#todayRecordsCard summary{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:58px;padding:10px 14px;cursor:pointer;list-style:none;}
+#todayRecordsCard summary::-webkit-details-marker{display:none;}
+#todayRecordsCard summary::after{content:"";width:7px;height:7px;margin-left:2px;border-right:1.5px solid var(--sage-deep);border-bottom:1.5px solid var(--sage-deep);transform:rotate(45deg) translateY(-2px);transition:transform .18s ease;}
+#todayRecordsCard[open] summary::after{transform:rotate(225deg) translate(-2px,-1px);}
+.today-extras-title{display:flex;align-items:center;gap:9px;min-width:0;}
+.today-extras-title b{display:block;font-size:13.5px;color:var(--ink);}
+.today-extras-title small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;}
+.today-extras-spark{display:grid;place-items:center;width:30px;height:30px;border-radius:11px;background:var(--sage-tint);color:var(--sage-deep);font-size:15px;flex:0 0 auto;}
+#todayRecordsCard summary .pill{margin-left:auto;white-space:nowrap;}
+#todayRecordsList{padding:0 14px 8px;border-top:1px solid rgba(176,146,105,.22);}
 #todayRecordsCard .logitem{gap:8px;padding:8px 0;}
-#todayRecordsCard .logitem .li-i{width:30px;height:30px;flex-basis:30px;border-radius:9px;font-size:15px;}
+#todayRecordsCard .logitem .li-i{width:32px;height:32px;flex-basis:32px;border-radius:10px;font-size:15px;overflow:hidden;}
+#todayRecordsCard .logitem .li-i .ingredient-icon{width:32px;height:32px;border-radius:9px;background:transparent;}
 #todayRecordsCard .logitem .li-t{font-size:12.5px;line-height:1.2;}
 #todayRecordsCard .logitem .li-t small{font-size:10.5px;line-height:1.25;margin-top:2px;}
 #todayRecordsCard .logitem .li-k{font-size:12px;}

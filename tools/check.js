@@ -10657,10 +10657,11 @@ function testEatenOutToggleWiring(){
 
   const recordsFn = fnBody('renderTodayRecords');
   assert(recordsFn.length > 0, 'wiring setup: renderTodayRecords() function body found in render.js', 'not found');
-  // A plan row (delete only, no edit sheet) keeps the inline toggle; a food row routes it
-  // into the edit sheet to avoid a crowded three-button row (Elena's call, 2026-07-21).
-  assert(recordsFn.indexOf('toggleTodayRecordGroupEatenOut(') !== -1, 'renderTodayRecords(): a plan row wires its inline toggle to toggleTodayRecordGroupEatenOut()', recordsFn);
-  assert(recordsFn.indexOf('chip-computed') !== -1, 'renderTodayRecords(): an eaten-out row shows an at-a-glance pill (reuses the chip-computed style)', recordsFn);
+  assert(recordsFn.indexOf("filter(function(group){ return group.kind === 'food'; })") !== -1,
+    'renderTodayRecords(): filters out planned meals so it never repeats the meal cards', recordsFn);
+  assert(recordsFn.indexOf('toggleTodayRecordGroupEatenOut(') === -1,
+    'renderTodayRecords(): has no inline eaten-out toggle because it only displays compact quick-add rows', recordsFn);
+  assert(recordsFn.indexOf('chip-computed') !== -1, 'renderTodayRecords(): an eaten-out quick add shows an at-a-glance pill (reuses the chip-computed style)', recordsFn);
 
   // Food-row eaten-out lives in the edit sheet: the sheet exposes the toggle, and Save
   // applies it through setLogEntryEatenOut (which bumps u for sync). This is the no-crowding

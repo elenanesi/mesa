@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-<link rel="stylesheet" href="css/mesa.css?v=mesa-a44fb8261f94" />
+<link rel="stylesheet" href="css/mesa.css?v=mesa-1ca8e7c6952d" />
 </head>
 <body>
 
@@ -170,12 +170,15 @@
         <button onclick="openPantryLibrary()"><span class="qi">🥫</span>Pantry</button>
       </div>
 
-      <!-- One compact, editable source of truth for food already logged today. This replaces
-           the former duplicate "Eaten so far" chip strip above. -->
-      <div class="card" id="todayRecordsCard">
-        <div class="row between"><b style="font-size:14px">Eaten today</b><span class="pill" id="todayRecordsPill">0 kcal</span></div>
+      <!-- Planned meals already carry their own Eaten/Skipped state above. This compact,
+           collapsible surface is deliberately only for independent food and drink adds. -->
+      <details class="card today-extras" id="todayRecordsCard" hidden>
+        <summary>
+          <span class="today-extras-title"><span class="today-extras-spark" aria-hidden="true">✦</span><span><b>Little extras</b><small id="todayRecordsCount">0 extras</small></span></span>
+          <span class="pill" id="todayRecordsPill">0 kcal</span>
+        </summary>
         <div id="todayRecordsList"></div>
-      </div>
+      </details>
 
       <p class="sub" style="margin-top:16px;text-align:center">Plan generated from your profile · adjust anytime in Profile</p>
     </section>
@@ -1053,6 +1056,6 @@
 <script src="js/library.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/app.js?v=mesa-a44fb8261f94"></script>
+<script src="js/app.js?v=mesa-1ca8e7c6952d"></script>
 </body>
 </html>

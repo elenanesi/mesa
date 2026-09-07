@@ -1678,43 +1678,37 @@ function toggleTodayEntryEatenOut(index){
 }
 
 function renderTodayRecords(){
-  const raw = getDayLog(todayISO())[currentProf];
+  const card = document.getElementById('todayRecordsCard');
   const list = document.getElementById('todayRecordsList');
   const pill = document.getElementById('todayRecordsPill');
-  if(!list) return;
-  const total = raw.reduce(function(s, e){ return s + logEntryNutrition(e).kcal; }, 0);
-  if(pill) pill.textContent = Math.round(total) + ' kcal';
-  todayRecordGroups = groupedTodayRecords();
+  const count = document.getElementById('todayRecordsCount');
+  if(!list || !card) return;
+  // Planned meal status lives on the meal cards; this list is only for independent quick adds.
+  todayRecordGroups = groupedTodayRecords().filter(function(group){ return group.kind === 'food'; });
   if(!todayRecordGroups.length){
-    list.innerHTML = '<p class="sub" style="margin:8px 0 0">Nothing logged yet today.</p>';
+    card.hidden = true;
+    list.innerHTML = '';
     return;
   }
+  card.hidden = false;
+  const total = todayRecordGroups.reduce(function(sum, group){ return sum + (group.kcal || 0); }, 0);
+  if(pill) pill.textContent = Math.round(total) + ' kcal';
+  if(count) count.textContent = todayRecordGroups.length + (todayRecordGroups.length === 1 ? ' extra' : ' extras');
   list.innerHTML = todayRecordGroups.map(function(group, gi){
     const editBtn = '<button class="li-x" aria-label="Edit this item" onclick="openEditTodayRecord('+gi+')">✎</button>';
     const deleteBtn = '<button class="li-x" aria-label="Delete this item" onclick="deleteTodayRecordGroup('+gi+')">✕</button>';
     // FAVORITES-EATENOUT-plan.md item 3: same toggle as "Today so far", but at the GROUP
     // level (groupedTodayRecords merges repeat quick-adds of the same food into one row) —
-    // see groupEatenOut()/toggleTodayRecordGroupEatenOut() below.
+    // Its status is summarised from the full merged group, not the first entry alone.
     const isOut = groupEatenOut(group);
     const outPill = isOut ? ' <span class="chip-computed">🍴 out</span>' : '';
-    const toggleBtn = '<button class="li-x" aria-label="'+(isOut ? 'Mark eaten at home' : 'Mark eaten out')+'" onclick="toggleTodayRecordGroupEatenOut('+gi+')">'+(isOut ? '🏠' : '🍴')+'</button>';
-    if(group.kind === 'plan'){
-      const e = group.entry;
-      const r = RECIPES_DB[e.ref];
-      const emoji = r ? r.emoji : '🍽️';
-      const title = escapeHtml(logEntryTitleWithComponents(e));
-      const label = (e.slot ? SLOT_LABEL[e.slot] : 'Meal') + ' · ' + macroSummaryFromTotals(logEntryNutrition(e)) + (e.t ? ' · ' + e.t : '');
-      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(logEntryNutrition(e).kcal)+'</div>'+toggleBtn+deleteBtn+'</div>';
-    }
     const food = FOODS[group.ref];
     const title = escapeHtml(foodGroupTitle(food, group.grams));
     const nut = foodMacros(group.ref, group.grams);
+    const icon = foodIconHtml(group.ref);
     const label = (group.ref === 'espresso-unsweetened' || group.ref === 'cappuccino-unsweetened' ? 'Drink' : 'Quick add') + ' · ' + foodAmountLabel(food, group.grams) + ' · ' + macroSummaryFromTotals(nut);
-    // A quick-add food row already carries edit + delete; a third inline button crowds the
-    // text on a phone, so eaten-out moves INTO the edit sheet (buildEditTodayFoodSheet) for
-    // food rows. The pill still shows the state on the row at a glance. Plan rows above keep
-    // the inline toggle — they have only delete (2 buttons, uncrowded) and no edit sheet.
-    return '<div class="logitem"><div class="li-i">🥄</div><div class="li-t">'+title+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(group.kcal)+'</div>'+editBtn+deleteBtn+'</div>';
+    // Edit holds the optional eaten-out control, keeping this small disclosure row calm.
+    return '<div class="logitem"><div class="li-i">'+icon+'</div><div class="li-t">'+title+outPill+'<small>'+label+'</small></div><div class="li-k">'+Math.round(group.kcal)+'</div>'+editBtn+deleteBtn+'</div>';
   }).join('');
 }
 
