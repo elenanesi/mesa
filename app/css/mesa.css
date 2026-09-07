@@ -1108,14 +1108,8 @@ body.gate-open{overflow:hidden;}
 
 /* meal card states (confirmed/skipped visual treatment) */
 .meal.state-done{border-left:3px solid var(--sage);opacity:.8;}
-.meal.state-done .thumb{position:relative;}
 .meal.state-skipped{opacity:.5;border-left:3px solid var(--muted);}
 .meal.state-skipped .thumb{filter:grayscale(.35);}
-.done-badge{
-  position:absolute;top:-4px;right:-4px;width:16px;height:16px;border-radius:50%;
-  background:var(--sage);color:#fff;font-size:8px;font-weight:800;display:grid;place-items:center;
-  box-shadow:0 1px 3px rgba(0,0,0,.15);
-}
 .state-tag{font-size:10px;font-weight:700;margin-top:5px;}
 .state-tag.tag-done{color:var(--sage-deep);}
 .state-tag.tag-skipped{color:var(--muted);}

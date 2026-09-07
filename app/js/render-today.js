@@ -1896,15 +1896,6 @@ function renderTodayCardActions(){
       // Card state: done — show tag, undo, and swap/edit controls
       var card = wrap.closest('.meal');
       if(card){ card.classList.add('state-done'); card.classList.remove('state-skipped'); }
-      // Add badge to thumb
-      var thumb = card ? card.querySelector('.thumb') : null;
-      if(thumb && !thumb.querySelector('.done-badge')){
-        thumb.style.position = 'relative';
-        var badge = document.createElement('span');
-        badge.className = 'done-badge';
-        badge.textContent = '✓';
-        thumb.appendChild(badge);
-      }
       wrap.innerHTML = '<div class="tag-row"><span class="state-tag tag-done">✓ Eaten</span>'
         + '<span class="tag-controls"><button class="tag-undo" onclick="event.stopPropagation();openSwap(\''+slot+'\',null)">↔</button>'
         + '<button class="tag-undo" aria-label="'+addAria+'" onclick="event.stopPropagation();openAddMealRecipeSheet(\''+slot+'\')">'+addLabel+'</button>'
@@ -1912,18 +1903,12 @@ function renderTodayCardActions(){
     } else if(status === 'skipped'){
       var card2 = wrap.closest('.meal');
       if(card2){ card2.classList.add('state-skipped'); card2.classList.remove('state-done'); }
-      // Remove any done badge
-      var thumb2 = card2 ? card2.querySelector('.done-badge') : null;
-      if(thumb2) thumb2.remove();
       wrap.innerHTML = '<div class="tag-row"><span class="state-tag tag-skipped">— Skipped</span>'
         + '<button class="tag-undo" onclick="event.stopPropagation();undoLogSlot(\''+slot+'\')">↺ Undo</button></div>';
     } else {
       // Pending: cute single log button — swap/skip/extras live in recipe detail
       var card3 = wrap.closest('.meal');
       if(card3){ card3.classList.remove('state-done', 'state-skipped'); }
-      // Remove any done badge
-      var oldBadge = card3 ? card3.querySelector('.done-badge') : null;
-      if(oldBadge) oldBadge.remove();
       // todayISO() passed EXPLICITLY, not left to logConfirm/logSkip's currentLogDateISO()
       // default — this row renders today's state (slotLogStatus(todayISO()) above), so it
       // must write to today even when the Log screen is still set to Yesterday. See the doc
