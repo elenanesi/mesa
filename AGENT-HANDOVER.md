@@ -81,11 +81,13 @@ artwork, `app/js/app.js:applyMonthlyBackground()` (sets `body[data-month]`), and
 section of `app/css/mesa.css` (monthly artwork + accent tokens). Do **not** remove, flatten,
 or replace these rules while making an unrelated fix.
 
-- The twelve `body[data-month="N"]` rules jointly set the artwork and the `--sage`,
-  `--sage-deep`, `--sage-tint`, and `--sage-rgb` tokens. Those tokens deliberately recolor
-  active tabs, primary buttons, confirmation/success states, links, botanical marks, and
-  light accent surfaces to suit each month. New accent UI must use these variables — do not
-  introduce a fixed green hex value.
+- The twelve `body[data-month="N"]` rules jointly set the artwork, accent triad (`--sage`,
+  `--sage-deep`, `--sage-tint`, `--sage-rgb`), and the **Today text contrast map**. The latter
+  has one token for each surface: `--today-art-heading`, `--today-art-kicker`,
+  `--today-card-title`, `--today-card-detail`, `--today-note-text`, `--today-note-bg`, and
+  `--today-note-border`. It is deliberate: copy on watercolor needs a per-month color, while
+  copy on paper needs a darker companion. New Today copy must use the applicable mapped token,
+  never a fixed green or a broad light `.screen > .sub` override.
 - `.phone` must keep its **explicit longhand** background layers (`background-image`,
   `-position`, `-size`, `-repeat`). Do not condense it into `background: ...`. Installed
   Safari PWAs can discard a shorthand containing a custom `url()` layer. Also, because
@@ -94,8 +96,10 @@ or replace these rules while making an unrelated fix.
 - The monthly motif is offset by the exact fixed tab-bar height (`bottom 88px`) so the
   illustration is not clipped and no spare paper strip is visible. If the tab-bar height
   changes, update this offset in the same change and visually verify the September grapes.
-- Direct screen subtitles on September/November/December intentionally use a light shadowed
-  treatment because they sit on dark watercolor washes; text inside paper cards remains dark.
+- The Today profile-generation note (`#todayPlanNote`) has its own translucent paper/ink pair
+  from that map. Do not make it inherit a generic white subtitle color: September's pale wash
+  made white-on-white unreadable. November/December retain light ink only inside their mapped
+  darker note treatment; text inside paper cards remains dark.
 - Any edit here requires visual QA in a real phone-width browser for September plus December,
   then `node tools/build-sw.js` so every image and stylesheet update reaches installed PWAs.
   The builder also stamps versioned `mesa.css` and `app.js` URLs in `index.html`; preserve those

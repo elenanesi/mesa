@@ -13489,40 +13489,30 @@ function testSnackTapAffordance(){
 }
 
 /* ===================================================================
-   UX-REVIEW-plan.md item 5: Today screen surfaces Shopping + Pantry
-
-   Shopping was reachable only from the Week screen and Pantry only two taps deep inside
-   Library. The fix adds a compact 2-button .quick grid to the Today screen (same
-   convention as the Log screen's "More ways to log" block), positioned AFTER every meal
-   card (so it can never push breakfast/lunch/dinner/snack below the fold at 375px) and
-   BEFORE the "Eaten today" records card, calling the pre-existing openShopping()/
-   openPantryLibrary() openers directly rather than duplicating any of their logic.
-   DOM-free: static markup assertions against the real index.html, same style as
-   testNoToastOnlyFakeFeaturesRemain's "More ways to log" grid check below.
+   Today stays focused on meals. Shopping lives in Planner and Pantry in Library; neither
+   needs to repeat beneath the meals. The profile note is on changing watercolor, so every
+   month must supply a complete, scoped text-color map for Today.
    =================================================================== */
-function testTodayShoppingPantryQuickLinks(){
+function testTodayFocusAndSeasonalTextMap(){
   const indexHtml = fs.readFileSync(path.join(APP_DIR, 'index.html'), 'utf8');
-
-  const gridMatch = indexHtml.match(/<div class="quick" id="todayQuickLinks"[\s\S]*?<\/div>/);
-  assert(!!gridMatch, 'index.html: Today screen has a #todayQuickLinks .quick grid', '');
-  const grid = gridMatch ? gridMatch[0] : '';
-  assert(grid.indexOf('onclick="openShopping()"') !== -1,
-    '#todayQuickLinks: Shopping button calls the existing openShopping() opener directly (no wrapper/duplicated logic)', grid);
-  assert(grid.indexOf('onclick="openPantryLibrary()"') !== -1,
-    '#todayQuickLinks: Pantry button calls the existing openPantryLibrary() opener directly (no wrapper/duplicated logic)', grid);
-
-  const snackIdx = indexHtml.indexOf('id="todaySnack"');
-  const quickIdx = indexHtml.indexOf('id="todayQuickLinks"');
-  const recordsIdx = indexHtml.indexOf('id="todayRecordsCard"');
-  assert(snackIdx !== -1 && quickIdx !== -1 && recordsIdx !== -1, 'setup: #todaySnack, #todayQuickLinks and #todayRecordsCard all found in index.html', '');
-  assert(snackIdx < quickIdx && quickIdx < recordsIdx,
-    'index.html: #todayQuickLinks sits AFTER every meal card (#todaySnack is the last one) and BEFORE #todayRecordsCard — never pushes the meal cards below the fold', 'snack@' + snackIdx + ' quick@' + quickIdx + ' records@' + recordsIdx);
+  assert(indexHtml.indexOf('id="todayQuickLinks"') === -1,
+    'Today: Shopping list and Pantry shortcuts are removed; their dedicated Planner/Library homes remain', '');
+  assert(indexHtml.indexOf('id="todayPlanNote"') !== -1,
+    'Today: profile-generation note has a dedicated hook for reliable seasonal contrast', '');
   assert(indexHtml.indexOf('id="eatenStripWrap"') === -1 && indexHtml.indexOf('id="eatenStrip"') === -1,
     'Today: the duplicate Eaten so far chip strip is removed in favour of one editable Eaten today list', '');
   const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
   const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
   assert(renderSrc.indexOf('renderEatenStrip()') === -1 && css.indexOf('#todayRecordsCard .logitem') !== -1,
     'Today eaten list: one compact record list remains, with no duplicate chip-strip renderer', '');
+  const todayTokens = ['--today-art-heading:', '--today-art-kicker:', '--today-card-title:', '--today-card-detail:', '--today-note-text:', '--today-note-bg:', '--today-note-border:'];
+  for(let month = 1; month <= 12; month++){
+    const match = css.match(new RegExp('body\\[data-month="' + month + '"\\]\\{([^}]*)\\}'));
+    assert(!!match && todayTokens.every(function(token){ return match[1].indexOf(token) !== -1; }),
+      'seasonal Today text map: month ' + month + ' defines every watercolor/card/note contrast token', match ? match[1] : 'missing month rule');
+  }
+  assert(css.indexOf('#todayPlanNote') !== -1 && css.indexOf('color:var(--today-note-text)!important') !== -1,
+    'Today profile note: uses its mapped contrast color rather than the old broad white subtitle rule', '');
 }
 
 function testTodayGoalSummaryRemoved(){
@@ -14299,7 +14289,7 @@ function main(){
   runTest('person-switcher: personSwitcherHtml() active-state/names/solo-hiding/escaping', function(){ testPersonSwitcherHtml(ctx); });
   runTest('person-switcher: a switch preserves the active screen + Week/Log view state', function(){ testPersonSwitchPreservesScreenAndViewState(ctx); });
   runTest('UX-REVIEW-plan.md item 4: snack card tap-to-recipe affordance (present with a recipe, absent without one)', function(){ testSnackTapAffordance(); });
-  runTest('UX-REVIEW-plan.md item 5: Today screen Shopping/Pantry quick links call the existing openers, placed below the meal cards', function(){ testTodayShoppingPantryQuickLinks(); });
+  runTest('Today focus + seasonal watercolor text contrast map', function(){ testTodayFocusAndSeasonalTextMap(); });
   runTest('Today summary: compact goal chip removed instead of showing a subset of goals', function(){ testTodayGoalSummaryRemoved(); });
   runTest('Week compact planning workspace: top actions, collapsed quality drawer, no bottom CTA stack', function(){ testWeekCompactPlanningWorkspace(); });
   runTest('Planner day disclosure state survives refreshes', function(){ testPlannerDayDisclosureState(ctx); });

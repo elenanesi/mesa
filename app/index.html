@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-<link rel="stylesheet" href="css/mesa.css?v=mesa-3bbd380d0c8e" />
+<link rel="stylesheet" href="css/mesa.css?v=mesa-4dfcf053a1cb" />
 </head>
 <body>
 
@@ -160,16 +160,6 @@
         <div class="sub" id="kcalSplitLegend" style="margin-top:8px">Target split for today</div>
       </div>
 
-      <!-- UX-REVIEW-plan.md item 5: Shopping and Pantry are weekly-cadence, high-intent
-           tasks with no surface on Today. Same .quick grid convention as the Log screen's
-           "More ways to log" block (2 columns here, not 4 — only 2 destinations), placed
-           below the meal cards so it never pushes them below the fold at 375px. Calls the
-           existing openers directly — no duplicated logic. -->
-      <div class="quick" id="todayQuickLinks" style="grid-template-columns:repeat(2,1fr);margin-top:18px">
-        <button onclick="openShopping()"><span class="qi">🛒</span>Shopping list</button>
-        <button onclick="openPantryLibrary()"><span class="qi">🥫</span>Pantry</button>
-      </div>
-
       <!-- Planned meals already carry their own Eaten/Skipped state above. This compact,
            collapsible surface is deliberately only for independent food and drink adds. -->
       <details class="card today-extras" id="todayRecordsCard" hidden>
@@ -180,7 +170,7 @@
         <div id="todayRecordsList"></div>
       </details>
 
-      <p class="sub" style="margin-top:16px;text-align:center">Plan generated from your profile · adjust anytime in Profile</p>
+      <p class="sub today-plan-note" id="todayPlanNote">Plan generated from your profile · adjust anytime in Profile</p>
     </section>
 
     <!-- ============ WEEK ============ -->
@@ -1056,6 +1046,6 @@
 <script src="js/library.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/app.js?v=mesa-3bbd380d0c8e"></script>
+<script src="js/app.js?v=mesa-4dfcf053a1cb"></script>
 </body>
 </html>

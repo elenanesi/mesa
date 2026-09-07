@@ -24,6 +24,15 @@
   /* This variable is used as a background-image layer, so its neutral value
      must be the image keyword `none` (not the color value `transparent`). */
   --season-wash:none;
+  /* Today copy is split by surface: watercolor, eyebrow, paper-card title,
+     paper-card detail, and the closing profile note. Each month maps these. */
+  --today-art-heading:#3c3228;
+  --today-art-kicker:#566b43;
+  --today-card-title:#342d25;
+  --today-card-detail:#6e6253;
+  --today-note-text:#4d4135;
+  --today-note-bg:rgba(255,250,240,.74);
+  --today-note-border:rgba(176,146,105,.38);
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
 html,body{margin:0;padding:0;}
@@ -48,31 +57,18 @@ body{
    artichoke watercolor, while grapes make September's harvest cue unmistakable. */
 /* Every month carries a related accent triad. Existing components consume these
    tokens for active tabs, confirmation controls, links, and success states. */
-body[data-month="1"]{--monthly-art:url("../assets/monthly-backgrounds/february.png");--sage:#b87346;--sage-deep:#8d4e2e;--sage-tint:#f5e4d6;--sage-rgb:184,115,70;}
-body[data-month="2"]{--monthly-art:url("../assets/monthly-backgrounds/february-artichokes.png");--sage:#876b86;--sage-deep:#654f67;--sage-tint:#efe6ef;--sage-rgb:135,107,134;}
-body[data-month="3"]{--monthly-art:url("../assets/monthly-backgrounds/march.png");--sage:#78966c;--sage-deep:#536e4d;--sage-tint:#eaf0e4;--sage-rgb:120,150,108;}
-body[data-month="4"]{--monthly-art:url("../assets/monthly-backgrounds/april.png");--sage:#b8626d;--sage-deep:#894550;--sage-tint:#f5e3e5;--sage-rgb:184,98,109;}
-body[data-month="5"]{--monthly-art:url("../assets/monthly-backgrounds/may.png");--sage:#b85c69;--sage-deep:#8d3f51;--sage-tint:#f6e0e5;--sage-rgb:184,92,105;}
-body[data-month="6"]{--monthly-art:url("../assets/monthly-backgrounds/june.png");--sage:#4e8b7d;--sage-deep:#32685d;--sage-tint:#dff0eb;--sage-rgb:78,139,125;}
-body[data-month="7"]{--monthly-art:url("../assets/monthly-backgrounds/july.png");--sage:#b96548;--sage-deep:#8b422f;--sage-tint:#f5e2d9;--sage-rgb:185,101,72;}
-body[data-month="8"]{--monthly-art:url("../assets/monthly-backgrounds/august.png");--sage:#827154;--sage-deep:#5f523d;--sage-tint:#f0eadb;--sage-rgb:130,113,84;}
-body[data-month="9"]{--monthly-art:url("../assets/monthly-backgrounds/september-grapes.png");--sage:#95627a;--sage-deep:#6d3f58;--sage-tint:#f2e2e9;--sage-rgb:149,98,122;}
-body[data-month="10"]{--monthly-art:url("../assets/monthly-backgrounds/october.png");--sage:#b46b3d;--sage-deep:#864722;--sage-tint:#f6e2d1;--sage-rgb:180,107,61;}
-body[data-month="11"]{--monthly-art:url("../assets/monthly-backgrounds/november.png");--sage:#89624b;--sage-deep:#644432;--sage-tint:#f1e3da;--sage-rgb:137,98,75;}
-body[data-month="12"]{--monthly-art:url("../assets/monthly-backgrounds/december.png");--sage:#5f8469;--sage-deep:#3e6148;--sage-tint:#e3eee4;--sage-rgb:95,132,105;}
-
-/* The November and December washes are deliberately richer. Lift only the two
-   page-level headings that sit directly on them; card content stays dark on paper. */
-body[data-month="11"] #today .topbar h1,
-body[data-month="12"] #today .topbar h1,
-body[data-month="11"] #today > .row.between h2,
-body[data-month="12"] #today > .row.between h2{color:#fffaf0;text-shadow:0 1px 10px rgba(34,25,17,.42);}
-body[data-month="11"] #today .topbar .eyebrow,
-body[data-month="12"] #today .topbar .eyebrow{color:#f7d99c;text-shadow:0 1px 8px rgba(34,25,17,.35);}
-/* Direct screen subtitles sit on the seasonal wash rather than a paper card. */
-body[data-month="9"] .screen > .sub,
-body[data-month="11"] .screen > .sub,
-body[data-month="12"] .screen > .sub{color:#fffaf0;text-shadow:0 1px 8px rgba(34,25,17,.48);}
+body[data-month="1"]{--monthly-art:url("../assets/monthly-backgrounds/february.png");--sage:#b87346;--sage-deep:#8d4e2e;--sage-tint:#f5e4d6;--sage-rgb:184,115,70;--today-art-heading:#6d3d27;--today-art-kicker:#8d4e2e;--today-card-title:#39291f;--today-card-detail:#6b5444;--today-note-text:#5e3a28;--today-note-bg:rgba(255,247,235,.80);--today-note-border:rgba(141,78,46,.24);}
+body[data-month="2"]{--monthly-art:url("../assets/monthly-backgrounds/february-artichokes.png");--sage:#876b86;--sage-deep:#654f67;--sage-tint:#efe6ef;--sage-rgb:135,107,134;--today-art-heading:#503d52;--today-art-kicker:#654f67;--today-card-title:#372f38;--today-card-detail:#655c66;--today-note-text:#4c3c50;--today-note-bg:rgba(253,247,252,.80);--today-note-border:rgba(101,79,103,.24);}
+body[data-month="3"]{--monthly-art:url("../assets/monthly-backgrounds/march.png");--sage:#78966c;--sage-deep:#536e4d;--sage-tint:#eaf0e4;--sage-rgb:120,150,108;--today-art-heading:#395942;--today-art-kicker:#536e4d;--today-card-title:#30372b;--today-card-detail:#5c6657;--today-note-text:#38553f;--today-note-bg:rgba(247,251,241,.80);--today-note-border:rgba(83,110,77,.24);}
+body[data-month="4"]{--monthly-art:url("../assets/monthly-backgrounds/april.png");--sage:#b8626d;--sage-deep:#894550;--sage-tint:#f5e3e5;--sage-rgb:184,98,109;--today-art-heading:#703b45;--today-art-kicker:#894550;--today-card-title:#412a2f;--today-card-detail:#73575c;--today-note-text:#693640;--today-note-bg:rgba(255,246,247,.80);--today-note-border:rgba(137,69,80,.24);}
+body[data-month="5"]{--monthly-art:url("../assets/monthly-backgrounds/may.png");--sage:#b85c69;--sage-deep:#8d3f51;--sage-tint:#f6e0e5;--sage-rgb:184,92,105;--today-art-heading:#713443;--today-art-kicker:#8d3f51;--today-card-title:#40282f;--today-card-detail:#75545d;--today-note-text:#68313f;--today-note-bg:rgba(255,246,248,.80);--today-note-border:rgba(141,63,81,.24);}
+body[data-month="6"]{--monthly-art:url("../assets/monthly-backgrounds/june.png");--sage:#4e8b7d;--sage-deep:#32685d;--sage-tint:#dff0eb;--sage-rgb:78,139,125;--today-art-heading:#24584f;--today-art-kicker:#32685d;--today-card-title:#283a36;--today-card-detail:#526761;--today-note-text:#23564d;--today-note-bg:rgba(242,251,248,.80);--today-note-border:rgba(50,104,93,.24);}
+body[data-month="7"]{--monthly-art:url("../assets/monthly-backgrounds/july.png");--sage:#b96548;--sage-deep:#8b422f;--sage-tint:#f5e2d9;--sage-rgb:185,101,72;--today-art-heading:#743b29;--today-art-kicker:#8b422f;--today-card-title:#3d2b24;--today-card-detail:#6c5448;--today-note-text:#703a29;--today-note-bg:rgba(255,247,241,.80);--today-note-border:rgba(139,66,47,.24);}
+body[data-month="8"]{--monthly-art:url("../assets/monthly-backgrounds/august.png");--sage:#827154;--sage-deep:#5f523d;--sage-tint:#f0eadb;--sage-rgb:130,113,84;--today-art-heading:#4f4634;--today-art-kicker:#5f523d;--today-card-title:#373229;--today-card-detail:#625c4f;--today-note-text:#4c4432;--today-note-bg:rgba(253,250,240,.80);--today-note-border:rgba(95,82,61,.24);}
+body[data-month="9"]{--monthly-art:url("../assets/monthly-backgrounds/september-grapes.png");--sage:#95627a;--sage-deep:#6d3f58;--sage-tint:#f2e2e9;--sage-rgb:149,98,122;--today-art-heading:#4d2942;--today-art-kicker:#6d3f58;--today-card-title:#3c2935;--today-card-detail:#6d5964;--today-note-text:#4a2b40;--today-note-bg:rgba(255,248,246,.84);--today-note-border:rgba(109,63,88,.28);}
+body[data-month="10"]{--monthly-art:url("../assets/monthly-backgrounds/october.png");--sage:#b46b3d;--sage-deep:#864722;--sage-tint:#f6e2d1;--sage-rgb:180,107,61;--today-art-heading:#6d3518;--today-art-kicker:#864722;--today-card-title:#40291e;--today-card-detail:#704f3d;--today-note-text:#653317;--today-note-bg:rgba(255,247,239,.82);--today-note-border:rgba(134,71,34,.25);}
+body[data-month="11"]{--monthly-art:url("../assets/monthly-backgrounds/november.png");--sage:#89624b;--sage-deep:#644432;--sage-tint:#f1e3da;--sage-rgb:137,98,75;--today-art-heading:#fff8eb;--today-art-kicker:#f4d7b3;--today-card-title:#3e2d25;--today-card-detail:#6d5548;--today-note-text:#fff7e9;--today-note-bg:rgba(67,44,32,.58);--today-note-border:rgba(255,237,211,.34);}
+body[data-month="12"]{--monthly-art:url("../assets/monthly-backgrounds/december.png");--sage:#5f8469;--sage-deep:#3e6148;--sage-tint:#e3eee4;--sage-rgb:95,132,105;--today-art-heading:#fff9ed;--today-art-kicker:#ebce8e;--today-card-title:#2e392f;--today-card-detail:#556458;--today-note-text:#fff8e8;--today-note-bg:rgba(37,67,48,.62);--today-note-border:rgba(244,224,177,.38);}
 
 /* ---------- App root: fills the real viewport (no more desktop phone frame) ---------- */
 .phone{
@@ -111,6 +107,7 @@ body[data-month="12"] .screen > .sub{color:#fffaf0;text-shadow:0 1px 8px rgba(34
 h1{font-family:var(--font-script);font-size:34px;line-height:1.04;margin:6px 0 2px;font-weight:500;color:#2f281f;}
 h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:500;color:#3c3228;}
 .sub{color:var(--muted);font-size:13.5px;margin:0 0 4px;}
+#todayPlanNote{margin:16px 0 0!important;padding:8px 12px;text-align:center;color:var(--today-note-text)!important;background:var(--today-note-bg);border:1px solid var(--today-note-border);border-radius:12px;box-shadow:0 4px 12px rgba(73,54,32,.08);text-shadow:none!important;}
 .day-cue{color:var(--gold);font-weight:500;}
 /* Stronger day-cue variant for a genuinely high reading (currently: total-fat 'over',
    PER_DAY_BANDS.fat state.js) — reuses --terra, the app's existing over/high accent
@@ -128,6 +125,13 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .day-closed-leaf svg{width:100%;height:100%;}
 .day-closed-leaf .leaf-body{fill:var(--sage-deep);stroke:rgba(var(--sage-rgb),.4);stroke-width:.6;}
 .eyebrow{font-size:11px;font-weight:700;letter-spacing:1.7px;text-transform:uppercase;color:var(--sage-deep);}
+
+/* Today’s watercolor layer has a scoped text palette, so pale September art cannot
+   inherit a broad white subtitle rule intended for richer winter paintings. */
+#today .topbar h1,#today > .row.between h2{color:var(--today-art-heading);text-shadow:0 1px 9px rgba(255,250,240,.32);}
+#today .topbar .eyebrow{color:var(--today-art-kicker);text-shadow:0 1px 7px rgba(255,250,240,.36);}
+#today .meal .info .t,#todayProgressCard .ring .big,#todayProgressCard .macro .mhead b,#todayRecordsCard .today-extras-title b{color:var(--today-card-title);}
+#today .meal .info .d,#todayProgressCard .macro .mhead > span,#todayRecordsCard .today-extras-title small,#todayRecordsCard .logitem .li-t small{color:var(--today-card-detail);}
 
 .card{background:rgba(255,250,240,.88);border-radius:var(--radius);box-shadow:var(--shadow-soft);padding:16px;margin-top:12px;border:1px solid rgba(176,146,105,.38);}
 .row{display:flex;align-items:center;gap:12px;}
@@ -1062,12 +1066,12 @@ body.gate-open{overflow:hidden;}
 #todayProgressCard .ring{border-radius:50%;background:radial-gradient(circle at 36% 28%,rgba(255,255,255,.92),rgba(var(--sage-rgb),.07) 67%,rgba(var(--sage-rgb),.13));box-shadow:inset 0 0 0 1px rgba(var(--sage-rgb),.15),0 6px 15px rgba(73,54,32,.08);}
 #todayProgressCard .ring-track{stroke:rgba(var(--sage-rgb),.13);}
 #todayProgressCard .ring-protein{stroke:var(--sage);}
-#todayProgressCard .ring .big{font-size:28px;letter-spacing:-.8px;color:var(--ink);}
+#todayProgressCard .ring .big{font-size:28px;letter-spacing:-.8px;color:var(--today-card-title);}
 #todayProgressCard .ring .lbl{font-size:10px;max-width:82px;text-align:center;line-height:1.2;}
 #todayProgressCard .macros{gap:12px;}
 #todayProgressCard .macro .mhead{margin-bottom:6px;font-size:12px;}
-#todayProgressCard .macro .mhead > span{color:var(--ink-soft);font-weight:600;}
-#todayProgressCard .macro .mhead b{font-size:12.5px;color:var(--ink);}
+#todayProgressCard .macro .mhead > span{color:var(--today-card-detail);font-weight:600;}
+#todayProgressCard .macro .mhead b{font-size:12.5px;color:var(--today-card-title);}
 #todayProgressCard .bar{height:7px;background:rgba(var(--sage-rgb),.10);box-shadow:inset 0 1px 2px rgba(73,54,32,.06);}
 #today .meal{border-color:rgba(176,146,105,.32);box-shadow:0 6px 18px rgba(73,54,32,.075),inset 0 1px 0 rgba(255,255,255,.65);}
 #today .meal .thumb{background:linear-gradient(145deg,#fffaf0,var(--sage-tint));box-shadow:inset 0 1px 0 rgba(255,255,255,.85),0 3px 8px rgba(73,54,32,.06);}
@@ -1083,8 +1087,8 @@ body.gate-open{overflow:hidden;}
 #todayRecordsCard summary::after{content:"";width:7px;height:7px;margin-left:2px;border-right:1.5px solid var(--sage-deep);border-bottom:1.5px solid var(--sage-deep);transform:rotate(45deg) translateY(-2px);transition:transform .18s ease;}
 #todayRecordsCard[open] summary::after{transform:rotate(225deg) translate(-2px,-1px);}
 .today-extras-title{display:flex;align-items:center;gap:9px;min-width:0;}
-.today-extras-title b{display:block;font-size:13.5px;color:var(--ink);}
-.today-extras-title small{display:block;margin-top:2px;color:var(--muted);font-size:10.5px;}
+.today-extras-title b{display:block;font-size:13.5px;color:var(--today-card-title);}
+.today-extras-title small{display:block;margin-top:2px;color:var(--today-card-detail);font-size:10.5px;}
 .today-extras-spark{display:grid;place-items:center;width:30px;height:30px;border-radius:11px;background:var(--sage-tint);color:var(--sage-deep);font-size:15px;flex:0 0 auto;}
 #todayRecordsCard summary .pill{margin-left:auto;white-space:nowrap;}
 #todayRecordsList{padding:0 14px 8px;border-top:1px solid rgba(176,146,105,.22);}
