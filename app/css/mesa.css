@@ -838,6 +838,10 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .altrow{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid rgba(176,146,105,.38);border-radius:14px;margin-top:10px;cursor:pointer;background:rgba(255,250,240,.9);min-height:44px;}
 .altrow:active{transform:scale(.98);}
 .altrow .ae{font-size:26px;width:48px;text-align:center;flex:0 0 48px;}
+/* Recipe book + Market use the same small watercolor art as Today. It stays clipped inside its
+   own warm-paper tile, so list rows keep their calm, tidy rhythm even when a painting is detailed. */
+.altrow .ae.recipe-list-art{height:48px;display:grid;place-items:center;overflow:hidden;border:1px solid rgba(176,146,105,.26);border-radius:12px;background:#fbf5e8;}
+.recipe-list-image{display:block;width:100%;height:100%;object-fit:cover;}
 /* Swap sheet "top pick" — row 0 of Best matches heros visually (same data/onclick) so the
    sheet reads as "here's your best match, or browse" instead of five identical rows. */
 .altrow-hero{padding:17px;border-color:rgba(199,154,72,.55);background:linear-gradient(180deg,rgba(199,154,72,.12),rgba(255,250,240,.95));box-shadow:var(--shadow-soft);}

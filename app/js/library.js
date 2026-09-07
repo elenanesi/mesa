@@ -3144,7 +3144,7 @@ function libRecipeRowHtml(id, isMarket){
       + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">' + lucideIcon('pencil') + '</button>'
       + '<button class="lib-del" data-act="' + removeAct + '" aria-label="' + removeLabel + '">' + lucideIcon('trash') + '</button>';
   }
-  return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae">' + r.emoji + '</div>'
+  return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae recipe-list-art">' + recipeThumbnailHtml(r, id) + '</div>'
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + badge + '</div>'
     + mealSub
     + '<div class="ad">' + slotLabel + ' · ' + seasonLabel(recipeSeason(r)) + ' · ' + Math.round(nut.kcal) + ' kcal · ' + Math.round(nut.protein) + 'g protein</div></div>'

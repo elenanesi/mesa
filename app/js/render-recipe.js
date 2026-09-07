@@ -552,6 +552,24 @@ function recipeImageAssetForRecipe(recipe, recipeId){
   return src || DEFAULT_RECIPE_IMAGE_ASSET;
 }
 
+// The book, Market, and Today list rows deliberately use the small watercolor copies rather
+// than rendering an emoji or downloading a full recipe illustration for every visible row.
+// Only curated image keys have a thumbnail; a user-provided asset stays on its original path.
+function recipeThumbnailAssetForRecipe(recipe, recipeId){
+  const source = safeRecipeImageAsset(recipeImageAssetForRecipe(recipe, recipeId)) || DEFAULT_RECIPE_IMAGE_ASSET;
+  const match = /^assets\/recipes\/([a-z0-9][a-z0-9-]*)\.png$/.exec(source);
+  return match && RECIPE_IMAGE_KEYS.indexOf(match[1]) !== -1
+    ? 'assets/recipes/thumb-' + match[1] + '.png'
+    : source;
+}
+
+function recipeThumbnailHtml(recipe, recipeId){
+  if(!recipe) return '';
+  const emoji = recipe.emoji || '🍽️';
+  const src = safeRecipeImageAsset(recipeThumbnailAssetForRecipe(recipe, recipeId)) || DEFAULT_RECIPE_IMAGE_ASSET;
+  return '<img class="recipe-list-image" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" data-fallback="' + htmlAttr(emoji) + '" onerror="this.onerror=null;this.replaceWith(document.createTextNode(this.getAttribute(\'data-fallback\')||\'\'))">';
+}
+
 function recipeHeroHtml(recipe, recipeId){
   if(!recipe) return '';
   const emoji = recipe.emoji || '';

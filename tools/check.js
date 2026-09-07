@@ -1329,6 +1329,10 @@ function testRecipeImageHelpers(ctx){
   const recipe = {title: 'Hero test', emoji: '🍽️', imageKey: 'fish-main'};
   assert(call(ctx, 'recipeImageAssetForRecipe', [recipe]) === 'assets/recipes/fish-main.png',
     'recipeImageAssetForRecipe: maps imageKey to an available assets/recipes/<key>.png', '');
+  assert(call(ctx, 'recipeThumbnailAssetForRecipe', [recipe]) === 'assets/recipes/thumb-fish-main.png',
+    'recipeThumbnailAssetForRecipe: curated recipe art resolves to its small watercolor copy', '');
+  assert(call(ctx, 'recipeThumbnailAssetForRecipe', [{title: 'Custom asset', emoji: '🍽️', imageUri: 'assets/recipes/custom-upload.png'}]) === 'assets/recipes/custom-upload.png',
+    'recipeThumbnailAssetForRecipe: a user-provided recipe asset keeps its original path when no thumb exists', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Breakfast bowl', emoji: '🥣', slot: 'breakfast', tags: [], ingredients: []}]) === 'assets/recipes/breakfast-bowl.png',
     'recipeImageAssetForRecipe: infers the breakfast-bowl image for breakfast recipes', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Big salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}]) === 'assets/recipes/salad.png',
@@ -1365,6 +1369,10 @@ function testRecipeImageHelpers(ctx){
     'recipeHeroHtml: renders an image for recipes with imageKey', html);
   assert(/onerror="this\.onerror=null;this\.replaceWith\(document\.createTextNode\(this\.getAttribute\('data-fallback'\)\|\|''\)\)"/.test(html),
     'recipeHeroHtml: rendered image wires a DOM-level fallback to the recipe emoji', html);
+
+  const thumbnailHtml = call(ctx, 'recipeThumbnailHtml', [recipe]);
+  assert(thumbnailHtml.indexOf('class="recipe-list-image"') !== -1 && thumbnailHtml.indexOf('src="assets/recipes/thumb-fish-main.png"') !== -1,
+    'recipeThumbnailHtml: list rows render the watercolor thumbnail, not an emoji', thumbnailHtml);
 
   const noImageHtml = call(ctx, 'recipeHeroHtml', [{title: 'No image', emoji: '<meal>'}]);
   assert(noImageHtml.indexOf('src="assets/recipes/default-recipe.png"') !== -1 && noImageHtml.indexOf('data-fallback="&lt;meal&gt;"') !== -1,
