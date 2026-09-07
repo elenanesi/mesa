@@ -88,6 +88,14 @@ const SIDE_TOP_K = 4;
    and this block is the only place to change. */
 const WEEKLY_RECIPE_CAP = {side: 3, main: 2, full: 2};
 const WEEKLY_RECIPE_CAP_DEFAULT = 2;
+// Options recipe (baked fish = 5 fish, pasta = 7 sauces) — the "middle" behaviour (owner
+// 2026-09-07, after "fully independent" served the base dish too often): each SPECIFIC combo
+// at most OPTION_COMBO_WEEK_CAP times/week (1 = a fresh combo every appearance), while the BASE
+// recipe is capped just OPTION_BASE_WEEK_BONUS over a plain recipe — so it can show up a few
+// times with different options, but never dominate the week (e.g. pasta full-cap 2 + 1 = 3x,
+// three different sauces). See eligibleCombosForVariety (per-combo) + weeklyCapForRecipe (base).
+const OPTION_COMBO_WEEK_CAP = 1;
+const OPTION_BASE_WEEK_BONUS = 1;
 // FAVORITES-EATENOUT-plan.md item 2, Decision Q1: a favorited recipe's weekly cap is +1
 // over the same recipe unfavorited (full/main 2->3, side/sauce 3->4) -- the ONE place caps
 // are read (applyWeeklyCapFilter and sidePoolLadder both call this), so nothing else needs
@@ -98,7 +106,13 @@ function weeklyCapForRecipe(id, persons){
   const r = RECIPES_DB[id];
   const cap = r && WEEKLY_RECIPE_CAP[r.role];
   const base = typeof cap === 'number' ? cap : WEEKLY_RECIPE_CAP_DEFAULT;
-  return recipeFavoritedByAny(id, persons) ? base + 1 : base;
+  let out = recipeFavoritedByAny(id, persons) ? base + 1 : base;
+  // An options recipe may appear a bit more often than a plain one — each appearance is a
+  // genuinely different combo — but still bounded so a base dish can't take over the week.
+  // This is the BASE-recipe cap (read via weekUse[baseId], recorded in recordDayUsage); the
+  // per-combo cap is OPTION_COMBO_WEEK_CAP, applied separately in eligibleCombosForVariety.
+  if(r && Array.isArray(r.optionGroups) && r.optionGroups.length) out += OPTION_BASE_WEEK_BONUS;
+  return out;
 }
 
 // Drops candidates this person has already used their weekly allowance of. Like every
@@ -829,7 +843,10 @@ function eligibleCombosForVariety(recipeId, avoidList, dietList, history, person
   persons.forEach(function(p){ (history[p].dayUseRecipe[dayIndex] || []).forEach(function(k){ usedToday[k] = true; }); });
   const notToday = all.filter(function(o){ return !usedToday[key(o)]; });
   let base = notToday.length ? notToday : all;
-  const cap = weeklyCapForRecipe(recipeId, persons);
+  // Per-COMBO weekly cap (not the base-recipe cap): each specific combo at most this often, so
+  // a fresh option is preferred every appearance. The base-recipe total is capped separately by
+  // applyWeeklyCapFilter via weekUse[baseId] (weeklyCapForRecipe's options bonus).
+  const cap = OPTION_COMBO_WEEK_CAP;
   const underCap = base.filter(function(o){ return persons.every(function(p){ return (history[p].weekUse[key(o)] || 0) < cap; }); });
   base = underCap.length ? underCap : base;
   const vp = persons[0];
@@ -954,8 +971,13 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
       const vkey = comboVarietyKey(c.recipeId, c.opts);
       if(!history[person].dayUseRecipe[dayIndex]) history[person].dayUseRecipe[dayIndex] = [];
       history[person].dayUseRecipe[dayIndex].push(vkey);
-      // VARIETY-plan.md P2: same walk feeds the whole-week tally the cap reads.
+      // VARIETY-plan.md P2: same walk feeds the whole-week tally the cap reads (per-combo for an
+      // options recipe, since vkey carries the combo).
       history[person].weekUse[vkey] = (history[person].weekUse[vkey] || 0) + 1;
+      // Options recipe only: ALSO tally the BARE base id so applyWeeklyCapFilter can bound the
+      // base recipe's TOTAL weekly appearances across all its combos (the "middle" behaviour).
+      // For an options-less dish vkey === c.recipeId, so this never double-counts.
+      if(vkey !== c.recipeId) history[person].weekUse[c.recipeId] = (history[person].weekUse[c.recipeId] || 0) + 1;
       // Same-day ingredient variety: record this dish's dominant Produce/Dairy key so a later
       // slot the same day is nudged away from repeating it (ingredientDiversityPenalty).
       if(history[person].dayUseIngredientKey){

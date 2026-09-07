@@ -100,7 +100,7 @@ function makeLocalStorage(){
 function noop(){}
 function fakeEl(){
   return {
-    style: {setProperty: noop}, children: [], classList: {add: noop, remove: noop, contains: function(){ return false; }},
+    style: {setProperty: noop}, dataset: {}, children: [], classList: {add: noop, remove: noop, contains: function(){ return false; }},
     addEventListener: noop, removeEventListener: noop, setAttribute: noop, appendChild: noop, replaceChildren: noop,
     querySelector: fakeEl
   };
@@ -128,7 +128,7 @@ function makeObFakeDocument(){
   const els = new Map();
   function makeObFakeEl(){
     const el = {
-      value: '', textContent: '', innerHTML: '', className: '', style: {},
+      value: '', textContent: '', innerHTML: '', className: '', style: {}, dataset: {},
       classList: {add: noop, remove: noop, toggle: noop, contains: function(){ return false; }},
       querySelector: function(){ return makeObFakeEl(); },
       // querySelectorAll/.closest (goal-audit test: toggleGoal()'s applyProf() funnel
@@ -4660,12 +4660,17 @@ function testOptionComboVariety(ctx){
   const afterToday = combos(usedTodayHist);
   assert(afterToday.indexOf('salmon') === -1 && afterToday.length === 4,
     'eligibleCombosForVariety: a combo already placed today is dropped; the other fish stay', JSON.stringify(afterToday));
-  // (5) a combo at its weekly cap is dropped.
-  const cap = call(ctx, 'weeklyCapForRecipe', ['baked-fish', ['elena']]);
+  // (5) per-combo cap: a specific combo at OPTION_COMBO_WEEK_CAP is dropped (forces a fresh combo).
+  const comboCap = get(ctx, 'OPTION_COMBO_WEEK_CAP');
   const cappedHist = {elena: {dayUseRecipe: {}, weekUse: {}, dinner: []}};
-  cappedHist.elena.weekUse[kCod] = cap;
+  cappedHist.elena.weekUse[kCod] = comboCap;
   assert(combos(cappedHist).indexOf('cod') === -1,
-    'eligibleCombosForVariety: a combo already at its weekly cap is dropped', 'cap=' + cap);
+    'eligibleCombosForVariety: a combo already at the per-combo weekly cap is dropped', 'comboCap=' + comboCap);
+  // (5b) the BASE recipe gets a small bonus over a plain recipe's cap (the "middle" behaviour).
+  const plainCap = call(ctx, 'weeklyCapForRecipe', ['shakshuka', ['elena']]);
+  const optCap = call(ctx, 'weeklyCapForRecipe', ['baked-fish', ['elena']]);
+  assert(optCap === plainCap + get(ctx, 'OPTION_BASE_WEEK_BONUS'),
+    'weeklyCapForRecipe: an options recipe caps OPTION_BASE_WEEK_BONUS above a plain recipe (base dish appears a few times, not every day)', 'plain=' + plainCap + ' option=' + optCap);
   // (6) never-starve: if EVERY combo was used today, it falls back to all of them (slot never empties).
   const allTodayHist = {elena: {dayUseRecipe: {0: []}, weekUse: {}, dinner: []}};
   ['salmon', 'sea-bass', 'sole', 'cod', 'tuna'].forEach(function(f){ allTodayHist.elena.dayUseRecipe[0].push(call(ctx, 'comboVarietyKey', ['baked-fish', {fish: f}])); });
@@ -4931,7 +4936,7 @@ function testWeeklyRecipeCaps(ctx){
     const filtered = call(ctx, 'applyWeeklyCapFilter', [['shakshuka', 'pizza'], get(ctx, '__h'), ['elena']]);
     assert(JSON.stringify(filtered) === JSON.stringify(['pizza']),
       'applyWeeklyCapFilter: drops a recipe already at its weekly quota', JSON.stringify(filtered));
-    run(ctx, "__h.elena.weekUse['pizza'] = 2;");
+    run(ctx, "__h.elena.weekUse['pizza'] = 3;"); // pizza is an OPTIONS recipe: base cap 2 + OPTION_BASE_WEEK_BONUS 1 = 3
     const relaxed = call(ctx, 'applyWeeklyCapFilter', [['shakshuka', 'pizza'], get(ctx, '__h'), ['elena']]);
     assert(relaxed.length === 2,
       'applyWeeklyCapFilter: relaxes to the full pool when everything is at quota (never returns empty)', JSON.stringify(relaxed));
