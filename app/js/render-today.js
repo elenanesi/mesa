@@ -2591,6 +2591,51 @@ function slotDescLine(view, label){
   return label + ' · ' + macroSummaryFromTotals(view);
 }
 
+// Today is a scan-first surface, so use the small watercolor copy of the recipe art rather
+// than a Unicode food glyph.  The full 512px painting remains available on the recipe page;
+// these 160px copies keep the four card previews crisp without making the daily screen pay
+// for a hero-size image.  If an older/custom recipe has no safe image, retain its emoji as a
+// resilient, readable fallback rather than leaving a blank tile.
+function todayRecipeThumbAsset(recipe, recipeId){
+  if(typeof recipeImageAssetForRecipe !== 'function') return '';
+  var source = recipeImageAssetForRecipe(recipe, recipeId);
+  // A few legacy recipes explicitly carry the generic default image even though their
+  // ingredients clearly identify a more helpful existing watercolor (for example sea bass).
+  // On the compact Today surface prefer that specific inference; an intentionally selected
+  // non-default image always remains untouched.
+  if(source === 'assets/recipes/default-recipe.png' && typeof inferredRecipeImageKey === 'function'){
+    var inferred = inferredRecipeImageKey(recipe, recipeId);
+    if(inferred && inferred !== 'default-recipe') source = 'assets/recipes/' + inferred + '.png';
+  }
+  // Composed dinner titles can be assembled around a base recipe, so retain this one clear
+  // visual cue even when that temporary composed object no longer carries ingredient rows.
+  if(source === 'assets/recipes/default-recipe.png' && /sea bass|branzino/i.test(String((recipe && recipe.title) || ''))){
+    source = 'assets/recipes/fish-main.png';
+  }
+  var match = /^assets\/recipes\/([a-z0-9][a-z0-9-]*)\.png$/.exec(source || '');
+  return match ? 'assets/recipes/thumb-' + match[1] + '.png' : source;
+}
+
+function paintTodayMealThumb(elementId, recipe, recipeId, fallbackEmoji){
+  var tile = document.getElementById(elementId);
+  if(!tile) return;
+  var fallback = fallbackEmoji || '🍽️';
+  var source = recipe ? todayRecipeThumbAsset(recipe, recipeId) : '';
+  tile.textContent = '';
+  if(!source || typeof document.createElement !== 'function'){
+    tile.textContent = fallback;
+    return;
+  }
+  var image = document.createElement('img');
+  image.className = 'meal-thumb-art';
+  image.src = source;
+  image.alt = '';
+  image.setAttribute('aria-hidden', 'true');
+  image.decoding = 'async';
+  image.onerror = function(){ tile.textContent = fallback; };
+  tile.appendChild(image);
+}
+
 function renderTodayMeals(){
   activeMenu = computeActiveMenu();
 
@@ -2602,28 +2647,28 @@ function renderTodayMeals(){
   }
 
   const bfv = todaySlotView('breakfast'), bf = slotFallback(bfv);
-  document.getElementById('bfEmoji').textContent = bf.emoji;
+  paintTodayMealThumb('bfEmoji', bfv.recipe, bfv.recipeId, bf.emoji);
   document.getElementById('bfTitle').textContent = bfv.recipe ? mealTitleWithExtras(bfv) : bf.title;
   document.getElementById('bfKcal').textContent = bfv.kcal;
   document.getElementById('bfDesc').textContent = slotDescLine(bfv, 'Breakfast');
   document.getElementById('bfTags').innerHTML = tagsHtml(bfv.recipeId, 'breakfast', 'pillBreakfast', bfv.shared);
 
   const luv = todaySlotView('lunch'), lu = slotFallback(luv);
-  document.getElementById('lunchThumb').textContent = lu.emoji;
+  paintTodayMealThumb('lunchThumb', luv.recipe, luv.recipeId, lu.emoji);
   document.getElementById('lunchTitle').textContent = luv.recipe ? mealTitleWithExtras(luv) : lu.title;
   document.getElementById('lunchKcal').textContent = luv.kcal;
   document.getElementById('lunchDesc').textContent = slotDescLine(luv, 'Lunch');
   document.getElementById('lunchTags').innerHTML = tagsHtml(luv.recipeId, 'lunch', 'pillLunch', luv.shared);
 
   const div_ = todaySlotView('dinner'), di = slotFallback(div_);
-  document.getElementById('dinnerThumb').textContent = di.emoji;
+  paintTodayMealThumb('dinnerThumb', div_.recipe, div_.recipeId, di.emoji);
   document.getElementById('dinnerTitle').textContent = div_.recipe ? mealTitleWithExtras(div_) : di.title;
   document.getElementById('dinnerKcal').textContent = div_.kcal;
   document.getElementById('dinnerDesc').textContent = slotDescLine(div_, 'Dinner');
   document.getElementById('dinnerTags').innerHTML = tagsHtml(div_.recipeId, 'dinner', 'pillDinner', div_.shared);
 
   const snv = todaySlotView('snack'), sn = slotFallback(snv);
-  document.getElementById('snackThumbEl').textContent = sn.emoji;
+  paintTodayMealThumb('snackThumbEl', snv.recipe, snv.recipeId, sn.emoji);
   document.getElementById('snackTitleEl').textContent = snv.recipe ? mealTitleWithExtras(snv) : sn.title;
   document.getElementById('snackKcalEl').textContent = snv.kcal;
   document.getElementById('snackDescEl').textContent = slotDescLine(snv, 'Snack');

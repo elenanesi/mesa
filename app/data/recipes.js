@@ -2020,6 +2020,7 @@ const RECIPES_DB = {
   },
   'spigola-acqua-pazza': {
     title: 'Sea bass acqua pazza', emoji: '🐟', slot: 'dinner', role: 'full',
+    imageKey: 'fish-main',
     season: 'evergreen', styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
     ingredients: [['sea-bass-fillet', 200], ['cherry-tomatoes', 120], ['olives', 20], ['capers', 10], ['potatoes', 130], ['olive-oil', 12]],
     toTaste: ['garlic', 'parsley', 'chilli'],
@@ -2090,6 +2091,7 @@ const RECIPES_DB = {
   // fish" main; the tomato-poached "Sea bass acqua pazza" stays a full plate (its own identity).
   'sea-bass-greens-potato': {
     title: 'Pan-fried sea bass', emoji: '🐟', slot: 'dinner', role: 'main',
+    imageKey: 'fish-main',
     slots: ['dinner'],
     season: 'evergreen', styles: ['balanced', 'highprotein', 'lowcarb'], time: 15,
     ingredients: [['sea-bass-fillet', 200], ['olive-oil', 10]],

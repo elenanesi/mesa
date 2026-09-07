@@ -426,7 +426,7 @@ function safeRecipeImageAsset(v){
   return /^assets\/recipes\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
-const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish'];
+const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish', 'sea-bass-fillet'];
 
 // task (options recipes, part 2b): the IMPLICIT favourite — the choice this person most
 // recently LOGGED for `recipeKey`'s `groupKey`, read from logHistory (newest date first, and
@@ -500,7 +500,7 @@ function recipeHasFishIngredient(recipe){
     if(FISH_RECIPE_INGREDIENT_IDS.indexOf(id) !== -1) return true;
     const f = (typeof FOODS !== 'undefined') && FOODS[id];
     const text = (id + ' ' + (f && f.name ? f.name : '')).toLowerCase();
-    return /salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(text);
+    return /salmon|salmone|cod|tuna|tonno|sole|sogliola|sea bass|branzino|fish|prawn|shrimp|clam|mussel/.test(text);
   });
 }
 
@@ -533,7 +533,7 @@ function inferredRecipeImageKey(recipe, recipeId){
   if(/soup|zuppa|broth|minestrone|stew/.test(haystack)) return 'soup';
   if(/pasta|spaghetti|lasagna|tagliatelle|penne|fusilli/.test(haystack)) return 'pasta';
   if(/salad|insalata|cous cous/.test(haystack) || emoji === '🥗') return 'salad';
-  if(recipeHasFishIngredient(recipe) || /salmon|salmone|cod|tuna|tonno|sole|sogliola|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';
+  if(recipeHasFishIngredient(recipe) || /salmon|salmone|cod|tuna|tonno|sole|sogliola|sea bass|branzino|fish|prawn|shrimp|clam|mussel/.test(haystack)) return 'fish-main';
   if(recipe.slot === 'breakfast') return 'breakfast-bowl';
   if(recipe.slot === 'lunch') return 'salad';
   if(recipe.slot === 'dinner') return 'default-recipe';
