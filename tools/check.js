@@ -1363,14 +1363,16 @@ function testRecipeImageHelpers(ctx){
     'recipeImageAssetForRecipe: keeps the default image for meat dinners unless explicitly changed', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Custom salad', emoji: '🥗', slot: 'lunch', tags: [], ingredients: []}, 'cr-custom-salad']) === 'assets/recipes/salad.png',
     'recipeImageAssetForRecipe: custom recipes in Auto use their slot default image', '');
-  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Yogurt cake', emoji: '🍰', slot: 'snack', imageKey: 'pasta'}]) === 'assets/recipes/yogurt-cake.png',
-    'recipeImageAssetForRecipe: exact recipe title mapping wins over a generic selected image', '');
-  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Eggs florentine', emoji: '🍳', slot: 'lunch', imageKey: 'salad'}]) === 'assets/recipes/egg-dishes.png',
-    'recipeImageAssetForRecipe: a recipe named for eggs gets the egg-dish artwork before its meal default', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Yogurt cake', emoji: '🍰', slot: 'snack', imageKey: 'pasta'}]) === 'assets/recipes/pasta.png',
+    'recipeImageAssetForRecipe: an explicitly assigned image wins over an exact title fallback', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Eggs florentine', emoji: '🍳', slot: 'lunch', imageKey: 'salad'}]) === 'assets/recipes/salad.png',
+    'recipeImageAssetForRecipe: an explicitly assigned image wins over the egg-title fallback', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Eggs, bacon, avocado & beans on toast', emoji: '🍳', slot: 'breakfast'}, 'uova-bacon']) === 'assets/recipes/egg-avocado-bacon-beans-toast.png',
     'recipeImageAssetForRecipe: the exact breakfast title gets its dedicated ad hoc artwork before the general egg image', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Slow-braised beef shin ragù', emoji: '🥘', slot: 'dinner'}]) === 'assets/recipes/slow-braised-beef.png',
     'recipeImageAssetForRecipe: exact slow-braised beef title gets its dedicated artwork', '');
+  assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Frittata with herbs', emoji: '🍳', slot: 'lunch'}]) === 'assets/recipes/egg-dishes.png',
+    'recipeImageAssetForRecipe: egg-title artwork is used only when no image is assigned', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Plain supper', emoji: '🍽️', slot: 'lunch'}]) === 'assets/recipes/salad.png',
     'recipeImageAssetForRecipe: unnamed dishes still fall back to their meal artwork', '');
 
@@ -1633,6 +1635,8 @@ function testRecipeImagePicker(ctx){
     'buildRecipeBuilderSheet: recipe image picker offers the available recipe images', html);
   assert(html.indexOf('image-picker-group-title">Everyday meals') !== -1 && html.indexOf('image-picker-group-title">Named dishes') !== -1,
     'buildRecipeBuilderSheet: groups recipe images by meal type', html);
+  assert(html.indexOf('Search images') !== -1 && html.indexOf('Search by dish, ingredient, or vibe') !== -1,
+    'buildRecipeBuilderSheet: recipe image picker provides a searchable illustration browser', html);
 
   call(ctx, 'setRecipeImageKey', ['fish-main']);
   assert(get(ctx, 'recipeBuilder').imageKey === 'fish-main',

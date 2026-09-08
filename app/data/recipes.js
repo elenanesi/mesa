@@ -15,10 +15,13 @@
      slots   — optional array of slots this recipe can serve; defaults to [slot]
      occasional — optional true for honest-log treats / fast food that should
                remain searchable/loggable but not enter automatic week planning
-     imageKey — optional kebab-case slug for assets/recipes/<imageKey>.png,
-               used by the recipe detail hero when a recipe photo exists
+     imageKey — optional kebab-case slug for assets/recipes/<imageKey>.png.
+               This is the explicit recipe art choice and must win over any
+               name-based inference when present (manual user choice, built-in
+               default, or household override).
      imageUri — optional safe relative URI (assets/recipes/<file>.png);
-               preferred over imageKey for ad hoc recipe art such as pizza
+               preferred over imageKey for bespoke ad hoc recipe art such as
+               pizza or any one-off imported illustration.
      styles  — subset of ['balanced','highprotein','lowcarb']; which
                household plan styles this recipe can serve (can overlap)
      time    — prep+cook minutes

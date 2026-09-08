@@ -3510,14 +3510,14 @@ function recipeToBuilder(id, recipeObj){
     ingredients: (r.ingredients || []).map(function(ing){ return {foodId: ing[0], grams: ing[1]}; }),
     optionGroups: recipeOptionGroupsToBuilder(r),
     stepsText: (r.steps || []).join('\n'),
-    pickerQuery: '',
+    pickerQuery: '', imagePickerQuery: '',
     panelOpen: {}
   };
 }
 
 function openNewRecipeForm(){
   rememberRecipeListReturn();
-  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: '', panelOpen: {}};
+  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: '', imagePickerQuery: '', panelOpen: {}};
   renderRecipeBuilderSheet(false, true);
 }
 
@@ -3664,7 +3664,7 @@ function buildRecipeBuilderSheet(){
     + '<button class="pill ghost chip-preset" onclick="toggleRecipeImagePicker()">' + (rb.imagePickerOpen ? 'Hide images' : 'Choose lead image') + '</button>'
     + '<span class="sub" style="margin:0">' + (currentImageKey ? escapeHtml(recipeImageLabel(currentImageKey)) : 'Auto · ' + escapeHtml(recipeImageLabel(autoImageKey))) + '</span>'
     + '</div>'
-    + (rb.imagePickerOpen ? buildRecipeImageGrid(currentImageKey) : '')
+    + (rb.imagePickerOpen ? buildRecipeImageGrid(currentImageKey, rb.imagePickerQuery || '') : '')
     + '</div>';
 
   html += '<details class="recipe-builder-panel"' + recipeBuilderPanelAttrs('planning', false) + '><summary>Planning settings <span>slot · season · role · availability</span></summary><div class="recipe-builder-panel-body">';
@@ -3961,14 +3961,25 @@ function resetRecipeBuilderOverride(){
   openEditRecipeForm(id); // re-opens on the now-restored built-in, options included
 }
 
-function buildRecipeImageGrid(currentImageKey){
+function buildRecipeImageGrid(currentImageKey, query){
+  const q = String(query || '').trim().toLowerCase();
+  let visibleCount = 0;
+  const matches = function(key, label){
+    if(!q) return true;
+    const haystack = (key + ' ' + label).toLowerCase();
+    return haystack.indexOf(q) !== -1;
+  };
   let html = '<div class="image-picker-groups recipe-image-grid" data-role="recipe-image-grid" style="margin-top:10px">'
+    + '<div class="field" style="margin:0 0 10px 0"><label>Search images</label><input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="search" value="' + htmlAttr(query || '') + '" oninput="setRecipeImagePickerQuery(this.value)" placeholder="Search by dish, ingredient, or vibe" autocomplete="off"></div>'
     + '<section class="image-picker-group"><div class="image-picker-group-title">Choice</div><div class="icon-grid">'
     + '<button type="button" class="icon-tile' + (!currentImageKey ? ' sel' : '') + '" data-image-key="" aria-label="Automatic recipe image">'
     + '<span class="recipe-image-tile-auto">Auto</span><span class="icon-tile-label">Auto</span></button></div></section>';
   recipeImagePickerGroups().forEach(function(group){
+    const visibleKeys = group.keys.filter(function(key){ return matches(key, recipeImageLabel(key)); });
+    if(!visibleKeys.length) return;
+    visibleCount += visibleKeys.length;
     html += '<section class="image-picker-group"><div class="image-picker-group-title">' + escapeHtml(group.label) + '</div><div class="icon-grid">';
-    group.keys.forEach(function(key){
+    visibleKeys.forEach(function(key){
       const src = 'assets/recipes/' + key + '.png';
       html += '<button type="button" class="icon-tile' + (currentImageKey === key ? ' sel' : '') + '" data-image-key="' + htmlAttr(key) + '" aria-label="' + htmlAttr(recipeImageLabel(key)) + ' image">'
         + '<img class="recipe-image-tile" src="' + htmlAttr(src) + '" alt="" aria-hidden="true" loading="lazy" onerror="this.onerror=null;this.src=\'assets/recipes/default-recipe.png\'">'
@@ -3976,6 +3987,9 @@ function buildRecipeImageGrid(currentImageKey){
     });
     html += '</div></section>';
   });
+  if(q && !visibleCount){
+    html += '<div class="sub" style="margin-top:6px">No matches for “' + escapeHtml(query || '') + '”. Try a broader name or clear the search.</div>';
+  }
   html += '</div>';
   return html;
 }
@@ -3994,6 +4008,24 @@ function setRecipeImageKey(rawKey){
   const key = safeRecipeImageKey(rawKey);
   recipeBuilder.imageKey = key || null;
   renderRecipeBuilderSheet();
+}
+
+function setRecipeImagePickerQuery(raw){
+  if(!recipeBuilder) return;
+  recipeBuilder.imagePickerQuery = String(raw || '');
+  filterRecipeImagePicker(recipeBuilder.imagePickerQuery);
+}
+
+function filterRecipeImagePicker(rawQuery){
+  if(typeof document === 'undefined') return;
+  const query = String(rawQuery || '').trim().toLowerCase();
+  document.querySelectorAll('[data-role="recipe-image-grid"] .icon-tile').forEach(function(tile){
+    const text = (tile.getAttribute('data-image-key') || '') + ' ' + (tile.getAttribute('aria-label') || '');
+    tile.hidden = !!query && text.toLowerCase().indexOf(query) === -1;
+  });
+  document.querySelectorAll('[data-role="recipe-image-grid"] .image-picker-group').forEach(function(group){
+    group.hidden = Array.prototype.every.call(group.querySelectorAll('.icon-tile'), function(tile){ return tile.hidden; });
+  });
 }
 
 function attachRecipeImageGridHandler(){
@@ -4521,7 +4553,7 @@ function saveComposedMealAsRecipe(entry, name){
   recipeBuilder = {
     name: (name || '').trim(), emoji: '🍽️', imageKey: null, imagePickerOpen: false,
     slots: slots, season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1,
-    ingredients: rows, optionGroups: [], stepsText: '', pickerQuery: ''
+    ingredients: rows, optionGroups: [], stepsText: '', pickerQuery: '', imagePickerQuery: ''
   };
   const beforeIds = Object.keys(customRecipes);
   saveRecipeBuilder();

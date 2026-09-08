@@ -511,10 +511,9 @@ function recipeHasFishIngredient(recipe){
   });
 }
 
-// Image selection is intentionally led by the *recipe name*, not whichever ingredient happens
-// to be most prominent. This keeps a frittata recognisably egg-led and a named dish from being
-// mistaken for a generic lunch salad. Exact named dishes win, then named egg dishes, then the
-// recipe's manually selected art, then the normal name/category and meal fallbacks.
+// Name-led matching is fallback only: a recipe's own assigned image (whether shipped with Mesa
+// or chosen by a user) is more specific than any heuristic. With no assignment, exact named
+// dishes win, then egg-named dishes, then normal category and meal fallbacks.
 const EXACT_RECIPE_TITLE_IMAGE_KEYS = {
   'classic hot dog': 'hot-dog',
   'hot dog': 'hot-dog',
@@ -599,10 +598,14 @@ function recipeImageAssetForRecipe(recipe, recipeId){
   if(!recipe) return '';
   const imageUri = safeRecipeImageAsset(recipe.imageUri);
   if(imageUri) return imageUri;
-  const imageKey = exactRecipeImageKey(recipe, recipeId)
-    || (recipeTitleRequestsEggImage(recipe) ? 'egg-dishes' : '')
-    || safeRecipeImageKey(recipe.imageKey)
-    || inferredRecipeImageKey(recipe, recipeId);
+  // Explicit art assignments win here. Only if a recipe has no stored art do we
+  // fall back to title-based and ingredient-based inference.
+  const explicitKey = safeRecipeImageKey(recipe.imageKey);
+  if(explicitKey){
+    const explicitSrc = safeRecipeImageAsset('assets/recipes/' + explicitKey + '.png');
+    if(explicitSrc) return explicitSrc;
+  }
+  const imageKey = inferredRecipeImageKey(recipe, recipeId);
   const src = safeRecipeImageAsset('assets/recipes/' + imageKey + '.png');
   return src || DEFAULT_RECIPE_IMAGE_ASSET;
 }
