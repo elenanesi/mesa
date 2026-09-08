@@ -46,16 +46,15 @@ function recipeServingContextFor(key){
     return null;
   }
 
+  // Serving/side context comes ONLY from an EXPLICIT plan/log open (recipeDayCtx — set by
+  // openRecipe from a Today/Week row). Opening the SAME recipe from the Library/Market
+  // (recipeDayCtx null) must show the ORIGINAL recipe — its own default servings, no plan
+  // portions, no composed sides — even when that recipe also happens to be on today's plan
+  // (owner 2026-09-08: "the recipe and the planned meal must be independent"). The old
+  // today-slot fallback scan here is exactly what leaked today's portions/sides onto a plain
+  // library open, so it is deliberately gone: no ambient "is this also today's meal?" lookup.
   if(recipeDayCtx && recipeDayCtx.slot && typeof recipeDayCtx.dayIndex === 'number'){
-    const ctx = fromPlan(recipeDayCtx.weekStartDate || mondayOfWeek(todayISO()), recipeDayCtx.dayIndex, recipeDayCtx.slot);
-    if(ctx) return ctx;
-  }
-
-  const currentPlan = ensureWeekPlan(mondayOfWeek(todayISO()));
-  const todayIdx = todayDayIndex();
-  for(let i = 0; i < SLOT_ORDER.length; i++){
-    const ctx = fromPlan(currentPlan.weekStartDate, todayIdx, SLOT_ORDER[i]);
-    if(ctx) return ctx;
+    return fromPlan(recipeDayCtx.weekStartDate || mondayOfWeek(todayISO()), recipeDayCtx.dayIndex, recipeDayCtx.slot);
   }
   return null;
 }
@@ -313,6 +312,45 @@ function recipeDisplayIngredients(recipeId, opts){
   });
   (src.toTaste || []).forEach(function(t){ ingredients.push([capitalizeFirst(t), null, 'to taste']); });
   return ingredients;
+}
+
+// Owner 2026-09-08: the ingredient list for a PLANNED/LOGGED meal must show the WHOLE meal —
+// the main dish PLUS every composed side and added food — not just the main, so "today's meal"
+// lists everything on the plate. Returns final, already-scaled [name, qty|null, unit] rows.
+//   mainScale = the main's serving multiplier (updateServings' ingScale: `total` whole-dish, 1
+//               one-serving); each side/food uses mainScale/total so the whole-dish↔one-serving
+//               toggle scales the entire plate uniformly (mirrors the nutrition grid, which
+//               already sums these same components).
+//   extras    = recipeDetailExtrasFor output ([{recipeId,portion,opts}]|[{foodId,grams}]).
+// With NO extras (library open, or a meal without sides) it returns exactly the old single-
+// recipe list, byte-identical. With extras it appends each side/food and MERGES duplicate foods
+// (e.g. olive oil from the main and a side) into one summed row, keeping "to taste" notes once.
+function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras){
+  function scaleRow(ing, f){ return ing[1] === null ? ing : [ing[0], +(ing[1] * f).toFixed(1), ing[2]]; }
+  const mainRows = recipeDisplayIngredients(mainId, mainOpts).map(function(ing){ return scaleRow(ing, mainScale); });
+  if(!extras || !extras.length) return mainRows;
+  const all = mainRows.slice();
+  const sideFactor = (total > 0) ? mainScale / total : mainScale;
+  extras.forEach(function(ex){
+    if(ex && ex.recipeId){
+      const p = (typeof ex.portion === 'number' && ex.portion > 0) ? ex.portion : 1;
+      recipeDisplayIngredients(ex.recipeId, ex.opts).forEach(function(ing){ all.push(scaleRow(ing, p * sideFactor)); });
+    } else if(ex && ex.foodId){
+      const food = FOODS[ex.foodId];
+      if(!food) return;
+      const grams = (typeof ex.grams === 'number' ? ex.grams : 0) * sideFactor;
+      all.push(food.unit === 'piece' ? [food.name, +(grams / food.avgG).toFixed(2), ''] : [food.name, +grams.toFixed(1), food.unit]);
+    }
+  });
+  // Merge duplicate foods (same name+unit) into one summed row; dedupe "to taste" notes, kept last.
+  const numeric = {}, order = [], toTaste = [], seenTt = {};
+  all.forEach(function(r){
+    if(r[1] === null){ if(!seenTt[r[0]]){ seenTt[r[0]] = true; toTaste.push(r); } return; }
+    const key = r[0] + '' + r[2];
+    if(!(key in numeric)){ numeric[key] = [r[0], 0, r[2]]; order.push(key); }
+    numeric[key][1] = +(numeric[key][1] + r[1]).toFixed(1);
+  });
+  return order.map(function(k){ return numeric[k]; }).concat(toTaste);
 }
 
 // RECIPES_DB[id].tags (raw tag strings) mapped through TAG_PILL_MAP (state.js) to the
@@ -1278,12 +1316,14 @@ function updateServings(){
     }
   }
   const ingScale = ingShowPerServing ? 1 : total;
-  const ingredients = recipeDisplayIngredients(currentRecipeKey, recipeOptsCtx);
+  // Whole MEAL, not just the main: for a planned/logged slot with composed sides (extrasList),
+  // the list includes every side + added food (owner 2026-09-08). A library open or a sideless
+  // meal has extrasList=[], so this returns the plain main list, byte-identical to before.
+  const ingredients = mealDetailIngredientRows(currentRecipeKey, recipeOptsCtx, ingScale, total, extrasList);
   document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
     const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
     if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
-    const scaled = +(qty * ingScale).toFixed(1);
-    return '<li><span>'+name+'</span><span>'+scaled+' '+unit+'</span></li>';
+    return '<li><span>'+name+'</span><span>'+qty+' '+unit+'</span></li>';
   }).join('');
   updateNutritionGrid(nutServings, nutHeader, extrasList);
   syncServeHighlight();

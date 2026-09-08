@@ -791,7 +791,11 @@ function testSharedRecipeViewerNutrition(ctx){
   // is set — verified functionally in testIngredientServingToggle below.
   assert(/const\s+ingScale\s*=\s*ingShowPerServing\s*\?\s*1\s*:\s*total/.test(usFn),
     'updateServings: the ingredient scale defaults to the whole-dish total, and is 1 (one serving) only when the toggle is on', usFn);
-  assert(/const\s+scaled\s*=\s*\+\(qty\s*\*\s*ingScale\)/.test(usFn),
+  // The whole-meal ingredient list (main + composed sides, 2026-09-08) is built by
+  // mealDetailIngredientRows, which applies ingScale to the main (and ingScale/total to each
+  // side). The functional whole-dish-vs-one-serving behaviour is verified in
+  // testIngredientServingToggle below; here we just pin that ingScale drives the list.
+  assert(/mealDetailIngredientRows\(currentRecipeKey,\s*recipeOptsCtx,\s*ingScale/.test(usFn),
     'updateServings: the INGREDIENT list scales by ingScale (whole-dish total by default, both people cook once)', usFn);
   assert(/total\s*=\s*\+\(svE\s*\+\s*svM\)/.test(usFn),
     'updateServings: total is still svE+svM for a shared dish (ingredient/cooking amount)', usFn);
@@ -823,6 +827,10 @@ function testIngredientServingToggle(ctx){
     assert(dinnerCell.shared === true,
       'setup: today\'s dinner slot is shared by default (two-person household)', JSON.stringify(dinnerCell));
     const recipeId = dinnerCell.recipeId;
+    // The whole-dish/one-serving toggle is a PLANNED-MEAL feature — its multi-serving context
+    // comes from opening the recipe FROM a plan slot (recipeDayCtx), the way Today/Week do. A
+    // plain library open is canonical (svS=1) by design (2026-09-08), covered by part (5) below.
+    run(ctx, "recipeDayCtx = {weekStartDate: '" + wk + "', dayIndex: 0, slot: 'dinner', person: 'elena'};");
 
     // (1) A multi-serving shared dish: total !== 1, so the toggle shows, defaulting to
     // whole-dish (off) — the fresh-open default.
@@ -896,6 +904,46 @@ function testIngredientServingToggle(ctx){
     run(ctx, "householdSize = 2;");
   } finally {
     ctx.document = savedDocument;
+  }
+}
+
+// Owner 2026-09-08: (1) a recipe opened from the LIBRARY must show the ORIGINAL recipe even
+// when that same recipe is also on today's plan — no leaked plan portions/sides (the two are
+// independent); (2) a recipe opened FROM its plan slot must list the WHOLE meal's ingredients
+// (main + composed sides), not only the main.
+function testRecipePlanIndependence(ctx){
+  const savedDocument = ctx.document;
+  ctx.document = makeObFakeDocument();
+  try {
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {}; recipeDayCtx = null; currentProf = 'elena'; householdSize = 1;");
+    const wk = call(ctx, 'ensureWeekPlan', []).weekStartDate;
+    const baseRecipeId = get(ctx, "weekPlans['" + wk + "'].days[0].meals.lunch.elena.recipeId");
+    // Add a side whose signature food (pumpkin seeds) is very unlikely to be in the main dish,
+    // so its presence/absence in the ingredient list is an unambiguous signal.
+    call(ctx, 'addExtraFoodToMeal', [wk, 0, 'lunch', 'elena', 'pumpkin-seeds', 20]);
+    const seedName = get(ctx, 'FOODS')['pumpkin-seeds'].name;
+    const ingList = function(){ return get(ctx, "document.getElementById('ingList').innerHTML"); };
+
+    // (1) LIBRARY open (no recipeDayCtx): canonical — solo 1x, no plan context, no side in the list.
+    run(ctx, "recipeDayCtx = null;");
+    call(ctx, 'renderRecipe', [baseRecipeId]);
+    assert(get(ctx, 'recipeServingCtx') === null,
+      'library open: a recipe that is also planned today carries NO plan serving context (independent)', JSON.stringify(get(ctx, 'recipeServingCtx')));
+    assert(get(ctx, 'recipeDetailExtrasCtx') === null,
+      'library open: no composed sides leak onto the plain recipe view', JSON.stringify(get(ctx, 'recipeDetailExtrasCtx')));
+    assert(ingList().indexOf(seedName) === -1,
+      'library open: the side ingredient (pumpkin seeds) is NOT in the original recipe\'s ingredient list', ingList());
+
+    // (2) PLAN open (recipeDayCtx = the lunch slot): the ingredient list now includes the side.
+    run(ctx, "recipeDayCtx = {weekStartDate: '" + wk + "', dayIndex: 0, slot: 'lunch', person: 'elena'};");
+    call(ctx, 'renderRecipe', [baseRecipeId]);
+    assert(get(ctx, 'recipeServingCtx') && get(ctx, 'recipeServingCtx').source === 'plan',
+      'plan open: opening from the plan slot DOES carry the plan serving context', JSON.stringify(get(ctx, 'recipeServingCtx')));
+    assert(ingList().indexOf(seedName) !== -1,
+      "today's meal view: the ingredient list includes the composed side (pumpkin seeds), not just the main", ingList());
+  } finally {
+    ctx.document = savedDocument;
+    run(ctx, "recipeDayCtx = null; householdSize = 2; weekPlans = {}; weekPlan = null;");
   }
 }
 
@@ -6464,6 +6512,9 @@ function testPortionKeyboardEntry(ctx){
   (function(){
     const wk = freshPlan();
     run(ctx, "weekPlans['" + wk + "'].days[0].meals.dinner.shared = false; weekPlans['" + wk + "'].days[0].meals.dinner.elena = {recipeId:'cena-cinese', portion:1}; delete weekPlans['" + wk + "'].days[0].meals.dinner.t;");
+    // Per-component edits persist to the plan slot only when opened FROM it (recipeDayCtx) — a
+    // plain library open is canonical with no plan write-back (2026-09-08).
+    run(ctx, "recipeDayCtx = {weekStartDate: '" + wk + "', dayIndex: 0, slot: 'dinner', person: 'elena'};");
     call(ctx, 'renderRecipe', ['cena-cinese']);
     const comps = get(ctx, 'recipeMealCompsCtx');
     const idx = comps.findIndex(function(c){ return c.recipeId === 'fried-rice-veg'; });
@@ -6495,6 +6546,9 @@ function testPortionKeyboardEntry(ctx){
     const baseRecipeId = cell(wk, 'lunch').elena.recipeId;
     call(ctx, 'addExtraRecipeToMeal', [wk, 0, 'lunch', 'elena', 'yogurt']);
     call(ctx, 'addExtraFoodToMeal', [wk, 0, 'lunch', 'elena', 'spinach', 40]);
+    // Extras (sides/added foods) only surface when the recipe is opened FROM its plan slot
+    // (recipeDayCtx) — a plain library open is canonical with no extras (2026-09-08).
+    run(ctx, "recipeDayCtx = {weekStartDate: '" + wk + "', dayIndex: 0, slot: 'lunch', person: 'elena'};");
     call(ctx, 'renderRecipe', [baseRecipeId]);
     const extras = get(ctx, 'recipeDetailExtrasCtx');
     assert(extras && extras.length === 2 && extras[0].recipeId === 'yogurt' && extras[1].foodId === 'spinach',
@@ -6528,6 +6582,8 @@ function testPortionKeyboardEntry(ctx){
     const wk = freshPlan();
     const dinnerCell = cell(wk, 'dinner');
     assert(dinnerCell.shared === true, 'setup: today\'s dinner slot is shared by default (two-person household)', JSON.stringify(dinnerCell));
+    // Serving steppers persist to the plan slot only when opened FROM it (recipeDayCtx, 2026-09-08).
+    run(ctx, "recipeDayCtx = {weekStartDate: '" + wk + "', dayIndex: 0, slot: 'dinner', person: 'elena'};");
     call(ctx, 'renderRecipe', [dinnerCell.recipeId]);
 
     call(ctx, 'commitServe', ['elena', '2']);
@@ -6547,7 +6603,7 @@ function testPortionKeyboardEntry(ctx){
 
     // solo bound (0.5-4x, wider than shared's 3x) — a one-person-household lunch slot.
     const lunchRecipeId = cell(wk, 'lunch').elena.recipeId;
-    run(ctx, "householdSize = 1;");
+    run(ctx, "householdSize = 1; recipeDayCtx = {weekStartDate: '" + wk + "', dayIndex: 0, slot: 'lunch', person: 'elena'};");
     call(ctx, 'renderRecipe', [lunchRecipeId]);
     call(ctx, 'commitServe', ['solo', '4']);
     assert(get(ctx, 'svS') === 4, 'commitServe (solo): a typed valid value sets svS', String(get(ctx, 'svS')));
@@ -14159,6 +14215,7 @@ function main(){
   runTest('supplement foods: fibre>carbs allowed for supplements, blocked for regular foods', function(){ testSupplementFood(ctx); });
   runTest('shared-meal recipe nutrition = viewer portion', function(){ testSharedRecipeViewerNutrition(ctx); });
   runTest('ingredient serving toggle (whole dish <-> one serving)', function(){ testIngredientServingToggle(ctx); });
+  runTest('recipe/plan independence + whole-meal ingredient list (2026-09-08)', function(){ testRecipePlanIndependence(ctx); });
   runTest('soft lunch=carbs / dinner=protein bias', function(){ testSlotCompositionBias(ctx); });
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
