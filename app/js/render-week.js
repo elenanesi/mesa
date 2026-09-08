@@ -275,29 +275,38 @@ function renderWeek(){
     // per-nutrient detail — protein floor and fiber/free-sugars in-line, plus compact kcal/
     // sat-fat notes appended since they aren't itemized figures on this line.
     const bal = perDayBalanceState(totals, person);
-    const cue = function(state){ return (state==='ok') ? '' : ' <span class="day-cue">· ' + state + '</span>'; };
-    // Total-fat cue: the WORDING now escalates with severity too (not just the colour) so a
-    // routine drift and a genuinely high day never read the same — amber "· fat rich" for
-    // 'rich' (matching "sat fat rich"), the stronger red .day-cue-over "· fat high" reserved
-    // for 'over' (perDayBalanceState/state.js PER_DAY_BANDS.fat). Suppressed entirely on an
-    // under-target day (perDayBalanceState gates fat on kcal!=='low').
-    const fatCue = bal.fat==='ok' ? ''
-      : (bal.fat==='over'
-          ? ' <span class="day-cue day-cue-over">· fat high</span>'
-          : ' <span class="day-cue">· fat rich</span>');
-    const extraCues = (bal.kcal!=='ok' ? ' <span class="day-cue">· kcal '+bal.kcal+'</span>' : '')
-                    + (bal.satFat==='rich' ? ' <span class="day-cue">· sat fat rich</span>' : '')
+    // Cue colour tracks severity, matching the day dot: an OUTLIER reading (free sugars over the
+    // WHO limit, sat fat >15%, total fat 'over') gets the amber .day-cue-over; every other
+    // off-band reading is a calm minor deviation in yellowish-green .day-cue. (2026-09-08.)
+    const OUTLIER_STATE = {freeSugars:'high', satFat:'high', fat:'over'};
+    const cue = function(nutrient, state, label){
+      if(state === 'ok') return '';
+      const cls = OUTLIER_STATE[nutrient] === state ? 'day-cue day-cue-over' : 'day-cue';
+      return ' <span class="' + cls + '">· ' + (label || state) + '</span>';
+    };
+    // Total fat / sat fat wording escalates with severity too (not just the colour): 'rich' for a
+    // minor drift, 'high' for the outlier. Suppressed on an under-target day (perDayBalanceState
+    // gates fat/sat-fat on kcal!=='low').
+    const fatCue = cue('fat', bal.fat, bal.fat==='over' ? 'fat high' : 'fat rich');
+    const satFatCue = cue('satFat', bal.satFat, bal.satFat==='high' ? 'sat fat high' : 'sat fat rich');
+    const extraCues = (bal.kcal!=='ok' ? cue('kcal', bal.kcal, 'kcal '+bal.kcal) : '')
+                    + satFatCue
                     + fatCue;
-    const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g'+cue(bal.protein)+' · C '+Math.round(totals.carbs)
-      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g'+cue(bal.fiber)
-      +' · free sugars '+Math.round(totals.freeSugars)+'g'+cue(bal.freeSugars)+extraCues+'</div>';
+    const dayMacroLine = '<div class="sub day-macros" style="margin:0">P '+Math.round(totals.protein)+'g'+cue('protein', bal.protein)+' · C '+Math.round(totals.carbs)
+      +'g · F '+Math.round(totals.fat)+'g · fiber '+Math.round(totals.fiber)+'g'+cue('fiber', bal.fiber)
+      +' · free sugars '+Math.round(totals.freeSugars)+'g'+cue('freeSugars', bal.freeSugars)+extraCues+'</div>';
     const label = weekScreenShowsNext ? dayDateLabel(day.date) : (DAY_NAMES[di] + (di === todayIdx ? ' · Today' : ''));
     const expanded = isWeekDayExpanded(day.date, person);
     // Single holistic balance dot for the always-visible day header — the overview stays
     // one signal per day; per-nutrient detail lives only in dayMacroLine above, revealed
     // when the day is expanded.
     const overall = dayBalanceOverall(totals, person);
-    const dayDot = '<span class="day-dot day-dot-'+(overall==='balanced'?'ok':'off')+'" aria-label="'+(overall==='balanced'?'Balanced day':'Off-balance day')+'"></span>';
+    // Three-tier dot (owner 2026-09-08): balanced -> GREEN (a good day), minor -> yellowish-green
+    // (a small deviation, week can still balance), outlier -> amber (a real outlier). Fixed
+    // semantic colours, never the seasonal accent.
+    const dotClass = overall==='balanced' ? 'ok' : (overall==='outlier' ? 'off' : 'minor');
+    const dotLabel = overall==='balanced' ? 'Balanced day' : (overall==='outlier' ? 'Off-balance day' : 'Slightly off-balance day');
+    const dayDot = '<span class="day-dot day-dot-'+dotClass+'" aria-label="'+dotLabel+'"></span>';
     // Persistent, discoverable trace of a fully-closed day (item 4) — distinct from dayDot
     // above (which is a QUALITY signal, balanced vs off) and from any streak/pass-fail
     // marker: this is purely "was every plannable slot here accounted for" (confirmed or

@@ -7157,15 +7157,20 @@ function testPerDayBalanceState(ctx){
 
   // Free sugars: single-sourced ceiling off this person's calorie goal, same derivation as
   // weekNutriSummary's sugarTargetG (NUTRITION_GUIDANCE.freeSugars.target/100 * calGoal/4).
+  // Two tiers (2026-09-08): 'rich' (minor) above the WHO 5% ideal, 'high' (outlier) above the
+  // WHO 10% limit. Multiples of the 10%-limit grams (sugarDailyG).
   const sugarPct = get(ctx, 'NUTRITION_GUIDANCE.freeSugars.target');
-  const sugarCeilMult = get(ctx, 'PER_DAY_BANDS.freeSugars.ceilMult');
+  const sugarMinorMult = get(ctx, 'PER_DAY_BANDS.freeSugars.minorMult');
+  const sugarOutlierMult = get(ctx, 'PER_DAY_BANDS.freeSugars.outlierMult');
   const sugarDailyG = (sugarPct / 100) * calGoal / 4;
-  const sugarCeil = sugarDailyG * sugarCeilMult;
+  const sugarMinor = sugarDailyG * sugarMinorMult, sugarOutlier = sugarDailyG * sugarOutlierMult;
 
-  const sugarOk = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.floor(sugarCeil * 0.5)}), person]);
-  assert(sugarOk.freeSugars === 'ok', 'perDayBalanceState: free sugars well under the ' + Math.round(sugarCeil) + 'g ceiling is "ok" (quiet, no cue)', JSON.stringify(sugarOk));
-  const sugarRich = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.ceil(sugarCeil + 5)}), person]);
-  assert(sugarRich.freeSugars === 'rich', 'perDayBalanceState: free sugars above the ' + Math.round(sugarCeil) + 'g ceiling is "rich"', JSON.stringify(sugarRich));
+  const sugarOk = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.floor(sugarMinor * 0.5)}), person]);
+  assert(sugarOk.freeSugars === 'ok', 'perDayBalanceState: free sugars well under the ' + Math.round(sugarMinor) + 'g minor line is "ok" (quiet, no cue)', JSON.stringify(sugarOk));
+  const sugarRich = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.ceil(sugarMinor + 2)}), person]);
+  assert(sugarRich.freeSugars === 'rich', 'perDayBalanceState: free sugars above the ~5% minor line (' + Math.round(sugarMinor) + 'g) is "rich" (minor deviation)', JSON.stringify(sugarRich));
+  const sugarHigh = call(ctx, 'perDayBalanceState', [baseDay({freeSugars: Math.ceil(sugarOutlier + 5)}), person]);
+  assert(sugarHigh.freeSugars === 'high', 'perDayBalanceState: free sugars above the WHO 10% limit (' + Math.round(sugarOutlier) + 'g) is "high" (real outlier)', JSON.stringify(sugarHigh));
 
   // kcal: within +/-tol is "ok"; above is "high"; below is "low".
   const kcalTol = get(ctx, 'PER_DAY_BANDS.kcal.tol');
@@ -7184,14 +7189,18 @@ function testPerDayBalanceState(ctx){
   assert(proteinOk.protein === 'ok', 'perDayBalanceState: protein at the daily target is "ok" (quiet, no cue)', JSON.stringify(proteinOk));
 
   // Sat fat: ceiling only, single-sourced off calGoal (NUTRITION_GUIDANCE.satFat.target/100 * calGoal/9).
+  // Two tiers (2026-09-08): 'rich' (minor) above the WHO 10% limit, 'high' (outlier) above 15%.
   const satPct = get(ctx, 'NUTRITION_GUIDANCE.satFat.target');
-  const satCeilMult = get(ctx, 'PER_DAY_BANDS.satFat.ceilMult');
+  const satMinorMult = get(ctx, 'PER_DAY_BANDS.satFat.minorMult');
+  const satOutlierMult = get(ctx, 'PER_DAY_BANDS.satFat.outlierMult');
   const satDailyG = (satPct / 100) * calGoal / 9;
-  const satCeil = satDailyG * satCeilMult;
-  const satRich = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.ceil(satCeil + 5)}), person]);
-  assert(satRich.satFat === 'rich', 'perDayBalanceState: sat fat above the ' + Math.round(satCeil) + 'g ceiling is "rich"', JSON.stringify(satRich));
-  const satOk = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.floor(satCeil * 0.5)}), person]);
-  assert(satOk.satFat === 'ok', 'perDayBalanceState: sat fat well under the ' + Math.round(satCeil) + 'g ceiling is "ok" (quiet, no cue)', JSON.stringify(satOk));
+  const satMinor = satDailyG * satMinorMult, satOutlier = satDailyG * satOutlierMult;
+  const satRich = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.ceil(satMinor + 2)}), person]);
+  assert(satRich.satFat === 'rich', 'perDayBalanceState: sat fat above the 10% WHO line (' + Math.round(satMinor) + 'g) is "rich" (minor)', JSON.stringify(satRich));
+  const satHigh = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.ceil(satOutlier + 5)}), person]);
+  assert(satHigh.satFat === 'high', 'perDayBalanceState: sat fat above 15% (' + Math.round(satOutlier) + 'g) is "high" (outlier)', JSON.stringify(satHigh));
+  const satOk = call(ctx, 'perDayBalanceState', [baseDay({satFat: Math.floor(satMinor * 0.5)}), person]);
+  assert(satOk.satFat === 'ok', 'perDayBalanceState: sat fat well under the 10% line is "ok" (quiet, no cue)', JSON.stringify(satOk));
 
   // TOTAL fat (2026-09-04, MEASURED problem: generation was landing a ~40% energy-from-fat
   // median): ceiling only, judged as % of THIS day's own kcal against the person's macro
@@ -7218,7 +7227,7 @@ function testPerDayBalanceState(ctx){
   // 'low' — usually a day still being filled in) a modest absolute fat load reads as a high
   // PERCENTAGE of a small denominator and the warning fired harshly/volatilely. They're now
   // suppressed when kcal is 'low'. Same over-the-line fat grams as fatOver, but on a light day:
-  const lowKcalHighFat = baseDay({fat: fatOverG, satFat: Math.ceil(satCeil + 5), kcal: Math.floor(calGoal * (1 - kcalTol) - 5)});
+  const lowKcalHighFat = baseDay({fat: fatOverG, satFat: Math.ceil(satOutlier + 5), kcal: Math.floor(calGoal * (1 - kcalTol) - 5)});
   const lightFat = call(ctx, 'perDayBalanceState', [lowKcalHighFat, person]);
   assert(lightFat.kcal === 'low', 'test setup: the light day is kcal:low', JSON.stringify(lightFat));
   assert(lightFat.fat === 'ok' && lightFat.satFat === 'ok',
@@ -7236,22 +7245,28 @@ function testPerDayBalanceState(ctx){
   assert(nullDay.kcal === 'ok' && nullDay.protein === 'ok' && nullDay.fiber === 'ok' && nullDay.freeSugars === 'ok' && nullDay.satFat === 'ok' && nullDay.fat === 'ok',
     'perDayBalanceState: null dayTotals degrades to the quiet all-"ok" default', JSON.stringify(nullDay));
 
-  // dayBalanceOverall: the single holistic dot for the collapsed day header. 'balanced' only
-  // when every tracked target is in band; 'off' if even one axis is out.
+  // dayBalanceOverall: the single holistic dot, THREE tiers (2026-09-08). 'balanced' only when
+  // every axis is in band; 'minor' when off-band but nothing extreme (yellow-green dot);
+  // 'outlier' RESERVED for the strong signals — free sugars over the WHO limit, sat fat >15%,
+  // total fat 'over' (amber dot).
   const overallBalanced = call(ctx, 'dayBalanceOverall', [baseDay(), person]);
   assert(overallBalanced === 'balanced', 'dayBalanceOverall: an in-range day on every axis is "balanced"', overallBalanced);
-  const overallOffFiber = call(ctx, 'dayBalanceOverall', [baseDay({fiber: 10}), person]);
-  assert(overallOffFiber === 'off', 'dayBalanceOverall: fiber alone out of band is enough to make the day "off"', overallOffFiber);
-  const overallOffKcal = call(ctx, 'dayBalanceOverall', [baseDay({kcal: Math.ceil(calGoal * (1 + kcalTol) + 5)}), person]);
-  assert(overallOffKcal === 'off', 'dayBalanceOverall: kcal alone out of band is enough to make the day "off"', overallOffKcal);
-  const overallOffSatFat = call(ctx, 'dayBalanceOverall', [baseDay({satFat: Math.ceil(satCeil + 5)}), person]);
-  assert(overallOffSatFat === 'off', 'dayBalanceOverall: sat fat alone out of band is enough to make the day "off"', overallOffSatFat);
-  // A day that is otherwise perfectly fine but runs fat-heavy now reads "off" too — this is
-  // the whole point of the guard (owner: "generation drifted fat-heavy while every OTHER
-  // tracked target looked fine") and is expected to lower the Week screen's "N of 7
-  // balanced" count.
-  const overallOffFat = call(ctx, 'dayBalanceOverall', [baseDay({fat: fatOverG}), person]);
-  assert(overallOffFat === 'off', 'dayBalanceOverall: an otherwise-fine but fat-heavy day is now "off" (the new total-fat guard)', overallOffFat);
+  // Minor-tier axes: a low-fibre, off-kcal, or mildly-rich sat-fat day is a MINOR deviation, not an outlier.
+  const overallMinorFiber = call(ctx, 'dayBalanceOverall', [baseDay({fiber: 10}), person]);
+  assert(overallMinorFiber === 'minor', 'dayBalanceOverall: fibre alone out of band is a "minor" deviation (yellow-green), not balanced or outlier', overallMinorFiber);
+  const overallMinorKcal = call(ctx, 'dayBalanceOverall', [baseDay({kcal: Math.ceil(calGoal * (1 + kcalTol) + 5)}), person]);
+  assert(overallMinorKcal === 'minor', 'dayBalanceOverall: kcal alone out of band is a "minor" deviation', overallMinorKcal);
+  const overallMinorSat = call(ctx, 'dayBalanceOverall', [baseDay({satFat: Math.ceil(satMinor + 2)}), person]);
+  assert(overallMinorSat === 'minor', 'dayBalanceOverall: sat fat just over the 10% line is "minor"', overallMinorSat);
+  const overallMinorSugar = call(ctx, 'dayBalanceOverall', [baseDay({freeSugars: Math.ceil(sugarMinor + 2)}), person]);
+  assert(overallMinorSugar === 'minor', 'dayBalanceOverall: free sugars over the 5% ideal (but under the 10% limit) is "minor"', overallMinorSugar);
+  // Outlier-tier axes: the strong signals push the whole day to "outlier" (amber).
+  const overallOutSugar = call(ctx, 'dayBalanceOverall', [baseDay({freeSugars: Math.ceil(sugarOutlier + 5)}), person]);
+  assert(overallOutSugar === 'outlier', 'dayBalanceOverall: free sugars over the WHO 10% limit makes the day an "outlier"', overallOutSugar);
+  const overallOutSat = call(ctx, 'dayBalanceOverall', [baseDay({satFat: Math.ceil(satOutlier + 5)}), person]);
+  assert(overallOutSat === 'outlier', 'dayBalanceOverall: sat fat over 15% makes the day an "outlier"', overallOutSat);
+  const overallOutFat = call(ctx, 'dayBalanceOverall', [baseDay({fat: fatOverG}), person]);
+  assert(overallOutFat === 'outlier', 'dayBalanceOverall: an otherwise-fine but fat-heavy ("over") day is an "outlier"', overallOutFat);
 }
 
 /* ---------------- dayImbalanceForPerson: total-fat steering term ----------------
@@ -14117,8 +14132,8 @@ function testDayCompletionQualityVariant(ctx){
 
     // -------- (b) completed but NOT balanced -> the normal wreath, no addendum --------
     run(ctx, "dayCompletionTotals = function(){ return {kcal: " + calGoal + ", protein: " + proteinTarget + ", fiber: 10, freeSugars: 0, satFat: 0}; };");
-    assert(call(ctx, 'dayBalanceOverall', [call(ctx, 'dayCompletionTotals', [TODAY, 'elena']), 'elena']) === 'off',
-      'test setup: the stubbed low-fiber totals classify as dayBalanceOverall "off"', '');
+    assert(call(ctx, 'dayBalanceOverall', [call(ctx, 'dayCompletionTotals', [TODAY, 'elena']), 'elena']) !== 'balanced',
+      'test setup: the stubbed low-fiber totals do NOT classify as dayBalanceOverall "balanced" (they are a minor deviation)', '');
     const planOff = call(ctx, 'dayCompletionRewardPlan', [TODAY, 'elena']);
     assert(!!planOff && planOff.genuine === true && planOff.quality === false && planOff.message === planOff.closingLine,
       'day-completion (b): a completed-but-not-balanced day selects the plain wreath (no addendum, no quality flag)', JSON.stringify(planOff));

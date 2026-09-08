@@ -3347,10 +3347,13 @@ function perDayBalanceState(dayTotals, person){
   const fiberBase = fiberBandBaseFor(person);
   if(classifyMinBand(dayTotals.fiber, fiberBase * PER_DAY_BANDS.fiber.floorMult) === 'under') out.fiber = 'light';
   else if(classifyMaxBand(dayTotals.fiber, fiberBase * PER_DAY_BANDS.fiber.ceilMult) === 'over') out.fiber = 'rich';
-  // free sugars: ceiling
+  // free sugars: two ceilings — 'rich' (minor, > WHO 5% ideal) then 'high' (outlier, > WHO 10%
+  // limit). Absolute grams vs calGoal (not the day's running kcal), so an added-sugar treat
+  // registers even on a still-being-logged day — the owner logged 18g and it must show.
   if(calGoal > 0){
-    const sugarCeil = ((NUTRITION_GUIDANCE.freeSugars.target/100)*calGoal/4) * PER_DAY_BANDS.freeSugars.ceilMult;
-    if(classifyMaxBand(dayTotals.freeSugars, sugarCeil) === 'over') out.freeSugars = 'rich';
+    const sugarBase = (NUTRITION_GUIDANCE.freeSugars.target/100)*calGoal/4; // grams at the 10% WHO line
+    if(classifyMaxBand(dayTotals.freeSugars, sugarBase * PER_DAY_BANDS.freeSugars.outlierMult) === 'over') out.freeSugars = 'high';
+    else if(classifyMaxBand(dayTotals.freeSugars, sugarBase * PER_DAY_BANDS.freeSugars.minorMult) === 'over') out.freeSugars = 'rich';
   }
   // Sat fat + TOTAL fat are RATIO/%-of-energy judgments, so they're unreliable on an
   // under-target day (out.kcal === 'low') — which on the Week view is usually a day still
@@ -3361,10 +3364,11 @@ function perDayBalanceState(dayTotals, person){
   // calories. (Generation steering in dayImbalanceForPerson is unaffected — it works on full
   // generated days, not partial running totals.)
   if(out.kcal !== 'low'){
-    // sat fat: ceiling
+    // sat fat: two ceilings — 'rich' (minor, > WHO 10% limit) then 'high' (outlier, > 15%).
     if(calGoal > 0 && typeof dayTotals.satFat === 'number'){
-      const satCeil = ((NUTRITION_GUIDANCE.satFat.target/100)*calGoal/9) * PER_DAY_BANDS.satFat.ceilMult;
-      if(classifyMaxBand(dayTotals.satFat, satCeil) === 'over') out.satFat = 'rich';
+      const satBase = (NUTRITION_GUIDANCE.satFat.target/100)*calGoal/9; // grams at the 10% WHO line
+      if(classifyMaxBand(dayTotals.satFat, satBase * PER_DAY_BANDS.satFat.outlierMult) === 'over') out.satFat = 'high';
+      else if(classifyMaxBand(dayTotals.satFat, satBase * PER_DAY_BANDS.satFat.minorMult) === 'over') out.satFat = 'rich';
     }
     // TOTAL fat: ceiling only, judged as % of the day's energy vs the person's own split
     // target +richAddPts/+overAddPts (state.js PER_DAY_BANDS.fat — see its header comment).
@@ -3377,11 +3381,19 @@ function perDayBalanceState(dayTotals, person){
   }
   return out;
 }
-// One holistic per-day state for the collapsed day header: 'balanced' when every tracked
-// target is in band, else 'off'. Keeps the overview to a single calm signal per day.
+// One holistic per-day state for the collapsed day header, THREE tiers (owner 2026-09-08):
+//   'balanced' — every tracked target in band (a genuinely good day: GREEN dot).
+//   'minor'    — some target off-band but nothing extreme; a day that deviates yet still lets
+//                the week balance (yellowish-green dot).
+//   'outlier'  — a genuinely extreme reading (amber dot), RESERVED for the strong signals:
+//                free sugars over the WHO 10% limit, sat fat over 15%, or total fat 'over'.
+// The render layer maps these to the three dot colours; 'balanced' is still what the
+// "N of 7 days balanced" count sums.
 function dayBalanceOverall(dayTotals, person){
   const s = perDayBalanceState(dayTotals, person);
-  return (s.kcal==='ok' && s.protein==='ok' && s.fiber==='ok' && s.freeSugars==='ok' && s.satFat==='ok' && s.fat==='ok') ? 'balanced' : 'off';
+  if(s.freeSugars==='high' || s.satFat==='high' || s.fat==='over') return 'outlier';
+  const anyOff = s.kcal!=='ok' || s.protein!=='ok' || s.fiber!=='ok' || s.freeSugars!=='ok' || s.satFat!=='ok' || s.fat!=='ok';
+  return anyOff ? 'minor' : 'balanced';
 }
 
 /* ---------------- BOOST CHIP (v1, manual-only nutrition nudge) ----------------

@@ -127,8 +127,15 @@ const PER_DAY_BANDS = {
   // (~0.6x the calorie-scaled base); ceilMult raised 1.7 -> 2.0 (~60g Elena / ~84g Andrea) so
   // only genuinely-extreme fibre days flag, not ordinary whole-food-heavy ones.
   fiber:      {floorMult: 0.6, ceilMult: 2.0},
-  freeSugars: {ceilMult: 1.5},                // no day above ~1.5x the daily free-sugar share
-  satFat:     {ceilMult: 1.8},                // no day above ~1.8x the daily sat-fat share
+  // free sugars + sat fat now carry TWO tiers (owner 2026-09-08: "reserve amber for real
+  // outliers; show minor deviations too; 18g free sugars should register"). minorMult marks a
+  // yellowish-green "minor deviation" (day off-band but the week can still balance), outlierMult
+  // the amber "real outlier". Both are multiples of the WHO guideline grams (target% of energy;
+  // NUTRITION_GUIDANCE). Free sugars: minor at 0.5x the 10% limit = the WHO *conditional* 5%
+  // ideal (~17.5g at 1400 kcal, so 18g shows), outlier at the 10% limit itself (~35g). Sat fat:
+  // minor at the 10% WHO limit, outlier at 1.5x (15%).
+  freeSugars: {minorMult: 0.5, outlierMult: 1.0},
+  satFat:     {minorMult: 1.0, outlierMult: 1.5},
   // TOTAL fat, unlike the others above, is judged against the person's OWN macro-split
   // target (PROF[person].defaultSplit.F, a % of energy) rather than a multiple of a
   // WHO grams/day figure — Mesa has no separate "total fat" WHO guideline distinct from

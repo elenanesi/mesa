@@ -15,6 +15,13 @@
   --terra-tint:#f4dfcf;
   --gold:#c79a48;
   --berry:#9a665e;
+  /* Day-balance signal colours (owner 2026-09-08) — FIXED semantic scale, deliberately NOT the
+     seasonal accent (--sage*), so a "good day" always reads green regardless of the month theme:
+     green = balanced/good, yellow-green = minor deviation (week can still balance), amber = a
+     real outlier. */
+  --balance-good:#5f8a4f;
+  --balance-minor:#94991f;
+  --balance-off:#cf8a30;
   --shadow:0 10px 24px rgba(73,54,32,.10);
   --shadow-soft:0 3px 10px rgba(73,54,32,.07);
   --radius:14px;
@@ -108,16 +115,17 @@ h1{font-family:var(--font-script);font-size:34px;line-height:1.04;margin:6px 0 2
 h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:500;color:#3c3228;}
 .sub{color:var(--muted);font-size:13.5px;margin:0 0 4px;}
 #todayPlanNote{margin:16px 0 0!important;padding:8px 12px;text-align:center;color:var(--today-note-text)!important;background:var(--today-note-bg);border:1px solid var(--today-note-border);border-radius:12px;box-shadow:0 4px 12px rgba(73,54,32,.08);text-shadow:none!important;}
-.day-cue{color:var(--gold);font-weight:500;}
+.day-cue{color:var(--balance-minor);font-weight:600;}
 /* Stronger day-cue variant for a genuinely high reading (currently: total-fat 'over',
    PER_DAY_BANDS.fat state.js) — reuses --terra, the app's existing over/high accent
    (.ring-over, .spark .col.over), so this introduces no new color, just a second calm
    tone alongside the amber .day-cue default. Never the whole app going red — one inline
    word, same weight/size as .day-cue. */
-.day-cue-over{color:var(--terra);font-weight:500;}
+.day-cue-over{color:var(--balance-off);font-weight:700;}
 .day-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;vertical-align:middle;}
-.day-dot-ok{background:var(--sage-deep);}
-.day-dot-off{background:var(--gold);}
+.day-dot-ok{background:var(--balance-good);}
+.day-dot-minor{background:var(--balance-minor);}
+.day-dot-off{background:var(--balance-off);}
 /* Persistent "day closed" trace (item 4) — a quiet, STATIC single leaf on the Week day
    header, distinct from day-dot above (a quality signal). No animation, no streak, no
    pass/fail color: it only ever marks "every plannable slot here is accounted for". */
