@@ -649,6 +649,25 @@ function isAutoLunchDinnerMain(id){
 }
 function isCarbSide(id){ return mealStructureForRecipe(RECIPES_DB[id]).carbs; }
 function isVegSide(id){ return mealStructureForRecipe(RECIPES_DB[id]).veg; }
+// A side whose dominant Produce ingredient is a STARCHY tuber (potatoes, sweet potato —
+// FOODS[id].starchy) behaves as a CARB, not the vegetable. mealStructureForRecipe counts any
+// >=80g Produce as "veg", so a 220g potato dish reads as veg AND carb — which let the composer
+// fill the carb slot with roast potatoes and the veg slot with mash, two starches on one plate
+// (owner 2026-09-08, recurring). This excludes starchy tubers from the VEG pool only; they stay
+// carb-eligible. Mirrors dominantIngredientKey's "largest Produce ingredient" rule.
+function sideDominantIsStarchyProduce(id){
+  const r = RECIPES_DB[id];
+  const list = (r && Array.isArray(r.ingredients)) ? r.ingredients : [];
+  let best = null;
+  list.forEach(function(ing){
+    const food = (typeof FOODS !== 'undefined') && FOODS[ing[0]];
+    if(!food || food.cat !== 'Produce') return;
+    const grams = Number(ing[1]) || 0;
+    if(!best || grams > best.grams) best = {food: food, grams: grams};
+  });
+  return !!(best && best.food.starchy);
+}
+function isVegOnlySide(id){ return isVegSide(id) && !sideDominantIsStarchyProduce(id); }
 
 // Plain-FOODS avoid check, mirroring library.js's own ingredient-derived avoid tagging
 // (deriveRecipeMeta: Dairy -> lactose, GLUTEN_FOOD_IDS -> gluten, prawns -> shellfish,
@@ -2725,7 +2744,9 @@ function buildSidePools(avoid, persons, history, dayIndex, slot){
     const filtered = slotOK.filter(filterFn);
     return filtered.length ? filtered : sidePool.filter(filterFn);
   }
-  return {carbPool: pool(isCarbSide), vegPool: pool(isVegSide)};
+  // vegPool uses isVegOnlySide (excludes starchy tubers) so the veg slot is a real vegetable,
+  // never a second starch alongside the carb side. Starchy tubers remain in carbPool via isCarbSide.
+  return {carbPool: pool(isCarbSide), vegPool: pool(isVegOnlySide)};
 }
 
 // remainingWeight is a per-person object {elena, partner} (owner 2026-08-23): the two can differ

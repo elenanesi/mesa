@@ -219,7 +219,10 @@ const FOODS = {
   },
   'potatoes': {
     name: 'Potatoes, raw', per: 100, unit: 'g', avgG: 170,
-    kcal: 77, protein: 2.0, carbs: 17.0, fat: 0.1, satFat: 0.0, fiber: 2.2,
+    // starchy: a Produce tuber that behaves as a CARB, not the vegetable. The planner's side
+    // composer treats it as a carb only (never the veg slot), so a meal can't get potatoes as
+    // BOTH sides — e.g. roasted + mashed potatoes on one plate (owner 2026-09-08).
+    kcal: 77, protein: 2.0, carbs: 17.0, fat: 0.1, satFat: 0.0, fiber: 2.2, starchy: true,
     flags: ['glutenFree'], cat: 'Produce', iconKey: 'potatoes', src: 'USDA FDC 170026 (potato, flesh and skin, raw)'
   },
   'oranges': {
@@ -942,7 +945,8 @@ const FOODS = {
   },
   'sweet-potato': {
     name: 'Sweet potato', per: 100, unit: 'g', avgG: 130,
-    kcal: 88, protein: 1.6, carbs: 20.1, fat: 0.1, satFat: 0, fiber: 3.0,
+    // starchy tuber — a carb, not the vegetable, in side composition (see potatoes).
+    kcal: 88, protein: 1.6, carbs: 20.1, fat: 0.1, satFat: 0, fiber: 3.0, starchy: true,
     flags: ['highFiber', 'glutenFree'], cat: 'Produce', iconKey: 'sweet-potato', src: 'USDA FDC 168482 (sweet potato, raw); kcal via 4/4/9 policy'
   },
   'brazil-nuts': {

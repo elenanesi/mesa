@@ -4676,6 +4676,25 @@ function testSideAndPairingAppropriateness(ctx){
   assert(lunchCarbs.length > 0,
     'buildSidePools: the lunch carb pool is still non-empty after the gate (never starves — other carbs remain)');
 
+  // -------- (1b) starchy tubers are a CARB, never the vegetable (owner 2026-09-08, recurring:
+  // "two potato dishes on one plate" — roasted + mashed). A potato/sweet-potato side must be
+  // carb-eligible but excluded from the veg pool, so a composed meal can't get two starches. --------
+  assert(call(ctx, 'sideDominantIsStarchyProduce', ['roasted-potatoes']) === true
+      && call(ctx, 'sideDominantIsStarchyProduce', ['mashed-potatoes']) === true,
+    'sideDominantIsStarchyProduce: potato sides read as starchy tubers');
+  assert(call(ctx, 'sideDominantIsStarchyProduce', ['steamed-green-beans']) === false
+      && call(ctx, 'sideDominantIsStarchyProduce', ['roasted-mixed-veg']) === false,
+    'sideDominantIsStarchyProduce: real vegetable sides are NOT starchy');
+  assert(call(ctx, 'isVegOnlySide', ['roasted-potatoes']) === false && call(ctx, 'isCarbSide', ['roasted-potatoes']) === true,
+    'isVegOnlySide: a potato side is a carb, not a veg (kept out of the veg slot)');
+  assert(call(ctx, 'isVegOnlySide', ['steamed-green-beans']) === true,
+    'isVegOnlySide: a real vegetable side still counts as veg');
+  const dinnerVeg = call(ctx, 'buildSidePools', [[], ['elena'], hist, 0, 'dinner']).vegPool;
+  assert(dinnerVeg.filter(function(id){ return /potato/.test(id); }).length === 0,
+    'buildSidePools: the dinner veg pool contains NO potato dishes (no carb+veg both potato)', JSON.stringify(dinnerVeg));
+  assert(dinnerVeg.length > 0 && dinnerCarbs.indexOf('roasted-potatoes') !== -1,
+    'buildSidePools: potatoes stay a carb option; the veg pool still has real vegetables', JSON.stringify(dinnerVeg));
+
   // -------- (2) breakfast flavor coherence --------
   assert(call(ctx, 'recipeFlavor', ['almond-skyr-bowl']) === 'sweet',
     'recipeFlavor: the skyr bowl is tagged sweet');
