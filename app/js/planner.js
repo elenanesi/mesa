@@ -4253,16 +4253,36 @@ function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   return scored.slice(0, 5);
 }
 
+// Cache: the searchable text is pure over RECIPES_DB (rebuilt on any catalog change via
+// customRev), and swap search calls it across the whole book on every keystroke.
+let swapSearchTextCache = {rev: null, map: {}};
 function swapSearchText(id){
   const r = RECIPES_DB[id];
   if(!r) return '';
-  return [
+  const rev = (typeof customRev !== 'undefined') ? customRev : 0;
+  if(swapSearchTextCache.rev !== rev){ swapSearchTextCache = {rev: rev, map: {}}; }
+  if(id in swapSearchTextCache.map) return swapSearchTextCache.map[id];
+  // Include the recipe's INGREDIENT names (owner 2026-09-14: "search should match ingredients and
+  // recipes alike" — typing "salmon"/"chickpea" should surface dishes made with it), resolved
+  // through recipeEffectiveIngredients -> FOODS[name] so an option-variant's real ingredient and
+  // a food's display name both count. Composite/Meal sub-recipe ingredients ride along too.
+  let ingNames = '';
+  if(typeof recipeEffectiveIngredients === 'function' && typeof FOODS !== 'undefined'){
+    ingNames = recipeEffectiveIngredients(r).map(function(ing){
+      const f = FOODS[ing[0]];
+      return f ? (f.name || '') : ing[0];
+    }).join(' ');
+  }
+  const text = [
     r.title || '',
+    ingNames,
     recipeSlotList(r).join(' '),
     (r.tags || []).join(' '),
     (r.styles || []).join(' '),
     id.indexOf('cr-') === 0 ? 'yours custom recipe' : 'built in'
   ].join(' ').toLowerCase();
+  swapSearchTextCache.map[id] = text;
+  return text;
 }
 
 // Small helper for the "usually {slot}" tag (Problem 4): a recipe's own primary slot,
@@ -4400,8 +4420,11 @@ function swapAltRowHtml(a, i){
   const pd = (a.proteinDelta >= 0 ? '+' : '') + Math.round(a.proteinDelta) + 'g protein';
   const isHero = i === 0;
   const heroBadge = isHero ? '<span class="pill gold altrow-hero-badge">✿ Top pick</span>' : '';
+  const thumb = (typeof recipeThumbnailHtml === 'function' && RECIPES_DB[a.id])
+    ? '<div class="ae recipe-list-art">' + recipeThumbnailHtml(RECIPES_DB[a.id], a.id) + '</div>'
+    : '<div class="ae">' + r.emoji + '</div>';
   return '<div class="altrow' + (isHero ? ' altrow-hero' : '') + '" onclick="chooseSwap(' + i + ')">'
-    + '<div class="ae">' + r.emoji + '</div>'
+    + thumb
     + '<div class="at">' + heroBadge + '<div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
     + '<div class="tags">' + swapTagsHtml(r.tags) + '</div>'
@@ -4422,8 +4445,14 @@ function swapRecipeRowHtml(a){
   // Problem 4: cross-slot search results (swapCtx.includeOtherMeals) carry the recipe's
   // usual slot so the row doesn't read as an unexplained lunch/dinner-shaped search hit.
   const otherSlotTag = a.otherSlot ? '<div class="sub" style="margin:2px 0 0">usually ' + escapeHtml(a.otherSlot.toLowerCase()) + '</div>' : '';
+  // Curated watercolor thumbnail (owner 2026-09-14: "the emojis there don't feel curated"),
+  // same helper + .recipe-list-art treatment the Library recipe list uses; falls back to the
+  // recipe's emoji inside recipeThumbnailHtml when it has no image.
+  const thumb = (typeof recipeThumbnailHtml === 'function' && RECIPES_DB[a.id])
+    ? '<div class="ae recipe-list-art">' + recipeThumbnailHtml(RECIPES_DB[a.id], a.id) + '</div>'
+    : '<div class="ae">' + r.emoji + '</div>';
   return '<div class="altrow" data-recipe-id="' + htmlAttr(a.id) + '">'
-    + '<div class="ae">' + r.emoji + '</div>'
+    + thumb
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad"><b>' + kd + '</b> · <b>' + pd + '</b></div>'
     + otherSlotTag

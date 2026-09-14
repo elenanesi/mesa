@@ -4015,6 +4015,13 @@ function testSwapCompleteMealPoolAndUniversalSearch(ctx){
     assert(sushi.indexOf('cena-giapponese') !== -1,
       'buildSwapSearchOptions (universal): an occasional composite (Japanese sushi dinner) is findable by search',
       JSON.stringify(sushi));
+    // Owner 2026-09-14: search matches INGREDIENTS too, not just titles/tags — typing a food
+    // name surfaces dishes made with it even when the title doesn't say so.
+    const byIngredient = call(ctx, 'buildSwapSearchOptions', [bareTestDay, 'dinner', 'elena', 'chickpea', wsd]).map(function(a){ return a.id; });
+    assert(byIngredient.indexOf('greek-salad-big') !== -1,
+      'buildSwapSearchOptions: an ingredient search ("chickpea") finds a dish whose TITLE omits it (Big Greek salad)', JSON.stringify(byIngredient));
+    assert(call(ctx, 'swapSearchText', ['baked-fish']).indexOf('salmon') !== -1,
+      'swapSearchText: an optionGroups ingredient (baked fish → salmon) is searchable');
   } finally {
     ctx.weekPlans = saved;
     run(ctx, "weekPlans = " + JSON.stringify(get(ctx, 'weekPlans')) + "; weekPlan = null; swapCtx = " + (savedSwapCtx ? JSON.stringify(savedSwapCtx) : 'null') + ";");
