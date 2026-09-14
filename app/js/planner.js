@@ -2011,6 +2011,26 @@ function dominantIngredientKey(recipe, opts){
   });
   return best ? best.key : null;
 }
+// The SET of substantial (>=MIN_DOMINANT_GRAMS) Produce/Dairy ingredient keys in a recipe — like
+// dominantIngredientKey but ALL of them, not just the largest. Used by the within-meal side
+// diversity (pushComposedSideCandidates) so a mixed "salad" side that shares a vegetable with the
+// main (even a non-dominant one) is still caught. Reads recipeEffectiveIngredients so option
+// variants resolve; keyed by food.sub||id, same family grouping dominantIngredientKey uses.
+function substantialProduceKeys(recipe, opts){
+  const keys = {};
+  if(!recipe || typeof recipeEffectiveIngredients !== 'function') return keys;
+  recipeEffectiveIngredients(recipe, opts).forEach(function(ing){
+    const food = (typeof FOODS !== 'undefined') && FOODS[ing[0]];
+    if(!food || (food.cat !== 'Produce' && food.cat !== 'Dairy')) return;
+    if((Number(ing[1]) || 0) < MIN_DOMINANT_GRAMS) return;
+    keys[food.sub || ing[0]] = true;
+  });
+  return keys;
+}
+function produceKeysOverlap(a, b){
+  for(const k in a){ if(a[k] && b[k]) return true; }
+  return false;
+}
 // The distinct dominant-ingredient keys of a whole composed unit: the main (through its chosen
 // opts) plus every recipe extra (a composed carb/veg side, or a snack). Pure + deterministic.
 function unitDominantKeys(mainId, opts, extras){
@@ -2652,10 +2672,15 @@ function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, max
   // fall back to the unfiltered pairs (the ingredientDiversityPenalty still handles the
   // cross-slot case). dominantIngredientKey is opts-less here — a fine approximation for a
   // diversity heuristic (the dominant veg rarely flips across a recipe's option variants).
-  const mainKey = (typeof dominantIngredientKey === 'function' && RECIPES_DB[mainId]) ? dominantIngredientKey(RECIPES_DB[mainId]) : null;
+  // Compare the SETS of substantial (>=40g) Produce/Dairy ingredients, not just each dish's single
+  // dominant one (owner 2026-09-14: a "Side salad" of lettuce+tomato+carrot landed next to a
+  // rocket/tomato salad main — their single dominants differed, so the old key match missed it,
+  // but they clearly overlap on a vegetable). A pair is dropped when a side shares ANY substantial
+  // vegetable with the MAIN, or the two sides share one — so one plate doesn't double a vegetable.
+  const mainKeys = (RECIPES_DB[mainId]) ? substantialProduceKeys(RECIPES_DB[mainId]) : {};
   const keyCache = {};
-  function sideKey(id){
-    if(!(id in keyCache)) keyCache[id] = (typeof dominantIngredientKey === 'function' && RECIPES_DB[id]) ? dominantIngredientKey(RECIPES_DB[id]) : null;
+  function sideKeys(id){
+    if(!(id in keyCache)) keyCache[id] = (RECIPES_DB[id]) ? substantialProduceKeys(RECIPES_DB[id]) : {};
     return keyCache[id];
   }
   function pass(diverseOnly){
@@ -2663,9 +2688,9 @@ function pushComposedSideCandidates(push, mainId, mainBase, desired, anchor, max
     carbIds.forEach(function(carbId){ vegIds.forEach(function(vegId){
       if(carbId === vegId) return;
       if(diverseOnly){
-        const ck = sideKey(carbId), vk = sideKey(vegId);
-        if(mainKey && (ck === mainKey || vk === mainKey)) return;
-        if(ck && ck === vk) return;
+        const ck = sideKeys(carbId), vk = sideKeys(vegId);
+        if(produceKeysOverlap(mainKeys, ck) || produceKeysOverlap(mainKeys, vk)) return;
+        if(produceKeysOverlap(ck, vk)) return;
       }
       const carbBase = dbBaseNutrition(carbId), vegBase = dbBaseNutrition(vegId);
       [0.5, 1].forEach(function(carbPortion){ [0.5, 1].forEach(function(vegPortion){

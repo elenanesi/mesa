@@ -4608,6 +4608,19 @@ function testDominantIngredientVariety(ctx){
   run(ctx, "__pcs2 = []; pushComposedSideCandidates(function(id,k,p,ex){ __pcs2.push(ex.map(function(c){return c.recipeId;})); }, 'cumin-roasted-carrots', dbBaseNutrition('cumin-roasted-carrots'), 600, 1, 3, ['cumin-roasted-carrots'], ['carrots-over-hummus']);");
   assert(get(ctx, '__pcs2').length > 0,
     'pushComposedSideCandidates: falls back to unfiltered pairs when no diverse side exists (never starves the slot)');
+
+  // (4) OVERLAP-based diversity (owner 2026-09-14 "side salad next to a salad main"): a side
+  // sharing ANY substantial vegetable with the main is dropped, even when its single dominant
+  // differs. filetto-manzo (rocket + cherry-tomato salad main) must not get a cherry-tomato veg
+  // side, but a spinach side is fine.
+  assert(JSON.stringify(call(ctx, 'substantialProduceKeys', [get(ctx, "RECIPES_DB['filetto-manzo']")])).indexOf('cherry-tomatoes') !== -1,
+    'substantialProduceKeys: a salad main lists ALL its substantial vegetables (rocket + cherry-tomatoes), not just one');
+  assert(call(ctx, 'produceKeysOverlap', [call(ctx, 'substantialProduceKeys', [get(ctx, "RECIPES_DB['filetto-manzo']")]), call(ctx, 'substantialProduceKeys', [get(ctx, "RECIPES_DB['confit-cherry-tomatoes']")])]) === true,
+    'produceKeysOverlap: a tomato salad main overlaps a cherry-tomato side');
+  run(ctx, "__pcs3 = []; pushComposedSideCandidates(function(id,k,p,ex){ __pcs3.push(ex.map(function(c){return c.recipeId;})); }, 'filetto-manzo', dbBaseNutrition('filetto-manzo'), 600, 1, 3, ['steamed-rice'], ['confit-cherry-tomatoes','spinach-garlic-lemon']);");
+  const pcs3 = get(ctx, '__pcs3');
+  assert(pcs3.length > 0 && pcs3.every(function(p){ return p.indexOf('confit-cherry-tomatoes') === -1; }) && pcs3.some(function(p){ return p.indexOf('spinach-garlic-lemon') !== -1; }),
+    'pushComposedSideCandidates: drops a veg side that shares a vegetable with the salad main (tomato), keeps the diverse one (spinach)', JSON.stringify(pcs3));
 }
 
 // Per-day per-ingredient QUANTITY cap (owner 2026-09-06 "no ~1kg carrots / 6 eggs a day"): a

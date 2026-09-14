@@ -352,7 +352,11 @@ function renderRebalanceSheet(){
     const last = i === rebalanceProposal.suggestions.length - 1;
     const kind = s.kind === 'swap' ? 'swap' : 'side';
     const icon = s.kind === 'swap' ? RECIPES_DB[s.toRecipeId].emoji : RECIPES_DB[s.sideRecipeId].emoji;
-    const note = (kind === 'swap' ? 'Swap' : 'Add side') + ' · ' + (spread ? 'to even out the week' : 'so you get more ' + g.label);
+    // Direction-aware reason (bug 2026-09-14: this used to say "so you get more <gap>" for EVERY
+    // gap, so a sat-fat/free-sugar ceiling read as "so you get more Saturated fat"). Reuse
+    // rebalanceReasonText, keyed on the gap's nutrient, so a ceiling reads "to ease off …" /
+    // "to lower …" — the same phrasing the today-rebalance sheet already uses per suggestion.
+    const note = (kind === 'swap' ? 'Swap' : 'Add side') + ' · ' + (spread ? 'to even out the week' : rebalanceReasonText({nutrient: g.key}));
     html += '<div class="logitem"' + (last ? ' style="border-bottom:0"' : '') + '><div class="li-i" style="background:var(--sage-tint)">' + icon + '</div>'
       + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
       + '<small>' + note + '</small></div>'
