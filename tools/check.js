@@ -4677,6 +4677,25 @@ function testDailyGramCap(ctx){
 // Side/pairing appropriateness (owner 2026-09-06: "mashed potato is only ok as a dinner side; a
 // sweet breakfast can't be paired with [savory]"). Two independent, deterministic gates, each
 // with a never-starve fallback. Unit-tests the pure helpers + the two composition entry points.
+// The add-meal search box also filters+ranks the Sides / Full-recipes lists (owner 2026-09-14:
+// typing "rice" showed Bread first because those lists ignored the query). Title match beats an
+// ingredient-only match (swapSearchText carries ingredients); a non-matching side drops out.
+function testAddMealSearchRanking(ctx){
+  assert(call(ctx, 'mealRecipeMatchScore', ['steamed-rice', 'rice']) >= 2,
+    'mealRecipeMatchScore: "rice" is a strong (title) match for Steamed rice');
+  assert(call(ctx, 'mealRecipeMatchScore', ['uramaki-salmon-philadelphia-avocado', 'rice']) === 1,
+    'mealRecipeMatchScore: a side that only CONTAINS rice (uramaki) is a weaker ingredient match');
+  assert(call(ctx, 'mealRecipeMatchScore', ['braised-cavolo-nero', 'rice']) === 0,
+    'mealRecipeMatchScore: a side with no rice does not match "rice" at all');
+  const opts = call(ctx, 'mealRecipeOptions', [[]]);
+  const rows = call(ctx, 'mealRecipeOptionRows', [opts.sides, 'rice']);
+  const iRice = rows.indexOf('steamed-rice'), iCavolo = rows.indexOf('braised-cavolo-nero');
+  assert(iRice !== -1 && iCavolo === -1,
+    'mealRecipeOptionRows: searching "rice" surfaces Steamed rice in Sides and drops the non-matching cavolo nero', 'rice@' + iRice + ' cavolo@' + iCavolo);
+  assert(call(ctx, 'mealRecipeOptionRows', [opts.sides, '']).indexOf('braised-cavolo-nero') !== -1,
+    'mealRecipeOptionRows: an empty query shows the full alphabetical Sides list (no filtering)');
+}
+
 function testSideAndPairingAppropriateness(ctx){
   // -------- (1) side-slot gating --------
   assert(call(ctx, 'sideAllowedInSlot', ['mashed-potatoes', 'dinner']) === true,
@@ -14345,6 +14364,7 @@ function main(){
   runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
   runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
   runTest('side/pairing appropriateness (slot + flavor gates, 2026-09-06)', function(){ testSideAndPairingAppropriateness(ctx); });
+  runTest('add-meal search ranks Sides/Full by the query (2026-09-14)', function(){ testAddMealSearchRanking(ctx); });
   runTest('options-recipe = one recipe per combo (variety, 2026-09-06)', function(){ testOptionComboVariety(ctx); });
   runTest('avoid a specific ingredient (PROF.avoidFoods)', function(){ testAvoidSpecificFood(ctx); });
   runTest('recipe-of-recipes (components aggregate)', function(){ testRecipeComponents(ctx); });

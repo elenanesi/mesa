@@ -61,6 +61,31 @@ function mealRecipeOptions(components){
   };
 }
 
+// Rank a recipe against the add-meal search box (owner 2026-09-14: typing "rice" showed Bread
+// first in Sides because the Sides list ignored the query). Higher = better; 0 = no match.
+// A title match beats an ingredient-only match, so "Steamed rice" outranks a side that merely
+// contains rice, and a side with no rice at all drops out. swapSearchText carries the
+// ingredient names (planner.js), so this matches ingredients and titles alike.
+function mealRecipeMatchScore(id, q){
+  const r = RECIPES_DB[id];
+  if(!r) return 0;
+  const title = (r.title || '').toLowerCase();
+  if(title.indexOf(q) === 0) return 3;
+  if(title.indexOf(q) !== -1) return 2;
+  return (swapSearchText(id).indexOf(q) !== -1) ? 1 : 0;
+}
+// Filter + rank a Sides/Full-recipes id list by the search query. Empty/short query -> the
+// list unchanged (its existing alphabetical order). Otherwise only matches, best first.
+function mealRecipeOptionRows(ids, query){
+  const q = String(query || '').trim().toLowerCase();
+  if(q.length < 2) return (ids || []).map(mealRecipeOptionRowHtml).join('');
+  const scored = (ids || []).map(function(id){ return {id: id, score: mealRecipeMatchScore(id, q)}; })
+    .filter(function(x){ return x.score > 0; });
+  scored.sort(function(a, b){ return b.score - a.score || mealTitleSort(a.id, b.id); });
+  if(!scored.length) return '<p class="sub" style="margin-top:6px">No match for “' + escapeHtml(String(query).trim()) + '”.</p>';
+  return scored.map(function(x){ return mealRecipeOptionRowHtml(x.id); }).join('');
+}
+
 function componentTitle(c){
   if(c && c.recipeId && RECIPES_DB[c.recipeId]) return recipeDisplayTitle(c.recipeId, c.opts);
   if(c && c.foodId && FOODS[c.foodId]) return FOODS[c.foodId].name;
@@ -323,14 +348,18 @@ function openAddMealSheetForContext(ctx){
 
   html += boostBlock
     + '<div class="shop-cat">Ingredients</div>'
-    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="mealFoodSearchInput" placeholder="Search ingredients…" value="' + htmlAttr(addMealFoodQuery) + '" oninput="onMealFoodSearch(this.value)" autocomplete="off">'
+    + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="mealFoodSearchInput" placeholder="Search ingredients, sides &amp; recipes…" value="' + htmlAttr(addMealFoodQuery) + '" oninput="onMealFoodSearch(this.value)" autocomplete="off">'
     + '<div id="mealFoodResults" style="margin-top:4px">' + renderMealFoodResults(addMealFoodQuery) + '</div>';
 
-  html += '<div class="shop-cat">Sides</div>';
-  html += opts.sides.length ? opts.sides.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No side recipes available.</p>';
-
-  html += '<div class="shop-cat">Full recipes</div>';
-  html += opts.full.length ? opts.full.map(mealRecipeOptionRowHtml).join('') : '<p class="sub" style="margin-top:6px">No other recipes available.</p>';
+  // Sides + Full recipes ALSO respond to the search box above (owner 2026-09-14): stash the id
+  // lists on addMealCtx so onMealFoodSearch can re-rank them by the same query, and give each its
+  // own container to repaint. Empty query shows the full alphabetical lists as before.
+  addMealCtx.sideIds = opts.sides;
+  addMealCtx.fullIds = opts.full;
+  html += '<div class="shop-cat">Sides</div>'
+    + '<div id="mealSidesResults">' + (opts.sides.length ? mealRecipeOptionRows(opts.sides, addMealFoodQuery) : '<p class="sub" style="margin-top:6px">No side recipes available.</p>') + '</div>';
+  html += '<div class="shop-cat">Full recipes</div>'
+    + '<div id="mealFullResults">' + (opts.full.length ? mealRecipeOptionRows(opts.full, addMealFoodQuery) : '<p class="sub" style="margin-top:6px">No other recipes available.</p>') + '</div>';
 
   document.getElementById('sheetBody').innerHTML = html;
   attachAddMealSheetHandler();
@@ -725,6 +754,16 @@ function onMealFoodSearch(value){
   addMealFoodQuery = value;
   const el = document.getElementById('mealFoodResults');
   if(el) el.innerHTML = renderMealFoodResults(value);
+  // The one search box drives foods AND the Sides / Full-recipes lists (owner 2026-09-14):
+  // typing "rice" surfaces Steamed rice in Sides, not Bread. Re-rank both from the stashed ids.
+  const sidesEl = document.getElementById('mealSidesResults');
+  if(sidesEl && addMealCtx && addMealCtx.sideIds){
+    sidesEl.innerHTML = addMealCtx.sideIds.length ? mealRecipeOptionRows(addMealCtx.sideIds, value) : '<p class="sub" style="margin-top:6px">No side recipes available.</p>';
+  }
+  const fullEl = document.getElementById('mealFullResults');
+  if(fullEl && addMealCtx && addMealCtx.fullIds){
+    fullEl.innerHTML = addMealCtx.fullIds.length ? mealRecipeOptionRows(addMealCtx.fullIds, value) : '<p class="sub" style="margin-top:6px">No other recipes available.</p>';
+  }
 }
 
 function chooseMealExtraRecipe(recipeId){
