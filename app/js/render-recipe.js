@@ -471,7 +471,10 @@ function safeRecipeImageKey(v){
 
 function safeRecipeImageAsset(v){
   v = String(v || '').trim();
-  return /^assets\/recipes\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
+  // A recipe may explicitly reuse an existing Mesa ingredient illustration when the
+  // ingredient itself is the clearest visual identifier (for example an apple snack or
+  // a soft drink). This is still an explicit assignment, so it wins over every heuristic.
+  return /^assets\/(?:recipes|ingredients)\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
 const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish', 'sea-bass-fillet'];

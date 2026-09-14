@@ -1497,7 +1497,7 @@ const RECIPES_DB = {
 
   'brazil-nuts-apple': {
     title: 'Snack: 2 Brazil nuts + apple', emoji: '🌰', slot: 'snack', role: 'full',
-    imageKey: 'snack-board',
+    imageUri: 'assets/ingredients/apples.png',
     season: 'winter/autumn',
     styles: ['balanced'], time: 2,
     ingredients: [['brazil-nuts', 10], ['apples', 150]],
@@ -1788,7 +1788,7 @@ const RECIPES_DB = {
   },
   'mcd-drink': {
     title: 'Soft drink', emoji: '🥤', slot: 'snack', role: 'full',
-    imageKey: 'fast-food-menu',
+    imageUri: 'assets/ingredients/cola.png',
     slots: ['snack', 'side'], occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [],
@@ -1848,7 +1848,7 @@ const RECIPES_DB = {
   },
   'bk-drink': {
     title: 'Soft drink', emoji: '🥤', slot: 'snack', role: 'full',
-    imageKey: 'fast-food-menu',
+    imageUri: 'assets/ingredients/cola.png',
     slots: ['snack', 'side'], occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [],
