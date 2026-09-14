@@ -90,8 +90,13 @@ function defaultMealFoodGrams(foodId){
 function mealRecipeOptionRowHtml(id){
   const r = RECIPES_DB[id];
   const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
+  // Curated watercolor thumbnail (owner 2026-09-14, same as the swap sheet — emoji "doesn't feel
+  // curated"); emoji fallback lives inside recipeThumbnailHtml for images-less recipes.
+  const thumb = (typeof recipeThumbnailHtml === 'function')
+    ? '<div class="ae recipe-list-art">' + recipeThumbnailHtml(r, id) + '</div>'
+    : '<div class="ae">' + r.emoji + '</div>';
   return '<div class="altrow" data-add-recipe-id="' + htmlAttr(id) + '">'
-    + '<div class="ae">' + r.emoji + '</div>'
+    + thumb
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
     + '</div>';
@@ -1185,8 +1190,11 @@ function mealBuilderRecipeSearchResults(query){
 function mealBuilderRecipeRowHtml(id){
   const r = RECIPES_DB[id];
   const nut = roundedNutritionTotals(recipeNutrition(id, 1).totals);
+  const thumb = (typeof recipeThumbnailHtml === 'function')
+    ? '<div class="ae recipe-list-art">' + recipeThumbnailHtml(r, id) + '</div>'
+    : '<div class="ae">' + r.emoji + '</div>';
   return '<div class="altrow" data-mb-recipe-id="' + htmlAttr(id) + '">'
-    + '<div class="ae">' + r.emoji + '</div>'
+    + thumb
     + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
     + '<div class="ad">' + nut.kcal + ' kcal · ' + nut.protein + 'g protein</div></div>'
     + '</div>';
