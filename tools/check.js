@@ -709,6 +709,86 @@ function testPantrySectionsAndFilters(ctx){
   }
 }
 
+/* ---------------- Cook from what I have (#7): pantry recipe scorer ----------------
+   planner.js:pantryScoreRecipe / pantryMakeableRecipes rank recipes by what's currently in
+   the pantry. Staples (oil/salt/…) are free; the MAIN ingredient weighs 3x a secondary;
+   quantity shortfalls are a soft `low` flag; diet/avoid gate hard. The Library-hub / Pantry
+   sheet (render-today.js:buildPantryCookSheet) groups the result into Ready now / Almost. */
+function testPantryCookFromWhatIHave(ctx){
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  const RID = 'boiled-eggs-veg-sticks'; // eggs + cucumber, no optionGroups — a stable fixture.
+  try{
+    assert(get(ctx, "!!RECIPES_DB['" + RID + "']"), 'setup: fixture recipe ' + RID + ' exists');
+
+    // (1) Every non-staple ingredient in stock in sufficient quantity => fullyMakeable, no
+    //     missing, matchScore 1.
+    run(ctx, "pantry = {'eggs': {qty: 500, setAt: 1, u: 1}, 'cucumber': {qty: 500, setAt: 1, u: 1}};");
+    let sc = call(ctx, 'pantryScoreRecipe', [RID, get(ctx, 'pantryRemaining()')]);
+    assert(sc && sc.fullyMakeable === true && sc.missing.length === 0 && Math.abs(sc.matchScore - 1) < 1e-9,
+      'pantryScoreRecipe: a fully-stocked recipe scores 1 with nothing missing', JSON.stringify(sc));
+
+    // (2) A missing non-staple ingredient is listed by NAME and lowers the score, but the
+    //     recipe still surfaces (1 short). Staples never appear as missing.
+    run(ctx, "pantry = {'eggs': {qty: 500, setAt: 1, u: 1}};");
+    sc = call(ctx, 'pantryScoreRecipe', [RID, get(ctx, 'pantryRemaining()')]);
+    assert(sc && !sc.fullyMakeable && sc.missing.some(function(n){ return /cucumber/i.test(n); }),
+      'pantryScoreRecipe: a missing ingredient is listed by name', JSON.stringify(sc));
+    assert(sc && !sc.missing.some(function(n){ return /olive oil|salt|garlic|pepper/i.test(n); }),
+      'pantryScoreRecipe: curated staples (and toTaste items) never appear as missing', JSON.stringify(sc.missing));
+
+    // (3) Quantity shortfall is a soft `low` flag, not a hard miss: have some cucumber, but
+    //     well under the recipe's need.
+    run(ctx, "pantry = {'eggs': {qty: 500, setAt: 1, u: 1}, 'cucumber': {qty: 5, setAt: 1, u: 1}};");
+    sc = call(ctx, 'pantryScoreRecipe', [RID, get(ctx, 'pantryRemaining()')]);
+    assert(sc && !sc.missing.some(function(n){ return /cucumber/i.test(n); }) && sc.low.some(function(n){ return /cucumber/i.test(n); }) && !sc.fullyMakeable,
+      'pantryScoreRecipe: an in-stock-but-low ingredient is `low`, not `missing`, and not fully makeable', JSON.stringify(sc));
+
+    // (4) An empty pantry yields no makeable suggestions (nothing scores >= 0.5).
+    run(ctx, "pantry = {};");
+    let list = call(ctx, 'pantryMakeableRecipes', ['elena']);
+    assert(Array.isArray(list) && list.length === 0,
+      'pantryMakeableRecipes: an empty pantry suggests nothing', 'len=' + (list && list.length));
+
+    // (5) Fully stocked, the fixture surfaces and every fully-makeable recipe sorts ahead of
+    //     the "almost" ones.
+    run(ctx, "pantry = {'eggs': {qty: 500, setAt: 1, u: 1}, 'cucumber': {qty: 500, setAt: 1, u: 1}};");
+    list = call(ctx, 'pantryMakeableRecipes', ['elena']);
+    const ids = list.map(function(x){ return x.recipeId; });
+    assert(ids.indexOf(RID) !== -1,
+      'pantryMakeableRecipes: a fully-stocked recipe is suggested', JSON.stringify(ids.slice(0, 8)));
+    let sawPartial = false, orderOk = true;
+    list.forEach(function(x){ if(!x.fullyMakeable) sawPartial = true; else if(sawPartial) orderOk = false; });
+    assert(orderOk, 'pantryMakeableRecipes: fully-makeable recipes sort before "almost" ones');
+
+    // (6) Diet gate is hard: a vegan profile never gets an egg recipe, even fully stocked.
+    const eggsViolateVegan = call(ctx, 'recipeViolatesDiet', [RID, ['vegan']]);
+    if(eggsViolateVegan){
+      const savedDiets = cloneJSON(get(ctx, "PROF['elena'] && PROF['elena'].diets"));
+      try{
+        run(ctx, "if(PROF && PROF.elena){ PROF.elena.diets = ['vegan']; }");
+        const veganList = call(ctx, 'pantryMakeableRecipes', ['elena']);
+        assert(veganList.every(function(x){ return x.recipeId !== RID; }),
+          'pantryMakeableRecipes: diet restriction hard-excludes a violating recipe', JSON.stringify(veganList.map(function(x){ return x.recipeId; }).slice(0, 8)));
+      } finally {
+        run(ctx, "if(PROF && PROF.elena){ PROF.elena.diets = " + JSON.stringify(savedDiets || []) + "; }");
+      }
+    }
+
+    // (7) The UI builder groups into Ready now / Almost and never inline-interpolates the
+    //     recipe id (custom cr-<slug> ids are read back from data-recipe-id).
+    const sheetHtml = call(ctx, 'buildPantryCookSheet', [list]);
+    assert(sheetHtml.indexOf('Ready now') !== -1,
+      'buildPantryCookSheet: renders a "Ready now" section for fully-makeable recipes', sheetHtml.slice(0, 200));
+    assert(sheetHtml.indexOf('data-recipe-id="' + RID + '"') !== -1,
+      'buildPantryCookSheet: rows carry data-recipe-id (delegated click, no inline id interpolation)');
+    const emptyHtml = call(ctx, 'buildPantryCookSheet', [[]]);
+    assert(emptyHtml.indexOf('Nothing to suggest') !== -1,
+      'buildPantryCookSheet: empty result shows a calm empty state', emptyHtml.slice(0, 160));
+  } finally {
+    run(ctx, "pantry = " + JSON.stringify(savedPantry) + ";");
+  }
+}
+
 /* ---------------- ingredient detail page (task C4): buildFoodDetailMarkup() ----------------
    library.js's buildFoodDetailMarkup(id) is the pure HTML-string builder behind
    openFoodDetail() — it reads the live merged FOODS[id] record (overrides applied) and
@@ -14334,6 +14414,7 @@ function main(){
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
+  runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });
   runTest('reconcileInCartShopSet: prunes stale shopping-list in-cart ticks (Defect C redesign)', function(){ testReconcileInCartShopSet(ctx); });

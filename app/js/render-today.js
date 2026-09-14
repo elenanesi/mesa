@@ -824,6 +824,106 @@ function chooseMealExtraFood(foodId, gramsOverride){
   toast('＋ Added ' + FOODS[foodId].name);
 }
 
+// ── Cook from what I have (#7) ─────────────────────────────────────────────
+// Owner request: "there should be an option to have suggested meals with what I currently
+// have in my pantry." Ranking + diet/avoid gating live in planner.js:pantryMakeableRecipes
+// (staples like oil/salt are free; MAIN ingredient weighs 3x; quantity shortfalls are a
+// soft `low` flag, not a hard miss). This is the UI: two calm groups — "Ready now" (nothing
+// missing) and "Almost" (1–2 items short) — reusing the swap sheet's watercolor altrow look
+// (recipeThumbnailHtml, owner 2026-09-14 "the emojis don't feel curated"). Tapping a row
+// drops that recipe into today's matching slot via the existing swap apply path
+// (pantryAddRecipeToToday → chooseSwapRecipe), so shared-cell confirm, log correction and
+// every-surface re-render all come for free. Entry points: the Library hub + the Pantry page.
+let pantryCookCtx = null;
+
+function openPantryCookSheet(){
+  const list = (typeof pantryMakeableRecipes === 'function') ? pantryMakeableRecipes(currentProf) : [];
+  pantryCookCtx = {list: list};
+  document.getElementById('sheetBody').innerHTML = buildPantryCookSheet(list);
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  attachPantryCookHandler();
+}
+
+function buildPantryCookSheet(list){
+  let html = '<h2 style="margin-top:6px">Cook from what I have</h2>'
+    + '<p class="sub">Suggestions built from your pantry right now. Everyday staples (oil, salt, garlic, lemon…) are assumed on hand. Tap one to put it on today’s plan.</p>';
+  if(!list || !list.length){
+    return html + '<div class="empty" style="margin-top:14px">Nothing to suggest yet. Add a few ingredients to your <b>Pantry</b> and check back — or the pantry is empty for now.</div>';
+  }
+  const ready = list.filter(function(sc){ return sc.fullyMakeable; });
+  const almost = list.filter(function(sc){ return !sc.fullyMakeable; });
+  html += '<div id="pantryCookResults">';
+  if(ready.length){
+    html += '<div class="shop-cat">Ready now</div>' + ready.map(pantryCookRowHtml).join('');
+  }
+  if(almost.length){
+    html += '<div class="shop-cat">Almost — a couple of things short</div>' + almost.map(pantryCookRowHtml).join('');
+  }
+  html += '</div>';
+  return html;
+}
+
+function pantryCookRowHtml(sc){
+  const r = RECIPES_DB[sc.recipeId];
+  if(!r) return '';
+  const thumb = (typeof recipeThumbnailHtml === 'function')
+    ? '<div class="ae recipe-list-art">' + recipeThumbnailHtml(r, sc.recipeId) + '</div>'
+    : '<div class="ae">' + (r.emoji || '🍽️') + '</div>';
+  let note;
+  if(sc.fullyMakeable){
+    note = '<span class="pill sage">Ready now</span>';
+  } else if(sc.missing && sc.missing.length){
+    note = '<span class="pill ghost">missing ' + escapeHtml(sc.missing.slice(0, 2).join(', ')) + (sc.missing.length > 2 ? ' +' + (sc.missing.length - 2) : '') + '</span>';
+  } else {
+    note = '<span class="pill ghost">running low on ' + escapeHtml((sc.low || []).slice(0, 2).join(', ')) + '</span>';
+  }
+  return '<div class="altrow" data-recipe-id="' + htmlAttr(sc.recipeId) + '">'
+    + thumb
+    + '<div class="at"><div class="an">' + escapeHtml(r.title) + '</div>'
+    + '<div class="tags">' + note + '</div>'
+    + '</div></div>';
+}
+
+// Delegated click (data-recipe-id, never an inline onclick) — same reason as
+// swapRecipeRowHtml: custom recipe ids are `cr-<user-typed-slug>` and must not be re-parsed
+// as a JS string. #pantryCookResults is recreated only when the sheet reopens.
+function attachPantryCookHandler(){
+  const results = document.getElementById('pantryCookResults');
+  if(results) results.onclick = function(e){
+    const row = e.target.closest('.altrow[data-recipe-id]');
+    if(!row || !results.contains(row)) return;
+    pantryAddRecipeToToday(row.getAttribute('data-recipe-id'));
+  };
+}
+
+// Drops `recipeId` onto today's plan by reusing the swap apply path. Target slot = the
+// recipe's first supported meal slot today that isn't already confirmed (so it doesn't
+// silently overwrite a meal you've already logged); if every matching slot is logged, falls
+// back to the recipe's first slot in order. chooseSwapRecipe handles the shared-cell confirm,
+// log correction, re-renders, persist, close and toast.
+function pantryAddRecipeToToday(recipeId){
+  const r = RECIPES_DB[recipeId];
+  if(!r) return;
+  const slots = recipeSlotList(r).filter(function(s){ return s !== 'side'; });
+  if(!slots.length) return;
+  const di = todayDayIndex();
+  const dateISO = todayISO();
+  let target = null;
+  SLOT_ORDER.forEach(function(s){
+    if(target || slots.indexOf(s) === -1) return;
+    if(typeof slotLogStatus === 'function' && slotLogStatus(dateISO, currentProf, s) === 'confirmed') return;
+    target = s;
+  });
+  if(!target){
+    SLOT_ORDER.forEach(function(s){ if(!target && slots.indexOf(s) !== -1) target = s; });
+  }
+  if(!target) return;
+  swapCtx = {dayIndex: di, slot: target, person: currentProf, weekStartDate: null, targetElId: null};
+  chooseSwapRecipe(recipeId, null);
+}
+
 // (b) fix: owner complaint — once an extra (e.g. Greek salad + cucumber salad alongside
 // shakshuka) was added there was no way to take it back off. Symmetric to
 // chooseMealExtraRecipe above, with one extra step for an already-logged meal: the logged

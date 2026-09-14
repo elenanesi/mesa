@@ -4193,6 +4193,108 @@ function recipeContainsProteinType(recipeId, key){
 // ensureWeekPlan) lets the Week screen's swap sheet operate on NEXT week's plan too.
 // Two swap candidates whose best-fit calories land within this many kcal of the meal being
 // swapped are treated as an equally good fit and rotated for variety (see buildSwapAlternatives).
+/* ---------------- COOK-FROM-PANTRY (owner 2026-09-14, panel-designed) ----------------
+   Suggest recipes the household can make from what's currently in the pantry. Panel resolution:
+   makeability is the FILTER, nutritional fit the SORT; diet/avoid-lists stay a hard gate. Score
+   the NON-STAPLE ingredients only (staples are assumed on-hand — the recipe's own `toTaste` list
+   is already unquantified/free, plus a curated staple allowlist below; deliberately NOT cat
+   'Pantry', which also holds flour/rice/pasta — defining carbs, not staples). MAIN ingredients
+   (protein, or the defining largest-gram item) weigh 3x a secondary. Quantity is a separate
+   'low' flag, not a hard miss. Deterministic (pure over the pantry map). See the panel memos. */
+const PANTRY_STAPLE_FOOD_IDS = {
+  'olive-oil': 1, 'salt': 1, 'garlic': 1, 'lemon': 1, 'vanilla': 1, 'cinnamon': 1,
+  'ginger': 1, 'soy-sauce': 1, 'balsamic-vinegar': 1, 'mustard': 1
+};
+// Effective ingredients with the best PANTRY-COVERED choice picked per optionGroup (baked fish ->
+// whichever fish you have), composites flattened + summed by foodId (one quantity check per food).
+function pantryBestVariantIngredients(r, pantryMap){
+  let opts = null;
+  if(Array.isArray(r.optionGroups) && r.optionGroups.length){
+    opts = {};
+    r.optionGroups.forEach(function(group){
+      if(!group || typeof group.key !== 'string') return;
+      const choices = Array.isArray(group.choices) ? group.choices : [];
+      let best = null;
+      choices.forEach(function(ch){
+        const chIngs = Array.isArray(ch.ingredients) ? ch.ingredients : [];
+        let present = 0, tot = 0;
+        chIngs.forEach(function(ing){ if(!PANTRY_STAPLE_FOOD_IDS[ing[0]]){ tot++; if((pantryMap[ing[0]] || 0) > 0) present++; } });
+        const cover = tot > 0 ? present / tot : 1;
+        if(!best || cover > best.cover) best = {id: ch.id, cover: cover};
+      });
+      if(best) opts[group.key] = best.id;
+    });
+  }
+  const raw = (typeof recipeEffectiveIngredients === 'function') ? recipeEffectiveIngredients(r, opts) : (r.ingredients || []);
+  const merged = {}, order = [];
+  raw.forEach(function(ing){ const id = ing[0]; if(!(id in merged)){ merged[id] = 0; order.push(id); } merged[id] += Number(ing[1]) || 0; });
+  return order.map(function(id){ return [id, merged[id]]; });
+}
+// Score one recipe against the pantry. Returns null for a recipe with no non-staple ingredient.
+// {recipeId, matchScore 0..1, fullyMakeable, missing:[names], low:[names], mainMissing, ingredientCount}.
+function pantryScoreRecipe(recipeId, pantryMap){
+  const r = RECIPES_DB[recipeId];
+  if(!r) return null;
+  const ings = pantryBestVariantIngredients(r, pantryMap).filter(function(ing){
+    return !PANTRY_STAPLE_FOOD_IDS[ing[0]] && (typeof FOODS !== 'undefined') && FOODS[ing[0]];
+  });
+  if(!ings.length) return null;
+  let totalG = 0, maxG = 0;
+  ings.forEach(function(ing){ totalG += ing[1]; if(ing[1] > maxG) maxG = ing[1]; });
+  let wSum = 0, wPresent = 0;
+  const missing = [], low = [];
+  let mainMissing = false;
+  ings.forEach(function(ing){
+    const foodId = ing[0], needG = ing[1], food = FOODS[foodId];
+    const isMain = food.cat === 'Protein' || (totalG > 0 && needG >= 0.25 * totalG) || needG === maxG;
+    const w = isMain ? 3 : 1;
+    wSum += w;
+    const have = pantryMap[foodId] || 0;
+    if(have > 0){
+      wPresent += w;
+      if(have < 0.9 * needG) low.push(food.name);
+    } else {
+      missing.push(food.name);
+      if(isMain) mainMissing = true;
+    }
+  });
+  return {
+    recipeId: recipeId,
+    matchScore: wSum > 0 ? wPresent / wSum : 0,
+    fullyMakeable: missing.length === 0 && low.length === 0,
+    missing: missing, low: low, mainMissing: mainMissing, ingredientCount: ings.length
+  };
+}
+// The ranked "cook from what I have" list for `person` (diet/avoid gate uses their lists). Hides
+// not-makeable (>=3 missing, or match < 0.5). Sort: fully-makeable first (tie: fewest ingredients),
+// then 'almost' by mainMissing asc, missing-count asc, matchScore desc, id asc (deterministic).
+function pantryMakeableRecipes(person){
+  person = person || (typeof currentProf !== 'undefined' ? currentProf : 'elena');
+  const pantryMap = (typeof pantryRemaining === 'function') ? pantryRemaining() : {};
+  const dietList = unionDiets([person]);
+  const avoidL = avoidFoodsList(person);
+  const out = [];
+  Object.keys(RECIPES_DB).forEach(function(id){
+    const r = RECIPES_DB[id];
+    if(!r || r.oneTime) return;
+    if(recipeViolatesDiet(id, dietList)) return;
+    if(recipeHitsAvoid(r, avoidL)) return;
+    const sc = pantryScoreRecipe(id, pantryMap);
+    if(!sc) return;
+    if(sc.missing.length >= 3 || sc.matchScore < 0.5) return;
+    out.push(sc);
+  });
+  out.sort(function(a, b){
+    if(a.fullyMakeable !== b.fullyMakeable) return a.fullyMakeable ? -1 : 1;
+    if(a.fullyMakeable){
+      return a.ingredientCount - b.ingredientCount || (a.recipeId < b.recipeId ? -1 : 1);
+    }
+    if(a.mainMissing !== b.mainMissing) return a.mainMissing ? 1 : -1;
+    return a.missing.length - b.missing.length || (b.matchScore - a.matchScore) || (a.recipeId < b.recipeId ? -1 : 1);
+  });
+  return out;
+}
+
 const SWAP_KCAL_TIE_BAND = 120;
 function buildSwapAlternatives(dayIndex, slot, person, weekStartDate){
   const plan = ensureWeekPlan(weekStartDate);

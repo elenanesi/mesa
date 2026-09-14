@@ -522,6 +522,7 @@ function renderLibraryHub(){
     + '<div class="altrow" onclick="openFoodLibrary()"><div class="ae">🧺</div><div class="at"><div class="an">Ingredients</div><div class="ad">Browse, edit or add foods</div></div></div>'
     + '<div class="altrow" onclick="openMyRecipes()"><div class="ae">📖</div><div class="at"><div class="an">Recipes</div><div class="ad">Browse, edit or add recipes</div></div></div>'
     + '<div class="altrow" onclick="openPantryLibrary()"><div class="ae">🥫</div><div class="at"><div class="an">Pantry</div><div class="ad">Track what you already have at home</div></div></div>'
+    + '<div class="altrow" onclick="openPantryCookSheet()"><div class="ae">🍳</div><div class="at"><div class="an">Cook from what I have</div><div class="ad">Meal ideas from your current pantry</div></div></div>'
     + '<div class="altrow" onclick="openBarcodeScanner(true)"><div class="ae">📷</div><div class="at"><div class="an">Scan barcode</div><div class="ad">Add packaged products sold in Italy</div></div></div>'
     + '<div class="altrow" onclick="openNewFoodForm()"><div class="ae">＋</div><div class="at"><div class="an">New ingredient</div><div class="ad">Create a food from macros</div></div></div>'
     + '<div class="altrow" onclick="openNewRecipeForm()"><div class="ae">✎</div><div class="at"><div class="an">New recipe</div><div class="ad">Build from ingredients and meal slots</div></div></div>'
@@ -2472,6 +2473,7 @@ function buildPantryLibrarySheet(){
     + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:8px" type="text" id="libPantrySearchInput" placeholder="Search your pantry…" value="' + htmlAttr(libPantryQuery) + '" oninput="onLibPantrySearchInput(this.value)" autocomplete="off">'
     + '<div id="libPantryFilterBar">' + renderLibPantryFilterBar() + '</div>'
     + '<button class="cta ghostbtn" style="margin-top:12px" onclick="openPantryAddSheet()">＋ Add to pantry</button>'
+    + '<button class="cta ghostbtn" style="margin-top:8px" onclick="openPantryCookSheet()">🍳 Cook from what I have</button>'
     + '<div id="libPantryList" style="margin-top:4px">' + renderPantryListMarkup(libPantryQuery) + '</div>';
 }
 
