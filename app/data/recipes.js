@@ -2208,6 +2208,19 @@ const RECIPES_DB = {
     tags: ['veggie'],
     avoid: ['lactose']
   },
+  'cinnamon-roll': {
+    // A built-in version of the household cinnamon roll: it is a manual/market treat,
+    // not an automatic-plan candidate. Existing custom rolls keep any image chosen by
+    // their author, while the title-based art fallback gives unassigned ones this painting.
+    title: 'Cinnamon roll', emoji: '🍥', slot: 'breakfast', role: 'full',
+    imageKey: 'cinnamon-roll', season: 'winter/autumn', slots: ['breakfast', 'snack'], styles: ['balanced'], time: 28,
+    occasional: true,
+    ingredients: [['00-flour', 45], ['milk', 25], ['eggs', 20], ['butter', 14], ['granulated-sugar', 16], ['cream-cheese', 15]],
+    toTaste: ['cinnamon', 'vanilla', 'yeast', 'pinch of salt'],
+    steps: ['Make a soft enriched dough with the flour, milk, egg and a little butter; let it rise until puffy.', 'Roll it out, brush with the remaining butter and scatter with sugar and cinnamon.', 'Roll into a spiral, bake at 180°C until deeply golden, then finish with a small cream-cheese and vanilla drizzle.'],
+    tags: [],
+    avoid: ['gluten', 'lactose']
+  },
   'hot-dog': {
     title: 'Classic hot dog', emoji: '🌭', slot: 'dinner', role: 'full', occasional: true,
     imageKey: 'hot-dog', season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced'], time: 12,

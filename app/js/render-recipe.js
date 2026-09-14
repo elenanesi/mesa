@@ -397,14 +397,14 @@ const RECIPE_IMAGE_KEYS = [
   'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure',
   'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast',
   'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos',
-  'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast',
+  'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast',
   'slow-braised-beef'
 ];
 
 const RECIPE_IMAGE_GROUPS = [
   {label: 'Everyday meals', keys: ['default-recipe', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main']},
   {label: 'Breakfast, snacks & sweets', keys: ['breakfast-bowl', 'french-toast', 'pancakes', 'onigiri', 'snack-board', 'dessert-sweets', 'ice-cream']},
-  {label: 'Named dishes', keys: ['ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'nachos', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef']}
+  {label: 'Named dishes', keys: ['ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'nachos', 'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef']}
 ];
 
 function recipeImageLabel(key){
@@ -433,6 +433,7 @@ function recipeImageLabel(key){
     'club-sandwich': 'Club sandwich',
     'shakshuka': 'Shakshuka',
     'snack-board': 'Snack board',
+    'cinnamon-roll': 'Cinnamon roll',
     'hot-dog': 'Hot dog',
     'yogurt-cake': 'Yogurt cake',
     'egg-dishes': 'Egg dishes',
@@ -556,6 +557,8 @@ const EXACT_RECIPE_TITLE_IMAGE_KEYS = {
   'classic hot dog': 'hot-dog',
   'hot dog': 'hot-dog',
   'hotdog': 'hot-dog',
+  'cinnamon roll': 'cinnamon-roll',
+  'cinnamon bun': 'cinnamon-roll',
   'chocolate yogurt cheesecake': 'yogurt-cake',
   'yogurt cake': 'yogurt-cake',
   'yoghurt cake': 'yogurt-cake',
@@ -568,6 +571,7 @@ const EXACT_RECIPE_TITLE_IMAGE_KEYS = {
 };
 const EXACT_RECIPE_ID_IMAGE_KEYS = {
   'hot-dog': 'hot-dog',
+  'cinnamon-roll': 'cinnamon-roll',
   'uova-bacon': 'egg-avocado-bacon-beans-toast',
   'braised-beef-shin-ragu': 'slow-braised-beef',
   'choc-yogurt-cheesecake': 'yogurt-cake'
@@ -585,6 +589,28 @@ function exactRecipeImageKey(recipe, recipeId){
 
 function recipeTitleRequestsEggImage(recipe){
   return /\b(egg|eggs|uovo|uova|omelette|omelet|frittata)\b/.test(normalizedRecipeImageTitle(recipe && recipe.title));
+}
+
+// Reuse a watercolor ingredient icon only when the *dish title* is plainly about that
+// ingredient and normal inference would otherwise settle for a generic meal illustration.
+// This makes a simple toast/bread or yogurt recipe more recognisable without turning every
+// compound recipe into a collage of its components. Explicit recipe art always wins above.
+const RECIPE_INGREDIENT_ART_TITLE_RULES = [
+  {pattern: /\b(toast|bread|bruschetta|fette biscottate)\b/, ids: ['wholewheat-bread', 'white-bread', 'rye-bread']},
+  {pattern: /\b(yogurt|yoghurt|skyr)\b/, ids: ['greek-yogurt', 'skyr', 'soy-yogurt']}
+];
+
+function recipeIngredientArtAsset(recipe){
+  if(!recipe || typeof FOODS === 'undefined') return '';
+  const title = normalizedRecipeImageTitle(recipe.title);
+  const rule = RECIPE_INGREDIENT_ART_TITLE_RULES.find(function(entry){ return entry.pattern.test(title); });
+  if(!rule) return '';
+  const present = (Array.isArray(recipe.ingredients) ? recipe.ingredients : []).map(function(ing){ return ing && ing[0]; });
+  const foodId = rule.ids.find(function(id){ return present.indexOf(id) !== -1; });
+  const food = foodId && FOODS[foodId];
+  if(!food || typeof ingredientIconAssetForFood !== 'function') return '';
+  const asset = ingredientIconAssetForFood(food);
+  return typeof safeIngredientIconAsset === 'function' ? safeIngredientIconAsset(asset) : '';
 }
 
 function inferredRecipeImageKey(recipe, recipeId){
@@ -643,7 +669,22 @@ function recipeImageAssetForRecipe(recipe, recipeId){
     const explicitSrc = safeRecipeImageAsset('assets/recipes/' + explicitKey + '.png');
     if(explicitSrc) return explicitSrc;
   }
+  const exactKey = exactRecipeImageKey(recipe, recipeId);
+  if(exactKey){
+    const exactSrc = safeRecipeImageAsset('assets/recipes/' + exactKey + '.png');
+    if(exactSrc) return exactSrc;
+  }
+  if(recipeTitleRequestsEggImage(recipe)){
+    const eggSrc = safeRecipeImageAsset('assets/recipes/egg-dishes.png');
+    if(eggSrc) return eggSrc;
+  }
   const imageKey = inferredRecipeImageKey(recipe, recipeId);
+  // Ingredient art is deliberately a replacement for generic meal art only; named dish,
+  // category and user-curated recipe art remain more descriptive.
+  if(['default-recipe', 'breakfast-bowl', 'salad'].indexOf(imageKey) !== -1){
+    const ingredientAsset = recipeIngredientArtAsset(recipe);
+    if(ingredientAsset) return ingredientAsset;
+  }
   const src = safeRecipeImageAsset('assets/recipes/' + imageKey + '.png');
   return src || DEFAULT_RECIPE_IMAGE_ASSET;
 }
