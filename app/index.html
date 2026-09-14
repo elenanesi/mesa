@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-<link rel="stylesheet" href="css/mesa.css?v=mesa-f7f9fba00be2" />
+<link rel="stylesheet" href="css/mesa.css?v=mesa-b6bcbebcb19b" />
 </head>
 <body>
 
@@ -125,14 +125,16 @@
               <div class="mhead"><span>Protein <span class="macro-pct macro-pct-p" id="pctP">26%</span></span><b id="mp">28 / 110 g</b></div>
               <div class="bar"><i class="b-p" id="bp" style="width:26%"></i></div>
             </div>
-            <div class="macro">
-              <div class="mhead"><span>Carbs <span class="macro-pct macro-pct-c" id="pctC">41%</span></span><b id="mc">34 / 170 g</b></div>
+            <div class="macro" id="macroCarbs">
+              <div class="mhead" id="carbsHead" onclick="toggleMacroConcern('carbs')"><span>Carbs <span class="macro-pct macro-pct-c" id="pctC">41%</span><span class="macro-warn-dot" id="carbsWarnDot" hidden aria-label="Free sugars are high today"></span></span><b id="mc">34 / 170 g</b></div>
               <div class="bar"><i class="b-c" id="bc" style="width:20%"></i></div>
+              <div class="macro-detail" id="carbsDetail" hidden></div>
             </div>
-            <div class="macro">
-              <div class="mhead"><span>Fat <span class="macro-pct macro-pct-f" id="pctF">33%</span></span><b id="mf">12 / 62 g</b></div>
+            <div class="macro" id="macroFat">
+              <div class="mhead" id="fatHead" onclick="toggleMacroConcern('fat')"><span>Fat <span class="macro-pct macro-pct-f" id="pctF">33%</span><span class="macro-warn-dot" id="fatWarnDot" hidden aria-label="Saturated fat is high today"></span></span><b id="mf">12 / 62 g</b></div>
               <div class="bar"><i class="b-f" id="bff" style="width:19%"></i></div>
               <div class="sub" id="fatSplit" style="display:none;margin:5px 0 0;font-size:11.5px">◌ 9g non-saturated fat (estimate) · 3g sat.</div>
+              <div class="macro-detail" id="fatDetail" hidden></div>
             </div>
           </div>
         </div>
@@ -1046,6 +1048,6 @@
 <script src="js/library.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/app.js?v=mesa-f7f9fba00be2"></script>
+<script src="js/app.js?v=mesa-b6bcbebcb19b"></script>
 </body>
 </html>

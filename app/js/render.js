@@ -587,11 +587,84 @@ function refreshRingAndBars(){
   if(glanceC) glanceC.textContent = Math.round(cEaten) + 'g';
   if(glanceF) glanceF.textContent = Math.round(fEaten) + 'g';
 
+  // Free-sugar / sat-fat concern dots + inline detail on the Carbs / Fat macros (owner + panel
+  // 2026-09-14). Quiet by default: a small amber dot appears ONLY when the hidden component is a
+  // real outlier for the day; otherwise nothing shows (no red, no clutter).
+  if(typeof renderTodayMacroConcerns === 'function') renderTodayMacroConcerns();
+
   // --- Whole-day confirmation is deliberately docked above navigation, separate from the chart. ---
   if(typeof renderTodayKeystone === 'function') renderTodayKeystone();
   // --- Phase 3 D3b: "targets are an estimate" banner (fill-in-later nudge) ---
   if(typeof renderBasicsBanner === 'function') renderBasicsBanner();
 
+}
+
+/* ---------------- Today macro concern: free sugars (Carbs) / sat fat (Fat) ----------------
+   Panel-approved (2026-09-14): NOT a red overlay — a small amber dot on the Carbs/Fat macro,
+   shown only at the WHO OUTLIER line (macroConcernForDay reuses perDayBalanceState's bands +
+   sat-fat under-target suppression). Tapping the macro expands an inline, calm detail: the
+   value vs energy %, and the top-3 meals contributing, by grams. No sheet, no wall of text. */
+let expandedMacroConcern = null; // 'carbs' | 'fat' | null — which detail is open (accordion)
+
+function todayMacroConcernData(){
+  if(typeof macroConcernForDay !== 'function' || typeof ensureWeekPlan !== 'function') return null;
+  try{
+    const plan = ensureWeekPlan(mondayOfWeek(todayISO()));
+    const day = plan && plan.days && plan.days[todayDayIndex()];
+    return day ? macroConcernForDay(day, currentProf) : null;
+  }catch(e){ return null; }
+}
+
+function macroConcernDetailHtml(which, c){
+  const nutrient = which === 'carbs' ? 'freeSugars' : 'satFat';
+  const label = which === 'carbs' ? 'Free sugars' : 'Saturated fat';
+  const line = which === 'carbs' ? 'WHO guidance: under 10% of energy' : 'WHO guidance: under 10% of energy (saturated)';
+  const d = c[nutrient];
+  const contribs = d.contributors.slice(0, 3).map(function(x){
+    return '<div class="macro-contrib"><span>' + escapeHtml(x.label) + '</span><b>' + x.grams + 'g</b><em>' + x.pct + '%</em></div>';
+  }).join('');
+  const more = d.contributors.length > 3 ? '<div class="sub macro-contrib-more">+ ' + (d.contributors.length - 3) + ' more</div>' : '';
+  // Calm, neutral framing (panel): state the fact + where it came from, no verdict/blame.
+  const head = '<div class="macro-detail-line"><b>' + label + ' ' + d.grams + 'g</b> · ' + d.pct + '% of energy'
+    + ' <span class="pill macro-detail-chip">above the line</span></div>'
+    + '<div class="sub" style="margin:2px 0 6px">' + line + '</div>';
+  return head + (contribs ? '<div class="macro-detail-contribs">' + contribs + more + '</div>' : '');
+}
+
+function renderTodayMacroConcerns(){
+  if(typeof document === 'undefined' || !document.getElementById) return;
+  const c = todayMacroConcernData();
+  // Collapse an open detail that is no longer a concern (e.g. after a person switch).
+  if(expandedMacroConcern){
+    const nut = expandedMacroConcern === 'carbs' ? 'freeSugars' : 'satFat';
+    if(!(c && c[nut] && c[nut].high)) expandedMacroConcern = null;
+  }
+  ['carbs', 'fat'].forEach(function(which){
+    const nut = which === 'carbs' ? 'freeSugars' : 'satFat';
+    const high = !!(c && c[nut] && c[nut].high);
+    const dot = document.getElementById(which + 'WarnDot');
+    const head = document.getElementById(which + 'Head');
+    const detail = document.getElementById(which + 'Detail');
+    if(dot) dot.hidden = !high;
+    if(head) head.style.cursor = high ? 'pointer' : '';
+    if(detail){
+      if(high && expandedMacroConcern === which){
+        detail.innerHTML = macroConcernDetailHtml(which, c);
+        detail.hidden = false;
+      } else {
+        detail.hidden = true;
+        detail.innerHTML = '';
+      }
+    }
+  });
+}
+
+function toggleMacroConcern(which){
+  const c = todayMacroConcernData();
+  const nut = which === 'carbs' ? 'freeSugars' : 'satFat';
+  if(!(c && c[nut] && c[nut].high)) return; // only interactive when there's a real concern
+  expandedMacroConcern = (expandedMacroConcern === which) ? null : which;
+  renderTodayMacroConcerns();
 }
 
 // The fuller calorie and nutrient view deliberately stays after the meal cards. This

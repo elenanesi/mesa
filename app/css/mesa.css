@@ -129,6 +129,18 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .day-dot-ok{background:var(--balance-good);}
 .day-dot-minor{background:var(--balance-minor);}
 .day-dot-off{background:var(--balance-off);}
+/* Today macro concern (free sugars on Carbs / sat fat on Fat, 2026-09-14): a small amber dot
+   on the macro head, and a calm inline detail on tap. Amber = the day-balance outlier colour. */
+.macro-warn-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--balance-off);margin-left:6px;vertical-align:middle;}
+.macro-detail{margin-top:9px;padding:10px 12px;background:rgba(207,138,48,.08);border:1px solid rgba(207,138,48,.22);border-radius:10px;}
+.macro-detail-line{font-size:13px;color:var(--ink-soft);}
+.macro-detail-chip{background:var(--balance-off);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border:0;margin-left:2px;vertical-align:middle;}
+.macro-detail-contribs{margin-top:2px;}
+.macro-contrib{display:flex;align-items:center;gap:8px;font-size:12.5px;padding:3px 0;border-top:1px solid rgba(176,146,105,.16);}
+.macro-contrib span{flex:1;color:var(--ink-soft);}
+.macro-contrib b{font-variant-numeric:tabular-nums;color:var(--ink);}
+.macro-contrib em{color:var(--muted);font-style:normal;font-size:11px;min-width:36px;text-align:right;}
+.macro-contrib-more{margin-top:4px;}
 /* Persistent "day closed" trace (item 4) — a quiet, STATIC single leaf on the Week day
    header, distinct from day-dot above (a quality signal). No animation, no streak, no
    pass/fail color: it only ever marks "every plannable slot here is accounted for". */

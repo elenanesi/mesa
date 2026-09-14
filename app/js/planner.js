@@ -3510,6 +3510,49 @@ function personDayNutriTotals(day, person){
   return totals;
 }
 
+// Today macro-concern (owner 2026-09-14 + panel): surface, on the Today macros, when the hidden
+// "bad" component of Carbs (free sugars) or Fat (saturated fat) is a real OUTLIER for the day.
+// Panel resolution: signal ONLY at the amber/outlier WHO line (free sugars > 10% of energy, sat
+// fat > 15%), reusing perDayBalanceState's exact bands (so the sat-fat under-target suppression
+// is honoured — no false alarm on a still-being-logged light day); never at the minor line
+// (crying wolf on a subset the user can't see). Attribution is MEAL-level, ranked by grams of the
+// component, top 3, with a small floor so rounding noise never lists. Pure read of the plan; the
+// grams are the same planEntryNutrition() the day dot and macro totals already use.
+const MACRO_CONCERN_MIN_CONTRIB_G = 2; // below this a meal isn't worth listing (rounding noise)
+function macroConcernForDay(day, person){
+  const out = {
+    freeSugars: {high: false, pct: 0, grams: 0, contributors: []},
+    satFat: {high: false, pct: 0, grams: 0, contributors: []}
+  };
+  if(!day || !day.meals) return out;
+  const totals = personDayNutriTotals(day, person);
+  const state = (typeof perDayBalanceState === 'function') ? perDayBalanceState(totals, person) : {};
+  const kcal = totals.kcal || 0;
+  out.freeSugars.high = state.freeSugars === 'high';
+  out.satFat.high = state.satFat === 'high';
+  out.freeSugars.grams = Math.round(totals.freeSugars || 0);
+  out.satFat.grams = Math.round(totals.satFat || 0);
+  out.freeSugars.pct = kcal > 0 ? Math.round((totals.freeSugars * 4 / kcal) * 100) : 0;
+  out.satFat.pct = kcal > 0 ? Math.round((totals.satFat * 9 / kcal) * 100) : 0;
+  ['freeSugars', 'satFat'].forEach(function(nutrient){
+    const rows = [];
+    SLOT_ORDER.forEach(function(slot){
+      const m = day.meals[slot];
+      if(!m || !m[person] || !m[person].recipeId) return;
+      const g = planEntryNutrition(m[person])[nutrient] || 0;
+      if(g < MACRO_CONCERN_MIN_CONTRIB_G) return;
+      const r = RECIPES_DB[m[person].recipeId];
+      rows.push({slot: slot, label: (r && r.title) || (SLOT_LABEL[slot] || slot), grams: Math.round(g)});
+    });
+    rows.sort(function(a, b){ return b.grams - a.grams; });
+    const total = out[nutrient].grams || 0;
+    out[nutrient].contributors = rows.map(function(x){
+      return {slot: x.slot, label: x.label, grams: x.grams, pct: total > 0 ? Math.round(x.grams / total * 100) : 0};
+    });
+  });
+  return out;
+}
+
 // Same single-sourced per-day targets perDayBalanceState (above) classifies against —
 // this turns those bands into a continuous "how far off" scalar the greedy pass below can
 // actually optimize (perDayBalanceState only ever reports a discrete state, never a

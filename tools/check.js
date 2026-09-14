@@ -4634,6 +4634,38 @@ function testDominantIngredientVariety(ctx){
     'pushComposedSideCandidates: drops a veg side that shares a vegetable with the salad main (tomato), keeps the diverse one (spinach)', JSON.stringify(pcs3));
 }
 
+// Today macro concern (owner + panel 2026-09-14): macroConcernForDay flags an OUTLIER of the
+// hidden component of a macro (free sugars in Carbs, sat fat in Fat) and lists the meals that
+// contribute, ranked by grams. `high` mirrors perDayBalanceState's outlier state exactly (so the
+// sat-fat under-target suppression is inherited); contributors are sorted desc, floored, %-shared.
+function testMacroConcern(ctx){
+  run(ctx, "PROF.elena.calGoalNum = 1400;");
+  // A day with two sugary meals (breakfast + snack) and low-sugar mains.
+  const day = {meals: {
+    breakfast: {elena: {recipeId: 'french-toast-fruit-maple', portion: 1}},
+    lunch: {elena: {recipeId: 'lemon-herb-chicken-breast', portion: 1}},
+    dinner: {elena: {recipeId: 'pollo-al-forno', portion: 1}},
+    snack: {elena: {recipeId: 'yogurt-fruit-snack', portion: 1}}
+  }};
+  const c = call(ctx, 'macroConcernForDay', [day, 'elena']);
+  // `high` mirrors perDayBalanceState exactly for both nutrients.
+  const state = call(ctx, 'perDayBalanceState', [call(ctx, 'personDayNutriTotals', [day, 'elena']), 'elena']);
+  assert(c.freeSugars.high === (state.freeSugars === 'high') && c.satFat.high === (state.satFat === 'high'),
+    'macroConcernForDay: `high` matches perDayBalanceState outlier state for free sugars + sat fat', JSON.stringify({c: [c.freeSugars.high, c.satFat.high], s: [state.freeSugars, state.satFat]}));
+  // Contributors are ranked by grams (descending) and each carries a % share.
+  const contribs = c.freeSugars.contributors;
+  assert(contribs.length >= 2 && contribs[0].grams >= contribs[1].grams && contribs[0].label.length > 0,
+    'macroConcernForDay: free-sugar contributors are per-meal, ranked by grams descending', JSON.stringify(contribs));
+  assert(contribs.every(function(x){ return x.grams >= 2; }),
+    'macroConcernForDay: a trivial (<2g) contributor is not listed (rounding-noise floor)', JSON.stringify(contribs));
+  assert(contribs.reduce(function(a, x){ return a + x.pct; }, 0) >= 90,
+    'macroConcernForDay: contributor % shares roughly account for the day total', JSON.stringify(contribs));
+  // A day with no meals -> no concern, empty contributors (never throws).
+  const empty = call(ctx, 'macroConcernForDay', [{meals: {}}, 'elena']);
+  assert(empty.freeSugars.high === false && empty.satFat.contributors.length === 0,
+    'macroConcernForDay: an empty day is a no-op (no concern, no contributors)');
+}
+
 // Per-day per-ingredient QUANTITY cap (owner 2026-09-06 "no ~1kg carrots / 6 eggs a day"): a
 // SOFT, bounded, purely-additive score term that grows with how far a candidate pushes a single
 // food's DAILY total past its ceiling. Distinct from ingredientDiversityPenalty (same KEY across
@@ -14372,6 +14404,7 @@ function main(){
   runTest('same-day ingredient variety (soft nudge)', function(){ testDominantIngredientVariety(ctx); });
   runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
   runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
+  runTest('Today macro concern: free sugars / sat fat outlier + contributors (2026-09-14)', function(){ testMacroConcern(ctx); });
   runTest('side/pairing appropriateness (slot + flavor gates, 2026-09-06)', function(){ testSideAndPairingAppropriateness(ctx); });
   runTest('add-meal search ranks Sides/Full by the query (2026-09-14)', function(){ testAddMealSearchRanking(ctx); });
   runTest('options-recipe = one recipe per combo (variety, 2026-09-06)', function(){ testOptionComboVariety(ctx); });
