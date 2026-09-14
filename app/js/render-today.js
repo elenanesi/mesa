@@ -3180,13 +3180,24 @@ function showArcPopover(macro, event){
   detailEl.style.whiteSpace = 'pre-line';
 
   var ringEl = document.querySelector('.ring');
-  if(ringEl){
+  if(ringEl && ringEl.getBoundingClientRect){
     var ringRect = ringEl.getBoundingClientRect();
-    pop.style.left = (ringRect.left + ringRect.width / 2) + 'px';
     pop.style.top = (ringRect.bottom + 8) + 'px';
+    pop.style.left = (ringRect.left + ringRect.width / 2) + 'px';
     pop.style.transform = 'translateX(-50%)';
+    pop.classList.add('show');
+    // Clamp the CENTRE so the (now-measurable) box never overflows the screen edges — the donut
+    // sits on the left, so a wide popover used to spill off the left and crop (owner 2026-09-14).
+    if(pop.getBoundingClientRect){
+      var vw = (typeof window !== 'undefined' && window.innerWidth) ? window.innerWidth : 375;
+      var half = pop.getBoundingClientRect().width / 2;
+      var cx = ringRect.left + ringRect.width / 2;
+      cx = Math.max(half + 8, Math.min(vw - half - 8, cx));
+      pop.style.left = cx + 'px';
+    }
+  } else {
+    pop.classList.add('show');
   }
-  pop.classList.add('show');
 
   // Auto-dismiss after 4s or on next tap outside ring
   clearTimeout(window._arcPopTimer);

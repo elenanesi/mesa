@@ -1055,7 +1055,10 @@ body.gate-open{overflow:hidden;}
 .arc-popover{
   position:fixed;top:0;left:0;background:var(--card);border:1px solid var(--line);border-radius:12px;
   padding:10px 14px;box-shadow:0 6px 20px rgba(73,54,32,.15);font-size:12px;z-index:100;
-  white-space:nowrap;pointer-events:none;opacity:0;transition:opacity .2s;
+  /* Cap the width and allow wrapping (2026-09-14): the sub-nutrient detail can be long, and the
+     popover is anchored under the left-hand donut — nowrap made it overflow off-screen and crop.
+     The JS also clamps its centre within the viewport. */
+  max-width:min(300px,90vw);white-space:normal;pointer-events:none;opacity:0;transition:opacity .2s;
 }
 .arc-popover.show{opacity:1;pointer-events:auto;}
 .arc-popover .ap-label{font-weight:700;font-size:13px;display:flex;align-items:center;gap:6px;}
