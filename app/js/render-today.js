@@ -3153,6 +3153,26 @@ function showArcPopover(macro, event){
       detail += '\n' + fmtKcal(leftKcal) + ' kcal remaining';
     }
   }
+  // Sub-nutrient detail (owner 2026-09-14): Carbs reveals FREE SUGARS, Fat reveals SATURATED FAT
+  // — always shown here so the user can actually SEE sat fat / free sugars (not only when high),
+  // with the top contributing meals; emphasized when it's a real WHO outlier. Meal titles are
+  // catalog/user copy, so escape them before they enter this innerHTML string.
+  if((macro === 'carbs' || macro === 'fat') && typeof macroConcernForDay === 'function'){
+    try{
+      var plan2 = ensureWeekPlan(mondayOfWeek(todayISO()));
+      var day2 = plan2 && plan2.days && plan2.days[todayDayIndex()];
+      var c2 = day2 ? macroConcernForDay(day2, currentProf) : null;
+      var subKey = macro === 'carbs' ? 'freeSugars' : 'satFat';
+      var subLabel = macro === 'carbs' ? 'Free sugars' : 'Saturated fat';
+      if(c2 && c2[subKey]){
+        var d2 = c2[subKey];
+        var subLine = subLabel + ' ' + d2.grams + 'g · ' + d2.pct + '% of energy';
+        detail += '\n\n' + (d2.high ? '<strong>' + subLine + ' · above the WHO line</strong>' : subLine);
+        var tops = d2.contributors.slice(0, 2).map(function(x){ return escapeHtml(x.label) + ' ' + x.grams + 'g'; });
+        if(tops.length) detail += '\nfrom ' + tops.join(' · ');
+      }
+    }catch(e){}
+  }
   // innerHTML (not textContent) so the <strong> emphasis above can render — every other
   // value concatenated into `detail` is a formatted number, never user/HTML input.
   detailEl.innerHTML = detail;
@@ -3173,7 +3193,9 @@ function showArcPopover(macro, event){
   window._arcPopTimer = setTimeout(function(){ pop.classList.remove('show'); }, 4000);
   if(window._arcDismiss) document.removeEventListener('click', window._arcDismiss);
   window._arcDismiss = function(e){
-    if(e.target.closest && e.target.closest('.center, .ring-arc')) return;
+    // Keep the popover open when the tap is another opener (a donut segment, the ring centre,
+    // or now a macro bar row) — those re-open it via showArcPopover's own stopPropagation.
+    if(e.target.closest && e.target.closest('.center, .ring-arc, .macros .mhead')) return;
     pop.classList.remove('show');
     document.removeEventListener('click', window._arcDismiss);
     window._arcDismiss = null;
