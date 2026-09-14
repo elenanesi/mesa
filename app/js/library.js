@@ -3502,6 +3502,10 @@ function recipeToBuilder(id, recipeObj){
     imageKey: safeRecipeImageKey(r.imageKey) || null,
     imagePickerOpen: false,
     slots: recipeSlotList(r).length ? recipeSlotList(r) : [r.slot || 'dinner'],
+    // sideSlots (which meals a role:'side' recipe may ACCOMPANY as a composed side). Absent on
+    // the recipe = pairs with both lunch and dinner (the default); the builder shows that as both
+    // selected. Only meaningful for sides — the "Pairs with" control below reads/writes it.
+    sideSlots: Array.isArray(r.sideSlots) ? r.sideSlots.slice() : null,
     season: recipeSeason(r),
     role: normalizeRecipeRole(r.role),
     occasional: r.occasional === true,
@@ -3517,7 +3521,7 @@ function recipeToBuilder(id, recipeObj){
 
 function openNewRecipeForm(){
   rememberRecipeListReturn();
-  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: '', imagePickerQuery: '', panelOpen: {}};
+  recipeBuilder = {name: '', emoji: '🍽️', imageKey: null, imagePickerOpen: false, slots: ['dinner'], sideSlots: null, season: 'evergreen', role: 'full', occasional: false, time: 20, servings: 1, ingredients: [], optionGroups: [], stepsText: '', pickerQuery: '', imagePickerQuery: '', panelOpen: {}};
   renderRecipeBuilderSheet(false, true);
 }
 
@@ -3668,9 +3672,20 @@ function buildRecipeBuilderSheet(){
     + '</div>';
 
   html += '<details class="recipe-builder-panel"' + recipeBuilderPanelAttrs('planning', false) + '><summary>Planning settings <span>slot · season · role · availability</span></summary><div class="recipe-builder-panel-body">';
-  html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
-    + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
-    + '</div><div class="sub" style="margin-top:4px">Pick every meal this recipe can work for. The first selected slot stays primary for old plans.</div></div>';
+  // A SIDE's key planning question is which meals it can ACCOMPANY (owner 2026-09-14: setting
+  // this was confusing) — so when Role = Side, the meal-slot chips are replaced by a focused
+  // "Pairs with" control that writes the real gate (sideSlots). It appears only for sides, and a
+  // side pairs with BOTH meals by default, so most sides never need to touch it — the smart,
+  // contextual visual the owner asked for, no extra wall of text. Other roles keep "Meal slots".
+  if(normalizeRecipeRole(rb.role) === 'side'){
+    html += '<div class="field"><label>Pairs with</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+      + ['lunch', 'dinner'].map(function(s){ return '<button class="pill ghost chip-preset' + (recipeBuilderSideSlotOn(rb, s) ? ' chipsel' : '') + '" onclick="toggleRecipeBuilderSideSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
+      + '</div><div class="sub" style="margin-top:4px">The meals this side can join a main for. Both by default.</div></div>';
+  } else {
+    html += '<div class="field"><label>Meal slots</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
+      + RECIPE_SLOTS.map(function(s){ return '<button class="pill ghost chip-preset' + (rb.slots.indexOf(s) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeSlot(\'' + s + '\')">' + SLOT_LABEL[s] + '</button>'; }).join('')
+      + '</div><div class="sub" style="margin-top:4px">Pick every meal this recipe can work for. The first selected slot stays primary for old plans.</div></div>';
+  }
 
   html += '<div class="field"><label>Season</label><div class="row" style="gap:7px;flex-wrap:wrap;margin-top:6px">'
     + SEASON_VALUES.map(function(s){ return '<button class="pill ghost chip-preset' + (normalizeSeason(rb.season) === s ? ' chipsel' : '') + '" onclick="setRecipeBuilderSeason(\'' + s + '\')">' + seasonLabel(s) + '</button>'; }).join('')
@@ -4049,6 +4064,24 @@ function toggleRecipeSlot(s){
 }
 function setRecipeBuilderSeason(season){ recipeBuilder.season = normalizeSeason(season); renderRecipeBuilderSheet(); }
 function setRecipeBuilderRole(role){ recipeBuilder.role = normalizeRecipeRole(role); renderRecipeBuilderSheet(); }
+// "Pairs with" (sideSlots) — only shown for role:'side'. null/empty means "both meals" (the
+// default), so a chip reads selected when sideSlots is unset OR lists that slot.
+function recipeBuilderSideSlotOn(rb, slot){
+  return !Array.isArray(rb.sideSlots) || rb.sideSlots.length === 0 || rb.sideSlots.indexOf(slot) !== -1;
+}
+function toggleRecipeBuilderSideSlot(slot){
+  const rb = recipeBuilder;
+  // Materialise "both" (the null default) before narrowing, so the first tap removes ONE meal.
+  let sel = Array.isArray(rb.sideSlots) && rb.sideSlots.length ? rb.sideSlots.slice() : ['lunch', 'dinner'];
+  const idx = sel.indexOf(slot);
+  if(idx === -1) sel.push(slot);
+  else if(sel.length > 1) sel.splice(idx, 1);
+  else { toast('A side must pair with at least one meal'); return; }
+  sel = ['lunch', 'dinner'].filter(function(s){ return sel.indexOf(s) !== -1; });
+  // Both selected == the default -> store null so the recipe stays clean (no redundant field).
+  rb.sideSlots = (sel.length === 2) ? null : sel;
+  renderRecipeBuilderSheet();
+}
 function stepRecipeTime(delta){ recipeBuilder.time = Math.max(2, Math.min(180, recipeBuilder.time + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeServings(delta){ recipeBuilder.servings = Math.max(1, Math.min(12, recipeBuilder.servings + delta)); renderRecipeBuilderSheet(); }
 function stepRecipeIngredientGrams(i, delta){
@@ -4502,6 +4535,11 @@ function saveRecipeBuilder(){
     u: Date.now() // couple-sync newer-wins stamp (js/sync.js:mergeEntryMap) — see state.js's doc block
   };
   if(rb.occasional) recipe.occasional = true;
+  // A narrowed "Pairs with" (only for sides) rides along as sideSlots; both-meals is the default,
+  // stored as null in the builder, so we simply omit the field then (keeps the recipe clean).
+  if(normalizeRecipeRole(rb.role) === 'side' && Array.isArray(rb.sideSlots) && rb.sideSlots.length && rb.sideSlots.length < 2){
+    recipe.sideSlots = ['lunch', 'dinner'].filter(function(s){ return rb.sideSlots.indexOf(s) !== -1; });
+  }
   const optionGroupsForSave = buildRecipeOptionGroupsForSave(rb);
   if(optionGroupsForSave) recipe.optionGroups = optionGroupsForSave;
   const chosenImageKey = safeRecipeImageKey(rb.imageKey || '');
