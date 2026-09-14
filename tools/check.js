@@ -13648,7 +13648,7 @@ function testTodayFocusAndSeasonalTextMap(){
   const css = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
   assert(renderSrc.indexOf('renderEatenStrip()') === -1 && css.indexOf('#todayRecordsCard .logitem') !== -1,
     'Today eaten list: one compact record list remains, with no duplicate chip-strip renderer', '');
-  const todayTokens = ['--today-art-heading:', '--today-art-kicker:', '--today-card-title:', '--today-card-detail:', '--today-note-text:', '--today-note-bg:', '--today-note-border:'];
+  const todayTokens = ['--today-art-heading:', '--today-art-kicker:', '--art-body:', '--today-card-title:', '--today-card-detail:', '--today-note-text:', '--today-note-bg:', '--today-note-border:'];
   for(let month = 1; month <= 12; month++){
     const match = css.match(new RegExp('body\\[data-month="' + month + '"\\]\\{([^}]*)\\}'));
     assert(!!match && todayTokens.every(function(token){ return match[1].indexOf(token) !== -1; }),
@@ -13656,6 +13656,11 @@ function testTodayFocusAndSeasonalTextMap(){
   }
   assert(css.indexOf('#todayPlanNote') !== -1 && css.indexOf('color:var(--today-note-text)!important') !== -1,
     'Today profile note: uses its mapped contrast color rather than the old broad white subtitle rule', '');
+  assert(css.indexOf('.screen > [id$="Body"] > :is(h1,h2,.sub,.eyebrow)') !== -1 && css.indexOf('color:var(--art-body)') !== -1,
+    'seasonal text map: every screen heading and subtitle rendered directly on watercolor uses the scoped art palette', '');
+  assert(css.indexOf('body[data-month="11"]') !== -1 && css.indexOf('--art-text-shadow:0 1px 9px rgba(45,28,22,.56)') !== -1
+      && css.indexOf('body[data-month="12"]') !== -1 && css.indexOf('--art-text-shadow:0 1px 9px rgba(22,49,34,.58)') !== -1,
+    'seasonal text map: dark November and December paintings use a dark halo behind their light watercolor text', '');
 }
 
 function testTodayGoalSummaryRemoved(){
