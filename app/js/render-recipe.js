@@ -398,11 +398,11 @@ const RECIPE_IMAGE_KEYS = [
   'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast',
   'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos',
   'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast',
-  'slow-braised-beef'
+  'slow-braised-beef', 'sesame-asian-bowl', 'roast-grill-plate'
 ];
 
 const RECIPE_IMAGE_GROUPS = [
-  {label: 'Everyday meals', keys: ['default-recipe', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main']},
+  {label: 'Everyday meals', keys: ['default-recipe', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'sesame-asian-bowl', 'roast-grill-plate']},
   {label: 'Breakfast, snacks & sweets', keys: ['breakfast-bowl', 'french-toast', 'pancakes', 'onigiri', 'snack-board', 'dessert-sweets', 'ice-cream']},
   {label: 'Named dishes', keys: ['ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'nachos', 'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef']}
 ];
@@ -438,7 +438,9 @@ function recipeImageLabel(key){
     'yogurt-cake': 'Yogurt cake',
     'egg-dishes': 'Egg dishes',
     'egg-avocado-bacon-beans-toast': 'Egg & avocado toast',
-    'slow-braised-beef': 'Slow-braised beef'
+    'slow-braised-beef': 'Slow-braised beef',
+    'sesame-asian-bowl': 'Sesame Asian bowl',
+    'roast-grill-plate': 'Roast & grill plate'
   };
   return labels[key] || String(key || '').replace(/-/g, ' ');
 }

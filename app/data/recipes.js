@@ -432,6 +432,7 @@ const RECIPES_DB = {
   },
   'turkey-roasted-veg': {
     title: 'Turkey & roasted veg', emoji: '🍗', slot: 'dinner', role: 'main',
+    imageKey: 'roast-grill-plate',
     slots: ['dinner', 'lunch'],
     styles: ['lowcarb', 'highprotein'], time: 30,
     ingredients: [['turkey-breast', 220], ['courgette', 150], ['bell-pepper', 100], ['olive-oil', 15]],
@@ -470,6 +471,7 @@ const RECIPES_DB = {
   // double up on starch/veg once a side is added; the id is kept stable for the D1 override.
   'pork-loin-farro-veg': {
     title: 'Pork loin', emoji: '🍖', slot: 'dinner', role: 'main',
+    imageKey: 'roast-grill-plate',
     slots: ['dinner'],
     styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['pork-loin', 150], ['olive-oil', 8]],
@@ -714,6 +716,7 @@ const RECIPES_DB = {
   },
   'chicken-satay': {
     title: 'Chicken satay', emoji: '🍢', slot: 'dinner', role: 'full',
+    imageKey: 'roast-grill-plate',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['chicken-breast', 170], ['almonds', 20], ['soy-sauce', 10], ['rice', 60], ['cucumber', 80]],
     toTaste: ['lime', 'ginger', 'chilli if wanted'],
@@ -723,6 +726,7 @@ const RECIPES_DB = {
   },
   'soy-ginger-chicken': {
     title: 'Soy ginger chicken', emoji: '🍗', slot: 'dinner', role: 'full',
+    imageKey: 'sesame-asian-bowl',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['chicken-breast', 170], ['soy-sauce', 15], ['ginger', 8], ['broccoli', 160], ['rice', 60], ['olive-oil', 6]],
     toTaste: ['garlic'],
@@ -759,6 +763,7 @@ const RECIPES_DB = {
   // distinguish it from the plain "Pork loin" main.
   'filetto-maiale': {
     title: 'Pork tenderloin with mushrooms', emoji: '🍖', slot: 'dinner', role: 'main',
+    imageKey: 'roast-grill-plate',
     slots: ['dinner'],
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['pork-loin', 170], ['mushrooms', 120], ['olive-oil', 10]],
@@ -844,6 +849,7 @@ const RECIPES_DB = {
   },
   'tofu-noodles': {
     title: 'Sesame-ginger tofu noodles', emoji: '🍜', slot: 'dinner', role: 'full',
+    imageKey: 'sesame-asian-bowl',
     styles: ['balanced'], time: 22,
     ingredients: [['tofu', 160], ['egg-noodles', 70], ['broccoli', 120], ['carrots', 80], ['soy-sauce', 15], ['olive-oil', 8]],
     toTaste: ['ginger', 'garlic', 'toasted sesame', 'chilli', 'lime'],
@@ -1253,6 +1259,7 @@ const RECIPES_DB = {
   },
   'cena-giapponese': {
     title: 'Japanese sushi dinner', emoji: '🍣', slot: 'dinner', role: 'full',
+    imageKey: 'onigiri',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 60,
@@ -1452,6 +1459,7 @@ const RECIPES_DB = {
     // Panel recipe pass (2026-08-30): was a fibre bomb (28g > 25g GI-distress flag) — lentils
     // 220 -> 170 brings it to ~23g, still a robust high-fibre bowl; chef rename + blistered greens.
     title: 'Herby lentil & quinoa, blistered greens', emoji: '🫘', slot: 'dinner', role: 'full',
+    imageKey: 'cooked-vegetables',
     season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 28,
     ingredients: [['cooked-lentils', 170], ['quinoa-dry', 55], ['broccoli', 160], ['spinach', 100], ['olive-oil', 8]],
     toTaste: ['lemon', 'cumin', 'parsley'],
@@ -1460,6 +1468,7 @@ const RECIPES_DB = {
   },
   'chickpea-potato-veg-tray': {
     title: 'Chickpea, potato & vegetable traybake', emoji: '🥔', slot: 'dinner', role: 'full',
+    imageKey: 'cooked-vegetables',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 35,
     ingredients: [['chickpeas', 180], ['potatoes', 220], ['courgette', 160], ['bell-pepper', 120], ['olive-oil', 10]],
     toTaste: ['smoked paprika', 'oregano', 'chilli flakes', 'lemon', 'black pepper'],
@@ -1476,6 +1485,7 @@ const RECIPES_DB = {
   },
   'cannellini-potato-greens': {
     title: 'Tuscan white bean, potato & greens', emoji: '🥬', slot: 'dinner', role: 'full',
+    imageKey: 'cooked-vegetables',
     slots: ['lunch', 'dinner'], styles: ['balanced', 'highprotein', 'lowcarb'], time: 30,
     ingredients: [['cannellini-beans', 220], ['potatoes', 200], ['spinach', 140], ['cherry-tomatoes', 120], ['olive-oil', 8]],
     toTaste: ['rosemary', 'garlic', 'chilli flakes', 'lemon'],
@@ -1487,6 +1497,7 @@ const RECIPES_DB = {
 
   'brazil-nuts-apple': {
     title: 'Snack: 2 Brazil nuts + apple', emoji: '🌰', slot: 'snack', role: 'full',
+    imageKey: 'snack-board',
     season: 'winter/autumn',
     styles: ['balanced'], time: 2,
     ingredients: [['brazil-nuts', 10], ['apples', 150]],
@@ -1516,6 +1527,7 @@ const RECIPES_DB = {
     // above. season pinned evergreen (mixed-berries alone would otherwise lock this to
     // spring/summer).
     title: 'Snack: Cottage cheese & berries', emoji: '🫐', slot: 'snack', role: 'full', season: 'evergreen',
+    imageKey: 'snack-board',
     styles: ['balanced', 'highprotein'], time: 3,
     ingredients: [['cottage-cheese', 150], ['mixed-berries', 100]],
     toTaste: [],
@@ -1611,6 +1623,7 @@ const RECIPES_DB = {
     // Panel Wave 4 (2026-09-05): still 70.3% fat-cal. Feta 40->25g, cherry tomatoes bulked
     // 80->140g. fat% 70.3 -> ~64.
     title: 'Snack: Feta, tomato & olives', emoji: '🫒', slot: 'snack', role: 'full',
+    imageKey: 'snack-board',
     season: 'evergreen',
     styles: ['balanced', 'lowcarb'], time: 3,
     ingredients: [['feta-cheese', 25], ['olives', 30], ['cherry-tomatoes', 140]],
@@ -1756,6 +1769,7 @@ const RECIPES_DB = {
   // defaults to Coca-Cola ZERO (no sugar) with full-sugar Coke as an option (its optionGroup).
   'mcd-big-mac': {
     title: 'Big Mac', emoji: '🍔', slot: 'snack', role: 'full',
+    imageKey: 'fast-food-menu',
     slots: ['snack', 'side'], occasional: true,
     styles: ['balanced'], time: 3,
     ingredients: [['big-mac', 215]],
@@ -1774,6 +1788,7 @@ const RECIPES_DB = {
   },
   'mcd-drink': {
     title: 'Soft drink', emoji: '🥤', slot: 'snack', role: 'full',
+    imageKey: 'fast-food-menu',
     slots: ['snack', 'side'], occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [],
@@ -1833,6 +1848,7 @@ const RECIPES_DB = {
   },
   'bk-drink': {
     title: 'Soft drink', emoji: '🥤', slot: 'snack', role: 'full',
+    imageKey: 'fast-food-menu',
     slots: ['snack', 'side'], occasional: true,
     styles: ['balanced'], time: 1,
     ingredients: [],
@@ -2033,6 +2049,7 @@ const RECIPES_DB = {
   },
   'caponata-ceci': {
     title: 'Sicilian aubergine caponata with chickpeas', emoji: '🍆', slot: 'dinner', role: 'full',
+    imageKey: 'cooked-vegetables',
     season: 'evergreen', styles: ['balanced'], time: 30,
     ingredients: [['aubergine', 200], ['chickpeas', 150], ['tomato-passata', 120], ['olives', 20], ['capers', 10], ['olive-oil', 12]],
     toTaste: ['garlic', 'oregano', 'basil', 'chilli', 'a splash of balsamic'],
@@ -2120,6 +2137,7 @@ const RECIPES_DB = {
   // almond-flour. Sources credited in each recipe's notes via the originating creator.
   'peanut-tofu-noodles': {
     title: 'Peanut butter tofu noodles', emoji: '🍜', slot: 'dinner', role: 'full',
+    imageKey: 'sesame-asian-bowl',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['egg-noodles', 85], ['tofu', 130], ['peanut-butter', 26], ['carrots', 60], ['bell-pepper', 60], ['soy-sauce', 15], ['honey', 6], ['olive-oil', 5]],
     toTaste: ['garlic', 'ginger', 'lime', 'chilli', 'sesame', 'coriander'],
@@ -2192,6 +2210,7 @@ const RECIPES_DB = {
   },
   'crispy-ricepaper-sushi': {
     title: 'Crispy rice-paper sushi rolls', emoji: '🍣', slot: 'dinner', role: 'full',
+    imageKey: 'onigiri',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['rice-paper', 44], ['nori', 9], ['tofu', 150], ['rice', 55], ['avocado', 50], ['cucumber', 60], ['carrots', 40], ['soy-sauce', 12], ['olive-oil', 6]],
     toTaste: ['ginger', 'sesame', 'chilli', 'lime'],
@@ -2237,6 +2256,7 @@ const RECIPES_DB = {
   // mascarpone, cornstarch, burrata (diet lists wired in library.js).
   'broccoli-ricotta-patties': {
     title: 'Broccoli & ricotta melty patties', emoji: '🥦', slot: 'dinner', role: 'main',
+    imageKey: 'cooked-vegetables',
     season: 'winter/autumn', styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['broccoli', 200], ['ricotta', 100], ['scamorza', 45], ['breadcrumbs', 15]],
     toTaste: ['black pepper', 'salt', 'garlic'],
@@ -2246,6 +2266,7 @@ const RECIPES_DB = {
   },
   'pumpkin-gnocchi-2ing': {
     title: 'Two-ingredient pumpkin gnocchi', emoji: '🎃', slot: 'dinner', role: 'full',
+    imageKey: 'pasta',
     season: 'winter/autumn', styles: ['balanced'], time: 40,
     ingredients: [['pumpkin', 250], ['00-flour', 98], ['olive-oil', 8], ['parmesan', 15]],
     toTaste: ['sage', 'nutmeg', 'black pepper', 'salt'],
@@ -2379,6 +2400,7 @@ const RECIPES_DB = {
   },
   'crispy-tempeh-rice-bowl': {
     title: 'Crispy tempeh & charred broccoli rice bowl', emoji: '🥢', slot: 'dinner', role: 'full',
+    imageKey: 'sesame-asian-bowl',
     season: 'evergreen',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 25,
@@ -2437,6 +2459,7 @@ const RECIPES_DB = {
   // one seasonal ingredient (green-beans) would otherwise season-lock the pork dish.
   'turkey-rice-pak-choy-bowl': {
     title: 'Turkey, rice & pak choy bowl', emoji: '🍚', slot: 'dinner', role: 'full', season: 'evergreen',
+    imageKey: 'sesame-asian-bowl',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['turkey-breast', 180], ['rice', 70], ['pak-choy', 200], ['carrots', 80], ['soy-sauce', 15], ['olive-oil', 6]],
@@ -2457,6 +2480,7 @@ const RECIPES_DB = {
   },
   'pork-loin-potatoes-green-beans': {
     title: 'Pork loin, roast potatoes & green beans', emoji: '🥔', slot: 'dinner', role: 'full', season: 'evergreen',
+    imageKey: 'roast-grill-plate',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['pork-loin', 210], ['potatoes', 260], ['green-beans', 100], ['olive-oil', 5]],
