@@ -2505,6 +2505,23 @@ function testIngredientSubCandidates(ctx){
   run(ctx, "var __s=" + snap + "; PROF.elena.diets=__s.d; PROF.elena.avoid=__s.a; PROF.elena.avoidFoods=__s.af;");
 }
 
+// Feature #6 (owner 2026-09-16): a recipe's optional sideIngredients:[foodId] list splits the
+// meal-detail ingredient list into a "main" group and a "Toppings" group (both swappable). The
+// poke bowls use it. A recipe without the field renders one flat list (no divider).
+function testIngredientMainSideSplit(ctx){
+  const html = call(ctx, 'substitutableIngredientListHtml', ['poke-kukio', {}, null, 1]);
+  assert(typeof html === 'string' && html.indexOf('ing-side-divider') !== -1 && html.indexOf('Toppings') !== -1,
+    'substitutableIngredientListHtml: a recipe with sideIngredients renders a "Toppings" divider', (html || '').slice(0, 120));
+  const mainAt = html.indexOf('Salmon fillet');            // a main ingredient
+  const divAt = html.indexOf('ing-side-divider');
+  const topAt = html.indexOf('Mango');                     // a topping (in sideIngredients)
+  assert(mainAt !== -1 && divAt !== -1 && topAt !== -1 && mainAt < divAt && divAt < topAt,
+    'substitutableIngredientListHtml: main ingredients render before the Toppings divider, toppings after', JSON.stringify({mainAt: mainAt, divAt: divAt, topAt: topAt}));
+  const flat = call(ctx, 'substitutableIngredientListHtml', ['omelette', {}, null, 1]);
+  assert(flat.indexOf('ing-side-divider') === -1,
+    'substitutableIngredientListHtml: a recipe WITHOUT sideIngredients renders no Toppings divider (byte-identical grouping)', (flat || '').slice(0, 120));
+}
+
 // Fork-model migration (owner spec 2026-08-30): a legacy in-place built-in override
 // (recipeOverrides[id], from before the fork model) is converted on boot into a cr- fork carrying
 // the user's edit, with the original returned to the market — so a previously-edited recipe shows
@@ -14684,6 +14701,7 @@ function main(){
   runTest('meal: per-component PLAN override (remove/rescale a sub-recipe while still planned)', function(){ testMealPerComponentPlan(ctx); });
   runTest('meal: per-occurrence ingredient substitution (#6 — this-day-only ingredient swap)', function(){ testIngredientSubstitution(ctx); });
   runTest('meal: ingredient-sub candidates are like-for-like + diet/avoid gated (#6)', function(){ testIngredientSubCandidates(ctx); });
+  runTest('meal: recipe sideIngredients split the list into main + Toppings (#6)', function(){ testIngredientMainSideSplit(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });

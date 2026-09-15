@@ -1076,6 +1076,50 @@ const FOODS = {
     kcal: 349, protein: 4.0, carbs: 80.6, fat: 1.2, satFat: 0.3, fiber: 53.1, sugars: 2.2, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Pantry', iconKey: 'cinnamon',
     src: 'USDA FDC-style cinnamon, ground; kcal per 4/4/9 (used in tiny to-taste amounts)'
+  },
+
+  // ---- Poke-bowl ingredients (added 2026-09-16 for the Kukio / Holy Crab / Okinawa Green bowls) ----
+  'mango': {
+    name: 'Mango, raw', per: 100, unit: 'g', avgG: 200,
+    kcal: 63, protein: 0.8, carbs: 14.0, fat: 0.4, satFat: 0.1, fiber: 1.6, sugars: 13.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Produce', sub: 'fruit', season: 'spring/summer',
+    src: 'USDA FDC 169910-style (mango, raw); kcal per 4/4/9'
+  },
+  'surimi': {
+    name: 'Surimi / crab stick', per: 100, unit: 'g',
+    kcal: 97, protein: 8.0, carbs: 14.0, fat: 1.0, satFat: 0.2, fiber: 0, sugars: 5.0, freeSugars: 4.0, sugarQuality: 'added/free',
+    flags: [], cat: 'Protein',
+    src: 'USDA FDC 174204-style (surimi, imitation crab); kcal per 4/4/9'
+  },
+  'wakame-salad': {
+    name: 'Wakame seaweed salad', per: 100, unit: 'g',
+    kcal: 80, protein: 2.0, carbs: 9.0, fat: 4.0, satFat: 0.6, fiber: 1.5, sugars: 4.0, freeSugars: 3.0, sugarQuality: 'added/free',
+    flags: [], cat: 'Produce',
+    src: 'Seasoned wakame seaweed salad (with sesame oil + a little sugar), representative table; kcal per 4/4/9'
+  },
+  'tobiko': {
+    name: 'Tobiko (flying-fish roe)', per: 100, unit: 'g',
+    kcal: 136, protein: 20.0, carbs: 5.0, fat: 4.0, satFat: 1.0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: [], cat: 'Protein',
+    src: 'Fish-roe representative table (tobiko/caviale); kcal per 4/4/9'
+  },
+  'teriyaki-sauce': {
+    name: 'Teriyaki sauce', per: 100, unit: 'ml',
+    kcal: 76, protein: 3.0, carbs: 16.0, fat: 0, satFat: 0, fiber: 0, sugars: 14.0, freeSugars: 13.0, sugarQuality: 'added/free',
+    flags: [], cat: 'Pantry',
+    src: 'USDA FDC 174046-style (teriyaki sauce, ready-to-serve); kcal per 4/4/9'
+  },
+  'poppy-seeds': {
+    name: 'Poppy seeds', per: 100, unit: 'g',
+    kcal: 562, protein: 18.0, carbs: 28.0, fat: 42.0, satFat: 4.5, fiber: 19.5, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['highFiber'], cat: 'Pantry',
+    src: 'USDA FDC 170188-style (poppy seeds); kcal per 4/4/9 (used in tiny topping amounts)'
+  },
+  'goma-dressing': {
+    name: 'Goma (sesame) dressing', per: 100, unit: 'g',
+    kcal: 383, protein: 5.0, carbs: 12.0, fat: 35.0, satFat: 5.0, fiber: 2.0, sugars: 9.0, freeSugars: 8.0, sugarQuality: 'added/free',
+    flags: [], cat: 'Pantry',
+    src: 'Japanese creamy sesame (goma) dressing, representative table (sesame paste + soy + a little sugar/oil); kcal per 4/4/9'
   }
 
 };

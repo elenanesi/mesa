@@ -2228,17 +2228,52 @@ const RECIPES_DB = {
     avoid: ['lactose']
   },
   'cinnamon-roll': {
-    // A built-in version of the household cinnamon roll: it is a manual/market treat,
-    // not an automatic-plan candidate. Existing custom rolls keep any image chosen by
-    // their author, while the title-based art fallback gives unassigned ones this painting.
+    // The household cinnamon roll (owner's own `cr-cinnamon-rolls` recipe, 2026-09-16): a
+    // flour-forward enriched dough with milk, butter, egg and a cinnamon-sugar swirl — no
+    // cream-cheese frosting. Batch of 12; a manual/market treat, not an automatic-plan
+    // candidate. Existing custom rolls keep any image chosen by their author.
     title: 'Cinnamon roll', emoji: '🍥', slot: 'breakfast', role: 'full',
     imageKey: 'cinnamon-roll', season: 'winter/autumn', slots: ['breakfast', 'snack'], styles: ['balanced'], time: 28,
-    occasional: true,
-    ingredients: [['00-flour', 45], ['milk', 25], ['eggs', 20], ['butter', 14], ['granulated-sugar', 16], ['cream-cheese', 15]],
-    toTaste: ['cinnamon', 'vanilla', 'yeast', 'pinch of salt'],
-    steps: ['Make a soft enriched dough with the flour, milk, egg and a little butter; let it rise until puffy.', 'Roll it out, brush with the remaining butter and scatter with sugar and cinnamon.', 'Roll into a spiral, bake at 180°C until deeply golden, then finish with a small cream-cheese and vanilla drizzle.'],
+    occasional: true, servings: 12,
+    ingredients: [['00-flour', 615], ['granulated-sugar', 150], ['butter', 75], ['milk', 120], ['eggs', 60], ['cinnamon', 15]],
+    toTaste: ['vanilla', 'yeast', 'pinch of salt'],
+    steps: ['Make a soft enriched dough with the flour, milk, egg, a little sugar and butter; let it rise until puffy.', 'Roll it out, brush with butter and scatter with the cinnamon and remaining sugar.', 'Roll into a spiral, cut into ~12 rolls and bake at 180°C until deeply golden.'],
     tags: [],
     avoid: ['gluten', 'lactose']
+  },
+  // ---- Poke bowls (owner request 2026-09-16, from restaurant menu photos) ----
+  // Full lunch/dinner bowls: a rice + fish/seafood base (the "main") plus a set of toppings
+  // (sideIngredients — the fruit/veg/dressing). role:'full' (a complete meal, no side needed);
+  // season evergreen (poke is year-round). Macros land in the lunch band; sat fat kept modest.
+  'poke-kukio': {
+    title: 'Kukio poke bowl', emoji: '🍣', slot: 'lunch', role: 'full',
+    imageKey: 'sesame-asian-bowl', season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced'], time: 15,
+    ingredients: [['rice', 65], ['salmon-fillet', 35], ['sea-bass-fillet', 30], ['tuna-steak', 35], ['edamame', 40], ['mango', 40], ['avocado', 40], ['carrots', 30], ['goma-dressing', 18]],
+    sideIngredients: ['edamame', 'mango', 'avocado', 'carrots', 'goma-dressing'],
+    toTaste: ['soy sauce', 'lime'],
+    steps: ['Cook and lightly season the sushi rice, then cool.', 'Cube the salmon, sea bass and tuna; slice the mango and avocado; julienne the carrots.', 'Bowl the rice, arrange the fish and toppings, scatter the edamame and finish with goma dressing.'],
+    tags: ['heart', 'omega3'],
+    avoid: ['gluten']
+  },
+  'poke-holy-crab': {
+    title: 'Holy Crab poke bowl', emoji: '🦀', slot: 'lunch', role: 'full',
+    imageKey: 'sesame-asian-bowl', season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced'], time: 20,
+    ingredients: [['rice', 65], ['prawns', 55], ['cornstarch', 10], ['olive-oil', 6], ['surimi', 45], ['avocado', 35], ['cucumber', 40], ['edamame', 35], ['chia-seeds', 8], ['mayonnaise', 12]],
+    sideIngredients: ['avocado', 'cucumber', 'edamame', 'chia-seeds', 'mayonnaise'],
+    toTaste: ['sesame', 'lime'],
+    steps: ['Cook and cool the sushi rice.', 'Lightly coat the prawns in cornstarch and pan-fry in the olive oil until crisp (tempura-style).', 'Bowl the rice, add the surimi, tempura prawns and toppings, scatter the chia and finish with a little mayo.'],
+    tags: [],
+    avoid: ['shellfish']
+  },
+  'poke-okinawa-green': {
+    title: 'Okinawa Green poke bowl', emoji: '🥑', slot: 'lunch', role: 'full',
+    imageKey: 'sesame-asian-bowl', season: 'evergreen', slots: ['lunch', 'dinner'], styles: ['balanced'], time: 15,
+    ingredients: [['rice', 65], ['salmon-fillet', 60], ['avocado', 45], ['edamame', 45], ['wakame-salad', 40], ['tobiko', 15], ['teriyaki-sauce', 15], ['poppy-seeds', 4]],
+    sideIngredients: ['avocado', 'edamame', 'wakame-salad', 'tobiko', 'teriyaki-sauce', 'poppy-seeds'],
+    toTaste: ['sesame'],
+    steps: ['Cook and cool the sushi rice.', 'Cube the salmon and avocado.', 'Bowl the rice, arrange the salmon, avocado, edamame and wakame, spoon over teriyaki and top with tobiko and poppy seeds.'],
+    tags: ['heart', 'omega3'],
+    avoid: ['gluten']
   },
   'hot-dog': {
     title: 'Classic hot dog', emoji: '🌭', slot: 'dinner', role: 'full', occasional: true,

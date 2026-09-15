@@ -389,8 +389,13 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale, extras,
     for(let j = 0; j < subList.length; j++){ if(!consumed[j] && subList[j] && subList[j].from === fromId){ consumed[j] = true; return subList[j]; } }
     return null;
   }
-  let html = '<li class="ing-sub-hint">Tap an ingredient to change the amount or swap it, or ✕ to leave it out — just for today.</li>';
-  html += effOrig.map(function(ing){
+  // Owner 2026-09-16: a recipe may split its ingredients into "main" and "toppings/sides" via
+  // an optional sideIngredients:[foodId] list, so the meal reads as a base + toppings (e.g. a
+  // poke bowl). Both groups are fully swappable/removable — the split is for legibility. A
+  // recipe without the field renders as one flat "main" list, byte-identical to before.
+  const sideSet = {};
+  (Array.isArray(src.sideIngredients) ? src.sideIngredients : []).forEach(function(id){ sideSet[id] = true; });
+  function ingRowHtml(ing){
     const fromId = ing[0];
     const s = subFor(fromId);
     const removed = !!(s && s.remove);
@@ -425,7 +430,12 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale, extras,
       +   '<button class="ing-sub-x" onclick="removeMealIngredient(\'' + fromId + '\')" aria-label="Leave out ' + name + ' today">✕</button>'
       + '</span>'
       + '</li>';
-  }).join('');
+  }
+  let html = '<li class="ing-sub-hint">Tap an ingredient to change the amount or swap it, or ✕ to leave it out — just for today.</li>';
+  const mainIng = effOrig.filter(function(ing){ return !sideSet[ing[0]]; });
+  const toppingIng = effOrig.filter(function(ing){ return sideSet[ing[0]]; });
+  html += mainIng.map(ingRowHtml).join('');
+  if(toppingIng.length) html += '<li class="ing-side-divider">Toppings</li>' + toppingIng.map(ingRowHtml).join('');
   (src.toTaste || []).forEach(function(t){
     html += '<li><span>' + escapeHtml(capitalizeFirst(t)) + '</span><span>to taste</span></li>';
   });
@@ -802,7 +812,7 @@ function safeRecipeImageAsset(v){
   return /^assets\/(?:recipes|ingredients)\/[a-z0-9][a-z0-9-]*\.png$/.test(v) ? v : '';
 }
 
-const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish', 'sea-bass-fillet'];
+const FISH_RECIPE_INGREDIENT_IDS = ['salmon-fillet', 'tuna-in-olive-oil', 'tuna', 'tuna-steak', 'cod', 'prawns', 'clams', 'mussels', 'sole-fish', 'sea-bass-fillet', 'surimi', 'tobiko'];
 
 // task (options recipes, part 2b): the IMPLICIT favourite — the choice this person most
 // recently LOGGED for `recipeKey`'s `groupKey`, read from logHistory (newest date first, and
