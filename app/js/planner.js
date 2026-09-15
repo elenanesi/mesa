@@ -1431,6 +1431,31 @@ function removeEntryIngredientForDay(weekStartDate, dayIndex, slot, person, from
   });
 }
 
+// Per-occurrence AMOUNT change (feature #6, owner follow-up 2026-09-16): set THIS ingredient's
+// grams for today only, keeping any current swap target. `batchGrams` is in the recipe's own
+// ingredient-list (batch) basis — the UI converts the per-serving amount the user edits. If the
+// amount lands back on the original grams and there's no swap, this reverts (no no-op sub stored).
+function setEntryIngredientAmount(weekStartDate, dayIndex, slot, person, fromFoodId, batchGrams){
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
+    const effective = recipeEffectiveIngredients(RECIPES_DB[entry.recipeId], entry.opts);
+    const orig = effective.filter(function(ing){ return ing[0] === fromFoodId; })[0];
+    if(!orig) return false;
+    const g = Math.max(1, Math.round(batchGrams));
+    const existing = Array.isArray(entry.ingredientSubs) ? entry.ingredientSubs.filter(function(s){ return s && s.from === fromFoodId; })[0] : null;
+    // Keep any current swap target (changing the amount of an already-swapped ingredient); a
+    // removed ingredient has no amount, so a removal is treated as no current target.
+    const to = (existing && !existing.remove && typeof existing.to === 'string') ? existing.to : fromFoodId;
+    const rest = Array.isArray(entry.ingredientSubs) ? entry.ingredientSubs.filter(function(s){ return s && s.from !== fromFoodId; }) : [];
+    if(to === fromFoodId && Math.abs(g - orig[1]) < 0.5){ // back to the recipe's own amount, no swap -> revert
+      if(rest.length) entry.ingredientSubs = rest; else delete entry.ingredientSubs;
+      return;
+    }
+    rest.push({from: fromFoodId, to: to, grams: g});
+    entry.ingredientSubs = rest;
+  });
+}
+
 // Revert one per-occurrence change (swap OR removal) back to the recipe's original ingredient.
 // Returns false (aborting the whole mutation, incl. the shared-mirror) when there was nothing to undo.
 function removeEntryIngredientSub(weekStartDate, dayIndex, slot, person, fromFoodId){

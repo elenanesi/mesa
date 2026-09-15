@@ -2429,6 +2429,32 @@ function testIngredientSubstitution(ctx){
   assert(survivors.length >= 1, 'removeEntryIngredientForDay: at least one ingredient always survives', JSON.stringify(survivors));
   run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.elena = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; })();");
 
+  // amount change (owner follow-up): setEntryIngredientAmount overrides grams; nutrition reflects
+  // it; returning to the original grams (no swap) reverts. Fixture: mixed-berries orig 50g batch.
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.elena = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; })();");
+  const baseK = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]).kcal;
+  assert(call(ctx, 'setEntryIngredientAmount', [wk, 0, 'lunch', 'elena', 'mixed-berries', 150]) === true,
+    'setEntryIngredientAmount: setting a new amount returns true', '');
+  const amtComps = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(amtComps[0].ingredientSubs && amtComps[0].ingredientSubs[0].grams === 150 && amtComps[0].ingredientSubs[0].to === 'mixed-berries',
+    'setEntryIngredientAmount: stores {from, to:from, grams} on the base component', JSON.stringify(amtComps[0].ingredientSubs));
+  const amtK = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]).kcal;
+  assert(amtK > baseK + 1, 'planEntryNutrition: more of an ingredient raises the honest total', 'base=' + baseK + ' amt=' + amtK);
+  // amount can ride on top of a swap (change the swapped ingredient's grams, keep the swap)
+  call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'bananas']);
+  call(ctx, 'setEntryIngredientAmount', [wk, 0, 'lunch', 'elena', 'mixed-berries', 120]);
+  const both = (call(ctx, 'planEntryComponents', [entry('lunch', 'elena')])[0].ingredientSubs || [])[0];
+  assert(both && both.to === 'bananas' && both.grams === 120,
+    'setEntryIngredientAmount: keeps an existing swap target while changing the amount', JSON.stringify(both));
+  // back to the original amount with no swap -> reverts (no no-op sub)
+  call(ctx, 'removeEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries']);
+  assert(call(ctx, 'setEntryIngredientAmount', [wk, 0, 'lunch', 'elena', 'mixed-berries', 50]) === true, 'setEntryIngredientAmount: back-to-original call returns true', '');
+  assert(!entry('lunch', 'elena').ingredientSubs, 'setEntryIngredientAmount: original amount + no swap reverts (no no-op sub stored)', JSON.stringify(entry('lunch', 'elena').ingredientSubs));
+
+  // piece-count formatter (owner 2026-09-16): whole -> integer, else one decimal.
+  assert(call(ctx, 'fmtIngCount', [2]) === '2' && call(ctx, 'fmtIngCount', [2.0]) === '2', 'fmtIngCount: a whole count shows as an integer (2, not 2.0)', '');
+  assert(call(ctx, 'fmtIngCount', [3.6]) === '3.6', 'fmtIngCount: a fractional count keeps one decimal', call(ctx, 'fmtIngCount', [3.6]));
+
   // picking the ORIGINAL ingredient again reverts rather than storing a no-op sub.
   call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'bananas']);
   assert(call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'mixed-berries']) === true,

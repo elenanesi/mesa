@@ -167,6 +167,17 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .ing-sub-undo:active{background:rgba(176,146,105,.14);}
 .ing-sub-leaveout{margin-top:12px;width:100%;box-sizing:border-box;border:1px solid rgba(176,146,105,.4);background:transparent;color:var(--ink-soft);font-size:14px;font-weight:600;border-radius:12px;padding:11px;cursor:pointer;}
 .ing-sub-leaveout:active{background:rgba(176,146,105,.10);}
+/* Piece-food quantity: a count with a quiet gram sub-line (owner 2026-09-16). */
+.ing-qty-stack{display:inline-flex;flex-direction:column;align-items:flex-end;line-height:1.15;}
+.ing-qty-main{font-variant-numeric:tabular-nums;}
+.ing-qty-sub{font-size:10.5px;color:var(--muted);}
+/* "Amount today" stepper in the ingredient sheet. */
+.ing-amount-row{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:6px 0 12px;padding:10px 12px;background:rgba(176,146,105,.08);border-radius:12px;}
+.ing-amount-label{font-size:14px;font-weight:600;color:var(--ink-soft);}
+.ing-amount-ctrl{display:inline-flex;align-items:center;gap:12px;}
+.ing-amount-val{min-width:74px;text-align:center;font-size:14px;font-weight:700;color:var(--ink);font-variant-numeric:tabular-nums;}
+.ing-amount-btn{width:36px;height:36px;border-radius:50%;border:1px solid rgba(176,146,105,.4);background:var(--paper,#fff);color:var(--ink);font-size:18px;line-height:1;cursor:pointer;}
+.ing-amount-btn:active{background:rgba(176,146,105,.14);}
 /* Cook-from-pantry "which meal today?" chooser (owner 2026-09-15). */
 .pantry-meal-choices{display:flex;flex-direction:column;gap:8px;margin-top:12px;}
 .pantry-meal-choice{width:100%;box-sizing:border-box;text-align:left;border:1px solid rgba(176,146,105,.4);background:var(--paper,#fff);color:var(--ink);font-size:16px;font-weight:600;border-radius:12px;padding:14px 16px;cursor:pointer;}

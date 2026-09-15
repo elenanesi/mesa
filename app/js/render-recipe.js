@@ -366,6 +366,12 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, ma
    Add-extra (adds a food), or Edit-recipe (permanent). Offered only on a plain planned/logged
    meal (substitutableIngredientListHtml, called from updateServings when canSubstitute). */
 
+// A piece count reads as a whole number when it is one (2 eggs, not 2.0), else one decimal.
+function fmtIngCount(n){
+  const r = Math.round(n * 10) / 10;
+  return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}
+
 // The tappable ingredient list for a substitutable meal. Each row maps 1:1 to a base effective
 // ingredient (post-opts) and shows its CURRENT state: kept, swapped (replacement name + a calm
 // "today only" pill), or left out (greyed, with an undo). Tapping a kept/swapped row opens the
@@ -383,7 +389,7 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
     for(let j = 0; j < subList.length; j++){ if(!consumed[j] && subList[j] && subList[j].from === fromId){ consumed[j] = true; return subList[j]; } }
     return null;
   }
-  let html = '<li class="ing-sub-hint">Tap an ingredient to swap it, or ✕ to leave it out — just for today.</li>';
+  let html = '<li class="ing-sub-hint">Tap an ingredient to change the amount or swap it, or ✕ to leave it out — just for today.</li>';
   html += effOrig.map(function(ing){
     const fromId = ing[0];
     const s = subFor(fromId);
@@ -401,12 +407,17 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
     const grams = (s && typeof s.grams === 'number' && s.grams > 0) ? s.grams : ing[1];
     const food = FOODS[shownId];
     const perServ = grams / batchYield;
-    let qty, unit;
-    if(food && food.unit === 'piece'){ qty = +((perServ / food.avgG) * scale).toFixed(2); unit = ''; }
-    else { qty = +(perServ * scale).toFixed(1); unit = food ? food.unit : 'g'; }
     const name = escapeHtml(food ? food.name : shownId);
-    const pill = (shownId !== fromId) ? ' <span class="today-only-pill">today only</span>' : '';
-    const qtyHtml = qty + (unit ? ' ' + escapeHtml(String(unit)) : '');
+    const amountPill = (s && typeof s.grams === 'number' && !(s.to && s.to !== fromId)) ? ' <span class="today-only-pill">today only</span>' : '';
+    const pill = (shownId !== fromId) ? ' <span class="today-only-pill">today only</span>' : amountPill;
+    // Piece-unit foods (eggs, etc.) read as a COUNT — "number of eggs" — with the gram amount as a
+    // quiet sub-line beneath it (owner 2026-09-16); gram/ml foods stay a single amount.
+    let qtyHtml;
+    if(food && food.unit === 'piece' && food.avgG > 0){
+      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount((perServ / food.avgG) * scale) + '</span><span class="ing-qty-sub">' + Math.round(perServ * scale) + ' g</span></span>';
+    } else {
+      qtyHtml = '<span class="ing-qty-main">' + (+(perServ * scale).toFixed(1)) + ' ' + escapeHtml(String(food ? food.unit : 'g')) + '</span>';
+    }
     return '<li class="ing-sub-row">'
       + '<span class="ing-sub-name" onclick="openIngredientSubSheet(\'' + fromId + '\')">' + name + pill + '</span>'
       + '<span class="ing-sub-right">'
@@ -453,21 +464,98 @@ function openIngredientSubSheet(fromFoodId){
   if(inp) inp.oninput = function(){ renderIngSubResults(inp.value); };
 }
 
+// Resolves the CURRENT state of one base ingredient on the open meal (post-opts, post-sub): the
+// shown food (original or swap target), its batch grams, and the recipe's batch yield — so the
+// sheet can show the right name + amount. Null if the ingredient isn't in this recipe.
+function currentIngredientState(fromFoodId){
+  const recipe = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[currentRecipeKey];
+  if(!recipe) return null;
+  const batchYield = (typeof recipe.servings === 'number' && recipe.servings > 0) ? recipe.servings : 1;
+  const orig = recipeEffectiveIngredients(recipe, recipeOptsCtx).filter(function(ing){ return ing[0] === fromFoodId; })[0];
+  if(!orig) return null;
+  const sub = (Array.isArray(recipeSubsCtx) ? recipeSubsCtx : []).filter(function(s){ return s && s.from === fromFoodId; })[0];
+  const removed = !!(sub && sub.remove);
+  const shownId = (sub && !removed && typeof sub.to === 'string') ? sub.to : fromFoodId;
+  const batchGrams = (sub && !removed && typeof sub.grams === 'number' && sub.grams > 0) ? sub.grams : orig[1];
+  return {fromFoodId: fromFoodId, shownId: shownId, shownFood: FOODS[shownId], batchYield: batchYield, batchGrams: batchGrams, origBatchGrams: orig[1], removed: removed, swapped: shownId !== fromFoodId};
+}
+
+// The "Amount today" stepper for the current ingredient — shown in the ingredient's own unit
+// (a piece count for eggs etc., grams/ml otherwise) at one-serving scale. Steps by one piece
+// for piece foods, else 5 g/ml. Owner follow-up 2026-09-16.
+function amountStepperHtml(st){
+  if(!st || !st.shownFood) return '';
+  const perServG = st.batchGrams / st.batchYield;
+  const isPiece = st.shownFood.unit === 'piece' && st.shownFood.avgG > 0;
+  const stepPerServG = isPiece ? st.shownFood.avgG : 5;
+  const display = isPiece
+    ? fmtIngCount(perServG / st.shownFood.avgG) + ' · ' + Math.round(perServG) + ' g'
+    : Math.round(perServG) + ' ' + escapeHtml(String(st.shownFood.unit || 'g'));
+  return '<div class="ing-amount-row"><span class="ing-amount-label">Amount today</span>'
+    + '<span class="ing-amount-ctrl">'
+    +   '<button class="ing-amount-btn" onclick="stepMealIngredientAmount(' + (-stepPerServG) + ')" aria-label="Less">−</button>'
+    +   '<span class="ing-amount-val">' + display + '</span>'
+    +   '<button class="ing-amount-btn" onclick="stepMealIngredientAmount(' + stepPerServG + ')" aria-label="More">+</button>'
+    + '</span></div>';
+}
+
 function buildIngredientSubSheet(fromFoodId){
   const fromFood = FOODS[fromFoodId];
   const fromName = escapeHtml(fromFood ? fromFood.name : fromFoodId);
-  const current = (Array.isArray(recipeSubsCtx) ? recipeSubsCtx : []).filter(function(s){ return s && s.from === fromFoodId; })[0];
-  let html = '<h2 style="margin-top:6px">Swap ' + fromName + ' <span class="sheet-today-tag">today only</span></h2>'
+  const st = currentIngredientState(fromFoodId);
+  const shownName = escapeHtml((st && st.shownFood) ? st.shownFood.name : (fromFood ? fromFood.name : fromFoodId));
+  let html = '<h2 style="margin-top:6px">' + shownName + ' <span class="sheet-today-tag">today only</span></h2>'
     + '<p class="sub">Only today’s meal changes — your saved recipe stays the same.</p>';
-  if(current && typeof current.to === 'string'){
-    const toName = escapeHtml(FOODS[current.to] ? FOODS[current.to].name : current.to);
-    html += '<div class="ing-sub-current">Today: <b>' + toName + '</b>'
+  // Amount stepper (owner 2026-09-16) — skipped for a left-out ingredient.
+  if(st && !st.removed) html += amountStepperHtml(st);
+  if(st && st.swapped){
+    html += '<div class="ing-sub-current">Swapped from <b>' + fromName + '</b>'
       + '<button class="ing-sub-revert" onclick="revertMealIngredientSub()">↺ Back to ' + fromName + '</button></div>';
   }
-  html += '<div id="ingSubResults"></div>'
+  html += '<div class="ing-sub-group-label">Swap for something else</div>'
+    + '<div id="ingSubResults"></div>'
     + '<div class="ing-sub-search-wrap"><input id="ingSubSearch" type="search" placeholder="Search other ingredients…" autocomplete="off"></div>'
     + '<button class="ing-sub-leaveout" onclick="removeMealIngredient(\'' + fromFoodId + '\')">✕ Leave ' + fromName + ' out today</button>';
   return html;
+}
+
+// Re-render the open sub sheet in place (after an amount step) without closing it.
+function refreshIngredientSubSheet(){
+  if(!ingSubCtx) return;
+  const body = document.getElementById('sheetBody');
+  if(!body) return;
+  body.innerHTML = buildIngredientSubSheet(ingSubCtx.fromFoodId);
+  renderIngSubResults('');
+  const inp = document.getElementById('ingSubSearch');
+  if(inp) inp.oninput = function(){ renderIngSubResults(inp.value); };
+}
+
+// Change the current ingredient's amount for today (deltaPerServG in one-serving grams/ml).
+// Keeps the sheet open (unlike a swap/remove) so the user can nudge the amount a few times.
+function stepMealIngredientAmount(deltaPerServG){
+  if(!ingSubCtx) return;
+  const c = ingSubCtx;
+  const st = currentIngredientState(c.fromFoodId);
+  if(!st || st.removed) return;
+  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const perServG = st.batchGrams / st.batchYield;
+  const newPerServG = Math.max(1, Math.round(perServG + deltaPerServG));
+  const newBatchG = Math.max(1, Math.round(newPerServG * st.batchYield));
+  const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
+  if(wasLogged){
+    const revert = (st.shownId === c.fromFoodId && Math.abs(newBatchG - st.origBatchGrams) < 0.5);
+    writeLoggedIngredientSub(c.dateISO, c.person, c.slot, c.fromFoodId, revert ? null : {from: c.fromFoodId, to: st.shownId, grams: newBatchG});
+  }
+  setEntryIngredientAmount(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId, newBatchG);
+  if(typeof recomputeConsumed === 'function') recomputeConsumed(currentProf);
+  if(typeof recomputeProf === 'function') recomputeProf(currentProf);
+  if(typeof refreshRingAndBars === 'function') refreshRingAndBars();
+  if(typeof renderTodayMeals === 'function') renderTodayMeals();
+  if(typeof renderLogScreen === 'function') renderLogScreen();
+  if(typeof renderWeek === 'function') renderWeek();
+  if(typeof persist === 'function') persist();
+  if(typeof currentRecipeKey === 'string' && currentRecipeKey) renderRecipe(currentRecipeKey);
+  refreshIngredientSubSheet(); // repaint the sheet's amount value; keep it open
 }
 
 function ingSubOptionRowHtml(toId){
