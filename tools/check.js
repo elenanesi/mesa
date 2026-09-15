@@ -709,6 +709,34 @@ function testPantrySectionsAndFilters(ctx){
   }
 }
 
+// Regression (owner 2026-09-16: "pantry items I logged didn't persist, gone again"): a re-add
+// must beat a stale qty:0 removal tombstone in the couple-sync merge. setPantryRemaining stamps
+// `u` MONOTONICALLY per item (max of now and the last-seen u +1), so a deliberate edit always
+// outranks the value it replaces even when the other phone's tombstone carries a higher/equal u
+// (clock skew) or an exact-u tie would otherwise let the lexicographically-smaller {"qty":0,…} win.
+function testPantryReaddBeatsRemovalTombstone(ctx){
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  run(ctx, "var __prStub={persist:(typeof persist==='function'?persist:null)}; persist=function(){};");
+  try{
+    // The OTHER phone removed milk with a tombstone stamped 5 min in the FUTURE relative to this
+    // phone's clock (clock skew), and this phone has already pulled it.
+    const future = Date.now() + 5 * 60 * 1000;
+    run(ctx, "pantry = {}; pantry['milk'] = {qty:0, setAt:" + future + ", u:" + future + "};");
+    call(ctx, 'setPantryRemaining', ['milk', 500]);
+    const entry = get(ctx, "pantry['milk']");
+    assert(entry.qty === 500, 'pantry re-add: milk stored at qty 500', JSON.stringify(entry));
+    assert(entry.u > future, 'pantry re-add: stamp is strictly newer than the pulled tombstone u (clock-skew proof)', 'u=' + entry.u + ' tombstone=' + future);
+    const merged = call(ctx, 'mergeEntryMap', [{milk: entry}, {milk: {qty: 0, setAt: future, u: future}}]);
+    assert(merged.milk && merged.milk.qty === 500, 'pantry merge: the re-add beats the stale qty:0 removal tombstone', JSON.stringify(merged.milk));
+    // A subsequent edit still advances even when Date.now() could tie the previous entry's u.
+    run(ctx, "pantry['milk'] = {qty:500, setAt:1, u:1};");
+    call(ctx, 'setPantryRemaining', ['milk', 700]);
+    assert(get(ctx, "pantry['milk']").u > 1, 'pantry re-edit: stamp advances past the previous entry u (never ties)', String(get(ctx, "pantry['milk']").u));
+  } finally {
+    run(ctx, "pantry = " + JSON.stringify(savedPantry) + "; if(__prStub.persist) persist=__prStub.persist; delete __prStub;");
+  }
+}
+
 /* ---------------- Cook from what I have (#7): pantry recipe scorer ----------------
    planner.js:pantryScoreRecipe / pantryMakeableRecipes rank recipes by what's currently in
    the pantry. Staples (oil/salt/…) are free; the MAIN ingredient weighs 3x a secondary;
@@ -14698,6 +14726,7 @@ function main(){
   runTest('ingredient detail page markup (task C4)', function(){ testFoodDetailMarkup(ctx); });
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
+  runTest('Pantry re-add beats a stale removal tombstone (monotonic u)', function(){ testPantryReaddBeatsRemovalTombstone(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });

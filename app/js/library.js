@@ -2359,7 +2359,20 @@ function setPantryRemaining(foodId, newQty){
   if(!FOODS[foodId]) return;
   const qty = (typeof newQty === 'number' && isFinite(newQty) && newQty > 0) ? newQty : 0;
   const now = Date.now();
-  pantry[foodId] = {qty: qty, setAt: now, u: now};
+  // Couple-sync stamp MUST be strictly newer than this item's last-known `u`, not a bare
+  // Date.now(). Otherwise a deliberate edit — above all re-adding something the other phone
+  // removed — can LOSE mergeEntryMap (js/sync.js) to the stale qty:0 tombstone: either the
+  // other phone's tombstone carries a higher `u` (the two phones' clocks disagree), or an
+  // exact-`u` tie is broken by lexicographically-smaller JSON, where `{"qty":0,…}` beats
+  // `{"qty":250,…}` and the removal wins. Making `u` monotonic per item (max of now and the
+  // value we last saw for THIS food, +1) guarantees the newest edit this device makes always
+  // outranks the value it is replacing, regardless of clock skew — the fix for pantry adds
+  // that "didn't persist / came back gone" after a sync. setAt stays real-now (it's the
+  // consumption baseline + age hint, not a sync stamp).
+  const prev = pantry[foodId];
+  const prevU = (prev && typeof prev.u === 'number' && isFinite(prev.u)) ? prev.u : 0;
+  const u = Math.max(now, prevU + 1);
+  pantry[foodId] = {qty: qty, setAt: now, u: u};
   persist();
 }
 
