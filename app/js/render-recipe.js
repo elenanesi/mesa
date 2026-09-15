@@ -377,7 +377,7 @@ function fmtIngCount(n){
 // "today only" pill), or left out (greyed, with an undo). Tapping a kept/swapped row opens the
 // picker (keyed by the ORIGINAL foodId — stable identity); the trailing ✕ leaves it out today.
 // A short muted hint makes it obvious the rows are interactive (owner 2026-09-15).
-function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
+function substitutableIngredientListHtml(recipeId, opts, subs, ingScale, extras, total){
   const src = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[recipeId];
   if(!src) return '';
   const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
@@ -429,7 +429,37 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
   (src.toTaste || []).forEach(function(t){
     html += '<li><span>' + escapeHtml(capitalizeFirst(t)) + '</span><span>to taste</span></li>';
   });
+  // Composed sides / added foods, shown READ-ONLY beneath a divider so the meal view still lists
+  // the WHOLE plate (owner 2026-09-08) while keeping the base ingredients (above) the swappable
+  // ones — a clean main/side separation. Sides remain editable/removable in the "Made of" section.
+  const sideRows = (Array.isArray(extras) ? extras : []).map(function(ex){ return sideIngredientRowsHtml(ex, ingScale, total); }).join('');
+  if(sideRows) html += '<li class="ing-side-divider">With it</li>' + sideRows;
   return html;
+}
+
+// Read-only rows for one composed side (a recipe extra → its ingredients, or a plain food extra).
+// Scaled the same way mealDetailIngredientRows scales sides (portion × ingScale/total). Piece
+// foods show a count; there is no chevron/✕ — sides are edited as dishes in "Made of".
+function sideIngredientRowsHtml(ex, ingScale, total){
+  const scale = (typeof ingScale === 'number' && ingScale > 0) ? ingScale : 1;
+  const sideFactor = (typeof total === 'number' && total > 0) ? scale / total : scale;
+  function row(name, qtyHtml){ return '<li class="ing-sub-row ing-side-row"><span class="ing-sub-name">' + name + '</span><span class="ing-sub-qty">' + qtyHtml + '</span></li>'; }
+  if(ex && ex.recipeId && RECIPES_DB[ex.recipeId]){
+    const p = (typeof ex.portion === 'number' && ex.portion > 0) ? ex.portion : 1;
+    return recipeDisplayIngredients(ex.recipeId, ex.opts, ex.ingredientSubs).map(function(ing){
+      if(ing[1] === null) return row(escapeHtml(String(ing[0])), 'to taste');
+      return row(escapeHtml(String(ing[0])), (+(ing[1] * p * sideFactor).toFixed(1)) + ' ' + escapeHtml(String(ing[2])));
+    }).join('');
+  }
+  if(ex && ex.foodId && FOODS[ex.foodId]){
+    const food = FOODS[ex.foodId];
+    const grams = (typeof ex.grams === 'number' ? ex.grams : 0) * sideFactor;
+    const qtyHtml = (food.unit === 'piece' && food.avgG > 0)
+      ? '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' g</span></span>'
+      : '<span class="ing-qty-main">' + (+grams.toFixed(1)) + ' ' + escapeHtml(String(food.unit)) + '</span>';
+    return row(escapeHtml(food.name), qtyHtml);
+  }
+  return '';
 }
 
 // Builds the slot/person/date context for a per-occurrence ingredient change from the currently-
@@ -1666,18 +1696,18 @@ function updateServings(){
     }
   }
   const ingScale = ingShowPerServing ? 1 : total;
-  // feature #6: per-occurrence ingredient substitution is offered ONLY on a plain planned/logged
-  // meal (opened from Today/Week/Log — recipeServingCtx present) that is a normal recipe with no
-  // composed sides/extras. In that clean case each ingredient row maps 1:1 to the base recipe's
-  // effective ingredients, so a row can be tapped to swap just that ingredient (this day only).
-  // A composite "Made of" meal, or one with sides/extras, keeps the read-only merged plate list
-  // (its rows don't map 1:1 to a single base ingredient) — the sub still applies to nutrition if
-  // one was set elsewhere. A library open (recipeServingCtx null) is never substitutable.
-  const canSubstitute = !!(recipeServingCtx && recipeServingCtx.slot && !isComponentsRecipe
-    && (!extrasList || !extrasList.length) && RECIPES_DB[currentRecipeKey]);
+  // feature #6: per-occurrence ingredient substitution is offered on any planned/logged meal
+  // (recipeServingCtx present) that is a normal (non-composite) recipe — INCLUDING lunch/dinner
+  // meals that carry composed sides (owner 2026-09-16: "why only breakfast/snacks?"). The
+  // Ingredients list shows the BASE recipe's own ingredients (each maps 1:1 to a food, so it's
+  // safely swappable/removable/amount-editable); the composed SIDES stay in the "Made of" section
+  // above (editable/removable there), which keeps main and side cleanly separated rather than
+  // merged. A composite "Made of" recipe hides this section entirely; a library open
+  // (recipeServingCtx null) is never substitutable.
+  const canSubstitute = !!(recipeServingCtx && recipeServingCtx.slot && !isComponentsRecipe && RECIPES_DB[currentRecipeKey]);
   const ingListEl = document.getElementById('ingList');
   if(canSubstitute){
-    ingListEl.innerHTML = substitutableIngredientListHtml(currentRecipeKey, recipeOptsCtx, recipeSubsCtx, ingScale);
+    ingListEl.innerHTML = substitutableIngredientListHtml(currentRecipeKey, recipeOptsCtx, recipeSubsCtx, ingScale, extrasList, total);
   } else {
     // Whole MEAL, not just the main: for a planned/logged slot with composed sides (extrasList),
     // the list includes every side + added food (owner 2026-09-08). A library open or a sideless

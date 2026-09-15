@@ -957,7 +957,7 @@ function testIngredientServingToggle(ctx){
 
     const ingListHtml = function(){ return get(ctx, "document.getElementById('ingList').innerHTML"); };
     const ingHeaderHtml = function(){ return get(ctx, "document.getElementById('ingHeader').innerHTML"); };
-    assert(ingListHtml().indexOf('<span>' + expectedWhole + ' ' + unit + '</span>') !== -1,
+    assert(ingListHtml().indexOf(expectedWhole + ' ' + unit + '</span>') !== -1,
       'updateServings (default/whole-dish): the ingredient list shows the whole-dish quantity', ingListHtml());
     assert(ingHeaderHtml().indexOf('for the whole dish (' + total + ' servings)') !== -1,
       'updateServings (default/whole-dish): the header reads "for the whole dish (N servings)"', ingHeaderHtml());
@@ -967,7 +967,7 @@ function testIngredientServingToggle(ctx){
     call(ctx, 'setIngShowPerServing', [true]);
     assert(get(ctx, 'ingShowPerServing') === true,
       'setIngShowPerServing(true): sets the flag', String(get(ctx, 'ingShowPerServing')));
-    assert(ingListHtml().indexOf('<span>' + expectedOne + ' ' + unit + '</span>') !== -1,
+    assert(ingListHtml().indexOf(expectedOne + ' ' + unit + '</span>') !== -1,
       'updateServings (one-serving): the ingredient list now shows the per-serving quantity (scale=1), not the whole-dish one', ingListHtml());
     assert(ingHeaderHtml().indexOf('for one serving') !== -1,
       'updateServings (one-serving): the header reads "for one serving"', ingHeaderHtml());
@@ -978,7 +978,7 @@ function testIngredientServingToggle(ctx){
 
     // (3) Flip back — whole-dish quantities return.
     call(ctx, 'setIngShowPerServing', [false]);
-    assert(ingListHtml().indexOf('<span>' + expectedWhole + ' ' + unit + '</span>') !== -1,
+    assert(ingListHtml().indexOf(expectedWhole + ' ' + unit + '</span>') !== -1,
       'updateServings: toggling back to whole-dish restores the original quantities', ingListHtml());
 
     // (4) Reset-on-open: leaving the toggle on one-serving, then opening ANY recipe fresh
