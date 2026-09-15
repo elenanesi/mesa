@@ -457,30 +457,35 @@ function recipeEffectiveIngredients(recipe, opts, depth){
 }
 
 // Per-occurrence ingredient substitution (owner feature #6, panel-designed 2026-09-15): a
-// this-day-only swap of one ingredient for another on a single plan/log entry, WITHOUT
-// touching the saved recipe. `subs` is [{from: foodId, to: foodId, grams?}]. This wraps the
-// OUTPUT of recipeEffectiveIngredients — deliberately NOT baked into that function, which
-// stays purely recipe+opts-keyed (it is also called with no entry context at all: Market
-// previews, validate.js, recipeContainsFoodSub). Each sub replaces the FIRST not-yet-consumed
-// row whose foodId === sub.from with [sub.to, sub.grams (batch units) || the original grams],
-// so nutrition/shopping/display all recompute honestly (still strict sum(ingredients)). A sub
-// whose `from` isn't present (e.g. after an opts change removed it, or on a swapped-in recipe)
-// is silently inert — same never-throws tolerance the rest of the engine uses. An empty/absent
-// `subs` returns the rows array unchanged, so every existing (3-arg) caller is byte-identical.
+// this-day-only change to one ingredient on a single plan/log entry, WITHOUT touching the saved
+// recipe. `subs` is [{from: foodId, to: foodId, grams?} | {from: foodId, remove: true}]. This
+// wraps the OUTPUT of recipeEffectiveIngredients — deliberately NOT baked into that function,
+// which stays purely recipe+opts-keyed (it is also called with no entry context at all: Market
+// previews, validate.js, recipeContainsFoodSub). Each sub matches the FIRST not-yet-consumed row
+// whose foodId === sub.from and either SWAPS it to [sub.to, sub.grams (batch units) || original
+// grams] or, when {remove:true}, drops the row entirely — so nutrition/shopping/display all
+// recompute honestly (still strict sum(ingredients)). A sub whose `from` isn't present (e.g. after
+// an opts change, or on a swapped-in recipe) is silently inert — the never-throws tolerance the
+// rest of the engine uses. An empty/absent `subs` returns the rows array unchanged, so every
+// existing (3-arg) caller is byte-identical.
 function applyIngredientSubs(ingredientRows, subs){
   if(!Array.isArray(subs) || !subs.length || !Array.isArray(ingredientRows)) return ingredientRows;
   const rows = ingredientRows.map(function(r){ return [r[0], r[1]]; });
   const consumed = {};
+  let removedAny = false;
   subs.forEach(function(sub){
-    if(!sub || typeof sub.from !== 'string' || typeof sub.to !== 'string') return;
+    if(!sub || typeof sub.from !== 'string') return;
+    const isRemove = sub.remove === true;
+    if(!isRemove && typeof sub.to !== 'string') return;
     for(let i = 0; i < rows.length; i++){
-      if(consumed[i] || rows[i][0] !== sub.from) continue;
+      if(consumed[i] || !rows[i] || rows[i][0] !== sub.from) continue;
       consumed[i] = true;
-      rows[i] = [sub.to, (typeof sub.grams === 'number' && sub.grams > 0) ? sub.grams : rows[i][1]];
+      if(isRemove){ rows[i] = null; removedAny = true; }
+      else rows[i] = [sub.to, (typeof sub.grams === 'number' && sub.grams > 0) ? sub.grams : rows[i][1]];
       break;
     }
   });
-  return rows;
+  return removedAny ? rows.filter(Boolean) : rows;
 }
 
 // Sums a recipe's EFFECTIVE ingredients (recipeEffectiveIngredients — base `ingredients`

@@ -1052,20 +1052,20 @@ function removeExtraFromLoggedMeal(dateISO, person, slot, recipeId){
   return commitLoggedMealComponents(logged, components);
 }
 
-// Feature #6 (per-occurrence ingredient substitution), log side: set/clear a base-ingredient
-// substitution on an ALREADY-LOGGED slot's frozen snapshot, mirroring how the extras handlers
-// dual-write (chooseMealExtraRecipe) so a later undo+reconfirm/rebuild-from-plan doesn't drop
-// it. Writes components[0].ingredientSubs (the base dish); passing toFoodId === fromFoodId (or
-// falsy) reverts. Logged entries are per-person, so there is no partner mirroring here (the
-// plan side handles the shared-cell mirror).
-function setIngredientSubOnLoggedMeal(dateISO, person, slot, fromFoodId, toFoodId){
+// Feature #6 (per-occurrence ingredient substitution/removal), log side: set/replace/clear a
+// base-ingredient change on an ALREADY-LOGGED slot's frozen snapshot, mirroring how the extras
+// handlers dual-write (chooseMealExtraRecipe) so a later undo+reconfirm/rebuild-from-plan doesn't
+// drop it. Writes components[0].ingredientSubs (the base dish). `subObjOrNull` is {from,to} for a
+// swap, {from,remove:true} for a removal, or null to revert. Logged entries are per-person, so
+// there is no partner mirroring here (the plan side handles the shared-cell mirror).
+function writeLoggedIngredientSub(dateISO, person, slot, fromFoodId, subObjOrNull){
   const logged = loggedPlanEntryForSlot(dateISO, person, slot);
   if(!logged) return false;
   const components = loggedMealComponents(logged);
   if(!components[0]) return false;
   const base = Object.assign({}, components[0]);
   const list = Array.isArray(base.ingredientSubs) ? base.ingredientSubs.filter(function(s){ return s && s.from !== fromFoodId; }) : [];
-  if(toFoodId && toFoodId !== fromFoodId) list.push({from: fromFoodId, to: toFoodId});
+  if(subObjOrNull) list.push(subObjOrNull);
   if(list.length) base.ingredientSubs = list; else delete base.ingredientSubs;
   components[0] = base;
   return commitLoggedMealComponents(logged, components);

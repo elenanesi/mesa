@@ -149,10 +149,19 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    ingredient row gets a quiet chevron; a substituted ingredient wears a NEUTRAL "today only"
    pill (muted paper/ink, deliberately NOT sage and NOT amber — it's a preference, not a
    warning or a status). The picker rows are icon-forward (chef note) and calm. */
-.ing-sub-row{cursor:pointer;-webkit-tap-highlight-color:transparent;}
-.ing-sub-row:active{background:rgba(176,146,105,.10);}
-.ing-sub-qty{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
-.ing-sub-chev{color:var(--muted);font-weight:700;}
+.ing-sub-hint{font-size:12px;color:var(--muted);font-style:italic;padding:2px 0 8px!important;border:0!important;list-style:none;}
+.ing-sub-row{display:flex;align-items:center;justify-content:space-between;gap:8px;-webkit-tap-highlight-color:transparent;}
+.ing-sub-name{flex:1;cursor:pointer;}
+.ing-sub-right{display:inline-flex;align-items:center;gap:4px;white-space:nowrap;}
+.ing-sub-qty{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;cursor:pointer;}
+.ing-sub-chev{color:var(--sage-deep);font-weight:700;}
+.ing-sub-x{border:0;background:transparent;color:var(--muted);font-size:15px;line-height:1;padding:6px 4px;margin-left:2px;cursor:pointer;border-radius:6px;}
+.ing-sub-x:active{background:rgba(176,146,105,.14);}
+.ing-sub-removed .ing-sub-name{color:var(--muted);}
+.ing-sub-undo{border:0;background:transparent;color:var(--sage-deep);font-size:16px;line-height:1;padding:6px 8px;cursor:pointer;border-radius:6px;}
+.ing-sub-undo:active{background:rgba(176,146,105,.14);}
+.ing-sub-leaveout{margin-top:12px;width:100%;box-sizing:border-box;border:1px solid rgba(176,146,105,.4);background:transparent;color:var(--ink-soft);font-size:14px;font-weight:600;border-radius:12px;padding:11px;cursor:pointer;}
+.ing-sub-leaveout:active{background:rgba(176,146,105,.10);}
 .today-only-pill{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.2px;color:var(--ink-soft);background:rgba(176,146,105,.16);border-radius:7px;padding:1px 6px;margin-left:6px;vertical-align:middle;}
 .sheet-today-tag{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.3px;}
 .ing-sub-current{margin:6px 0 12px;font-size:14px;color:var(--ink-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}

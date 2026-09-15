@@ -2310,6 +2310,9 @@ function testIngredientSubstitution(ctx){
   const swapped = call(ctx, 'applyIngredientSubs', [rows, [{from: 'mixed-berries', to: 'bananas'}]]);
   assert(swapped[0][0] === 'bananas' && swapped[0][1] === 50 && swapped[1][0] === 'oats',
     'applyIngredientSubs: swaps `from`->`to` keeping the original grams; other rows untouched', JSON.stringify(swapped));
+  const removed = call(ctx, 'applyIngredientSubs', [rows, [{from: 'mixed-berries', remove: true}]]);
+  assert(removed.length === 1 && removed[0][0] === 'oats',
+    'applyIngredientSubs: {from,remove:true} drops the matching row entirely', JSON.stringify(removed));
 
   // -------- recipeNutrition 4th param: subs change the honest total --------
   const baseRecipe = call(ctx, 'recipeNutrition', ['oats-berries-walnuts', 1]).totals;
@@ -2381,6 +2384,34 @@ function testIngredientSubstitution(ctx){
     'planEntryNutrition: after revert the total returns to the recipe default', 'entry=' + revertNut.kcal + ' recipe=' + baseRecipe.kcal);
   assert(call(ctx, 'removeEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries']) === false,
     'removeEntryIngredientSub: nothing to undo returns false', '');
+
+  // removal (owner follow-up): leave an ingredient out for the day; nutrition + shopping drop it.
+  assert(call(ctx, 'removeEntryIngredientForDay', [wk, 0, 'lunch', 'elena', 'mixed-berries']) === true,
+    'removeEntryIngredientForDay: leaving out a present ingredient returns true', '');
+  const rmComps = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(rmComps[0].ingredientSubs && rmComps[0].ingredientSubs[0].remove === true,
+    'removeEntryIngredientForDay: the base component carries a {remove:true} sub', JSON.stringify(rmComps[0].ingredientSubs));
+  const rmQty = call(ctx, 'foodQuantitiesForComponents', [rmComps]);
+  assert(!rmQty['mixed-berries'],
+    'foodQuantitiesForComponents: a left-out ingredient is not bought', JSON.stringify(rmQty));
+  const rmNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(rmNut.kcal < baseRecipe.kcal - 1,
+    'planEntryNutrition: leaving out an ingredient lowers the honest total', 'rm=' + rmNut.kcal + ' base=' + baseRecipe.kcal);
+  // undo the removal
+  assert(call(ctx, 'removeEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries']) === true,
+    'removeEntryIngredientSub: undoes a removal too (shared undo for swap + remove)', '');
+  assert(!entry('lunch', 'elena').ingredientSubs,
+    'removeEntryIngredientSub: the field is cleared after undoing the only removal', JSON.stringify(entry('lunch', 'elena').ingredientSubs));
+
+  // guard: never remove the LAST remaining ingredient. Leave out all but one, then the last -> false.
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.elena = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; })();");
+  ['oats', 'milk', 'walnuts', 'mixed-berries'].forEach(function(fid){ call(ctx, 'removeEntryIngredientForDay', [wk, 0, 'lunch', 'elena', fid]); });
+  const lastOut = call(ctx, 'removeEntryIngredientForDay', [wk, 0, 'lunch', 'elena', 'honey']);
+  assert(lastOut === false,
+    'removeEntryIngredientForDay: refuses to remove the last remaining ingredient (no 0-ingredient meal)', String(lastOut));
+  const survivors = call(ctx, 'applyIngredientSubs', [call(ctx, 'recipeEffectiveIngredients', [get(ctx, 'RECIPES_DB')['oats-berries-walnuts']]), entry('lunch', 'elena').ingredientSubs || []]);
+  assert(survivors.length >= 1, 'removeEntryIngredientForDay: at least one ingredient always survives', JSON.stringify(survivors));
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.elena = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; })();");
 
   // picking the ORIGINAL ingredient again reverts rather than storing a no-op sub.
   call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'bananas']);

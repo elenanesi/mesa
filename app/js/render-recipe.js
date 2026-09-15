@@ -366,34 +366,53 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, ma
    Add-extra (adds a food), or Edit-recipe (permanent). Offered only on a plain planned/logged
    meal (substitutableIngredientListHtml, called from updateServings when canSubstitute). */
 
-// The tappable ingredient list for a substitutable meal: each row maps 1:1 to a base effective
-// ingredient (post-opts), shows the CURRENT ingredient (the replacement if one is set, with a
-// calm "today only" pill), and opens the picker keyed by the ORIGINAL foodId (stable identity).
+// The tappable ingredient list for a substitutable meal. Each row maps 1:1 to a base effective
+// ingredient (post-opts) and shows its CURRENT state: kept, swapped (replacement name + a calm
+// "today only" pill), or left out (greyed, with an undo). Tapping a kept/swapped row opens the
+// picker (keyed by the ORIGINAL foodId — stable identity); the trailing ✕ leaves it out today.
+// A short muted hint makes it obvious the rows are interactive (owner 2026-09-15).
 function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
   const src = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[recipeId];
   if(!src) return '';
   const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
   const scale = (typeof ingScale === 'number' && ingScale > 0) ? ingScale : 1;
   const effOrig = recipeEffectiveIngredients(src, opts);
-  const effShown = applyIngredientSubs(effOrig, subs);
-  let html = effOrig.map(function(ing, i){
+  const subList = Array.isArray(subs) ? subs : [];
+  const consumed = {};
+  function subFor(fromId){
+    for(let j = 0; j < subList.length; j++){ if(!consumed[j] && subList[j] && subList[j].from === fromId){ consumed[j] = true; return subList[j]; } }
+    return null;
+  }
+  let html = '<li class="ing-sub-hint">Tap an ingredient to swap it, or ✕ to leave it out — just for today.</li>';
+  html += effOrig.map(function(ing){
     const fromId = ing[0];
-    const shownId = effShown[i][0];
-    const grams = effShown[i][1];
+    const s = subFor(fromId);
+    const removed = !!(s && s.remove);
+    const fromName = escapeHtml(FOODS[fromId] ? FOODS[fromId].name : fromId);
+    // fromId is an internal FOODS id (validate.js-enforced [a-z0-9-] format), safe to inline —
+    // same convention as the "Made of" rows' openSubRecipe('<recipeId>').
+    if(removed){
+      return '<li class="ing-sub-row ing-sub-removed">'
+        + '<span class="ing-sub-name">' + fromName + ' <span class="today-only-pill">left out today</span></span>'
+        + '<button class="ing-sub-undo" onclick="restoreMealIngredient(\'' + fromId + '\')" aria-label="Add ' + fromName + ' back">↺</button>'
+        + '</li>';
+    }
+    const shownId = (s && typeof s.to === 'string') ? s.to : fromId;
+    const grams = (s && typeof s.grams === 'number' && s.grams > 0) ? s.grams : ing[1];
     const food = FOODS[shownId];
-    const substituted = shownId !== fromId;
     const perServ = grams / batchYield;
     let qty, unit;
     if(food && food.unit === 'piece'){ qty = +((perServ / food.avgG) * scale).toFixed(2); unit = ''; }
     else { qty = +(perServ * scale).toFixed(1); unit = food ? food.unit : 'g'; }
     const name = escapeHtml(food ? food.name : shownId);
-    const pill = substituted ? ' <span class="today-only-pill">today only</span>' : '';
+    const pill = (shownId !== fromId) ? ' <span class="today-only-pill">today only</span>' : '';
     const qtyHtml = qty + (unit ? ' ' + escapeHtml(String(unit)) : '');
-    // fromId is an internal FOODS id (validate.js-enforced [a-z0-9-] format), safe to inline —
-    // same convention as the "Made of" rows' openSubRecipe('<recipeId>').
-    return '<li class="ing-sub-row" onclick="openIngredientSubSheet(\'' + fromId + '\')">'
-      + '<span>' + name + pill + '</span>'
-      + '<span class="ing-sub-qty">' + qtyHtml + ' <span class="ing-sub-chev" aria-hidden="true">›</span></span>'
+    return '<li class="ing-sub-row">'
+      + '<span class="ing-sub-name" onclick="openIngredientSubSheet(\'' + fromId + '\')">' + name + pill + '</span>'
+      + '<span class="ing-sub-right">'
+      +   '<span class="ing-sub-qty" onclick="openIngredientSubSheet(\'' + fromId + '\')">' + qtyHtml + ' <span class="ing-sub-chev" aria-hidden="true">›</span></span>'
+      +   '<button class="ing-sub-x" onclick="removeMealIngredient(\'' + fromId + '\')" aria-label="Leave out ' + name + ' today">✕</button>'
+      + '</span>'
       + '</li>';
   }).join('');
   (src.toTaste || []).forEach(function(t){
@@ -402,12 +421,12 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
   return html;
 }
 
-// Opens the substitution picker for one base ingredient of the currently-open meal. Captures the
-// slot/person/date from recipeServingCtx so the mutators (which run later, after the sheet) still
-// address the right cell even if the screen re-renders.
-function openIngredientSubSheet(fromFoodId){
-  if(!recipeServingCtx || !recipeServingCtx.slot || !FOODS[fromFoodId]) return;
-  ingSubCtx = {
+// Builds the slot/person/date context for a per-occurrence ingredient change from the currently-
+// open meal (recipeServingCtx), so a row action (swap/remove/undo) still addresses the right cell
+// even after the screen re-renders. Returns null for a library open (no plan/log context).
+function ingredientSubCtxFor(fromFoodId){
+  if(!recipeServingCtx || !recipeServingCtx.slot) return null;
+  return {
     weekStartDate: recipeServingCtx.weekStartDate || mondayOfWeek(recipeServingCtx.dateISO || todayISO()),
     dayIndex: (typeof recipeServingCtx.dayIndex === 'number') ? recipeServingCtx.dayIndex : todayDayIndex(),
     slot: recipeServingCtx.slot,
@@ -416,6 +435,13 @@ function openIngredientSubSheet(fromFoodId){
     shared: !!recipeServingCtx.shared,
     fromFoodId: fromFoodId
   };
+}
+
+// Opens the substitution picker for one base ingredient of the currently-open meal.
+function openIngredientSubSheet(fromFoodId){
+  if(!FOODS[fromFoodId]) return;
+  ingSubCtx = ingredientSubCtxFor(fromFoodId);
+  if(!ingSubCtx) return;
   const body = document.getElementById('sheetBody');
   if(!body) return;
   body.innerHTML = buildIngredientSubSheet(fromFoodId);
@@ -433,13 +459,14 @@ function buildIngredientSubSheet(fromFoodId){
   const current = (Array.isArray(recipeSubsCtx) ? recipeSubsCtx : []).filter(function(s){ return s && s.from === fromFoodId; })[0];
   let html = '<h2 style="margin-top:6px">Swap ' + fromName + ' <span class="sheet-today-tag">today only</span></h2>'
     + '<p class="sub">Only today’s meal changes — your saved recipe stays the same.</p>';
-  if(current){
+  if(current && typeof current.to === 'string'){
     const toName = escapeHtml(FOODS[current.to] ? FOODS[current.to].name : current.to);
     html += '<div class="ing-sub-current">Today: <b>' + toName + '</b>'
       + '<button class="ing-sub-revert" onclick="revertMealIngredientSub()">↺ Back to ' + fromName + '</button></div>';
   }
   html += '<div id="ingSubResults"></div>'
-    + '<div class="ing-sub-search-wrap"><input id="ingSubSearch" type="search" placeholder="Search other ingredients…" autocomplete="off"></div>';
+    + '<div class="ing-sub-search-wrap"><input id="ingSubSearch" type="search" placeholder="Search other ingredients…" autocomplete="off"></div>'
+    + '<button class="ing-sub-leaveout" onclick="removeMealIngredient(\'' + fromFoodId + '\')">✕ Leave ' + fromName + ' out today</button>';
   return html;
 }
 
@@ -476,27 +503,48 @@ function chooseMealIngredientSub(toFoodId){
   // Dual-write, mirroring chooseMealExtraRecipe: when the slot is already logged, update the log
   // snapshot too, so a later undo+reconfirm (which rebuilds the log from the plan) keeps the sub.
   const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
-  if(wasLogged) setIngredientSubOnLoggedMeal(c.dateISO, c.person, c.slot, c.fromFoodId, toFoodId);
+  if(wasLogged) writeLoggedIngredientSub(c.dateISO, c.person, c.slot, c.fromFoodId, {from: c.fromFoodId, to: toFoodId});
   const ok = setEntryIngredientSub(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId, toFoodId);
   if(!ok && !wasLogged) return;
-  afterIngredientSubChange(c, toFoodId);
+  afterIngredientSubChange(c, {toFoodId: toFoodId});
 }
 
-function revertMealIngredientSub(){
-  if(!ingSubCtx) return;
-  const c = ingSubCtx;
+// Leave an ingredient out of THIS meal, today only (owner follow-up 2026-09-15). Same dual-write
+// + shared-mirror rails as a swap; the plan side guards against removing the last ingredient.
+function removeMealIngredient(fromFoodId){
+  const c = ingredientSubCtxFor(fromFoodId);
+  if(!c || !FOODS[fromFoodId]) return;
   if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
   const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
-  if(wasLogged) setIngredientSubOnLoggedMeal(c.dateISO, c.person, c.slot, c.fromFoodId, c.fromFoodId);
+  const ok = removeEntryIngredientForDay(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId);
+  if(!ok){ if(typeof toast === 'function') toast('Keep at least one ingredient'); return; }
+  if(wasLogged) writeLoggedIngredientSub(c.dateISO, c.person, c.slot, c.fromFoodId, {from: c.fromFoodId, remove: true});
+  afterIngredientSubChange(c, {removed: true});
+}
+
+// Undo a swap OR a removal, back to the recipe's original ingredient.
+function restoreMealIngredient(fromFoodId){
+  const c = ingredientSubCtxFor(fromFoodId);
+  if(!c) return;
+  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
+  if(wasLogged) writeLoggedIngredientSub(c.dateISO, c.person, c.slot, c.fromFoodId, null);
   removeEntryIngredientSub(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId);
   afterIngredientSubChange(c, null);
 }
 
+// The sheet's "↺ Back to X" button (revert a swap while the picker is open).
+function revertMealIngredientSub(){
+  if(!ingSubCtx) return;
+  restoreMealIngredient(ingSubCtx.fromFoodId);
+}
+
 // Shared post-change refresh: recompute the viewer's totals, repaint every surface that reads
 // the plan/log (Today ring+bars+meals, Log, Week), persist, close the sheet, and repaint the
-// open recipe screen so its ingredient list + nutrition reflect the swap. Mirrors the tail of
-// chooseMealExtraRecipe.
-function afterIngredientSubChange(c, toFoodId){
+// open recipe screen so its ingredient list + nutrition reflect the change. Mirrors the tail of
+// chooseMealExtraRecipe. `outcome` is {toFoodId} for a swap, {removed:true} for a removal, or
+// null for a revert — drives the confirmation toast only.
+function afterIngredientSubChange(c, outcome){
   if(typeof recomputeConsumed === 'function') recomputeConsumed(currentProf);
   if(typeof recomputeProf === 'function') recomputeProf(currentProf);
   if(typeof refreshRingAndBars === 'function') refreshRingAndBars();
@@ -507,7 +555,8 @@ function afterIngredientSubChange(c, toFoodId){
   if(typeof closeSheet === 'function') closeSheet();
   if(typeof currentRecipeKey === 'string' && currentRecipeKey) renderRecipe(currentRecipeKey);
   const fromName = FOODS[c.fromFoodId] ? FOODS[c.fromFoodId].name : c.fromFoodId;
-  if(toFoodId && FOODS[toFoodId]) toast('Today: ' + FOODS[toFoodId].name + ' instead of ' + fromName);
+  if(outcome && outcome.toFoodId && FOODS[outcome.toFoodId]) toast('Today: ' + FOODS[outcome.toFoodId].name + ' instead of ' + fromName);
+  else if(outcome && outcome.removed) toast('Left out today: ' + fromName);
   else toast('Back to ' + fromName);
 }
 

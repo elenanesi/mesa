@@ -1413,8 +1413,26 @@ function setEntryIngredientSub(weekStartDate, dayIndex, slot, person, fromFoodId
   });
 }
 
-// Revert one per-occurrence substitution (back to the recipe's original ingredient). Returns
-// false (aborting the whole mutation, incl. the shared-mirror) when there was nothing to undo.
+// Per-occurrence ingredient REMOVAL (feature #6, owner follow-up 2026-09-15): drop one base
+// ingredient from THIS meal, this day only ({from, remove:true}) — e.g. "no honey today".
+// Same validation + mutateMealExtras rails as setEntryIngredientSub. Guarded: never removes the
+// LAST remaining ingredient (a 0-ingredient meal is nonsensical) — returns false, which the UI
+// turns into a gentle toast. removeEntryIngredientSub (below) is the shared undo for both a swap
+// and a removal (it just drops whatever sub carries this `from`).
+function removeEntryIngredientForDay(weekStartDate, dayIndex, slot, person, fromFoodId){
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
+    const effective = recipeEffectiveIngredients(RECIPES_DB[entry.recipeId], entry.opts);
+    if(!effective.some(function(ing){ return ing[0] === fromFoodId; })) return false;
+    const list = Array.isArray(entry.ingredientSubs) ? entry.ingredientSubs.filter(function(s){ return s && s.from !== fromFoodId; }) : [];
+    const prospective = list.concat([{from: fromFoodId, remove: true}]);
+    if(applyIngredientSubs(effective, prospective).length < 1) return false; // keep >= 1 ingredient
+    entry.ingredientSubs = prospective;
+  });
+}
+
+// Revert one per-occurrence change (swap OR removal) back to the recipe's original ingredient.
+// Returns false (aborting the whole mutation, incl. the shared-mirror) when there was nothing to undo.
 function removeEntryIngredientSub(weekStartDate, dayIndex, slot, person, fromFoodId){
   return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
     if(!Array.isArray(entry.ingredientSubs)) return false;
