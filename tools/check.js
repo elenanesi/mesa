@@ -12335,6 +12335,28 @@ function testRecipeOptionsBuilder(ctx){
     const validation = call(ctx, 'validateData', []);
     assert(validation.ok === true, 'fork note: validateData() stays ok:true after a built-in fork', JSON.stringify(validation.errors));
 
+    // Fork provenance + Market awareness (owner ask 2026-09-16): the fork records forkedFrom, so the
+    // Market can tell you the pristine original you're browsing already has an edited version in your
+    // book — while the normal Add still brings the original back beside the fork.
+    assert(get(ctx, 'customRecipes')[forkId].forkedFrom === 'baked-fish',
+      'fork provenance: the fork stores forkedFrom = the source built-in id', String(get(ctx, 'customRecipes')[forkId].forkedFrom));
+    assert(call(ctx, 'builtinHasForkInBook', ['baked-fish']) === true,
+      'fork awareness: builtinHasForkInBook() sees the in-book fork of baked-fish', '');
+    run(ctx, "libRecipeView = 'market';");
+    const marketRow = call(ctx, 'libRecipeRowHtml', ['baked-fish', true]);
+    assert(marketRow.indexOf('edited version in your book') !== -1,
+      'fork awareness: the Market row for the edited built-in is tagged "edited version in your book"', marketRow);
+    assert(marketRow.indexOf('data-act="addbook"') !== -1,
+      'fork awareness: the Market row still offers Add (bring the pristine original back beside your edit)', marketRow);
+    // Re-editing the fork itself preserves the provenance link (recipe object is rebuilt each save).
+    call(ctx, 'openEditRecipeForm', [forkId]);
+    const rb2 = get(ctx, 'recipeBuilder');
+    rb2.time = (rb2.time || 10) + 1;
+    call(ctx, 'saveRecipeBuilder', []);
+    assert(get(ctx, 'customRecipes')[forkId].forkedFrom === 'baked-fish',
+      'fork provenance: re-editing the fork keeps forkedFrom', String(get(ctx, 'customRecipes')[forkId].forkedFrom));
+    run(ctx, "libRecipeView = 'book';");
+
     // (c) Never shown for a brand-new custom recipe.
     call(ctx, 'openNewRecipeForm', []);
     html = call(ctx, 'buildRecipeBuilderSheet', []);

@@ -3120,20 +3120,29 @@ function libRecipeRowHtml(id, isMarket){
   if(!r) return '';
   const nut = recipeNutrition(id, 1).totals;
   const inBook = recipeInBook(id);
+  // RECIPE-MARKET fork awareness: editing a built-in FORKS it to a cr- recipe and returns the
+  // untouched original to the market (saveRecipeBuilder). So a market row can be a pristine
+  // original the household ALREADY has an edited version of — surface that ("edited version in
+  // your book") so they know they hold a variant, while the normal Add still lets them keep the
+  // original beside their edit. See builtinHasForkInBook().
+  const hasEditedFork = isMarket && id.indexOf('cr-') !== 0 && builtinHasForkInBook(id);
   let badge = customRecipes[id] ? ' <span class="pill mini gold">yours</span>' : (recipeOverrides[id] ? ' <span class="pill mini terra">edited</span>' : '');
   if(isMealRecipe(r)) badge += ' <span class="pill mini sage">Meal</span>';
   if(isMarket && inBook) badge += ' <span class="pill mini">in your book</span>';
+  if(hasEditedFork) badge += ' <span class="pill mini terra">edited version in your book</span>';
   const mealSub = isMealRecipe(r) ? '<div class="ad meal-dishes">' + escapeHtml(mealDishNames(r).join(' · ')) + '</div>' : '';
   const slotLabel = recipeSlotList(r).map(function(s){ return SLOT_LABEL[s] || s; }).join(' / ');
   const pref = (recipePrefs[currentProf] && recipePrefs[currentProf][id]) || null;
   let actions;
   if(isMarket){
     // Market is browse-and-ADD only — a recipe in the book shows just the "in your book" pill; one
-    // not yet added shows a single Add / Re-add icon button.
+    // not yet added shows a single Add / Re-add icon button. A built-in you've forked (edited) is
+    // out of the book, so it lands here with a normal Add — which brings the pristine original back
+    // to sit beside your edited version — plus the "edited version in your book" tag above.
     if(inBook){
       actions = '<span class="lib-inbook-check" aria-label="In your book">' + lucideIcon('check') + '</span>';
     } else {
-      const label = deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book';
+      const label = hasEditedFork ? 'Add the original back to your book' : (deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book');
       actions = '<button class="lib-add-book" data-act="addbook" aria-label="' + label + ' — ' + htmlAttr(r.title) + '">' + lucideIcon('plus') + '</button>';
     }
   } else {
@@ -3351,6 +3360,25 @@ function addRecipeToBook(id){
   if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
 }
 
+// Does the household's book hold a user EDIT (fork) of this built-in? Editing a built-in forks it to
+// a cr- recipe (saveRecipeBuilder, editingBuiltin branch) and returns the original to the market, so
+// the market's pristine original should still tell you "you already have an edited version of this".
+// The link is `forkedFrom` (stamped on new forks + the legacy override->fork migration); we also
+// honour the migration's deterministic `cr-fork-<id>` id so forks made before `forkedFrom` existed
+// still light up. A fork counts only while it's actually in the book (not hard-deleted).
+function builtinHasForkInBook(builtinId){
+  if(!builtinId || builtinId.indexOf('cr-') === 0) return false;
+  const legacyForkId = 'cr-fork-' + builtinId;
+  if(customRecipes[legacyForkId] && recipeInBook(legacyForkId)) return true;
+  const ids = Object.keys(customRecipes);
+  for(let i = 0; i < ids.length; i++){
+    const cid = ids[i];
+    const c = customRecipes[cid];
+    if(c && c.forkedFrom === builtinId && recipeInBook(cid)) return true;
+  }
+  return false;
+}
+
 // Remove a BUILT-IN from the book — the calm, reversible counterpart to deleteRecipe. NOT a
 // hard delete/tombstone (deletedRecipes): the recipe stays in the market, re-addable anytime.
 // `silent` skips the toast/re-render for callers that manage their own (e.g. an Undo flow).
@@ -3393,6 +3421,7 @@ function migrateRecipeOverridesToForks(){
     if(!customRecipes[forkId] && !deletedRecipes[forkId]){
       const fork = deepClone(ov);
       fork.u = stamp;
+      fork.forkedFrom = id; // provenance link so the Market tags the original "edited version in your book"
       customRecipes[forkId] = fork;
     }
     materializeRecipeBook();        // activates the book so the removal below actually takes effect
@@ -4547,6 +4576,12 @@ function saveRecipeBuilder(){
   const chosenImageKey = safeRecipeImageKey(rb.imageKey || '');
   if(chosenImageKey) recipe.imageKey = chosenImageKey;
   if(deletedRecipes[id]) delete deletedRecipes[id]; // recreate-after-delete: this save's `u` beats the tombstone either way
+  // Fork provenance: a built-in edit records its source id so the Market can tag the pristine
+  // original "edited version in your book" (builtinHasForkInBook). Editing your OWN cr- recipe
+  // carries any existing link forward — the recipe object is rebuilt from scratch on every save,
+  // so an unpreserved field would be dropped the next time the fork itself is edited.
+  if(editingBuiltin) recipe.forkedFrom = rb.editingId;
+  else if(rb.editingId && customRecipes[rb.editingId] && customRecipes[rb.editingId].forkedFrom) recipe.forkedFrom = customRecipes[rb.editingId].forkedFrom;
   customRecipes[id] = recipe; // always the user's own recipe now (cr- id) — no in-place built-in override
   if(editingBuiltin){
     // Drop any legacy in-place override for the built-in so the ORIGINAL (not a stale prior edit)
