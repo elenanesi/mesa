@@ -3870,58 +3870,72 @@ function hideEditorActionBar(){
    (openAddIngredientToRecipe/addIngredientToRecipe below, generalized with an
    optional target) — no new picker UI, per the plan's scope cut.
    =================================================================== */
+// UX redesign 2026-09-16 (owner: the Options section felt busy / hard to read / not luxury on
+// mobile). Flattened from card-in-card-in-card to one calm bordered group holding hairline-
+// separated choices; the group/choice NAME inputs double as their own headers (no repeated
+// "Group label"/"Choice label" captions or "Group 1 / Choice 2" scaffolding); the default choice
+// wears a quiet "Default" tag, others a plain "Set default" link; the rarely-used per-choice diet
+// variant is tucked behind a native <details> so the five diet chips no longer dominate every
+// choice; ingredient rows are single, roomy lines with the name given priority (ellipsis) and the
+// stepper compact. All the existing on* handlers are untouched — this is presentation only.
 function buildRecipeOptionsSection(rb){
   const groups = rb.optionGroups || [];
-  let html = '<h2 style="margin-top:18px">Options <span class="sub" style="font-weight:400;font-size:12px">(variant groups, optional)</span></h2>'
-    + '<p class="sub" style="margin-top:2px">Give this recipe swappable choices — e.g. a "Fish" group with salmon, sea bass and cod. The first choice in a group is its default.</p>';
+  let html = '';
+  if(!groups.length){
+    html += '<p class="ropts-intro sub">Give this recipe swappable choices — e.g. a <b>Fish</b> group with salmon, sea bass and cod. The first choice is the default the planner uses.</p>';
+  }
 
   groups.forEach(function(group, gi){
-    html += '<div class="card recipe-option-group" style="padding:14px;margin-top:12px">'
-      + '<div class="row between"><b style="font-size:13px">Group ' + (gi + 1) + '</b>'
-      + '<button class="lib-del" aria-label="Remove option group" onclick="removeRecipeOptionGroup(' + gi + ')">✕</button></div>';
-
-    html += '<div class="field" style="margin-top:8px"><label>Group label</label>'
-      + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(group.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].label=this.value" placeholder="e.g. Fish" autocomplete="off"></div>';
+    html += '<div class="ropts-group">'
+      + '<div class="ropts-group-head">'
+      + '<input class="ropts-group-name" type="text" value="' + htmlAttr(group.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].label=this.value" placeholder="Group name — e.g. Fish" autocomplete="off" aria-label="Option group name">'
+      + '<button class="lib-del ropts-del" aria-label="Remove option group" onclick="removeRecipeOptionGroup(' + gi + ')">✕</button>'
+      + '</div>';
 
     const choices = group.choices || [];
     choices.forEach(function(choice, ci){
       const choiceTotals = computeRecipeOptionChoiceTotals(gi, ci);
       const warn = kcalBandWarning(rb.slots[0] || 'dinner', choiceTotals.kcal);
-      html += '<div class="card recipe-option-choice" style="padding:12px;margin-top:10px;background:rgba(255,255,255,.5)">'
-        + '<div class="row between"><b style="font-size:12.5px">' + (ci === 0 ? 'Default choice' : 'Choice ' + (ci + 1)) + '</b>'
-        + '<div class="row" style="gap:6px">'
-        + (ci !== 0 ? '<button class="pill ghost chip-preset" style="min-height:44px;padding:0 12px" onclick="makeRecipeOptionChoiceDefault(' + gi + ',' + ci + ')">Make default</button>' : '')
-        + '<button class="lib-del" aria-label="Remove choice" onclick="removeRecipeOptionChoice(' + gi + ',' + ci + ')">✕</button>'
-        + '</div></div>';
-
-      html += '<div class="field" style="margin-top:8px"><label>Choice label</label>'
-        + '<input class="inp" style="width:100%;box-sizing:border-box;border:1px solid var(--line);margin-top:6px" type="text" value="' + htmlAttr(choice.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].choices[' + ci + '].label=this.value" placeholder="e.g. Salmon" autocomplete="off"></div>';
-      html += '<div class="field" style="margin-top:8px"><label>Diet variant <span class="sub">(optional)</span></label><div class="chiprow">'
-        + DIET_KEYS.map(function(k){ return '<button class="pill ghost chip-preset' + ((choice.dietKeys || []).indexOf(k) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeOptionChoiceDiet(' + gi + ',' + ci + ',\'' + k + '\')">' + escapeHtml(dietLabel(k)) + '</button>'; }).join('') + '</div></div>';
+      const dietCount = (choice.dietKeys || []).length;
+      html += '<div class="ropts-choice">'
+        + '<div class="ropts-choice-head">'
+        + '<input class="ropts-choice-name" type="text" value="' + htmlAttr(choice.label) + '" oninput="recipeBuilder.optionGroups[' + gi + '].choices[' + ci + '].label=this.value" placeholder="Choice — e.g. Salmon" autocomplete="off" aria-label="Choice name">'
+        + (ci === 0
+            ? '<span class="ropts-default-tag">Default</span>'
+            : '<button class="ropts-setdefault" onclick="makeRecipeOptionChoiceDefault(' + gi + ',' + ci + ')">Set default</button>')
+        + '<button class="lib-del ropts-del" aria-label="Remove choice" onclick="removeRecipeOptionChoice(' + gi + ',' + ci + ')">✕</button>'
+        + '</div>';
 
       (choice.ingredients || []).forEach(function(row, ii){
         const food = FOODS[row.foodId];
         if(!food) return;
-        const pieceHint = food.unit === 'piece' ? ' (≈' + (+(row.grams / food.avgG).toFixed(1)) + ' piece)' : '';
-        html += '<div class="field"><div class="inp"><span>' + escapeHtml(food.name) + '</span>'
-          + '<span class="sv-stepper" style="margin:0">'
+        const pieceHint = food.unit === 'piece' ? ' · ≈' + (+(row.grams / food.avgG).toFixed(1)) + ' pc' : '';
+        html += '<div class="ropts-ing">'
+          + '<span class="ropts-ing-name">' + escapeHtml(food.name) + '</span>'
+          + '<span class="sv-stepper ropts-ing-step">'
           + '<button onclick="stepRecipeOptionIngredientGrams(' + gi + ',' + ci + ',' + ii + ',-10)" aria-label="Decrease grams">–</button>'
           + '<input class="sv-val" type="text" inputmode="decimal" value="' + row.grams + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" onblur="commitRecipeOptionIngredientGrams(' + gi + ',' + ci + ',' + ii + ',this.value)" aria-label="Grams of ' + htmlAttr(food.name) + '">'
           + '<span class="sv-unit">g' + pieceHint + '</span>'
           + '<button onclick="stepRecipeOptionIngredientGrams(' + gi + ',' + ci + ',' + ii + ',10)" aria-label="Increase grams">+</button>'
-          + '<button class="lib-del" style="margin-left:4px" aria-label="Remove ' + htmlAttr(food.name) + '" onclick="removeRecipeOptionIngredient(' + gi + ',' + ci + ',' + ii + ')">✕</button>'
-          + '</span></div></div>';
+          + '<button class="lib-del ropts-ing-del" aria-label="Remove ' + htmlAttr(food.name) + '" onclick="removeRecipeOptionIngredient(' + gi + ',' + ci + ',' + ii + ')">✕</button>'
+          + '</span></div>';
       });
-      html += '<button class="cta ghostbtn" style="margin-top:2px" onclick="openAddIngredientToRecipe({groupIndex:' + gi + ',choiceIndex:' + ci + '})">＋ Add ingredient</button>';
-      if(warn) html += '<div class="cap-note" style="color:#b25e35;margin-top:6px">' + warn + '</div>';
-      html += '</div>'; // .recipe-option-choice
+
+      html += '<button class="ropts-add" onclick="openAddIngredientToRecipe({groupIndex:' + gi + ',choiceIndex:' + ci + '})">＋ Ingredient</button>';
+      html += '<details class="ropts-diet"' + (dietCount ? ' open' : '') + '><summary>Diet variant'
+        + (dietCount ? ' <span class="ropts-diet-count">' + dietCount + '</span>' : ' <span class="ropts-diet-hint">optional</span>') + '</summary>'
+        + '<div class="chiprow ropts-diet-chips">'
+        + DIET_KEYS.map(function(k){ return '<button class="pill ghost chip-preset' + ((choice.dietKeys || []).indexOf(k) !== -1 ? ' chipsel' : '') + '" onclick="toggleRecipeOptionChoiceDiet(' + gi + ',' + ci + ',\'' + k + '\')">' + escapeHtml(dietLabel(k)) + '</button>'; }).join('')
+        + '</div></details>';
+      if(warn) html += '<div class="ropts-warn">' + warn + '</div>';
+      html += '</div>'; // .ropts-choice
     });
 
-    html += '<button class="cta ghostbtn" style="margin-top:8px" onclick="addRecipeOptionChoice(' + gi + ')">＋ Add choice</button>';
-    html += '</div>'; // .recipe-option-group
+    html += '<button class="ropts-add ropts-add-choice" onclick="addRecipeOptionChoice(' + gi + ')">＋ Add choice</button>';
+    html += '</div>'; // .ropts-group
   });
 
-  html += '<button class="cta ghostbtn" style="margin-top:8px" onclick="addRecipeOptionGroup()">＋ Add option group</button>';
+  html += '<button class="cta ghostbtn ropts-add-group" style="margin-top:12px" onclick="addRecipeOptionGroup()">＋ Add option group</button>';
   return html;
 }
 

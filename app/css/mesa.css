@@ -1027,6 +1027,48 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
    large pill CTAs in a dense editing form. */
 .recipe-builder-panel .pill.chip-preset{min-height:44px;border:1px solid rgba(176,146,105,.35);border-radius:10px;padding:0 11px;background:rgba(255,250,240,.78);color:var(--ink-soft);font-size:12px;font-weight:700;}
 .recipe-builder-panel .pill.chip-preset.chipsel{border-color:var(--sage);background:var(--sage);color:#fff;}
+
+/* ---- Recipe builder → Options (variant groups): calm, flat redesign (2026-09-16) ----
+   One bordered group holds hairline-separated choices; name inputs are their own headers;
+   the diet-variant chips hide behind a <details>; ingredient rows are single roomy lines. */
+.ropts-intro{margin:0 0 2px;line-height:1.5;}
+.ropts-group{border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.5);padding:6px 14px 14px;margin-top:12px;}
+.ropts-group-head{display:flex;align-items:center;gap:8px;padding-top:8px;}
+.ropts-group-name{flex:1;min-width:0;font-size:15px;font-weight:800;color:var(--ink);background:transparent;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:6px 2px;font-family:inherit;}
+.ropts-group-name:focus{outline:none;border-bottom-color:var(--sage);}
+.ropts-group-name::placeholder{font-weight:700;color:var(--muted);}
+.ropts-choice{margin-top:14px;padding-top:14px;border-top:1px solid var(--line);}
+.ropts-choice-head{display:flex;align-items:center;gap:8px;}
+.ropts-choice-name{flex:1;min-width:0;font-size:14px;font-weight:700;color:var(--ink);background:transparent;border:0;border-bottom:1px solid transparent;border-radius:0;padding:4px 2px;font-family:inherit;}
+.ropts-choice-name:focus{outline:none;border-bottom-color:var(--sage);}
+.ropts-choice-name::placeholder{font-weight:600;color:var(--muted);}
+.ropts-default-tag{flex-shrink:0;font-size:10px;font-weight:800;letter-spacing:.05em;text-transform:uppercase;color:var(--sage-deep);background:rgba(122,142,110,.16);border-radius:999px;padding:4px 9px;white-space:nowrap;}
+.ropts-setdefault{flex-shrink:0;font:inherit;font-size:11.5px;font-weight:700;color:var(--muted);background:transparent;border:0;padding:6px 4px;min-height:44px;cursor:pointer;white-space:nowrap;}
+.ropts-setdefault:active{transform:scale(.96);}
+/* Quiet the remove ✕: the shared .lib-del is a heavy 44px terracotta block that dominated the
+   section — here it's a small, muted, transparent glyph that only tints on press. */
+.ropts-del.lib-del{width:32px;height:32px;min-width:32px;flex:0 0 32px;border-radius:9px;background:transparent;color:var(--muted);font-size:14px;}
+.ropts-del.lib-del:active{background:#f6e6dc;color:#b25e35;}
+.ropts-ing{margin-top:12px;}
+.ropts-ing-name{display:block;font-size:13.5px;color:var(--ink);line-height:1.35;}
+.ropts-ing-step{margin:6px 0 0!important;justify-content:flex-start;gap:8px;}
+.ropts-ing-step .sv-unit{min-width:0;margin:0;}
+.ropts-ing-step .ropts-ing-del.lib-del{width:32px;height:32px;min-width:32px;flex:0 0 32px;border:0;border-radius:9px;background:transparent;color:var(--muted);font-size:14px;margin-left:auto;}
+.ropts-ing-step .ropts-ing-del.lib-del:active{background:#f6e6dc;color:#b25e35;}
+.ropts-add{display:inline-flex;align-items:center;gap:6px;margin-top:12px;font:inherit;font-size:12.5px;font-weight:700;color:var(--sage-deep);background:transparent;border:0;padding:8px 2px;min-height:40px;cursor:pointer;}
+.ropts-add:active{transform:scale(.97);}
+.ropts-add-choice{margin-top:14px;}
+.ropts-diet{margin-top:10px;}
+.ropts-diet summary{list-style:none;cursor:pointer;display:flex;align-items:center;gap:7px;min-height:38px;font-size:12px;font-weight:700;color:var(--muted);}
+.ropts-diet summary::-webkit-details-marker{display:none;}
+.ropts-diet summary::after{content:none!important;}   /* neutralise the panel's own summary chevron leaking in */
+.ropts-diet summary::before{content:'⌄';font-size:12px;color:var(--muted);transition:transform .16s ease;order:0;}
+.ropts-diet[open] summary::before{transform:rotate(180deg);}
+.ropts-diet summary > span{margin-left:auto;}
+.ropts-diet-hint{font-weight:600;color:var(--muted);opacity:.75;}
+.ropts-diet-count{background:var(--sage);color:#fff;border-radius:999px;font-size:10px;font-weight:800;padding:1px 7px;}
+.ropts-diet-chips{margin-top:10px;margin-bottom:2px;}
+.ropts-warn{font-size:11.5px;line-height:1.4;color:#b25e35;margin-top:10px;}
 .food-builder-panel{margin-top:12px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.58);overflow:hidden;}
 .food-builder-panel summary{min-height:46px;box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 13px;cursor:pointer;color:var(--ink-soft);font-size:13px;font-weight:800;list-style:none;}
 .food-builder-panel summary::-webkit-details-marker{display:none;}

@@ -12431,7 +12431,7 @@ function testRecipeOptionsBuilder(ctx){
     const html = call(ctx, 'buildRecipeBuilderSheet', []);
     assert(html.indexOf('Options <span') !== -1,
       'recipe detail discoverability: the existing "Change image" edit entry point (openRecipeImageForm) reaches a builder sheet including the Options section', '');
-    assert(html.indexOf('recipe-option-group') !== -1 && html.indexOf('Group 1') !== -1,
+    assert(html.indexOf('ropts-group') !== -1 && /value="Fish"/.test(html),
       'recipe detail discoverability: baked-fish\'s existing Fish optionGroup renders inside the builder\'s Options section', '');
     run(ctx, "recipeBuilder = null;");
   })();
