@@ -132,6 +132,11 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 /* Today macro concern (free sugars on Carbs / sat fat on Fat, 2026-09-14): a small amber dot
    on the macro head, and a calm inline detail on tap. Amber = the day-balance outlier colour. */
 .macro-warn-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--balance-off);margin-left:6px;vertical-align:middle;}
+/* The class sets display:inline-block, which (author rule) outranks the UA [hidden]{display:none}
+   — so without this the dot/chip showed even when renderTodayMacroConcerns set hidden=true, i.e.
+   an amber dot on days with nothing to flag (owner 2026-09-16). Same trap the .login-gate rule
+   below documents. The [hidden] variant (specificity 0,2,0) restores the hide. */
+.macro-warn-dot[hidden]{display:none;}
 /* When the day is a real WHO outlier, the dot reads out as a small amber chip so the
    correction is legible on Today without a tap (owner 2026-09-15). Same amber "off" token,
    never red. Overrides the dot's dimensions above (must follow it in source order). */

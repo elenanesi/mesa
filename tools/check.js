@@ -14441,6 +14441,11 @@ function testNeutralOverTargetAndCompactMacroLine(ctx){
   const chipRule = (cssSrc.match(/\.macro-warn-chip\{[^}]*\}/) || [''])[0];
   assert(/var\(--balance-off\)/.test(chipRule) && !/red|#f00/i.test(chipRule),
     'macro-warn-chip: amber --balance-off background, never red', chipRule);
+  // Regression (owner 2026-09-16): .macro-warn-dot sets display:inline-block, which outranks the
+  // UA [hidden]{display:none}, so without an explicit [hidden] guard the dot showed on days with
+  // nothing to flag. Assert the guard exists so renderTodayMacroConcerns' hidden toggle works.
+  assert(/\.macro-warn-dot\[hidden\]\s*\{\s*display\s*:\s*none/.test(cssSrc),
+    'macro-warn-dot: a [hidden] guard hides the dot/chip when nothing is flagged (else the class display beats [hidden])', '');
   const apDetailRule = (cssSrc.match(/\.arc-popover \.ap-detail\{[^}]*\}/) || [''])[0];
   assert(/color\s*:\s*var\(--muted\)/.test(apDetailRule) && !/--terra|--gold-warn|red/.test(apDetailRule),
     'showArcPopover: the detail text stays in the same neutral muted color regardless of over/under target (no failure color)', apDetailRule);
