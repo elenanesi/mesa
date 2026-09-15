@@ -618,7 +618,20 @@ function renderTodayMacroConcerns(){
   ['carbs', 'fat'].forEach(function(which){
     const nut = which === 'carbs' ? 'freeSugars' : 'satFat';
     const dot = document.getElementById(which + 'WarnDot');
-    if(dot) dot.hidden = !(c && c[nut] && c[nut].high);
+    if(!dot) return;
+    const isHigh = !!(c && c[nut] && c[nut].high);
+    dot.hidden = !isHigh;
+    // Owner 2026-09-15: a bare 7px dot is too quiet to say WHAT to correct. When high, read the
+    // signal out as a small amber chip ("Sat fat high" / "Free sugars high") so the correction
+    // is legible on Today without a tap; the popover carries the vs-guideline detail. Amber
+    // (--balance-off), never red.
+    if(isHigh){
+      dot.textContent = which === 'carbs' ? 'Free sugars high' : 'Sat fat high';
+      dot.classList.add('macro-warn-chip');
+    } else {
+      dot.textContent = '';
+      dot.classList.remove('macro-warn-chip');
+    }
   });
 }
 

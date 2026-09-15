@@ -185,7 +185,10 @@ function validateData() {
     if (typeof r.emoji !== 'string' || !r.emoji) errors.push(prefix + 'emoji missing/empty');
     if (typeof r.time !== 'number' || r.time <= 0) errors.push(prefix + 'time must be a positive number');
     if ('imageKey' in r && (typeof r.imageKey !== 'string' || !/^[a-z0-9][a-z0-9-]*$/.test(r.imageKey))) errors.push(prefix + 'invalid imageKey');
-    if ('imageUri' in r && (typeof r.imageUri !== 'string' || !/^assets\/recipes\/[a-z0-9][a-z0-9-]*\.png$/.test(r.imageUri))) errors.push(prefix + 'invalid imageUri');
+    // A recipe may reuse an existing Mesa ingredient illustration when the ingredient is the
+    // clearest visual identifier (e.g. an apple snack, a soft drink) — so both assets/recipes/
+    // and assets/ingredients/ are valid. Mirrors safeRecipeImageAsset() in render-recipe.js.
+    if ('imageUri' in r && (typeof r.imageUri !== 'string' || !/^assets\/(?:recipes|ingredients)\/[a-z0-9][a-z0-9-]*\.png$/.test(r.imageUri))) errors.push(prefix + 'invalid imageUri');
     // servings (batch yield) is optional — absent means 1.
     if ('servings' in r && (typeof r.servings !== 'number' || r.servings <= 0)) errors.push(prefix + 'servings must be a positive number');
     if ('season' in r && VALID_SEASONS.indexOf(r.season) === -1) errors.push(prefix + 'invalid season "' + r.season + '"');

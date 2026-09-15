@@ -1427,7 +1427,7 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos', 'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef']),
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos', 'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef', 'sesame-asian-bowl', 'roast-grill-plate']),
     'availableRecipeImageKeys: returns curated recipe image set plus approved ad hoc recipe images', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
   assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
     'safeRecipeImageKey: accepts an available recipe image key', '');
@@ -1443,8 +1443,12 @@ function testRecipeImageHelpers(ctx){
     'safeRecipeImageKey: rejects path traversal / format-invalid keys', '');
   assert(call(ctx, 'safeRecipeImageAsset', ['assets/recipes/salmon-greens.png']) === 'assets/recipes/salmon-greens.png',
     'safeRecipeImageAsset: accepts assets/recipes/<key>.png paths', '');
-  assert(call(ctx, 'safeRecipeImageAsset', ['assets/ingredients/salmon-greens.png']) === '',
-    'safeRecipeImageAsset: rejects non-recipe asset directories', '');
+  assert(call(ctx, 'safeRecipeImageAsset', ['assets/ingredients/apples.png']) === 'assets/ingredients/apples.png',
+    'safeRecipeImageAsset: accepts assets/ingredients/<key>.png (a recipe may reuse an ingredient illustration)', '');
+  assert(call(ctx, 'safeRecipeImageAsset', ['assets/evil/salmon-greens.png']) === '',
+    'safeRecipeImageAsset: rejects asset directories other than recipes/ or ingredients/', '');
+  assert(call(ctx, 'safeRecipeImageAsset', ['assets/recipes/../ingredients/apples.png']) === '',
+    'safeRecipeImageAsset: rejects path traversal', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'URI hero test', emoji: '🍽️', imageUri: 'assets/recipes/pizza.png', imageKey: 'fish-main'}]) === 'assets/recipes/pizza.png',
     'recipeImageAssetForRecipe: recipe imageUri takes priority over imageKey', '');
   assert(call(ctx, 'recipeImageAssetForRecipe', [{title: 'Bad URI test', emoji: '🍽️', imageUri: 'https://evil.example/pizza.png', imageKey: 'fish-main'}]) === 'assets/recipes/fish-main.png',
@@ -14225,7 +14229,28 @@ function testNeutralOverTargetAndCompactMacroLine(ctx){
     'showArcPopover: the over-target number is still shown, now as neutral bold emphasis instead of a warning glyph', popoverSrc);
   assert(/detailEl\.innerHTML\s*=\s*detail/.test(popoverSrc),
     'showArcPopover: renders via innerHTML so the neutral <strong> emphasis can actually render', popoverSrc);
+  // Owner 2026-09-15 ("make it clear what needs correction"): an over-WHO-line sub-nutrient
+  // must be UNMISSABLE — amber weight + an explicit vs-guideline comparison, pulling the
+  // target from NUTRITION_GUIDANCE (never a hardcoded 10), never red.
+  assert(/color:var\(--balance-off\)/.test(popoverSrc),
+    'showArcPopover: an over-line sub-nutrient (sat fat / free sugars) is emphasised in amber --balance-off', popoverSrc);
+  assert(!/color:\s*(red|#f00|#ff0000|var\(--terra\))/i.test(popoverSrc),
+    'showArcPopover: the concern emphasis is never red (panel-rejected)', popoverSrc);
+  assert(/NUTRITION_GUIDANCE\[subKey\]/.test(popoverSrc) && /WHO suggests under/.test(popoverSrc),
+    'showArcPopover: shows an explicit "WHO suggests under N%" comparison, single-sourced from NUTRITION_GUIDANCE (not hardcoded)', popoverSrc);
+  assert(!/WHO suggests under 10%/.test(popoverSrc) && !/under\s*10\s*%/.test(popoverSrc),
+    'showArcPopover: the guideline number is interpolated from the target, not literally typed as 10', popoverSrc);
+  // The Today macro-concern signal upgraded from a bare 7px dot to a labelled amber chip.
+  const renderSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
+  const rtmcStart = renderSrc.indexOf('function renderTodayMacroConcerns(');
+  const rtmcNext = renderSrc.indexOf('\nfunction ', rtmcStart + 1);
+  const rtmcSrc = renderSrc.slice(rtmcStart, rtmcNext === -1 ? renderSrc.length : rtmcNext);
+  assert(/macro-warn-chip/.test(rtmcSrc) && /Sat fat high/.test(rtmcSrc) && /Free sugars high/.test(rtmcSrc),
+    'renderTodayMacroConcerns: a high day reads out as a labelled amber chip ("Sat fat high" / "Free sugars high"), not just a dot', rtmcSrc);
   const cssSrc = fs.readFileSync(path.join(APP_DIR, 'css', 'mesa.css'), 'utf8');
+  const chipRule = (cssSrc.match(/\.macro-warn-chip\{[^}]*\}/) || [''])[0];
+  assert(/var\(--balance-off\)/.test(chipRule) && !/red|#f00/i.test(chipRule),
+    'macro-warn-chip: amber --balance-off background, never red', chipRule);
   const apDetailRule = (cssSrc.match(/\.arc-popover \.ap-detail\{[^}]*\}/) || [''])[0];
   assert(/color\s*:\s*var\(--muted\)/.test(apDetailRule) && !/--terra|--gold-warn|red/.test(apDetailRule),
     'showArcPopover: the detail text stays in the same neutral muted color regardless of over/under target (no failure color)', apDetailRule);

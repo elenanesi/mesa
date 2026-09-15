@@ -132,6 +132,10 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 /* Today macro concern (free sugars on Carbs / sat fat on Fat, 2026-09-14): a small amber dot
    on the macro head, and a calm inline detail on tap. Amber = the day-balance outlier colour. */
 .macro-warn-dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--balance-off);margin-left:6px;vertical-align:middle;}
+/* When the day is a real WHO outlier, the dot reads out as a small amber chip so the
+   correction is legible on Today without a tap (owner 2026-09-15). Same amber "off" token,
+   never red. Overrides the dot's dimensions above (must follow it in source order). */
+.macro-warn-chip{width:auto;height:auto;border-radius:8px;background:var(--balance-off);color:#fff;font-size:10px;font-weight:700;line-height:1;letter-spacing:.2px;padding:3px 7px;}
 .macro-detail{margin-top:9px;padding:10px 12px;background:rgba(207,138,48,.08);border:1px solid rgba(207,138,48,.22);border-radius:10px;}
 .macro-detail-line{font-size:13px;color:var(--ink-soft);}
 .macro-detail-chip{background:var(--balance-off);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border:0;margin-left:2px;vertical-align:middle;}

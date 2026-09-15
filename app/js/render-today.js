@@ -3267,7 +3267,17 @@ function showArcPopover(macro, event){
       if(c2 && c2[subKey]){
         var d2 = c2[subKey];
         var subLine = subLabel + ' ' + d2.grams + 'g · ' + d2.pct + '% of energy';
-        detail += '\n\n' + (d2.high ? '<strong>' + subLine + ' · above the WHO line</strong>' : subLine);
+        if(d2.high){
+          // Over the WHO line: make the sub-nutrient unmissable (amber weight, the app's
+          // existing "off" colour — never red, panel-rejected) AND explicit about the target,
+          // pulling the guideline % from NUTRITION_GUIDANCE so it stays single-sourced (never
+          // a hardcoded 10). Owner 2026-09-15: "make it clear what needs correction".
+          var g2 = (typeof NUTRITION_GUIDANCE !== 'undefined' && NUTRITION_GUIDANCE[subKey]) ? NUTRITION_GUIDANCE[subKey] : null;
+          var guideTxt = g2 ? (' — WHO suggests under ' + g2.target + '%') : ' — above the WHO line';
+          detail += '\n\n<strong style="color:var(--balance-off)">' + subLine + guideTxt + '</strong>';
+        } else {
+          detail += '\n\n' + subLine;
+        }
         var tops = d2.contributors.slice(0, 2).map(function(x){ return escapeHtml(x.label) + ' ' + x.grams + 'g'; });
         if(tops.length) detail += '\nfrom ' + tops.join(' · ');
       }
