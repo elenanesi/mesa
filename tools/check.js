@@ -1443,7 +1443,7 @@ function testRecipeDisplayHelpers(ctx){
 }
 
 function testRecipeImageHelpers(ctx){
-  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos', 'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef', 'sesame-asian-bowl', 'roast-grill-plate']),
+  assert(JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])) === JSON.stringify(['default-recipe', 'breakfast-bowl', 'salad', 'soup', 'pasta', 'cooked-vegetables', 'meat-main', 'fish-main', 'dessert-sweets', 'ice-cream', 'ramen', 'butter-chicken', 'chinese-dinner', 'fast-food-menu', 'onigiri', 'french-toast', 'pancakes', 'boiled-chicken-broth', 'burrito', 'citrus-roast-turkey', 'club-sandwich', 'shakshuka', 'polpette-tacchino-yogurt-menta', 'feta-filo-miele-noodles-verdure', 'pomodori-al-riso', 'ricotta-pere-noci-toast', 'uova-avocado-toast', 'carrots-over-hummus', 'spring-rolls', 'pizza', 'snack-board', 'nachos', 'cinnamon-roll', 'hot-dog', 'yogurt-cake', 'egg-dishes', 'egg-avocado-bacon-beans-toast', 'slow-braised-beef', 'sesame-asian-bowl', 'roast-grill-plate', 'sushi-platter', 'savory-breakfast']),
     'availableRecipeImageKeys: returns curated recipe image set plus approved ad hoc recipe images', JSON.stringify(call(ctx, 'availableRecipeImageKeys', [])));
   assert(call(ctx, 'safeRecipeImageKey', ['fish-main']) === 'fish-main',
     'safeRecipeImageKey: accepts an available recipe image key', '');
@@ -1802,7 +1802,7 @@ function testRecipeImagePicker(ctx){
   // Editing a built-in now FORKS + sends the original back to the market (owner spec 2026-08-30),
   // which materializes/mutates the recipe-book globals — snapshot them so this test restores them.
   const __bookSnap = get(ctx, "JSON.stringify({rb: (typeof recipeBook!=='undefined'&&recipeBook)||null, rbi: (typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb: (typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}})");
-  call(ctx, 'openEditRecipeForm', ['omelette']);
+  call(ctx, 'openEditRecipeForm', ['lentil']);
   assert(get(ctx, 'recipeBuilder').imageKey === null,
     'openEditRecipeForm: built-in recipes without explicit imageKey start in Auto mode', String(get(ctx, 'recipeBuilder').imageKey));
   assert(get(ctx, 'recipeBuilder').imagePickerOpen === false,
