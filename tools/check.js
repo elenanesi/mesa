@@ -12599,10 +12599,11 @@ function testMealBuilder(ctx){
 }
 
 // Wiring guard (source-structure, not DOM — same reasoning testAteOutQuickAddWiring's doc
-// gives): the swap sheet's "Build your own meal" button really opens the MEAL BUILDER (not
-// the old add-meal composer), the ate-out sheet's "Build it from ingredients" button really
-// hands off into it too, and both one-time-recipe footer actions reuse the RIGHT underlying
+// gives): the ate-out sheet's "Build it from ingredients" button really hands off into the
+// MEAL BUILDER, and both one-time-recipe footer actions reuse the RIGHT underlying
 // primitives — applyOneTimeMealToSlot, never the kcal-matching applySwap/applySwapToPlan.
+// (The swap sheet's old "Build your own meal" button was removed 2026-09-16 — per-ingredient
+// edit/swap/remove on the Today meal detail replaced it — so it is asserted GONE below.)
 function testMealBuilderWiring(){
   const renderSrc = readAllRenderSrc();
   const plannerSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'planner.js'), 'utf8');
@@ -12612,10 +12613,8 @@ function testMealBuilderWiring(){
     return m ? m[0] : '';
   };
 
-  const openFn = fnBodyIn(plannerSrc, 'openBuildYourOwnMeal');
-  assert(openFn.length > 0, 'wiring setup: openBuildYourOwnMeal() found in planner.js', 'not found');
-  assert(openFn.indexOf('openMealBuilder(') !== -1, 'openBuildYourOwnMeal(): opens the MEAL BUILDER, not the old add-meal composer', openFn);
-  assert(openFn.indexOf("'plan'") !== -1, 'openBuildYourOwnMeal(): opens it in mode:\'plan\' (its footer can set the slot\'s base)', openFn);
+  assert(fnBodyIn(plannerSrc, 'openBuildYourOwnMeal').length === 0, 'openBuildYourOwnMeal() removed from planner.js (Swap "Build your own meal" retired)', 'still present');
+  assert(plannerSrc.indexOf('openBuildYourOwnMeal(') === -1, 'no lingering reference to openBuildYourOwnMeal() in planner.js', 'reference found');
 
   const ateOutFn = fnBodyIn(renderSrc, 'buildAteOutSheet');
   assert(ateOutFn.length > 0, 'wiring setup: buildAteOutSheet() found in render-today.js', 'not found');
@@ -12625,11 +12624,11 @@ function testMealBuilderWiring(){
   assert(handoffFn.length > 0, 'wiring setup: openMealBuilderFromAteOut() found in render-today.js', 'not found');
   assert(handoffFn.indexOf("openMealBuilder(ctx, 'eatenOut')") !== -1, 'openMealBuilderFromAteOut(): hands off in mode:\'eatenOut\', carrying the ate-out sheet\'s own ctx', handoffFn);
 
-  const useFn = fnBodyIn(renderSrc, 'confirmMealBuilderUseForThisMeal');
-  assert(useFn.length > 0, 'wiring setup: confirmMealBuilderUseForThisMeal() found in render-today.js', 'not found');
-  assert(useFn.indexOf('createOneTimeRecipeFromRows(') !== -1, 'confirmMealBuilderUseForThisMeal(): creates the one-time recipe via createOneTimeRecipeFromRows()', useFn);
-  assert(useFn.indexOf('applyOneTimeMealToSlot(') !== -1, 'confirmMealBuilderUseForThisMeal(): sets the slot via applyOneTimeMealToSlot()', useFn);
-  assert(useFn.indexOf('applySwap(') === -1 && useFn.indexOf('applySwapToPlan(') === -1, 'confirmMealBuilderUseForThisMeal(): never calls the kcal-matching applySwap/applySwapToPlan (would silently re-portion the built meal)', useFn);
+  // The mode:'plan' footer action (confirmMealBuilderUseForThisMeal) was removed 2026-09-16
+  // with the Swap "Build your own meal" button — assert it is gone so nothing revives a
+  // dead entry point.
+  assert(fnBodyIn(renderSrc, 'confirmMealBuilderUseForThisMeal').length === 0, 'confirmMealBuilderUseForThisMeal() removed (mode:\'plan\' footer retired with the Swap builder button)', 'still present');
+  assert(renderSrc.indexOf('confirmMealBuilderUseForThisMeal(') === -1, 'no lingering reference to confirmMealBuilderUseForThisMeal()', 'reference found');
 
   const logFn = fnBodyIn(renderSrc, 'confirmMealBuilderLogEatenOut');
   assert(logFn.length > 0, 'wiring setup: confirmMealBuilderLogEatenOut() found in render-today.js', 'not found');

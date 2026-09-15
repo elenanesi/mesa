@@ -1301,7 +1301,10 @@ function commitMealExtraFoodAmount(foodId, raw){
    same customRecipes path every other custom recipe already uses.
 
    mealBuilder shape: {rows:[{foodId,grams}], name, ctx:{weekStartDate,dayIndex,slot,person}
-   |null, mode:'plan'|'eatenOut', pickerQuery, recipeQuery}. `pickerQuery` mirrors
+   |null, mode:'eatenOut', pickerQuery, recipeQuery}. (The old mode:'plan' entry point — the
+   Swap sheet's "Build your own meal" button — was retired 2026-09-16 once per-ingredient
+   edit/swap/remove landed on the Today meal detail; the builder now serves only the ate-out
+   "Build it from ingredients" hand-off.) `pickerQuery` mirrors
    recipeBuilder.pickerQuery's naming (the plain-ingredient food search); `recipeQuery` is
    this sheet's OWN addition — its recipe search, shared by BOTH "Seed from a recipe" and
    "Add a recipe's ingredients": they are the exact same explode-and-merge operation
@@ -1310,7 +1313,7 @@ function commitMealExtraFoodAmount(foodId, raw){
 let mealBuilder = null;
 
 function openMealBuilder(ctx, mode){
-  mealBuilder = {rows: [], name: '', ctx: ctx || null, mode: mode === 'eatenOut' ? 'eatenOut' : 'plan', pickerQuery: '', recipeQuery: ''};
+  mealBuilder = {rows: [], name: '', ctx: ctx || null, mode: mode === 'plan' ? 'plan' : 'eatenOut', pickerQuery: '', recipeQuery: ''};
   document.getElementById('sheetBody').innerHTML = buildMealBuilderSheet();
   attachMealBuilderSheetHandler();
   document.getElementById('sheet').classList.add('tall');
@@ -1553,9 +1556,6 @@ function buildMealBuilderSheet(){
     + '<div id="mealBuilderFoodResults" style="margin-top:4px">' + mealBuilderFoodResultsHtml(mb.pickerQuery) + '</div>';
 
   html += '<button class="cta ghostbtn" style="margin-top:14px" onclick="openMealBuilderSaveSheet()">💾 Save to My recipes</button>';
-  if(mb.ctx && mb.mode === 'plan'){
-    html += '<button class="cta" onclick="confirmMealBuilderUseForThisMeal()">🍽️ Use for this meal</button>';
-  }
   if(mb.ctx && mb.mode === 'eatenOut'){
     html += '<button class="cta" onclick="confirmMealBuilderLogEatenOut()">🍴 Log as eaten out</button>';
   }
@@ -1624,46 +1624,6 @@ function confirmMealBuilderSave(){
   saveRecipeBuilder();
   if(recipeBuilder === null){ mealBuilder = null; closeSheet(); }
   else document.getElementById('sheetBody').innerHTML = buildMealBuilderSaveSheet(); // abort (e.g. dup name) — re-show the name step so its own toast has context to fix
-}
-
-// "🍽️ Use for this meal" (mode:'plan', shown only when ctx is set): freezes the builder's
-// rows into a ONE-TIME custom recipe (library.js:createOneTimeRecipeFromRows —
-// occasional:true so it never resurfaces for auto-planning, oneTime:true so it never
-// clutters My recipes) and sets it as ctx's own slot via applyOneTimeMealToSlot (planner.js)
-// — NOT applySwap/applySwapToPlan, which would re-portion the recipe to match whatever kcal
-// was already in the slot and silently distort the exact macros the live totals just showed.
-// If that slot is already CONFIRMED (logged) for its own date, corrects the log entry in
-// place too — same reasoning planner.js:chooseSwapRecipe already documents for a normal
-// swap: this IS a swap, just onto a freshly-minted recipe instead of an existing one, and
-// must not leave a stale logged dish behind it. Requires >=1 row.
-function confirmMealBuilderUseForThisMeal(){
-  if(!mealBuilder || !mealBuilder.ctx) return;
-  if(!mealBuilder.rows.length){ toast('Add at least one ingredient'); return; }
-  const ctx = mealBuilder.ctx;
-  const newId = createOneTimeRecipeFromRows(mealBuilder.rows, mealBuilder.name, [ctx.slot]);
-  if(!newId){ toast('Could not build this meal'); return; }
-  applyOneTimeMealToSlot(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, newId);
-  const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
-  if(logHistory[dateISO]){
-    const plan = editableWeekPlan(ctx.weekStartDate);
-    const meal = plan.days[ctx.dayIndex].meals[ctx.slot];
-    const people = meal.shared ? ['elena', 'partner'] : [ctx.person];
-    people.forEach(function(person){
-      if(slotLogStatus(dateISO, person, ctx.slot) !== 'confirmed') return;
-      const planEntry = meal[person];
-      logPlanEntry(dateISO, person, ctx.slot, planEntry.recipeId, planEntry.portion, planEntryComponents(planEntry));
-    });
-  }
-  mealBuilder = null;
-  recomputeConsumed(currentProf);
-  recomputeProf(currentProf);
-  refreshRingAndBars();
-  renderTodayMeals();
-  renderLogScreen();
-  renderWeek();
-  persist();
-  closeSheet();
-  toast('🍽️ ' + RECIPES_DB[newId].title + ' set for this meal');
 }
 
 // "🍴 Log as eaten out" (mode:'eatenOut', shown only when ctx is set): same one-time recipe

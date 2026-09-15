@@ -4800,20 +4800,11 @@ function attachSwapSearchHandler(){
 // "show other meals" toggle is gone: search is universal by default (see
 // buildSwapSearchOptions), so the toggle had nothing left to toggle.
 
-// #5b/meal-builder (owner spec 2026-08-17): from the swap sheet, jump straight into the
-// MEAL BUILDER (render-today.js:openMealBuilder) for this slot — a separate ingredient-row
-// draft that can start from a recipe's ingredients and freely edit/remove them (not just add
-// extras on top of a privileged base, which is all the add-meal composer/
-// openAddMealSheetForContext ever allowed). Reads the shared swapCtx (set by openWeekSwap et
-// al.); mode 'plan' shows the builder's "Use for this meal" footer action, which sets THIS
-// slot's base recipe once the user commits (planner.js:applyOneTimeMealToSlot).
-function openBuildYourOwnMeal(){
-  if(!swapCtx) return;
-  const weekStartDate = swapCtx.weekStartDate || mondayOfWeek(todayISO());
-  if(typeof openMealBuilder === 'function'){
-    openMealBuilder({weekStartDate: weekStartDate, dayIndex: swapCtx.dayIndex, slot: swapCtx.slot, person: swapCtx.person}, 'plan');
-  }
-}
+// NB: the swap sheet's old "🧩 Build your own meal" button (openBuildYourOwnMeal → the meal
+// builder in mode:'plan') was removed 2026-09-16 — per-ingredient edit/swap/remove now lives
+// directly on the Today meal detail (render-recipe.js:substitutableIngredientListHtml), so a
+// separate from-scratch builder in Swap was redundant. The meal builder itself stays: the
+// ate-out flow still uses it (render-today.js:openMealBuilderFromAteOut, mode:'eatenOut').
 
 // "What do you feel like?" chips (owner spec, 2026-08-17): single-select preset chips that
 // filter/re-rank "Best matches" in place — instant re-render, no submit, matching the rest of
@@ -4969,7 +4960,6 @@ function buildSwapSheet(ctx){
 
   const slotLabel = (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
   let html = '<h2 style="margin-top:6px">Swap this meal</h2><p class="sub">Best matches keep the plan close. Search reaches your whole book — any recipe, any meal, including yours.</p>'
-    + '<button class="cta ghostbtn" style="margin-top:4px" onclick="openBuildYourOwnMeal()">🧩 Build your own meal — ingredients &amp; recipes</button>'
     + '<div id="swapCravingChips">' + swapCravingChipsHtml() + '</div>'
     + '<div id="swapBestMatches">' + swapBestMatchesHtml(best) + '</div>';
 

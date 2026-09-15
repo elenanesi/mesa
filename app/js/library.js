@@ -4564,8 +4564,7 @@ function saveRecipeBuilder(){
 }
 
 // "Save a composed meal as a recipe" (wired from the add-meal composer's 💾 button,
-// render-today.js:confirmSaveComposedMeal — the swap sheet's 🧩 "Build your own meal" is
-// the other entry point into that same composer). Flattens `entry`'s LIVE components
+// render-today.js:confirmSaveComposedMeal). Flattens `entry`'s LIVE components
 // (planner.js:planEntryComponents + flattenComponentsToIngredientRows — base recipe plus
 // every extra ingredient/side/full recipe, foodId-merged) into ONE new custom recipe, so a
 // meal composed on the fly can be replanned again without re-composing it from scratch.
