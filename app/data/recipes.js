@@ -2310,7 +2310,7 @@ const RECIPES_DB = {
     avoid: ['gluten', 'lactose']
   },
   'jennifer-aniston-salad': {
-    title: 'Jennifer Aniston quinoa salad', emoji: '🥗', slot: 'lunch', role: 'full',
+    title: 'Quinoa, chickpea & feta salad', emoji: '🥗', slot: 'lunch', role: 'full',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['quinoa', 55], ['chickpeas', 70], ['cucumber', 60], ['red-onion', 30], ['pistachios', 20], ['feta-cheese', 40], ['olive-oil', 8], ['lemon', 6]],
     toTaste: ['parsley', 'mint', 'black pepper', 'salt'],
