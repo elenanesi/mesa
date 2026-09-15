@@ -395,6 +395,66 @@ function applyConsecutiveDinnerProteinRule(pool, history, persons, slot, dayInde
   return pool; // never starve the slot
 }
 
+/* ---------------- same-day lunch/dinner near-duplicate rule (owner 2026-09-16) ----------------
+   "The planner gives almost the same recipe for lunch and dinner the same day" — e.g. prawn &
+   cherry-tomato pasta at lunch and prawn & courgette wholegrain linguine at dinner: two different
+   recipe ids, but the same MEAL (prawn + pasta). The existing same-day rule (dominantIngredientKey/
+   ingredientDiversityPenalty) only looks at Produce/Dairy, so it misses this — the two share their
+   protein (prawn) and their starch base (pasta), and only differ on the veg. This catches it: a
+   dish's "similarity signature" is its protein kind + its primary starch family, and no two
+   lunch/dinner MAINS the same day may share one. Relaxes (never starves) like every rule here. */
+const STARCH_FAMILY_BY_ID = (function(){
+  const m = {};
+  // pasta/noodles (reuses the same list isDinnerOnlyProteinMain keeps lunch-eligible)
+  PASTA_NOODLE_FOOD_IDS.forEach(function(id){ m[id] = 'pasta'; });
+  ['rice'].forEach(function(id){ m[id] = 'rice'; });
+  ['potatoes', 'sweet-potato'].forEach(function(id){ m[id] = 'potato'; });
+  ['quinoa', 'quinoa-dry', 'farro-cooked', 'bulgur-cooked', 'couscous', 'barley', 'oats'].forEach(function(id){ m[id] = 'grain'; });
+  ['rye-bread', 'wholewheat-bread', 'white-bread', 'hot-dog-bun', 'pizza-bianca'].forEach(function(id){ m[id] = 'bread'; });
+  return m;
+})();
+const MIN_STARCH_GRAMS = 30; // a breadcrumb coating or a token grain doesn't define the dish
+function primaryStarchFamily(recipe, opts){
+  if(!recipe || typeof recipeEffectiveIngredients !== 'function') return null;
+  let best = null;
+  recipeEffectiveIngredients(recipe, opts).forEach(function(ing){
+    const fam = STARCH_FAMILY_BY_ID[ing[0]];
+    if(!fam) return;
+    const grams = Number(ing[1]) || 0;
+    if(grams < MIN_STARCH_GRAMS) return;
+    if(!best || grams > best.grams) best = {fam: fam, grams: grams};
+  });
+  return best ? best.fam : null;
+}
+// null when the dish has no substantial starch base (a salad, a stew) — such a dish is never
+// flagged as a "same-format" duplicate, keeping the rule conservative. Meatless dishes key their
+// protein half as 'veg' so two veg pasta dishes the same day still collide.
+function mealSimilarityKey(recipeId, opts){
+  const r = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[recipeId];
+  if(!r) return null;
+  const fam = primaryStarchFamily(r, opts);
+  if(!fam) return null;
+  return (recipeProteinKind(recipeId, opts) || 'veg') + '#' + fam;
+}
+let sameDayMainSimRelaxations = 0;
+function applySameDayMainSimilarityRule(pool, history, persons, slot, dayIndex){
+  if(slot !== 'lunch' && slot !== 'dinner') return pool;
+  const usedKeys = {};
+  persons.forEach(function(p){
+    const arr = history[p].dayMainSimKey && history[p].dayMainSimKey[dayIndex];
+    (arr || []).forEach(function(k){ usedKeys[k] = true; });
+  });
+  if(!Object.keys(usedKeys).length) return pool; // first main of the day -> nothing to clash with
+  const filtered = pool.filter(function(id){
+    if(!isAutoLunchDinnerMain(id)) return true; // sides/non-mains don't define the meal
+    const k = mealSimilarityKey(id); // default combo — a taste rule, not exact-variant accounting
+    return !k || !usedKeys[k];
+  });
+  if(filtered.some(isAutoLunchDinnerMain)) return filtered;
+  if(pool.some(isAutoLunchDinnerMain)) sameDayMainSimRelaxations++;
+  return pool; // never starve the slot
+}
+
 // Counts how often a weekly cap had to be relaxed during one generateWeek(). A relaxation
 // is not a bug — every rule here degrades rather than returning an empty pool — but it does
 // mean the catalog cannot supply that slot within quota, which is otherwise invisible and
@@ -1028,6 +1088,15 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
   // avoid repeating it. Recorded for dinner only; lunch is intentionally not tracked here.
   if(slot === 'dinner' && history[person].dinnerProteinKind){
     history[person].dinnerProteinKind[dayIndex] = kind;
+  }
+  // Same-day lunch/dinner near-duplicate (applySameDayMainSimilarityRule): record this main's
+  // protein+starch signature so the OTHER main slot the same day avoids the same meal.
+  if((slot === 'lunch' || slot === 'dinner') && entry.recipeId && history[person].dayMainSimKey){
+    const sk = mealSimilarityKey(entry.recipeId, entry.opts);
+    if(sk){
+      if(!history[person].dayMainSimKey[dayIndex]) history[person].dayMainSimKey[dayIndex] = [];
+      history[person].dayMainSimKey[dayIndex].push(sk);
+    }
   }
   planEntryComponents(entry).forEach(function(c){
     if(c.recipeId){
@@ -1994,6 +2063,10 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons
   // main-repeat rule above and the same-day rule below, and a no-op for every non-dinner slot
   // (leaves lunch free for leftovers). Relaxes internally, so it never empties the pool.
   proteinBase = applyConsecutiveDinnerProteinRule(proteinBase, history, persons, slot, dayIndex);
+  // Same-day lunch/dinner near-duplicate rule (owner 2026-09-16): don't repeat the same
+  // protein+starch meal at both mains of one day (prawn pasta at lunch AND dinner). No-op for the
+  // first main of the day and for breakfast/snack; relaxes internally, so it never empties.
+  proteinBase = applySameDayMainSimilarityRule(proteinBase, history, persons, slot, dayIndex);
 
   const notUsedToday = proteinBase.filter(function(id){ return !usedToday[id]; });
   const dayBase = notUsedToday.length ? notUsedToday : proteinBase;
@@ -2508,7 +2581,7 @@ function generateWeek(seed){
     partner: (avoidFoodsList('partner')).slice()
   };
 
-  weeklyCapRelaxations = 0; mainRepeatRelaxations = 0; meatRuleRelaxations = 0; emptyPoolPicks = 0; consecutiveDinnerRelaxations = 0;
+  weeklyCapRelaxations = 0; mainRepeatRelaxations = 0; meatRuleRelaxations = 0; emptyPoolPicks = 0; consecutiveDinnerRelaxations = 0; sameDayMainSimRelaxations = 0;
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
   // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
@@ -2539,6 +2612,9 @@ function generateWeek(seed){
   // by dayIndex (sparse) — 'red'|'poultry'|'fish'|null (meatless) — read by
   // applyConsecutiveDinnerProteinRule so tomorrow's dinner avoids repeating tonight's protein.
   history.elena.dinnerProteinKind = {}; history.partner.dinnerProteinKind = {};
+  // Same-day lunch/dinner near-duplicate (owner 2026-09-16): per-person list of lunch/dinner MAIN
+  // protein+starch signatures by dayIndex (sparse) — read by applySameDayMainSimilarityRule.
+  history.elena.dayMainSimKey = {}; history.partner.dayMainSimKey = {};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.

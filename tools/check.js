@@ -760,6 +760,46 @@ function testPantryCustomFoodSurvivesValidation(ctx){
   }
 }
 
+// Same-day lunch/dinner near-duplicate rule (owner 2026-09-16): two different recipe ids that are
+// the same MEAL (prawn + pasta) must not land at lunch AND dinner the same day.
+// applySameDayMainSimilarityRule drops a main whose protein+starch signature already appears at a
+// lunch/dinner main today; a salad/stew (no starch base) is never flagged; it relaxes if that
+// would leave no main.
+function testSameDayMainSimilarity(ctx){
+  const L = 'prawn-pasta-cherry-tomato';
+  const D = 'prawn-courgette-wholegrain-linguine';
+  assert(get(ctx, "!!RECIPES_DB['" + L + "'] && !!RECIPES_DB['" + D + "']"), 'setup: both prawn+pasta fixture recipes exist', '');
+  // Both resolve to the same signature (fish + pasta) even though they are different recipes.
+  assert(call(ctx, 'mealSimilarityKey', [L]) === 'fish#pasta', 'mealSimilarityKey: prawn & cherry-tomato pasta => fish#pasta', String(call(ctx, 'mealSimilarityKey', [L])));
+  assert(call(ctx, 'mealSimilarityKey', [D]) === 'fish#pasta', 'mealSimilarityKey: prawn & courgette wholegrain linguine => fish#pasta', String(call(ctx, 'mealSimilarityKey', [D])));
+  assert(call(ctx, 'isAutoLunchDinnerMain', [L]) === true && call(ctx, 'isAutoLunchDinnerMain', [D]) === true, 'setup: both are auto lunch/dinner mains', '');
+
+  // A control main with a DIFFERENT signature (not fish#pasta) that must survive the filter.
+  run(ctx, "(function(){ __ctrl=null; var ids=Object.keys(RECIPES_DB); for(var i=0;i<ids.length;i++){ var id=ids[i]; if(!isAutoLunchDinnerMain(id)) continue; var k=mealSimilarityKey(id); if(k && k!=='fish#pasta'){ __ctrl=id; break; } } })();");
+  const ctrl = get(ctx, '__ctrl');
+  assert(!!ctrl, 'setup: found a control main with a non-fish#pasta signature', String(ctrl));
+
+  const hist = function(){ return {elena: {dayMainSimKey: {0: ['fish#pasta']}}}; };
+
+  // (1) Lunch already placed a fish#pasta main -> tonight's other prawn+pasta dish is excluded,
+  //     while the control main survives.
+  let out = call(ctx, 'applySameDayMainSimilarityRule', [[D, ctrl], hist(), ['elena'], 'dinner', 0]);
+  assert(out.indexOf(D) === -1 && out.indexOf(ctrl) !== -1,
+    'same-day similarity: a second fish#pasta main is dropped at dinner; a different-signature main stays', JSON.stringify(out));
+
+  // (2) First main of the day (no keys recorded yet) -> no constraint.
+  out = call(ctx, 'applySameDayMainSimilarityRule', [[D, ctrl], {elena: {dayMainSimKey: {}}}, ['elena'], 'lunch', 0]);
+  assert(out.length === 2, 'same-day similarity: the first main of the day is unconstrained', JSON.stringify(out));
+
+  // (3) Never starves: if every candidate is the same signature, relax to the input pool.
+  const before = get(ctx, 'sameDayMainSimRelaxations');
+  out = call(ctx, 'applySameDayMainSimilarityRule', [[D], hist(), ['elena'], 'dinner', 0]);
+  assert(out.indexOf(D) !== -1, 'same-day similarity: relaxes rather than emptying a pool with no alternative', JSON.stringify(out));
+  assert(get(ctx, 'sameDayMainSimRelaxations') === before + 1, 'same-day similarity: a relaxation is counted', 'before=' + before);
+
+  run(ctx, "delete __ctrl;");
+}
+
 // Consecutive-dinner protein/diet variety (owner 2026-09-16): applyConsecutiveDinnerProteinRule
 // must, for DINNER only, drop mains that repeat yesterday's dinner protein — same animal-protein
 // kind, or a second meatless night — while leaving LUNCH and non-mains untouched, and relaxing
@@ -14800,6 +14840,7 @@ function main(){
   runTest('Pantry re-add beats a stale removal tombstone (monotonic u)', function(){ testPantryReaddBeatsRemovalTombstone(ctx); });
   runTest('Pantry custom-food entry survives load validation', function(){ testPantryCustomFoodSurvivesValidation(ctx); });
   runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
+  runTest('Same-day lunch/dinner near-duplicate rule', function(){ testSameDayMainSimilarity(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });
