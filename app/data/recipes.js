@@ -87,6 +87,7 @@ const RECIPES_DB = {
   // "None" (granola/muesli are gluten) and they get a cereal-free bowl instead of losing the recipe.
   yogurt: {
     title: 'Yogurt bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 8,
     ingredients: [['maple-syrup', 8], ['chia-seeds', 6]],
@@ -124,6 +125,7 @@ const RECIPES_DB = {
   },
   omelette: {
     title: 'Veggie omelette & rye toast', emoji: '🍳', slot: 'breakfast', role: 'full',
+    imageKey: 'egg-dishes',
     styles: ['balanced', 'lowcarb'], time: 12,
     ingredients: [['eggs', 150], ['bell-pepper', 50], ['spinach', 30], ['rye-bread', 60], ['olive-oil', 5]],
     toTaste: ['herbs', 'black pepper'],
@@ -133,6 +135,7 @@ const RECIPES_DB = {
   },
   eggsturkey: {
     title: 'Eggs, turkey, cheese & bread', emoji: '🍳', slot: 'breakfast', role: 'full',
+    imageKey: 'egg-dishes',
     slots: ['breakfast', 'lunch'],
     styles: ['highprotein'], time: 10,
     ingredients: [['eggs', 100], ['turkey-breast', 80], ['scamorza', 30], ['olive-oil', 5]],
@@ -157,6 +160,7 @@ const RECIPES_DB = {
     // the name. MUST stay vegan + gluten-free (this is the vegan+GF starter breakfast) — soy,
     // chia, berries and coconut are all vegan/GF. sat fat 33 -> ~5, protein 9 -> ~14.
     title: 'Chia pudding, coconut & berries', emoji: '🍮', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     styles: ['balanced'], time: 5,
     ingredients: [['chia-seeds', 25], ['soy-milk', 170], ['soy-yogurt', 90], ['mixed-berries', 80], ['coconut-milk', 15]],
     toTaste: ['vanilla or cinnamon'],
@@ -166,6 +170,7 @@ const RECIPES_DB = {
   },
   'oats-berries-walnuts': {
     title: 'Overnight oats, walnuts & berries', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'winter/autumn',
     styles: ['balanced'], time: 5,
     ingredients: [['oats', 50], ['milk', 150], ['walnuts', 15], ['mixed-berries', 50], ['honey', 8]],
@@ -181,6 +186,7 @@ const RECIPES_DB = {
   // and 'balanced' so they refill that rotation year-round.
   'porridge-banana-almond': {
     title: 'Porridge with banana & almonds', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'winter/autumn',
     styles: ['balanced'], time: 8,
     ingredients: [['oats', 50], ['bananas', 100], ['apples', 60], ['almonds', 12], ['honey', 6]],
@@ -191,6 +197,7 @@ const RECIPES_DB = {
   },
   'scrambled-eggs-tomato-toast': {
     title: 'Scrambled eggs, tomato & toast', emoji: '🍳', slot: 'breakfast', role: 'full',
+    imageKey: 'club-sandwich',
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 10,
     ingredients: [['eggs', 120], ['cherry-tomatoes', 100], ['wholewheat-bread', 60], ['olive-oil', 6]],
@@ -201,6 +208,7 @@ const RECIPES_DB = {
   },
   'avocado-eggs': {
     title: 'Eggs & avocado', emoji: '🥑', slot: 'breakfast', role: 'main',
+    imageKey: 'egg-dishes',
     styles: ['lowcarb', 'highprotein'], time: 10,
     ingredients: [['eggs', 100], ['avocado', 70], ['cherry-tomatoes', 60], ['olive-oil', 5]],
     toTaste: ['lemon', 'black pepper'],
@@ -220,6 +228,7 @@ const RECIPES_DB = {
   },
   'veg-frittata': {
     title: 'Roast veg frittata', emoji: '🍳', slot: 'breakfast', role: 'main',
+    imageKey: 'egg-dishes',
     styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['eggs', 150], ['courgette', 60], ['bell-pepper', 60], ['parmesan', 20], ['olive-oil', 5]],
     toTaste: ['herbs'],
@@ -229,6 +238,7 @@ const RECIPES_DB = {
   },
   'almond-skyr-bowl': {
     title: 'Skyr, almonds & chia', emoji: '🥣', slot: 'breakfast', role: 'main',
+    imageKey: 'breakfast-bowl',
     // flavor (owner 2026-09-06): a SWEET breakfast main, so the planner pairs it with fruit, not
     // bread. Breakfast mains default to savory (eggs -> bread/nuts); tag the sweet-leaning ones.
     flavor: 'sweet',
@@ -258,6 +268,7 @@ const RECIPES_DB = {
      ingredients, kcal computed from data/foods.js ingredients per the ground rule. */
   'tofu-scramble-spinach-tomato': {
     title: 'Tofu scramble, spinach & tomatoes', emoji: '🍳', slot: 'breakfast', role: 'full',
+    imageKey: 'savory-breakfast',
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 12,
     ingredients: [['tofu', 150], ['spinach', 60], ['cherry-tomatoes', 80], ['olive-oil', 8], ['rye-bread', 40]],
@@ -268,6 +279,7 @@ const RECIPES_DB = {
   },
   'overnight-oats-banana-peanut-butter': {
     title: 'Overnight oats, banana & peanut butter', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'evergreen',
     styles: ['balanced'], time: 5,
     ingredients: [['oats', 45], ['soy-milk', 150], ['bananas', 80], ['peanut-butter', 15], ['chia-seeds', 8]],
@@ -281,6 +293,7 @@ const RECIPES_DB = {
     // (was ~25g sat fat, P7). Soy base adds protein; ripe peach carries the sweetness so the
     // maple syrup becomes an optional drizzle (free sugars -> 0). Kept vegan + gluten-free.
     title: 'Coconut chia pudding, peach', emoji: '🍮', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'evergreen',
     styles: ['balanced'], time: 5,
     ingredients: [['chia-seeds', 20], ['soy-milk', 150], ['soy-yogurt', 70], ['peaches', 120], ['coconut-milk', 20]],
@@ -291,6 +304,7 @@ const RECIPES_DB = {
   },
   'quinoa-breakfast-bowl-apple-walnut': {
     title: 'Quinoa breakfast bowl, apple & walnuts', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'winter/autumn',
     styles: ['balanced'], time: 15,
     ingredients: [['quinoa-dry', 45], ['soy-milk', 150], ['apples', 100], ['walnuts', 15], ['maple-syrup', 8]],
@@ -301,6 +315,7 @@ const RECIPES_DB = {
   },
   'avocado-tomato-toast': {
     title: 'Avocado & tomato toast', emoji: '🥑', slot: 'breakfast', role: 'full',
+    imageKey: 'club-sandwich',
     season: 'evergreen',
     styles: ['balanced', 'lowcarb'], time: 8,
     ingredients: [['white-bread', 70], ['avocado', 80], ['cherry-tomatoes', 60], ['lemon', 5], ['olive-oil', 5]],
@@ -531,6 +546,7 @@ const RECIPES_DB = {
   },
   cereali: {
     title: 'Cereal bowl', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     styles: ['balanced'], time: 3,
     ingredients: [['granola', 45], ['milk', 180], ['bananas', 70]],
     toTaste: [],
@@ -608,6 +624,7 @@ const RECIPES_DB = {
   },
   'toast-eatsmiter': {
     title: 'Turkey, mozzarella & tomato toastie', emoji: '🥪', slot: 'lunch', role: 'full',
+    imageKey: 'club-sandwich',
     styles: ['balanced'], time: 8,
     ingredients: [['wholewheat-bread', 90], ['turkey-breast', 70], ['mozzarella', 45], ['cherry-tomatoes', 50]],
     toTaste: ['mustard'],
@@ -627,6 +644,7 @@ const RECIPES_DB = {
   },
   'uova-pomodoro': {
     title: 'Eggs in tomato sauce', emoji: '🍳', slot: 'lunch', role: 'full',
+    imageKey: 'egg-dishes',
     season: 'spring/summer',
     slots: ['lunch', 'breakfast'],
     styles: ['balanced', 'lowcarb'], time: 15,
@@ -638,6 +656,7 @@ const RECIPES_DB = {
   },
   'panino-gorgonzola-prosciutto': {
     title: 'Gorgonzola & ham sandwich', emoji: '🥪', slot: 'lunch', role: 'full',
+    imageKey: 'club-sandwich',
     styles: ['balanced'], time: 7,
     ingredients: [['white-bread', 90], ['gorgonzola', 45], ['prosciutto-cotto', 60], ['rocket-arugula', 20]],
     toTaste: [],
@@ -716,7 +735,7 @@ const RECIPES_DB = {
   },
   'chicken-satay': {
     title: 'Chicken satay', emoji: '🍢', slot: 'dinner', role: 'full',
-    imageKey: 'roast-grill-plate',
+    imageKey: 'butter-chicken',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['chicken-breast', 170], ['almonds', 20], ['soy-sauce', 10], ['rice', 60], ['cucumber', 80]],
     toTaste: ['lime', 'ginger', 'chilli if wanted'],
@@ -1160,6 +1179,26 @@ const RECIPES_DB = {
     steps: ['Mix the pork mince with finely chopped cabbage, ginger, garlic and a splash of soy.', 'Spoon into the wrappers, pleat and seal.', 'Pan-fry base-down until browned, then add a splash of water and cover to steam through — 3-4 per portion.'],
     tags: ['muscle'], avoid: ['gluten']
   },
+  'shrimp-gyozas': {
+    title: 'Shrimp gyozas', emoji: '🥟', slot: 'side', role: 'side',
+    imageKey: 'chinese-dinner',
+    slots: ['side', 'dinner', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 25,
+    ingredients: [['wheat-wrapper', 40], ['prawns', 75], ['cabbage', 25], ['olive-oil', 3]],
+    toTaste: ['ginger', 'garlic', 'soy sauce', 'spring onion'],
+    steps: ['Chop the prawns finely and mix with cabbage, ginger, garlic and spring onion.', 'Spoon into the wrappers, pleat and seal.', 'Pan-fry base-down until golden, add a splash of water and cover to steam through — about 4 pieces per portion.'],
+    tags: ['muscle'], avoid: ['gluten', 'shellfish']
+  },
+  'shrimp-xiao-mai': {
+    title: 'Shrimp xiao mai', emoji: '🥟', slot: 'side', role: 'side',
+    imageKey: 'chinese-dinner',
+    slots: ['side', 'dinner', 'snack'], season: 'evergreen', occasional: true,
+    styles: ['balanced', 'highprotein'], time: 30,
+    ingredients: [['wheat-wrapper', 35], ['prawns', 85], ['mushrooms', 30], ['olive-oil', 3]],
+    toTaste: ['ginger', 'garlic', 'soy sauce', 'sesame oil', 'spring onion'],
+    steps: ['Chop the prawns and mushrooms finely; season with ginger, garlic, soy and a little sesame oil.', 'Press the filling into open-topped wrapper cups, leaving the tops pleated but open.', 'Steam until the prawns are just cooked through — about 5 pieces per portion.'],
+    tags: ['muscle'], avoid: ['gluten', 'shellfish']
+  },
   'fried-rice-veg': {
     title: 'Vegetable fried rice', emoji: '🍚', slot: 'side', role: 'side',
     slots: ['side'], season: 'evergreen', occasional: true,
@@ -1259,7 +1298,7 @@ const RECIPES_DB = {
   },
   'cena-giapponese': {
     title: 'Japanese sushi dinner', emoji: '🍣', slot: 'dinner', role: 'full',
-    imageKey: 'onigiri',
+    imageKey: 'sushi-platter',
     slots: ['dinner', 'lunch'],
     occasional: true,
     styles: ['balanced'], time: 60,
@@ -1977,6 +2016,7 @@ const RECIPES_DB = {
   },
   'white-beans-tomato-poached-eggs': {
     title: 'White beans, tomato & poached eggs', emoji: '🍳', slot: 'breakfast', role: 'full', season: 'evergreen',
+    imageKey: 'egg-dishes',
     styles: ['balanced', 'highprotein'], time: 15,
     ingredients: [['cannellini-beans', 120], ['tomatoes', 150], ['eggs', 100], ['spinach', 40], ['olive-oil', 8]],
     toTaste: ['garlic', 'herbs', 'black pepper'],
@@ -1986,6 +2026,7 @@ const RECIPES_DB = {
   },
   'ginger-egg-pak-choy-rice-bowl': {
     title: 'Ginger egg, pak choy & rice bowl', emoji: '🍳', slot: 'breakfast', role: 'full', season: 'evergreen',
+    imageKey: 'egg-dishes',
     styles: ['balanced'], time: 15,
     ingredients: [['eggs', 100], ['pak-choy', 150], ['rice', 45], ['mushrooms', 60], ['soy-sauce', 10], ['ginger', 6], ['olive-oil', 5]],
     toTaste: ['garlic'],
@@ -2030,6 +2071,7 @@ const RECIPES_DB = {
   },
   'bresaola-rucola-parmigiano': {
     title: 'Bresaola, rocket & parmesan crostini salad', emoji: '🥩', slot: 'lunch', role: 'full',
+    imageKey: 'club-sandwich',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 10,
     ingredients: [['bresaola', 70], ['rocket-arugula', 40], ['parmesan', 20], ['cherry-tomatoes', 80], ['wholewheat-bread', 60], ['olive-oil', 8]],
     toTaste: ['lemon', 'black pepper'],
@@ -2068,6 +2110,7 @@ const RECIPES_DB = {
   },
   'ricotta-pomodoro-toast': {
     title: 'Whipped ricotta & blistered tomato toast', emoji: '🍅', slot: 'breakfast', role: 'full',
+    imageKey: 'club-sandwich',
     season: 'evergreen', styles: ['balanced'], time: 8,
     ingredients: [['wholewheat-bread', 70], ['ricotta', 70], ['cherry-tomatoes', 80], ['olive-oil', 5]],
     toTaste: ['basil', 'lemon zest', 'chilli flakes', 'black pepper'],
@@ -2097,6 +2140,7 @@ const RECIPES_DB = {
   },
   'berry-chia-soy-pudding': {
     title: 'Berry chia & soy pudding', emoji: '🫐', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'evergreen', styles: ['balanced'], time: 5,
     ingredients: [['chia-seeds', 20], ['soy-milk', 200], ['bananas', 80], ['mixed-berries', 60], ['pumpkin-seeds', 15]],
     toTaste: ['cinnamon'],
@@ -2147,6 +2191,7 @@ const RECIPES_DB = {
   },
   'turkish-eggs-cilbir': {
     title: 'Turkish eggs (çılbır)', emoji: '🍳', slot: 'breakfast', role: 'full',
+    imageKey: 'egg-dishes',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 15,
     ingredients: [['eggs', 120], ['greek-yogurt', 180], ['butter', 12], ['olive-oil', 3]],
     toTaste: ['garlic', 'dill', 'chilli', 'lemon', 'salt'],
@@ -2165,6 +2210,7 @@ const RECIPES_DB = {
   },
   'baked-berry-yogurt': {
     title: 'Baked berry yogurt breakfast', emoji: '🫐', slot: 'breakfast', role: 'full',
+    imageKey: 'breakfast-bowl',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 30,
     ingredients: [['greek-yogurt', 170], ['eggs', 100], ['almond-flour', 12], ['mixed-berries', 80], ['honey', 6]],
     toTaste: ['vanilla', 'cinnamon'],
@@ -2192,6 +2238,7 @@ const RECIPES_DB = {
   },
   'ham-egg-in-a-hole': {
     title: 'Ham & egg in a hole', emoji: '🥚', slot: 'breakfast', role: 'full',
+    imageKey: 'egg-dishes',
     season: 'evergreen', styles: ['balanced', 'highprotein'], time: 20,
     ingredients: [['wholewheat-bread', 60], ['eggs', 60], ['prosciutto-cotto', 30], ['scamorza', 25], ['butter', 6]],
     toTaste: ['chives', 'black pepper', 'salt'],
@@ -2201,6 +2248,7 @@ const RECIPES_DB = {
   },
   'savoury-breakfast-muffins': {
     title: 'Savoury cheese & herb muffins', emoji: '🧁', slot: 'breakfast', role: 'full',
+    imageKey: 'savory-breakfast',
     season: 'evergreen', styles: ['balanced'], time: 30,
     ingredients: [['00-flour', 55], ['eggs', 55], ['greek-yogurt', 40], ['olive-oil', 12], ['parmesan', 20], ['mozzarella', 15], ['bell-pepper', 25], ['red-onion', 10]],
     toTaste: ['dill', 'basil', 'chilli', 'baking powder', 'garlic', 'salt'],
@@ -2366,6 +2414,7 @@ const RECIPES_DB = {
   },
   'turkish-kofte-garlic-yogurt': {
     title: 'Turkish köfte with garlic yogurt', emoji: '🧆', slot: 'lunch', role: 'main',
+    imageKey: 'shakshuka',
     season: 'evergreen',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
@@ -2419,6 +2468,7 @@ const RECIPES_DB = {
   },
   'harissa-chicken-thighs': {
     title: 'Harissa chicken thighs', emoji: '🍗', slot: 'lunch', role: 'main',
+    imageKey: 'roast-grill-plate',
     season: 'evergreen',
     slots: ['lunch', 'dinner'],
     styles: ['balanced', 'highprotein', 'lowcarb'], time: 25,
@@ -2536,6 +2586,7 @@ const RECIPES_DB = {
 
   'congee-crispy-tofu-chilli-oil': {
     title: 'Silky rice congee, crispy tofu & chilli-scallion oil', emoji: '🥣', slot: 'breakfast', role: 'full',
+    imageKey: 'savory-breakfast',
     season: 'evergreen',
     styles: ['balanced', 'highprotein'], time: 25,
     ingredients: [['rice', 45], ['tofu', 150], ['pak-choy', 60], ['soy-sauce', 8], ['olive-oil', 6]],
@@ -2552,6 +2603,7 @@ const RECIPES_DB = {
   },
   'chickpea-tomato-breakfast-braise': {
     title: 'Turkish-spiced chickpea & tomato breakfast braise', emoji: '🍅', slot: 'breakfast', role: 'full',
+    imageKey: 'savory-breakfast',
     season: 'evergreen',
     styles: ['balanced'], time: 18,
     ingredients: [['chickpeas', 200], ['tomato-passata', 120], ['spinach', 60], ['red-onion', 30], ['olive-oil', 10]],
@@ -2635,6 +2687,7 @@ const RECIPES_DB = {
   },
   'turkish-menemen-peppers-feta': {
     title: 'Menemen: Turkish peppers, tomato & eggs with feta', emoji: '🍳', slot: 'breakfast', role: 'full',
+    imageKey: 'egg-dishes',
     season: 'evergreen',
     styles: ['balanced'], time: 18,
     ingredients: [['eggs', 100], ['bell-pepper', 150], ['tomatoes', 150], ['feta-cheese', 15], ['olive-oil', 4], ['potatoes', 150]],
