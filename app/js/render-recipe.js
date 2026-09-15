@@ -35,13 +35,15 @@ function recipeServingContextFor(key){
       // recipe-screen chips (renderRecipeOptionsChips) open pre-selected to it.
       const loggedComponents = Array.isArray(logged.components) && logged.components.length ? logged.components : null;
       const loggedOpts = loggedComponents && loggedComponents[0] && loggedComponents[0].opts;
-      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged', opts: loggedOpts};
+      // feature #6: the base component's per-occurrence ingredient substitutions, if any.
+      const loggedSubs = loggedComponents && loggedComponents[0] && loggedComponents[0].ingredientSubs;
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: logged.portion || 1, person: person, source: 'logged', opts: loggedOpts, ingredientSubs: loggedSubs};
     }
     if(meal.shared && meal.recipeId === key){
-      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan', opts: meal.elena.opts};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: true, svE: meal.elena.portion, svM: meal.partner.portion, person: person, source: 'plan', opts: meal.elena.opts, ingredientSubs: meal.elena.ingredientSubs};
     }
     if(meal[person] && meal[person].recipeId === key){
-      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan', opts: meal[person].opts};
+      return {weekStartDate: weekStartDate, dayIndex: dayIndex, dateISO: dateISO, slot: slot, shared: false, solo: meal[person].portion, person: person, source: 'plan', opts: meal[person].opts, ingredientSubs: meal[person].ingredientSubs};
     }
     return null;
   }
@@ -298,12 +300,15 @@ function refreshMealPageAfterExtraChange(dateISO){
 // Every pre-existing call site omits `opts`, which normalizes to the deterministic
 // default combo for a recipe WITH optionGroups, or {} (bare `ingredients`, unchanged) for
 // one without — byte-identical to pre-D1 output either way.
-function recipeDisplayIngredients(recipeId, opts){
+function recipeDisplayIngredients(recipeId, opts, subs){
   // RECIPE-MARKET: catalog fallback so an out-of-book market recipe still previews its ingredients.
   const src = RECIPES_DB[recipeId] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[recipeId]);
   if(!src) return [];
   const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
-  const ingredients = recipeEffectiveIngredients(src, opts).map(function(ing){
+  // feature #6: apply any per-occurrence ingredient substitution so the displayed ingredient
+  // matches the nutrition (blueberries, not strawberries). `subs` is absent on every library
+  // open and pre-#6 entry -> byte-identical to before.
+  const ingredients = applyIngredientSubs(recipeEffectiveIngredients(src, opts), subs).map(function(ing){
     const foodId = ing[0], grams = +(ing[1] / batchYield).toFixed(1);
     const food = FOODS[foodId];
     if(!food){ console.error('recipeDisplayIngredients: "' + recipeId + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
@@ -325,9 +330,9 @@ function recipeDisplayIngredients(recipeId, opts){
 // With NO extras (library open, or a meal without sides) it returns exactly the old single-
 // recipe list, byte-identical. With extras it appends each side/food and MERGES duplicate foods
 // (e.g. olive oil from the main and a side) into one summed row, keeping "to taste" notes once.
-function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras){
+function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, mainSubs){
   function scaleRow(ing, f){ return ing[1] === null ? ing : [ing[0], +(ing[1] * f).toFixed(1), ing[2]]; }
-  const mainRows = recipeDisplayIngredients(mainId, mainOpts).map(function(ing){ return scaleRow(ing, mainScale); });
+  const mainRows = recipeDisplayIngredients(mainId, mainOpts, mainSubs).map(function(ing){ return scaleRow(ing, mainScale); });
   if(!extras || !extras.length) return mainRows;
   const all = mainRows.slice();
   const sideFactor = (total > 0) ? mainScale / total : mainScale;
@@ -351,6 +356,159 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras){
     numeric[key][1] = +(numeric[key][1] + r[1]).toFixed(1);
   });
   return order.map(function(k){ return numeric[k]; }).concat(toTaste);
+}
+
+/* ---------------- feature #6: per-occurrence ingredient substitution ----------------
+   This-day-only swap of one recipe ingredient for another on a planned/logged meal, WITHOUT
+   touching the saved recipe. Panel-designed 2026-09-15 (see NEXT-TASKS.md #6). The affordance
+   lives on the meal-detail ingredient rows (a `›` chevron), not on the compact Today card — so
+   the plate stays calm and this reads as "change this one thing", never as Swap (whole meal),
+   Add-extra (adds a food), or Edit-recipe (permanent). Offered only on a plain planned/logged
+   meal (substitutableIngredientListHtml, called from updateServings when canSubstitute). */
+
+// The tappable ingredient list for a substitutable meal: each row maps 1:1 to a base effective
+// ingredient (post-opts), shows the CURRENT ingredient (the replacement if one is set, with a
+// calm "today only" pill), and opens the picker keyed by the ORIGINAL foodId (stable identity).
+function substitutableIngredientListHtml(recipeId, opts, subs, ingScale){
+  const src = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[recipeId];
+  if(!src) return '';
+  const batchYield = (typeof src.servings === 'number' && src.servings > 0) ? src.servings : 1;
+  const scale = (typeof ingScale === 'number' && ingScale > 0) ? ingScale : 1;
+  const effOrig = recipeEffectiveIngredients(src, opts);
+  const effShown = applyIngredientSubs(effOrig, subs);
+  let html = effOrig.map(function(ing, i){
+    const fromId = ing[0];
+    const shownId = effShown[i][0];
+    const grams = effShown[i][1];
+    const food = FOODS[shownId];
+    const substituted = shownId !== fromId;
+    const perServ = grams / batchYield;
+    let qty, unit;
+    if(food && food.unit === 'piece'){ qty = +((perServ / food.avgG) * scale).toFixed(2); unit = ''; }
+    else { qty = +(perServ * scale).toFixed(1); unit = food ? food.unit : 'g'; }
+    const name = escapeHtml(food ? food.name : shownId);
+    const pill = substituted ? ' <span class="today-only-pill">today only</span>' : '';
+    const qtyHtml = qty + (unit ? ' ' + escapeHtml(String(unit)) : '');
+    // fromId is an internal FOODS id (validate.js-enforced [a-z0-9-] format), safe to inline —
+    // same convention as the "Made of" rows' openSubRecipe('<recipeId>').
+    return '<li class="ing-sub-row" onclick="openIngredientSubSheet(\'' + fromId + '\')">'
+      + '<span>' + name + pill + '</span>'
+      + '<span class="ing-sub-qty">' + qtyHtml + ' <span class="ing-sub-chev" aria-hidden="true">›</span></span>'
+      + '</li>';
+  }).join('');
+  (src.toTaste || []).forEach(function(t){
+    html += '<li><span>' + escapeHtml(capitalizeFirst(t)) + '</span><span>to taste</span></li>';
+  });
+  return html;
+}
+
+// Opens the substitution picker for one base ingredient of the currently-open meal. Captures the
+// slot/person/date from recipeServingCtx so the mutators (which run later, after the sheet) still
+// address the right cell even if the screen re-renders.
+function openIngredientSubSheet(fromFoodId){
+  if(!recipeServingCtx || !recipeServingCtx.slot || !FOODS[fromFoodId]) return;
+  ingSubCtx = {
+    weekStartDate: recipeServingCtx.weekStartDate || mondayOfWeek(recipeServingCtx.dateISO || todayISO()),
+    dayIndex: (typeof recipeServingCtx.dayIndex === 'number') ? recipeServingCtx.dayIndex : todayDayIndex(),
+    slot: recipeServingCtx.slot,
+    person: recipeServingCtx.person || currentProf,
+    dateISO: recipeServingCtx.dateISO || todayISO(),
+    shared: !!recipeServingCtx.shared,
+    fromFoodId: fromFoodId
+  };
+  const body = document.getElementById('sheetBody');
+  if(!body) return;
+  body.innerHTML = buildIngredientSubSheet(fromFoodId);
+  document.getElementById('sheet').classList.add('tall');
+  document.getElementById('sheetBackdrop').classList.add('show');
+  document.getElementById('sheet').classList.add('show');
+  renderIngSubResults('');
+  const inp = document.getElementById('ingSubSearch');
+  if(inp) inp.oninput = function(){ renderIngSubResults(inp.value); };
+}
+
+function buildIngredientSubSheet(fromFoodId){
+  const fromFood = FOODS[fromFoodId];
+  const fromName = escapeHtml(fromFood ? fromFood.name : fromFoodId);
+  const current = (Array.isArray(recipeSubsCtx) ? recipeSubsCtx : []).filter(function(s){ return s && s.from === fromFoodId; })[0];
+  let html = '<h2 style="margin-top:6px">Swap ' + fromName + ' <span class="sheet-today-tag">today only</span></h2>'
+    + '<p class="sub">Only today’s meal changes — your saved recipe stays the same.</p>';
+  if(current){
+    const toName = escapeHtml(FOODS[current.to] ? FOODS[current.to].name : current.to);
+    html += '<div class="ing-sub-current">Today: <b>' + toName + '</b>'
+      + '<button class="ing-sub-revert" onclick="revertMealIngredientSub()">↺ Back to ' + fromName + '</button></div>';
+  }
+  html += '<div id="ingSubResults"></div>'
+    + '<div class="ing-sub-search-wrap"><input id="ingSubSearch" type="search" placeholder="Search other ingredients…" autocomplete="off"></div>';
+  return html;
+}
+
+function ingSubOptionRowHtml(toId){
+  const f = FOODS[toId];
+  const name = escapeHtml(f ? f.name : toId);
+  return '<div class="ing-sub-option" onclick="chooseMealIngredientSub(\'' + toId + '\')">'
+    + (typeof foodIconHtml === 'function' ? foodIconHtml(toId) : '')
+    + '<span class="ing-sub-option-name">' + name + '</span>'
+    + '<span class="ing-sub-chev" aria-hidden="true">›</span></div>';
+}
+
+function renderIngSubResults(query){
+  const box = document.getElementById('ingSubResults');
+  if(!box || !ingSubCtx) return;
+  const persons = ingSubCtx.shared ? ['elena', 'partner'] : [ingSubCtx.person];
+  const q = String(query || '').trim();
+  const ids = q
+    ? ingredientSubSearch(q, ingSubCtx.fromFoodId, persons).slice(0, 24)
+    : ingredientSubCandidates(ingSubCtx.fromFoodId, persons).slice(0, 8);
+  if(!ids.length){
+    box.innerHTML = '<div class="empty" style="margin-top:10px">' + (q ? 'No matching ingredients you can eat.' : 'No like-for-like swaps here — try searching below.') + '</div>';
+    return;
+  }
+  const fromFood = FOODS[ingSubCtx.fromFoodId];
+  const label = q ? '' : '<div class="ing-sub-group-label">' + ((fromFood && fromFood.sub) ? 'Like for like' : 'Similar ingredients') + '</div>';
+  box.innerHTML = label + ids.map(ingSubOptionRowHtml).join('');
+}
+
+function chooseMealIngredientSub(toFoodId){
+  if(!ingSubCtx || !FOODS[toFoodId]) return;
+  const c = ingSubCtx;
+  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  // Dual-write, mirroring chooseMealExtraRecipe: when the slot is already logged, update the log
+  // snapshot too, so a later undo+reconfirm (which rebuilds the log from the plan) keeps the sub.
+  const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
+  if(wasLogged) setIngredientSubOnLoggedMeal(c.dateISO, c.person, c.slot, c.fromFoodId, toFoodId);
+  const ok = setEntryIngredientSub(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId, toFoodId);
+  if(!ok && !wasLogged) return;
+  afterIngredientSubChange(c, toFoodId);
+}
+
+function revertMealIngredientSub(){
+  if(!ingSubCtx) return;
+  const c = ingSubCtx;
+  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
+  if(wasLogged) setIngredientSubOnLoggedMeal(c.dateISO, c.person, c.slot, c.fromFoodId, c.fromFoodId);
+  removeEntryIngredientSub(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId);
+  afterIngredientSubChange(c, null);
+}
+
+// Shared post-change refresh: recompute the viewer's totals, repaint every surface that reads
+// the plan/log (Today ring+bars+meals, Log, Week), persist, close the sheet, and repaint the
+// open recipe screen so its ingredient list + nutrition reflect the swap. Mirrors the tail of
+// chooseMealExtraRecipe.
+function afterIngredientSubChange(c, toFoodId){
+  if(typeof recomputeConsumed === 'function') recomputeConsumed(currentProf);
+  if(typeof recomputeProf === 'function') recomputeProf(currentProf);
+  if(typeof refreshRingAndBars === 'function') refreshRingAndBars();
+  if(typeof renderTodayMeals === 'function') renderTodayMeals();
+  if(typeof renderLogScreen === 'function') renderLogScreen();
+  if(typeof renderWeek === 'function') renderWeek();
+  if(typeof persist === 'function') persist();
+  if(typeof closeSheet === 'function') closeSheet();
+  if(typeof currentRecipeKey === 'string' && currentRecipeKey) renderRecipe(currentRecipeKey);
+  const fromName = FOODS[c.fromFoodId] ? FOODS[c.fromFoodId].name : c.fromFoodId;
+  if(toFoodId && FOODS[toFoodId]) toast('Today: ' + FOODS[toFoodId].name + ' instead of ' + fromName);
+  else toast('Back to ' + fromName);
 }
 
 // RECIPES_DB[id].tags (raw tag strings) mapped through TAG_PILL_MAP (state.js) to the
@@ -745,6 +903,8 @@ function renderRecipe(key){
   // to the diet-aware (and, part 2b, favourite-aware) default instead of the bare choices[0].
   const defaultOpts = (recipeServingCtx && recipeServingCtx.opts) ? recipeServingCtx.opts : dietAwareDefaultOpts(r, currentRecipeKey, currentProf);
   recipeOptsCtx = normalizeRecipeOpts(r, defaultOpts);
+  // feature #6: this slot's per-occurrence ingredient substitutions (only from a plan/log open).
+  recipeSubsCtx = (recipeServingCtx && Array.isArray(recipeServingCtx.ingredientSubs) && recipeServingCtx.ingredientSubs.length) ? recipeServingCtx.ingredientSubs : null;
   // Meal (recipe-of-recipes) per-component context: start from the recipe's own sub-recipes, then
   // overlay whatever this meal was last LOGGED with (its stored components) OR — owner gap fix —
   // whatever this PLANNED slot's own components override says, so re-opening an eaten OR still-
@@ -869,6 +1029,13 @@ function deleteRecipeFromDetail(){
    .pill.chip-preset/.chipsel look, sized to the 44px tap-target minimum via
    .recipe-opt-chip in mesa.css); nothing renders for a recipe without optionGroups. */
 let recipeOptsCtx = null;
+// feature #6: the per-occurrence ingredient substitutions ([{from,to}]) for the currently-
+// shown planned/logged slot — set fresh by renderRecipe() from recipeServingCtx.ingredientSubs;
+// null for a library open or a slot with no subs. Read by the ingredient-list render (to show
+// the replacement + a "today only" pill) and the nutrition grid (so numbers match the display).
+let recipeSubsCtx = null;
+// feature #6: the slot/person the substitution sheet is currently acting on (set on sheet open).
+let ingSubCtx = null;
 
 // task D3: pure HTML-string builder, split out of renderRecipeOptionsChips() below in the
 // same buildXxx()/renderXxx() pattern js/library.js's builder sheets already use, so it's
@@ -1362,15 +1529,30 @@ function updateServings(){
     }
   }
   const ingScale = ingShowPerServing ? 1 : total;
-  // Whole MEAL, not just the main: for a planned/logged slot with composed sides (extrasList),
-  // the list includes every side + added food (owner 2026-09-08). A library open or a sideless
-  // meal has extrasList=[], so this returns the plain main list, byte-identical to before.
-  const ingredients = mealDetailIngredientRows(currentRecipeKey, recipeOptsCtx, ingScale, total, extrasList);
-  document.getElementById('ingList').innerHTML = ingredients.map(function(ing){
-    const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
-    if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
-    return '<li><span>'+name+'</span><span>'+qty+' '+unit+'</span></li>';
-  }).join('');
+  // feature #6: per-occurrence ingredient substitution is offered ONLY on a plain planned/logged
+  // meal (opened from Today/Week/Log — recipeServingCtx present) that is a normal recipe with no
+  // composed sides/extras. In that clean case each ingredient row maps 1:1 to the base recipe's
+  // effective ingredients, so a row can be tapped to swap just that ingredient (this day only).
+  // A composite "Made of" meal, or one with sides/extras, keeps the read-only merged plate list
+  // (its rows don't map 1:1 to a single base ingredient) — the sub still applies to nutrition if
+  // one was set elsewhere. A library open (recipeServingCtx null) is never substitutable.
+  const canSubstitute = !!(recipeServingCtx && recipeServingCtx.slot && !isComponentsRecipe
+    && (!extrasList || !extrasList.length) && RECIPES_DB[currentRecipeKey]);
+  const ingListEl = document.getElementById('ingList');
+  if(canSubstitute){
+    ingListEl.innerHTML = substitutableIngredientListHtml(currentRecipeKey, recipeOptsCtx, recipeSubsCtx, ingScale);
+  } else {
+    // Whole MEAL, not just the main: for a planned/logged slot with composed sides (extrasList),
+    // the list includes every side + added food (owner 2026-09-08). A library open or a sideless
+    // meal has extrasList=[], so this returns the plain main list, byte-identical to before.
+    // recipeSubsCtx keeps the displayed ingredient in step with the substituted nutrition.
+    const ingredients = mealDetailIngredientRows(currentRecipeKey, recipeOptsCtx, ingScale, total, extrasList, recipeSubsCtx);
+    ingListEl.innerHTML = ingredients.map(function(ing){
+      const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
+      if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
+      return '<li><span>'+name+'</span><span>'+qty+' '+unit+'</span></li>';
+    }).join('');
+  }
   updateNutritionGrid(nutServings, nutHeader, extrasList);
   syncServeHighlight();
 }
@@ -1396,11 +1578,14 @@ function updateNutritionGrid(servings, headerText, extraComponents){
   if(header) header.textContent = baseHeader + (hasExtras ? ' + extras' : '');
   // A Meal's nutrition is the sum of its INCLUDED sub-recipes (per the per-component steppers),
   // not the fixed recipe default — so a removed/rescaled sub-recipe is reflected live.
+  // feature #6: recipeSubsCtx (this slot's ingredient substitutions) flows into the base dish's
+  // nutrition so the grid matches the substituted ingredient list — additive, null for library
+  // opens/composite meals (a composite's subs would ride its own components, out of scope here).
   const nut = recipeMealCompsCtx
     ? nutritionForRecipeComponents(recipeMealCompsCtx.filter(function(c){ return c.portion > 0; }))
     : hasExtras
-      ? nutritionForRecipeComponents([{recipeId: currentRecipeKey, portion: servings, opts: recipeOptsCtx}].concat(extraComponents))
-      : recipeNutrition(currentRecipeKey, servings, recipeOptsCtx).totals;
+      ? nutritionForRecipeComponents([{recipeId: currentRecipeKey, portion: servings, opts: recipeOptsCtx, ingredientSubs: recipeSubsCtx}].concat(extraComponents))
+      : recipeNutrition(currentRecipeKey, servings, recipeOptsCtx, recipeSubsCtx).totals;
   const topKcal = document.getElementById('rsKcal');
   const topProt = document.getElementById('rsProt');
   if(topKcal) topKcal.textContent = '🔥 ' + fmtKcal(Math.round(nut.kcal)) + ' kcal';

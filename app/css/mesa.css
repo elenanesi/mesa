@@ -145,6 +145,26 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
 .macro-contrib b{font-variant-numeric:tabular-nums;color:var(--ink);}
 .macro-contrib em{color:var(--muted);font-style:normal;font-size:11px;min-width:36px;text-align:right;}
 .macro-contrib-more{margin-top:4px;}
+/* Feature #6 — per-occurrence ingredient substitution. Calm, anti-guilt: the tappable
+   ingredient row gets a quiet chevron; a substituted ingredient wears a NEUTRAL "today only"
+   pill (muted paper/ink, deliberately NOT sage and NOT amber — it's a preference, not a
+   warning or a status). The picker rows are icon-forward (chef note) and calm. */
+.ing-sub-row{cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.ing-sub-row:active{background:rgba(176,146,105,.10);}
+.ing-sub-qty{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;}
+.ing-sub-chev{color:var(--muted);font-weight:700;}
+.today-only-pill{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.2px;color:var(--ink-soft);background:rgba(176,146,105,.16);border-radius:7px;padding:1px 6px;margin-left:6px;vertical-align:middle;}
+.sheet-today-tag{font-size:12px;font-weight:600;color:var(--muted);letter-spacing:.3px;}
+.ing-sub-current{margin:6px 0 12px;font-size:14px;color:var(--ink-soft);display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+.ing-sub-current b{color:var(--ink);}
+.ing-sub-revert{border:1px solid rgba(176,146,105,.4);background:transparent;color:var(--ink-soft);font-size:12px;font-weight:600;border-radius:999px;padding:5px 11px;cursor:pointer;}
+.ing-sub-group-label{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted);margin:8px 0 6px;}
+.ing-sub-option{display:flex;align-items:center;gap:12px;padding:9px 8px;border-top:1px solid rgba(176,146,105,.16);cursor:pointer;-webkit-tap-highlight-color:transparent;}
+.ing-sub-option:active{background:rgba(176,146,105,.10);}
+.ing-sub-option .ingredient-icon{width:34px;height:34px;border-radius:9px;flex:none;object-fit:cover;}
+.ing-sub-option-name{flex:1;font-size:14.5px;color:var(--ink);}
+.ing-sub-search-wrap{margin-top:12px;}
+.ing-sub-search-wrap input{width:100%;box-sizing:border-box;padding:11px 13px;border:1px solid rgba(176,146,105,.4);border-radius:12px;font-size:15px;background:var(--paper,#fff);color:var(--ink);}
 /* Persistent "day closed" trace (item 4) — a quiet, STATIC single leaf on the Week day
    header, distinct from day-dot above (a quality signal). No animation, no streak, no
    pass/fail color: it only ever marks "every plannable slot here is accounted for". */

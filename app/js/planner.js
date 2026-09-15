@@ -1064,18 +1064,24 @@ function planEntryComponents(entry){
     }).map(function(c){
       const o = {recipeId: c.recipeId, portion: (typeof c.portion === 'number' && c.portion > 0) ? c.portion : 1};
       if(c.opts && typeof c.opts === 'object') o.opts = c.opts;
+      if(Array.isArray(c.ingredientSubs) && c.ingredientSubs.length) o.ingredientSubs = c.ingredientSubs;
       return o;
     });
   }
   if(!components || !components.length){
     const base = {recipeId: entry.recipeId, portion: (typeof entry.portion === 'number' ? entry.portion : 1)};
     if(entry.opts && typeof entry.opts === 'object') base.opts = entry.opts;
+    // Per-occurrence ingredient substitution (feature #6): the base component carries the
+    // entry's ingredientSubs so nutrition/shopping/log/display all apply them through the one
+    // planEntryComponents choke point. Additive: absent on every pre-#6 entry -> unchanged.
+    if(Array.isArray(entry.ingredientSubs) && entry.ingredientSubs.length) base.ingredientSubs = entry.ingredientSubs;
     components = [base];
   }
   (entry.extras || []).forEach(function(extra){
     if(extra && extra.recipeId && RECIPES_DB[extra.recipeId]){
       const c = {recipeId: extra.recipeId, portion: (typeof extra.portion === 'number' && extra.portion > 0) ? extra.portion : 1};
       if(extra.opts && typeof extra.opts === 'object') c.opts = extra.opts;
+      if(Array.isArray(extra.ingredientSubs) && extra.ingredientSubs.length) c.ingredientSubs = extra.ingredientSubs;
       components.push(c);
     } else if(extra && extra.foodId && FOODS[extra.foodId]){
       components.push({foodId: extra.foodId, grams: (typeof extra.grams === 'number' && extra.grams > 0) ? extra.grams : 100});
@@ -1199,7 +1205,7 @@ function emptyPlanEntry(){
 
 function refreshPlanEntryNutrition(entry){
   if(!entry || !entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
-  const nut = recipeNutrition(entry.recipeId, entry.portion, entry.opts).totals;
+  const nut = recipeNutrition(entry.recipeId, entry.portion, entry.opts, entry.ingredientSubs).totals;
   const changed = Math.abs((entry.kcal || 0) - nut.kcal) > 1e-6 || Math.abs((entry.protein || 0) - nut.protein) > 1e-6;
   if(changed){
     entry.kcal = nut.kcal;
@@ -1385,6 +1391,36 @@ function setExtraFoodGrams(weekStartDate, dayIndex, slot, person, foodId, grams)
     const idx = findLastExtraIndex(entry, {foodId: foodId});
     if(idx === -1) return false;
     entry.extras[idx].grams = amount;
+  });
+}
+
+// Per-occurrence ingredient substitution (feature #6): swap `fromFoodId` -> `toFoodId` on the
+// base recipe of THIS plan entry, this day only, at the original grams. Rides mutateMealExtras
+// so it gets couple-sync stamping + shared-meal mirroring (both halves of a shared cell get the
+// same sub) for free — never hand-roll against the plan object (resurrects the sync-revert bug).
+// Picking the original ingredient again (toFoodId === fromFoodId) reverts instead of storing a
+// no-op. Validated: `to` must be a real food; `from` must actually be one of the entry's current
+// effective ingredients (post-opts), so a stale/mismatched sub can never be written.
+function setEntryIngredientSub(weekStartDate, dayIndex, slot, person, fromFoodId, toFoodId){
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!entry.recipeId || !RECIPES_DB[entry.recipeId]) return false;
+    if(!FOODS[toFoodId]) return false;
+    const effective = recipeEffectiveIngredients(RECIPES_DB[entry.recipeId], entry.opts);
+    if(!effective.some(function(ing){ return ing[0] === fromFoodId; })) return false;
+    const list = Array.isArray(entry.ingredientSubs) ? entry.ingredientSubs.filter(function(s){ return s && s.from !== fromFoodId; }) : [];
+    if(toFoodId !== fromFoodId) list.push({from: fromFoodId, to: toFoodId});
+    if(list.length) entry.ingredientSubs = list; else delete entry.ingredientSubs;
+  });
+}
+
+// Revert one per-occurrence substitution (back to the recipe's original ingredient). Returns
+// false (aborting the whole mutation, incl. the shared-mirror) when there was nothing to undo.
+function removeEntryIngredientSub(weekStartDate, dayIndex, slot, person, fromFoodId){
+  return mutateMealExtras(weekStartDate, dayIndex, slot, person, function(entry){
+    if(!Array.isArray(entry.ingredientSubs)) return false;
+    const next = entry.ingredientSubs.filter(function(s){ return s && s.from !== fromFoodId; });
+    if(next.length === entry.ingredientSubs.length) return false;
+    if(next.length) entry.ingredientSubs = next; else delete entry.ingredientSubs;
   });
 }
 
@@ -1676,6 +1712,12 @@ function preserveSharedMealRecipes(oldPlan, newPlan){
       if(Array.isArray(oldMeal.partner && oldMeal.partner.extras)) newPartner.extras = deepClone(oldMeal.partner.extras);
       if(Array.isArray(oldMeal.elena && oldMeal.elena.components)) newElena.components = deepClone(oldMeal.elena.components);
       if(Array.isArray(oldMeal.partner && oldMeal.partner.components)) newPartner.components = deepClone(oldMeal.partner.components);
+      // feature #6: this soft lock keeps the SAME shared recipe (only re-portioning it), so a
+      // per-occurrence ingredient substitution should track its extras/components siblings and
+      // survive — the dish itself is unchanged. (A whole-meal Swap, which DOES change the recipe,
+      // correctly drops the sub since makePlanEntry never carries it.)
+      if(Array.isArray(oldMeal.elena && oldMeal.elena.ingredientSubs)) newElena.ingredientSubs = deepClone(oldMeal.elena.ingredientSubs);
+      if(Array.isArray(oldMeal.partner && oldMeal.partner.ingredientSubs)) newPartner.ingredientSubs = deepClone(oldMeal.partner.ingredientSubs);
       refreshPlanEntryNutrition(newElena);
       refreshPlanEntryNutrition(newPartner);
 
@@ -3840,7 +3882,10 @@ function foodQuantitiesForComponents(components){
       // task D1: recipeEffectiveIngredients (engine.js) resolves the CHOSEN variant's
       // ingredients (base + the opts-selected choice per group) — buys what was actually
       // planned/eaten, not always the default combo.
-      recipeEffectiveIngredients(r, c.opts).forEach(function(ing){
+      // feature #6: applyIngredientSubs then swaps any per-occurrence ingredient substitution
+      // (c.ingredientSubs) so the list buys the replacement (blueberries), not the original
+      // (strawberries) — this is THE shopping/pantry choke point the panel flagged.
+      applyIngredientSubs(recipeEffectiveIngredients(r, c.opts), c.ingredientSubs).forEach(function(ing){
         addFromIngredient(ing[0], (ing[1] / batchYield) * c.portion);
       });
     } else if(c && c.foodId){
@@ -4174,6 +4219,57 @@ function proteinCravingOptionsForPerson(person){
   return proteinCravingOptions().filter(function(o){
     return typeof ingredientIdsViolateDiet !== 'function' || !ingredientIdsViolateDiet([o.rep], diet);
   });
+}
+
+// Feature #6 (per-occurrence ingredient substitution): the curated, like-for-like replacement
+// candidates for `fromFoodId`. Panel rule (nutritionist P0): same `sub:` group when the
+// ingredient has one (fruit/yogurt today), else same `cat:` category — never fully
+// unconstrained; the sheet's own search box is the escape hatch for anything else. Hard-gated
+// by the household's diet + avoid lists (unioned across `persons` — a shared meal must satisfy
+// BOTH people, same rule the generator's candidate pool uses) so an avoided or diet-violating
+// food never appears as an option. Order is FOODS declaration order (stable, deterministic).
+function ingredientSubCandidates(fromFoodId, persons){
+  const from = (typeof FOODS !== 'undefined') && FOODS[fromFoodId];
+  if(!from) return [];
+  const people = (persons && persons.length) ? persons : [(typeof currentProf !== 'undefined') ? currentProf : 'elena'];
+  const avoid = people.reduce(function(acc, p){ return unionAvoid(acc, avoidFoodsList(p)); }, []);
+  const diets = unionDiets(people);
+  const allowed = function(id){
+    if(id === fromFoodId || !FOODS[id]) return false;
+    if(foodHitsAvoid(id, avoid)) return false;
+    if(typeof ingredientIdsViolateDiet === 'function' && ingredientIdsViolateDiet([id], diets)) return false;
+    return true;
+  };
+  const out = [];
+  Object.keys(FOODS).forEach(function(id){
+    if(!allowed(id)) return;
+    const f = FOODS[id];
+    if(from.sub){ if(f.sub === from.sub) out.push(id); }
+    else if(from.cat && f.cat === from.cat){ out.push(id); }
+  });
+  return out;
+}
+
+// Feature #6: diet/avoid-gated free search over ALL foods (the substitution sheet's escape
+// hatch when the curated like-for-like list doesn't have what the user wants). `query` is a
+// case-insensitive name substring; empty query returns []. Same hard diet/avoid gate as the
+// curated list, excludes the original, capped by the caller.
+function ingredientSubSearch(query, fromFoodId, persons){
+  const q = String(query || '').trim().toLowerCase();
+  if(!q) return [];
+  const people = (persons && persons.length) ? persons : [(typeof currentProf !== 'undefined') ? currentProf : 'elena'];
+  const avoid = people.reduce(function(acc, p){ return unionAvoid(acc, avoidFoodsList(p)); }, []);
+  const diets = unionDiets(people);
+  const out = [];
+  Object.keys(FOODS).forEach(function(id){
+    if(id === fromFoodId) return;
+    const f = FOODS[id];
+    if(!f || (f.name || '').toLowerCase().indexOf(q) === -1) return;
+    if(foodHitsAvoid(id, avoid)) return;
+    if(typeof ingredientIdsViolateDiet === 'function' && ingredientIdsViolateDiet([id], diets)) return;
+    out.push(id);
+  });
+  return out;
 }
 // Does the recipe (as typically made — chosen-variant ingredients, composite-aware) contain a
 // food of this protein type? Mirrors recipeContainsFoodSub's effective-ingredient walk.

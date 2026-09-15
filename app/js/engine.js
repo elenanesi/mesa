@@ -456,6 +456,33 @@ function recipeEffectiveIngredients(recipe, opts, depth){
   return effective;
 }
 
+// Per-occurrence ingredient substitution (owner feature #6, panel-designed 2026-09-15): a
+// this-day-only swap of one ingredient for another on a single plan/log entry, WITHOUT
+// touching the saved recipe. `subs` is [{from: foodId, to: foodId, grams?}]. This wraps the
+// OUTPUT of recipeEffectiveIngredients — deliberately NOT baked into that function, which
+// stays purely recipe+opts-keyed (it is also called with no entry context at all: Market
+// previews, validate.js, recipeContainsFoodSub). Each sub replaces the FIRST not-yet-consumed
+// row whose foodId === sub.from with [sub.to, sub.grams (batch units) || the original grams],
+// so nutrition/shopping/display all recompute honestly (still strict sum(ingredients)). A sub
+// whose `from` isn't present (e.g. after an opts change removed it, or on a swapped-in recipe)
+// is silently inert — same never-throws tolerance the rest of the engine uses. An empty/absent
+// `subs` returns the rows array unchanged, so every existing (3-arg) caller is byte-identical.
+function applyIngredientSubs(ingredientRows, subs){
+  if(!Array.isArray(subs) || !subs.length || !Array.isArray(ingredientRows)) return ingredientRows;
+  const rows = ingredientRows.map(function(r){ return [r[0], r[1]]; });
+  const consumed = {};
+  subs.forEach(function(sub){
+    if(!sub || typeof sub.from !== 'string' || typeof sub.to !== 'string') return;
+    for(let i = 0; i < rows.length; i++){
+      if(consumed[i] || rows[i][0] !== sub.from) continue;
+      consumed[i] = true;
+      rows[i] = [sub.to, (typeof sub.grams === 'number' && sub.grams > 0) ? sub.grams : rows[i][1]];
+      break;
+    }
+  });
+  return rows;
+}
+
 // Sums a recipe's EFFECTIVE ingredients (recipeEffectiveIngredients — base `ingredients`
 // plus, when `opts` selects them, each optionGroups choice's ingredients; never `toTaste`
 // — unquantified garnish, see data/recipes.js) at `servings` SERVINGS eaten. A recipe's
@@ -473,7 +500,7 @@ function recipeEffectiveIngredients(recipe, opts, depth){
 // goodFat = fat − satFat: the real ingredient-derived good/sat split for the recipe
 // screen (no more 75/25 approximation there — that approximation remains only for the
 // profile-level *target* split in recomputeProf, which this does not touch).
-function recipeNutrition(recipeId, servings, opts){
+function recipeNutrition(recipeId, servings, opts, subs){
   servings = (typeof servings === 'number' && servings > 0) ? servings : 1;
   const zero = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0, sugarQuality:'unknown', goodFat:0};
   // RECIPE-MARKET: fall back to the built-in catalog for a recipe the household hasn't added to
@@ -488,7 +515,7 @@ function recipeNutrition(recipeId, servings, opts){
   }
   const batchYield = (typeof r.servings === 'number' && r.servings > 0) ? r.servings : 1;
   const totals = {kcal:0, protein:0, carbs:0, fat:0, satFat:0, fiber:0, sugars:0, freeSugars:0};
-  recipeEffectiveIngredients(r, opts).forEach(function(ing){
+  applyIngredientSubs(recipeEffectiveIngredients(r, opts), subs).forEach(function(ing){
     const m = foodMacros(ing[0], ing[1] * servings / batchYield);
     totals.kcal += m.kcal; totals.protein += m.protein; totals.carbs += m.carbs;
     totals.fat += m.fat; totals.satFat += m.satFat; totals.fiber += m.fiber;
@@ -522,7 +549,9 @@ function nutritionForRecipeComponents(components){
     if(compRecipe){
       // task D1: c.opts (additive — undefined on every pre-D1 component) carries which
       // variant this component froze/planned; recipeNutrition's opts param defaults it.
-      nut = recipeNutrition(c.recipeId, c.portion, c.opts).totals;
+      // c.ingredientSubs (feature #6, additive — undefined on every pre-#6 component) carries
+      // this occurrence's per-ingredient substitutions; recipeNutrition applies them post-opts.
+      nut = recipeNutrition(c.recipeId, c.portion, c.opts, c.ingredientSubs).totals;
     } else if(c && c.foodId && typeof FOODS !== 'undefined' && FOODS[c.foodId]){
       nut = foodMacros(c.foodId, c.grams);
     }

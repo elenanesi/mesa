@@ -2289,6 +2289,149 @@ function testMealPerComponentPlan(ctx){
   run(ctx, "weekPlans = {}; weekPlan = null;"); // leave no fixture plan cached for later tests
 }
 
+// Per-occurrence ingredient substitution (owner feature #6, panel-designed 2026-09-15): a
+// this-day-only swap of one recipe ingredient for another on a single plan entry, WITHOUT
+// touching the saved recipe. Exercises the pure applyIngredientSubs helper, the
+// recipeNutrition 4th param, entry.ingredientSubs flowing through planEntryComponents /
+// planEntryNutrition / foodQuantitiesForComponents (the shopping/pantry choke point), the
+// setEntryIngredientSub/removeEntryIngredientSub mutators (validation + couple-sync stamping +
+// shared-cell mirroring), the revert path, and the determinism/migration guardrails.
+// Fixture recipe 'oats-berries-walnuts' (servings 1) contains mixed-berries (sub:'fruit'),
+// swapped for bananas (also sub:'fruit'); both differ nutritionally so a swap is observable.
+function testIngredientSubstitution(ctx){
+  // -------- pure helper: empty/absent subs is byte-identical (migration guarantee) --------
+  const rows = [['mixed-berries', 50], ['oats', 50]];
+  const unchanged = call(ctx, 'applyIngredientSubs', [rows, []]);
+  assert(JSON.stringify(unchanged) === JSON.stringify(rows),
+    'applyIngredientSubs: an empty subs list returns the rows unchanged (byte-identical migration)', JSON.stringify(unchanged));
+  const inert = call(ctx, 'applyIngredientSubs', [rows, [{from: 'not-in-recipe', to: 'bananas'}]]);
+  assert(JSON.stringify(inert) === JSON.stringify(rows),
+    'applyIngredientSubs: a sub whose `from` is absent is silently inert (never throws, no partial swap)', JSON.stringify(inert));
+  const swapped = call(ctx, 'applyIngredientSubs', [rows, [{from: 'mixed-berries', to: 'bananas'}]]);
+  assert(swapped[0][0] === 'bananas' && swapped[0][1] === 50 && swapped[1][0] === 'oats',
+    'applyIngredientSubs: swaps `from`->`to` keeping the original grams; other rows untouched', JSON.stringify(swapped));
+
+  // -------- recipeNutrition 4th param: subs change the honest total --------
+  const baseRecipe = call(ctx, 'recipeNutrition', ['oats-berries-walnuts', 1]).totals;
+  const subRecipe = call(ctx, 'recipeNutrition', ['oats-berries-walnuts', 1, undefined, [{from: 'mixed-berries', to: 'bananas'}]]).totals;
+  assert(Math.abs(subRecipe.kcal - baseRecipe.kcal) > 1e-6,
+    'recipeNutrition(subs): substituting an ingredient changes the recomputed kcal (still sum(ingredients))', 'base=' + baseRecipe.kcal + ' sub=' + subRecipe.kcal);
+  const threeArg = call(ctx, 'recipeNutrition', ['oats-berries-walnuts', 1, undefined]).totals;
+  assert(Math.abs(threeArg.kcal - baseRecipe.kcal) < 1e-6,
+    'recipeNutrition: the 3-arg call (no subs) is byte-identical to before (existing call sites unaffected)', 'base=' + baseRecipe.kcal + ' threeArg=' + threeArg.kcal);
+
+  // -------- plan-entry integration --------
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null;");
+  const plan = call(ctx, 'ensureWeekPlan', []);
+  const wk = plan.weekStartDate;
+
+  // determinism: a freshly generated plan never carries entry.ingredientSubs anywhere.
+  (function(){
+    const leaks = [];
+    plan.days.forEach(function(day, di){
+      ['breakfast', 'lunch', 'dinner', 'snack'].forEach(function(slot){
+        ['elena', 'partner'].forEach(function(person){
+          const e = day.meals[slot] && day.meals[slot][person];
+          if(e && e.ingredientSubs) leaks.push('day' + di + ' ' + slot + ' ' + person);
+        });
+      });
+    });
+    assert(leaks.length === 0, 'determinism: generateWeek never writes entry.ingredientSubs on any freshly generated slot', leaks.join('; '));
+  })();
+
+  function cell(slot){ return get(ctx, "weekPlans['" + wk + "'].days[0].meals['" + slot + "']"); }
+  function entry(slot, person){ return cell(slot)[person]; }
+
+  // Clean solo fixture on lunch (SHARED defaults false there).
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.shared = false; delete m.t; delete m.recipeId; m.elena = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; })();");
+  const cleanNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(Math.abs(cleanNut.kcal - baseRecipe.kcal) < 1e-6,
+    'planEntryNutrition (no sub): equals the recipe\'s own default kcal', 'entry=' + cleanNut.kcal + ' recipe=' + baseRecipe.kcal);
+
+  // validation: `from` must be a current ingredient; `to` must be a real food.
+  assert(call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'salmon-fillet', 'bananas']) === false,
+    'setEntryIngredientSub: rejects a `from` that is not one of the recipe\'s ingredients', '');
+  assert(call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'no-such-food']) === false,
+    'setEntryIngredientSub: rejects a `to` that is not a real food', '');
+
+  // real substitution: writes entry.ingredientSubs, nutrition + shopping reflect it.
+  assert(call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'bananas']) === true,
+    'setEntryIngredientSub: a valid swap returns true', '');
+  const comps = call(ctx, 'planEntryComponents', [entry('lunch', 'elena')]);
+  assert(comps.length === 1 && Array.isArray(comps[0].ingredientSubs) && comps[0].ingredientSubs[0].from === 'mixed-berries' && comps[0].ingredientSubs[0].to === 'bananas',
+    'planEntryComponents: the base component carries the entry\'s ingredientSubs', JSON.stringify(comps));
+  const subNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(Math.abs(subNut.kcal - subRecipe.kcal) < 1e-6,
+    'planEntryNutrition (sub): equals the subbed recipeNutrition total (honest recompute through planEntryComponents)', 'entry=' + subNut.kcal + ' subRecipe=' + subRecipe.kcal);
+  const qty = call(ctx, 'foodQuantitiesForComponents', [call(ctx, 'planEntryComponents', [entry('lunch', 'elena')])]);
+  assert((qty['bananas'] || 0) > 0 && !qty['mixed-berries'],
+    'foodQuantitiesForComponents: the shopping/pantry decomposition buys the replacement (bananas), not the original (mixed-berries)', JSON.stringify(qty));
+
+  // stamping: solo write stamps entry.t + clears meal.t.
+  assert(typeof entry('lunch', 'elena').t === 'number' && cell('lunch').t === undefined,
+    'setEntryIngredientSub: solo write stamps entry.t and clears any stale meal.t (couple-sync compares at the right level)', '');
+
+  // revert: removeEntryIngredientSub clears the sub; a second call is a no-op (false).
+  assert(call(ctx, 'removeEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries']) === true,
+    'removeEntryIngredientSub: reverting an existing sub returns true', '');
+  assert(!entry('lunch', 'elena').ingredientSubs,
+    'removeEntryIngredientSub: the ingredientSubs field is removed once empty (clean revert)', JSON.stringify(entry('lunch', 'elena').ingredientSubs));
+  const revertNut = call(ctx, 'planEntryNutrition', [entry('lunch', 'elena')]);
+  assert(Math.abs(revertNut.kcal - baseRecipe.kcal) < 1e-6,
+    'planEntryNutrition: after revert the total returns to the recipe default', 'entry=' + revertNut.kcal + ' recipe=' + baseRecipe.kcal);
+  assert(call(ctx, 'removeEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries']) === false,
+    'removeEntryIngredientSub: nothing to undo returns false', '');
+
+  // picking the ORIGINAL ingredient again reverts rather than storing a no-op sub.
+  call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'bananas']);
+  assert(call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'mixed-berries']) === true,
+    'setEntryIngredientSub: choosing the original ingredient again succeeds', '');
+  assert(!entry('lunch', 'elena').ingredientSubs,
+    'setEntryIngredientSub: choosing the original reverts (stores no no-op sub)', JSON.stringify(entry('lunch', 'elena').ingredientSubs));
+
+  // shared meal: the sub mirrors to BOTH halves (a shared dish moves as one).
+  run(ctx, "(function(){ var m = weekPlans['" + wk + "'].days[0].meals.lunch; m.shared = true; m.recipeId = 'oats-berries-walnuts'; delete m.t; m.elena = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; m.partner = {recipeId:'oats-berries-walnuts', portion:1, kcal:0, protein:0}; })();");
+  assert(call(ctx, 'setEntryIngredientSub', [wk, 0, 'lunch', 'elena', 'mixed-berries', 'bananas']) === true,
+    'setEntryIngredientSub: shared write returns true', '');
+  const sharedE = entry('lunch', 'elena').ingredientSubs, sharedP = entry('lunch', 'partner').ingredientSubs;
+  assert(Array.isArray(sharedE) && Array.isArray(sharedP) && sharedP[0] && sharedP[0].to === 'bananas',
+    'setEntryIngredientSub: a shared-cell sub mirrors onto the partner\'s half too', JSON.stringify({e: sharedE, p: sharedP}));
+  assert(typeof cell('lunch').t === 'number',
+    'setEntryIngredientSub: a shared write stamps meal.t (both halves move together)', 'meal.t=' + cell('lunch').t);
+
+  run(ctx, "weekPlans = {}; weekPlan = null;"); // leave no fixture plan cached for later tests
+}
+
+// Feature #6 candidate curation + diet/avoid gate (nutritionist P0): the replacement options
+// offered for an ingredient are like-for-like (same `sub:` group, e.g. fruit->fruit) and NEVER
+// include a food the person avoids or a diet forbids — the search escape hatch is gated too.
+function testIngredientSubCandidates(ctx){
+  const snap = get(ctx, "JSON.stringify({d:(PROF.elena.diets||[]), a:(PROF.elena.avoid||[]), af:(PROF.elena.avoidFoods||[])})");
+  run(ctx, "PROF.elena.diets = []; PROF.elena.avoid = []; PROF.elena.avoidFoods = [];");
+  const cands = call(ctx, 'ingredientSubCandidates', ['mixed-berries', ['elena']]);
+  assert(Array.isArray(cands) && cands.length > 0, 'ingredientSubCandidates: returns like-for-like options for a fruit ingredient', JSON.stringify(cands));
+  assert(cands.indexOf('mixed-berries') === -1, 'ingredientSubCandidates: never offers the original ingredient itself', JSON.stringify(cands));
+  const allFruit = cands.every(function(id){ const f = get(ctx, 'FOODS')[id]; return f && f.sub === 'fruit'; });
+  assert(allFruit, 'ingredientSubCandidates: every candidate shares the original\'s sub group (fruit->fruit, tightest curation)', JSON.stringify(cands));
+  assert(cands.indexOf('bananas') !== -1, 'ingredientSubCandidates: bananas is offered as a fruit swap by default', JSON.stringify(cands));
+
+  // avoid a specific food -> it disappears from BOTH the curated list and the search escape hatch.
+  run(ctx, "PROF.elena.avoidFoods = ['bananas'];");
+  const afterAvoid = call(ctx, 'ingredientSubCandidates', ['mixed-berries', ['elena']]);
+  assert(afterAvoid.indexOf('bananas') === -1, 'ingredientSubCandidates: an avoided food (PROF.avoidFoods) is never offered', JSON.stringify(afterAvoid));
+  const search = call(ctx, 'ingredientSubSearch', ['banan', 'mixed-berries', ['elena']]);
+  assert(search.indexOf('bananas') === -1, 'ingredientSubSearch: an avoided food is filtered out of search results too', JSON.stringify(search));
+  run(ctx, "PROF.elena.avoidFoods = [];");
+
+  // vegan diet: NO candidate offered for a protein swap may violate the diet.
+  run(ctx, "PROF.elena.diets = ['vegan'];");
+  const veganProt = call(ctx, 'ingredientSubCandidates', ['chicken-breast', ['elena']]);
+  const anyViolation = veganProt.some(function(id){ return call(ctx, 'ingredientIdsViolateDiet', [[id], ['vegan']]); });
+  assert(!anyViolation, 'ingredientSubCandidates: a vegan diet excludes every non-vegan category-fallback swap (no meat/fish/dairy offered)', JSON.stringify(veganProt));
+
+  run(ctx, "var __s=" + snap + "; PROF.elena.diets=__s.d; PROF.elena.avoid=__s.a; PROF.elena.avoidFoods=__s.af;");
+}
+
 // Fork-model migration (owner spec 2026-08-30): a legacy in-place built-in override
 // (recipeOverrides[id], from before the fork model) is converted on boot into a cr- fork carrying
 // the user's edit, with the original returned to the market — so a previously-edited recipe shows
@@ -14461,6 +14604,8 @@ function main(){
   runTest('meal: components resolve out-of-book (no 0-kcal Meal)', function(){ testMealComponentsResolveOutOfBook(ctx); });
   runTest('meal: per-component log (remove/rescale a sub-recipe)', function(){ testMealPerComponentLog(ctx); });
   runTest('meal: per-component PLAN override (remove/rescale a sub-recipe while still planned)', function(){ testMealPerComponentPlan(ctx); });
+  runTest('meal: per-occurrence ingredient substitution (#6 — this-day-only ingredient swap)', function(){ testIngredientSubstitution(ctx); });
+  runTest('meal: ingredient-sub candidates are like-for-like + diet/avoid gated (#6)', function(){ testIngredientSubCandidates(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });
