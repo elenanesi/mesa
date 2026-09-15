@@ -737,6 +737,50 @@ function testPantryReaddBeatsRemovalTombstone(ctx){
   }
 }
 
+// Consecutive-dinner protein/diet variety (owner 2026-09-16): applyConsecutiveDinnerProteinRule
+// must, for DINNER only, drop mains that repeat yesterday's dinner protein — same animal-protein
+// kind, or a second meatless night — while leaving LUNCH and non-mains untouched, and relaxing
+// (never emptying) when it would leave no usable main.
+function testConsecutiveDinnerProteinVariety(ctx){
+  // Pick real auto lunch/dinner mains of distinct protein kinds from the initialized catalog.
+  run(ctx, "(function(){ __cd={}; Object.keys(RECIPES_DB).forEach(function(id){ if(!isAutoLunchDinnerMain(id)) return; var k=recipeProteinKind(id); var key=(k===null)?'meatless':k; if(!__cd[key]) __cd[key]=[]; if(__cd[key].length<2) __cd[key].push(id); }); })();");
+  const mains = get(ctx, '__cd');
+  const poultry = mains.poultry && mains.poultry[0];
+  const fish = mains.fish && mains.fish[0];
+  const meatless = mains.meatless && mains.meatless[0];
+  assert(!!poultry && !!fish && !!meatless,
+    'setup: catalog has an auto poultry, fish and meatless dinner main', JSON.stringify({poultry: poultry, fish: fish, meatless: meatless}));
+  if(!(poultry && fish && meatless)){ run(ctx, "delete __cd;"); return; }
+
+  const mkHist = function(yesterdayKind){ return {elena: {dinnerProteinKind: {0: yesterdayKind}}}; };
+
+  // (1) Yesterday poultry -> tonight's poultry main is dropped; fish + meatless stay.
+  let out = call(ctx, 'applyConsecutiveDinnerProteinRule', [[poultry, fish, meatless], mkHist('poultry'), ['elena'], 'dinner', 1]);
+  assert(out.indexOf(poultry) === -1 && out.indexOf(fish) !== -1 && out.indexOf(meatless) !== -1,
+    'consecutive dinner: after a poultry dinner, a poultry main is excluded but fish/meatless remain', JSON.stringify(out));
+
+  // (2) Yesterday meatless -> tonight's meatless main is dropped; poultry + fish stay (no 2 veg nights).
+  out = call(ctx, 'applyConsecutiveDinnerProteinRule', [[poultry, fish, meatless], mkHist(null), ['elena'], 'dinner', 1]);
+  assert(out.indexOf(meatless) === -1 && out.indexOf(poultry) !== -1 && out.indexOf(fish) !== -1,
+    'consecutive dinner: after a meatless dinner, a meatless main is excluded but poultry/fish remain', JSON.stringify(out));
+
+  // (3) LUNCH is untouched — a chicken lunch the day after a chicken dinner (leftovers) is allowed.
+  out = call(ctx, 'applyConsecutiveDinnerProteinRule', [[poultry, fish, meatless], mkHist('poultry'), ['elena'], 'lunch', 1]);
+  assert(out.indexOf(poultry) !== -1, 'consecutive dinner: the rule does NOT touch lunch (leftovers stay allowed)', JSON.stringify(out));
+
+  // (4) Never starves: if every main repeats yesterday's protein, relax to the input pool.
+  const before = get(ctx, 'consecutiveDinnerRelaxations');
+  out = call(ctx, 'applyConsecutiveDinnerProteinRule', [[poultry], mkHist('poultry'), ['elena'], 'dinner', 1]);
+  assert(out.indexOf(poultry) !== -1, 'consecutive dinner: relaxes rather than emptying a dinner pool with no alternative protein', JSON.stringify(out));
+  assert(get(ctx, 'consecutiveDinnerRelaxations') === before + 1, 'consecutive dinner: a relaxation is counted for telemetry', 'before=' + before + ' after=' + get(ctx, 'consecutiveDinnerRelaxations'));
+
+  // (5) Day 0 has no "yesterday" -> no constraint.
+  out = call(ctx, 'applyConsecutiveDinnerProteinRule', [[poultry, fish, meatless], mkHist('poultry'), ['elena'], 'dinner', 0]);
+  assert(out.length === 3, 'consecutive dinner: day 0 (no previous dinner) applies no constraint', JSON.stringify(out));
+
+  run(ctx, "delete __cd;");
+}
+
 /* ---------------- Cook from what I have (#7): pantry recipe scorer ----------------
    planner.js:pantryScoreRecipe / pantryMakeableRecipes rank recipes by what's currently in
    the pantry. Staples (oil/salt/…) are free; the MAIN ingredient weighs 3x a secondary;
@@ -14136,8 +14180,12 @@ function testWeekCompactPlanningWorkspace(){
   const renderLayoutSrc = fs.readFileSync(path.join(APP_DIR, 'js', 'render.js'), 'utf8');
   assert(renderLayoutSrc.indexOf('planner.insertBefore(quality, list.nextSibling)') !== -1,
     'Planner: the balance tile is moved to the bottom after the plan list', '');
-  assert(weekSrc.indexOf('uniqueRecipeCount') !== -1 && weekSrc.indexOf('signal-variety') !== -1 && weekSrc.indexOf('signal-protein') !== -1 && weekSrc.indexOf('signal-fiber') !== -1,
-    'Planner balance check: identifies variety, protein, and fiber from computed plan data', '');
+  // Variety was removed as an explicit weekly goal (owner 2026-09-16) — the balance tile shows
+  // only the real nutrition targets now, and must NOT resurface a variety/dish-count signal.
+  assert(weekSrc.indexOf('signal-protein') !== -1 && weekSrc.indexOf('signal-fiber') !== -1,
+    'Planner balance check: identifies protein and fiber from computed plan data', '');
+  assert(weekSrc.indexOf('signal-variety') === -1 && weekSrc.indexOf('dishes planned') === -1,
+    'Planner balance check: variety/dish-count is NOT surfaced as an explicit weekly goal', '');
   assert(weekSrc.indexOf("btn.textContent = 'Re-balance';") !== -1 && weekSrc.indexOf("Re-balance next week") !== -1 && weekSrc.indexOf("Re-balance this week") !== -1,
     'Week toolbar: Re-balance keeps a short visible label with week-specific aria text', '');
   assert(weekSrc.indexOf("regenBtn.setAttribute('aria-label'") !== -1 && weekSrc.indexOf('Regenerate next week') !== -1 && weekSrc.indexOf('Regenerate this week') !== -1,
@@ -14727,6 +14775,7 @@ function main(){
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('Pantry re-add beats a stale removal tombstone (monotonic u)', function(){ testPantryReaddBeatsRemovalTombstone(ctx); });
+  runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });

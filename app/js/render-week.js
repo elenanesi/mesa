@@ -510,10 +510,13 @@ function renderWeekQuality(plan, person, dayViews){
   const signalsEl = document.getElementById('weekQualitySignals');
   const s = summarizeWeekPlan(plan, person);
   const proteinOnTarget = s.targetProtein > 0 && s.avgProteinPerDay >= s.targetProtein;
-  if(summaryEl) summaryEl.textContent = s.uniqueRecipeCount + ' dishes planned · ' + s.metricText;
+  // Variety is no longer surfaced as an explicit weekly GOAL (owner 2026-09-16): recipe/
+  // ingredient variety is enforced quietly in generation (no lunch/dinner repeats, no same
+  // protein or two meatless dinners back-to-back), not shown as a dish-count score to hit.
+  // The balance tile keeps only the real nutrition targets — protein and fibre.
+  if(summaryEl) summaryEl.textContent = s.metricText;
   if(signalsEl){
-    signalsEl.innerHTML = '<span class="week-quality-signal signal-variety"><b>Variety</b><em>' + s.uniqueRecipeCount + ' dishes</em></span>'
-      + '<span class="week-quality-signal signal-protein"><b>Protein</b><em>' + (proteinOnTarget ? 'On target' : Math.round(s.avgProteinPerDay) + 'g/day') + '</em></span>'
+    signalsEl.innerHTML = '<span class="week-quality-signal signal-protein"><b>Protein</b><em>' + (proteinOnTarget ? 'On target' : Math.round(s.avgProteinPerDay) + 'g/day') + '</em></span>'
       + '<span class="week-quality-signal signal-fiber"><b>Fiber</b><em>' + Math.round(s.avgFiberPerDay) + 'g/day</em></span>';
   }
   if(row) row.classList.toggle('open', weekQualityExpanded);

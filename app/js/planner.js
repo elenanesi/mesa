@@ -355,6 +355,45 @@ function applyLunchDinnerMainRules(pool, history, persons, slot){
 }
 let mainRepeatRelaxations = 0;
 let meatRuleRelaxations = 0;
+let consecutiveDinnerRelaxations = 0;
+
+/* ---------------- consecutive-dinner protein/diet variety (owner 2026-09-16) ----------------
+   The variety that matters most is on the plate two nights running, not the recipe name. So for
+   DINNER only, avoid repeating YESTERDAY's dinner protein: no same animal-protein kind
+   (chicken -> chicken, fish -> fish) back-to-back, and no two meatless (vegetarian/vegan)
+   dinners back-to-back. LUNCH is deliberately left untouched — a chicken lunch the day after a
+   chicken dinner is the leftovers case the owner explicitly wants to keep.
+
+   Applied to the dinner MAIN only (sides carry no protein identity), keyed off the protein kind
+   recorded for each relevant person's dinner the previous day (recordDayUsage ->
+   history[p].dinnerProteinKind[dayIndex]). Like every other variety rule here it RELAXES rather
+   than ever starving the slot: if honouring it would leave no main at all (a thin catalog, or a
+   fully vegetarian household where every dinner is meatless), it returns the input pool and
+   counts the relaxation. proteinKind: 'red' | 'poultry' | 'fish' | null (meatless). */
+function applyConsecutiveDinnerProteinRule(pool, history, persons, slot, dayIndex){
+  if(slot !== 'dinner' || dayIndex <= 0) return pool;
+  const banSameKind = {};   // animal-protein kinds not to repeat tonight
+  let banMeatless = false;  // yesterday's dinner was meatless -> don't serve a meatless main again
+  let havePrev = false;
+  persons.forEach(function(p){
+    const rec = history[p].dinnerProteinKind;
+    if(!rec || !Object.prototype.hasOwnProperty.call(rec, dayIndex - 1)) return;
+    havePrev = true;
+    const yk = rec[dayIndex - 1];
+    if(yk === null) banMeatless = true;
+    else if(yk) banSameKind[yk] = true;
+  });
+  if(!havePrev) return pool;
+  const filtered = pool.filter(function(id){
+    if(!isAutoLunchDinnerMain(id)) return true; // sides/non-mains pass; the main defines the protein
+    const kind = recipeProteinKind(id);
+    if(kind === null) return !banMeatless;      // a meatless main only if last night wasn't meatless
+    return !banSameKind[kind];                  // an animal-protein main only if a different kind
+  });
+  if(filtered.some(isAutoLunchDinnerMain)) return filtered; // still has at least one usable main
+  if(pool.some(isAutoLunchDinnerMain)) consecutiveDinnerRelaxations++;
+  return pool; // never starve the slot
+}
 
 // Counts how often a weekly cap had to be relaxed during one generateWeek(). A relaxation
 // is not a bug — every rule here degrades rather than returning an empty pool — but it does
@@ -983,6 +1022,12 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
       history[person].meatUse[kind]++;
       history[person].meatUse.total++;
     }
+  }
+  // Consecutive-dinner protein/diet variety (applyConsecutiveDinnerProteinRule): remember what
+  // protein kind this person's dinner carried tonight (null = meatless) so tomorrow's dinner can
+  // avoid repeating it. Recorded for dinner only; lunch is intentionally not tracked here.
+  if(slot === 'dinner' && history[person].dinnerProteinKind){
+    history[person].dinnerProteinKind[dayIndex] = kind;
   }
   planEntryComponents(entry).forEach(function(c){
     if(c.recipeId){
@@ -1944,7 +1989,11 @@ function applyVarietyFilter(pool, history, person, slot, dayIndex, dayUsePersons
     (history[p].dayUseRecipe[dayIndex] || []).forEach(function(id){ usedToday[id] = true; });
   });
   const persons = (dayUsePersons && dayUsePersons.length ? dayUsePersons : [person]);
-  const proteinBase = applyLunchDinnerMainRules(pool, history, persons, slot);
+  let proteinBase = applyLunchDinnerMainRules(pool, history, persons, slot);
+  // Consecutive-dinner protein/diet variety (owner 2026-09-16) — applied between the weekly
+  // main-repeat rule above and the same-day rule below, and a no-op for every non-dinner slot
+  // (leaves lunch free for leftovers). Relaxes internally, so it never empties the pool.
+  proteinBase = applyConsecutiveDinnerProteinRule(proteinBase, history, persons, slot, dayIndex);
 
   const notUsedToday = proteinBase.filter(function(id){ return !usedToday[id]; });
   const dayBase = notUsedToday.length ? notUsedToday : proteinBase;
@@ -2459,7 +2508,7 @@ function generateWeek(seed){
     partner: (avoidFoodsList('partner')).slice()
   };
 
-  weeklyCapRelaxations = 0; mainRepeatRelaxations = 0; meatRuleRelaxations = 0; emptyPoolPicks = 0;
+  weeklyCapRelaxations = 0; mainRepeatRelaxations = 0; meatRuleRelaxations = 0; emptyPoolPicks = 0; consecutiveDinnerRelaxations = 0;
   const history = {elena: {}, partner: {}};
   SLOT_ORDER.forEach(function(s){ history.elena[s] = []; history.partner[s] = []; });
   // task B2: parallel "what composed side/breakfast-pair id did this person use on day N"
@@ -2486,6 +2535,10 @@ function generateWeek(seed){
   history.elena.lunchDinnerMainUse = {}; history.partner.lunchDinnerMainUse = {};
   history.elena.meatUse = {red: 0, poultry: 0, total: 0};
   history.partner.meatUse = {red: 0, poultry: 0, total: 0};
+  // Consecutive-dinner protein/diet variety (owner 2026-09-16): per-person dinner protein kind
+  // by dayIndex (sparse) — 'red'|'poultry'|'fish'|null (meatless) — read by
+  // applyConsecutiveDinnerProteinRule so tomorrow's dinner avoids repeating tonight's protein.
+  history.elena.dinnerProteinKind = {}; history.partner.dinnerProteinKind = {};
 
   // weekSeed: deterministic per-week tie-break shift (see mealScore doc) — kept as a
   // secondary mechanism; the primary cross-week variety is the prevPlan filter below.
