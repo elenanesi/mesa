@@ -895,12 +895,21 @@ function normalizeFood(food){
    case to distinguish a delete from. */
 let pantry = {};
 
-// Drops entries that can't be trusted: a foodId no longer in FOODS (deleted custom food,
-// or corrupt data), or a qty that isn't a finite number >= 0 (>= so a qty:0 tombstone,
-// see the doc block above, survives loadState() — rejecting it here would silently drop
-// deletes on their own originating phone before they ever get a chance to sync out).
+// Drops entries that can't be trusted: a foodId in NEITHER the built-in FOODS nor the
+// household's customFoods (a genuinely deleted food, or corrupt data), or a qty that isn't a
+// finite number >= 0 (>= so a qty:0 tombstone, see the doc block above, survives loadState() —
+// rejecting it here would silently drop deletes on their own originating phone before they ever
+// get a chance to sync out).
+//
+// customFoods MUST be checked alongside FOODS here: loadState() populates `customFoods` before
+// it validates `pantry`, but the custom foods aren't merged INTO the global FOODS until
+// applyCustomFoods() runs AFTER loadState() (js/library.js, app.js boot). Checking FOODS alone
+// therefore dropped EVERY custom-food (`cf-`) pantry entry on every single load — a custom food
+// you stocked reappeared in "to buy" and looked like it "kept disappearing" (owner 2026-09-16,
+// "Fior di frutta fragole e fragoline"). A `cf-` entry is legitimate whenever customFoods holds
+// it; a truly stale id (deleted food) is in neither map and is still dropped.
 function isValidPantryEntry(foodId, entry){
-  return typeof foodId === 'string' && !!FOODS[foodId]
+  return typeof foodId === 'string' && (!!FOODS[foodId] || !!customFoods[foodId])
     && !!entry && typeof entry === 'object'
     && typeof entry.qty === 'number' && isFinite(entry.qty) && entry.qty >= 0;
 }

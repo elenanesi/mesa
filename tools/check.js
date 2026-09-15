@@ -737,6 +737,29 @@ function testPantryReaddBeatsRemovalTombstone(ctx){
   }
 }
 
+// Regression (owner 2026-09-16: custom-food pantry items "keep disappearing", e.g. "Fior di
+// frutta fragole e fragoline"): loadState() populates customFoods BEFORE it validates pantry, but
+// custom foods are merged into the global FOODS only by applyCustomFoods() AFTER loadState — so
+// isValidPantryEntry() must accept a foodId present in customFoods, not FOODS alone, or every
+// cf- pantry entry is dropped on every load.
+function testPantryCustomFoodSurvivesValidation(ctx){
+  run(ctx, "__savedCF = JSON.stringify(customFoods);");
+  try{
+    // A custom food known to customFoods but NOT (yet) merged into FOODS — the exact load-time state.
+    run(ctx, "customFoods['cf-zzpantrytest'] = {name:'ZZ test spread', unit:'g'}; delete FOODS['cf-zzpantrytest'];");
+    assert(call(ctx, 'isValidPantryEntry', ['cf-zzpantrytest', {qty: 200, setAt: 1, u: 1}]) === true,
+      'isValidPantryEntry: accepts a custom food in customFoods even when FOODS has not merged it yet (load-order fix)', '');
+    assert(call(ctx, 'isValidPantryEntry', ['cf-zzpantrytest', {qty: 0, setAt: 1, u: 1}]) === true,
+      'isValidPantryEntry: a custom-food qty:0 tombstone also survives (so a delete can still sync out)', '');
+    assert(call(ctx, 'isValidPantryEntry', ['cf-genuinely-unknown-zz', {qty: 200, setAt: 1, u: 1}]) === false,
+      'isValidPantryEntry: still drops a foodId in neither FOODS nor customFoods (stale/corrupt)', '');
+    assert(call(ctx, 'isValidPantryEntry', ['apples', {qty: 200, setAt: 1, u: 1}]) === true,
+      'isValidPantryEntry: still accepts a built-in food', '');
+  } finally {
+    run(ctx, "delete customFoods['cf-zzpantrytest']; customFoods = JSON.parse(__savedCF); delete __savedCF;");
+  }
+}
+
 // Consecutive-dinner protein/diet variety (owner 2026-09-16): applyConsecutiveDinnerProteinRule
 // must, for DINNER only, drop mains that repeat yesterday's dinner protein — same animal-protein
 // kind, or a second meatless night — while leaving LUNCH and non-mains untouched, and relaxing
@@ -14775,6 +14798,7 @@ function main(){
   runTest('Add to pantry on ingredient cards', function(){ testAddToPantryOnIngredientCards(ctx); });
   runTest('Pantry page: category sections + filters', function(){ testPantrySectionsAndFilters(ctx); });
   runTest('Pantry re-add beats a stale removal tombstone (monotonic u)', function(){ testPantryReaddBeatsRemovalTombstone(ctx); });
+  runTest('Pantry custom-food entry survives load validation', function(){ testPantryCustomFoodSurvivesValidation(ctx); });
   runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
