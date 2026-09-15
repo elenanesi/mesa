@@ -838,7 +838,9 @@ let pantryCookCtx = null;
 
 function openPantryCookSheet(){
   const list = (typeof pantryMakeableRecipes === 'function') ? pantryMakeableRecipes(currentProf) : [];
-  pantryCookCtx = {list: list};
+  // Preserve a chosen meal-type filter across a reopen (e.g. the meal-chooser's Back button).
+  const prevFilter = (pantryCookCtx && pantryCookCtx.slotFilter) || null;
+  pantryCookCtx = {list: list, slotFilter: prevFilter, pendingRecipeId: null};
   document.getElementById('sheetBody').innerHTML = buildPantryCookSheet(list);
   document.getElementById('sheet').classList.add('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -846,23 +848,59 @@ function openPantryCookSheet(){
   attachPantryCookHandler();
 }
 
+// Meal slots the pantry-cook filter offers (never 'side' — a side isn't a standalone meal).
+const PANTRY_COOK_SLOTS = ['breakfast', 'lunch', 'dinner', 'snack'];
+
 function buildPantryCookSheet(list){
   let html = '<h2 style="margin-top:6px">Cook from what I have</h2>'
     + '<p class="sub">Suggestions built from your pantry right now. Everyday staples (oil, salt, garlic, lemon…) are assumed on hand. Tap one to put it on today’s plan.</p>';
   if(!list || !list.length){
     return html + '<div class="empty" style="margin-top:14px">Nothing to suggest yet. Add a few ingredients to your <b>Pantry</b> and check back — or the pantry is empty for now.</div>';
   }
+  // Owner request 2026-09-15: filter by meal type (like the recipe book/market), so "show me
+  // dinner ideas only" is one tap. The list already carries each recipe's slots (recipeSlotList).
+  const f = pantryCookCtx && pantryCookCtx.slotFilter;
+  html += '<div class="chiprow" id="pantryCookFilters" style="margin-top:8px">' + pantryCookFilterChipsHtml() + '</div>';
+  html += '<div id="pantryCookResults">' + pantryCookResultsHtml(pantryCookFilterList(list, f)) + '</div>';
+  return html;
+}
+
+function pantryCookFilterChipsHtml(){
+  const cur = (pantryCookCtx && pantryCookCtx.slotFilter) || null;
+  let chips = '<button type="button" class="pill ghost chip-preset' + (!cur ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="setPantryCookFilter(null)">All</button>';
+  chips += PANTRY_COOK_SLOTS.map(function(s){
+    return '<button type="button" class="pill ghost chip-preset' + (cur === s ? ' chipsel' : '') + '" style="min-height:44px;padding:0 14px" onclick="setPantryCookFilter(\'' + s + '\')">' + (SLOT_LABEL[s] || s) + '</button>';
+  }).join('');
+  return chips;
+}
+
+function pantryCookFilterList(list, slotFilter){
+  if(!slotFilter) return list || [];
+  return (list || []).filter(function(sc){
+    const r = RECIPES_DB[sc.recipeId];
+    return r && recipeSlotList(r).indexOf(slotFilter) !== -1;
+  });
+}
+
+// Pure on the (already-filtered) list it's handed, so buildPantryCookSheet stays self-contained
+// (does not depend on pantryCookCtx) and remains headlessly testable.
+function pantryCookResultsHtml(list){
+  if(!list || !list.length) return '<div class="empty" style="margin-top:14px">Nothing here for this meal yet — try another meal, or add a few ingredients to your Pantry.</div>';
   const ready = list.filter(function(sc){ return sc.fullyMakeable; });
   const almost = list.filter(function(sc){ return !sc.fullyMakeable; });
-  html += '<div id="pantryCookResults">';
-  if(ready.length){
-    html += '<div class="shop-cat">Ready now</div>' + ready.map(pantryCookRowHtml).join('');
-  }
-  if(almost.length){
-    html += '<div class="shop-cat">Almost — a couple of things short</div>' + almost.map(pantryCookRowHtml).join('');
-  }
-  html += '</div>';
+  let html = '';
+  if(ready.length) html += '<div class="shop-cat">Ready now</div>' + ready.map(pantryCookRowHtml).join('');
+  if(almost.length) html += '<div class="shop-cat">Almost — a couple of things short</div>' + almost.map(pantryCookRowHtml).join('');
   return html;
+}
+
+function setPantryCookFilter(slot){
+  if(!pantryCookCtx) return;
+  pantryCookCtx.slotFilter = slot || null;
+  const chips = document.getElementById('pantryCookFilters');
+  if(chips) chips.innerHTML = pantryCookFilterChipsHtml();
+  const results = document.getElementById('pantryCookResults');
+  if(results) results.innerHTML = pantryCookResultsHtml(pantryCookFilterList(pantryCookCtx.list, pantryCookCtx.slotFilter)); // element persists, delegated onclick stays attached
 }
 
 function pantryCookRowHtml(sc){
@@ -898,29 +936,39 @@ function attachPantryCookHandler(){
   };
 }
 
-// Drops `recipeId` onto today's plan by reusing the swap apply path. Target slot = the
-// recipe's first supported meal slot today that isn't already confirmed (so it doesn't
-// silently overwrite a meal you've already logged); if every matching slot is logged, falls
-// back to the recipe's first slot in order. chooseSwapRecipe handles the shared-cell confirm,
-// log correction, re-renders, persist, close and toast.
+// Owner request 2026-09-15: make it clear WHERE a pantry pick lands. When there's a choice of
+// meal, ask ("Which meal today?"); when the meal is unambiguous — the user has filtered to one
+// meal type, or the recipe only fits one slot — place it straight away. Placement reuses the
+// swap apply path (placePantryRecipeSlot) so the shared-cell confirm, log correction, re-renders,
+// persist, close and toast all come for free.
 function pantryAddRecipeToToday(recipeId){
   const r = RECIPES_DB[recipeId];
   if(!r) return;
-  const slots = recipeSlotList(r).filter(function(s){ return s !== 'side'; });
+  const slots = recipeSlotList(r).filter(function(s){ return PANTRY_COOK_SLOTS.indexOf(s) !== -1; });
   if(!slots.length) return;
-  const di = todayDayIndex();
-  const dateISO = todayISO();
-  let target = null;
-  SLOT_ORDER.forEach(function(s){
-    if(target || slots.indexOf(s) === -1) return;
-    if(typeof slotLogStatus === 'function' && slotLogStatus(dateISO, currentProf, s) === 'confirmed') return;
-    target = s;
-  });
-  if(!target){
-    SLOT_ORDER.forEach(function(s){ if(!target && slots.indexOf(s) !== -1) target = s; });
-  }
-  if(!target) return;
-  swapCtx = {dayIndex: di, slot: target, person: currentProf, weekStartDate: null, targetElId: null};
+  if(pantryCookCtx) pantryCookCtx.pendingRecipeId = recipeId;
+  const filter = pantryCookCtx && pantryCookCtx.slotFilter;
+  if(filter && slots.indexOf(filter) !== -1){ placePantryRecipeSlot(filter); return; }
+  if(slots.length === 1){ placePantryRecipeSlot(slots[0]); return; }
+  document.getElementById('sheetBody').innerHTML = buildPantryMealChooser(recipeId, slots);
+}
+
+function buildPantryMealChooser(recipeId, slots){
+  const r = RECIPES_DB[recipeId];
+  // slots come from PANTRY_COOK_SLOTS (safe to inline); the user-authored recipeId is NOT
+  // inlined — it's held in pantryCookCtx.pendingRecipeId and read by placePantryRecipeSlot.
+  return '<h2 style="margin-top:6px">Which meal today?</h2>'
+    + '<p class="sub">Put <b>' + escapeHtml(r ? r.title : recipeId) + '</b> on today’s plan as…</p>'
+    + '<div class="pantry-meal-choices">'
+    + slots.map(function(s){ return '<button class="pantry-meal-choice" onclick="placePantryRecipeSlot(\'' + s + '\')">' + (SLOT_LABEL[s] || s) + '</button>'; }).join('')
+    + '</div>'
+    + '<button class="ghostbtn" style="margin-top:12px" onclick="openPantryCookSheet()">‹ Back to suggestions</button>';
+}
+
+function placePantryRecipeSlot(slot){
+  const recipeId = pantryCookCtx && pantryCookCtx.pendingRecipeId;
+  if(!recipeId || !RECIPES_DB[recipeId] || PANTRY_COOK_SLOTS.indexOf(slot) === -1) return;
+  swapCtx = {dayIndex: todayDayIndex(), slot: slot, person: currentProf, weekStartDate: null, targetElId: null};
   chooseSwapRecipe(recipeId, null);
 }
 

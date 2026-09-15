@@ -784,6 +784,22 @@ function testPantryCookFromWhatIHave(ctx){
     const emptyHtml = call(ctx, 'buildPantryCookSheet', [[]]);
     assert(emptyHtml.indexOf('Nothing to suggest') !== -1,
       'buildPantryCookSheet: empty result shows a calm empty state', emptyHtml.slice(0, 160));
+    // (8) Meal-type filter (owner 2026-09-15): the sheet renders filter chips, and
+    //     pantryCookFilterList keeps only recipes whose slots include the chosen meal.
+    assert(sheetHtml.indexOf('pantryCookFilters') !== -1 && sheetHtml.indexOf('setPantryCookFilter') !== -1,
+      'buildPantryCookSheet: renders meal-type filter chips', sheetHtml.slice(0, 240));
+    const dinnerOnly = call(ctx, 'pantryCookFilterList', [list, 'dinner']);
+    const allDinner = dinnerOnly.every(function(sc){ const r = get(ctx, 'RECIPES_DB')[sc.recipeId]; return r && call(ctx, 'recipeSlotList', [r]).indexOf('dinner') !== -1; });
+    assert(allDinner, 'pantryCookFilterList: filtering to "dinner" keeps only dinner-eligible recipes', JSON.stringify(dinnerOnly.map(function(sc){ return sc.recipeId; })));
+    const noFilter = call(ctx, 'pantryCookFilterList', [list, null]);
+    assert(noFilter.length === list.length, 'pantryCookFilterList: no filter returns the whole list', 'got ' + noFilter.length + ' of ' + list.length);
+    // (9) Meal chooser (owner 2026-09-15): offers the recipe's eligible meal slots, and never
+    //     inline-interpolates the recipe id (the slot buttons carry only the safe slot key).
+    const chooser = call(ctx, 'buildPantryMealChooser', ['omelette', ['breakfast', 'lunch']]);
+    assert(chooser.indexOf("placePantryRecipeSlot('breakfast')") !== -1 && chooser.indexOf("placePantryRecipeSlot('lunch')") !== -1,
+      'buildPantryMealChooser: renders a button per eligible meal slot', chooser.slice(0, 240));
+    assert(chooser.indexOf('omelette') === -1 || chooser.indexOf("placePantryRecipeSlot('omelette')") === -1,
+      'buildPantryMealChooser: the recipe id is not inlined into a slot onclick', chooser.slice(0, 240));
   } finally {
     run(ctx, "pantry = " + JSON.stringify(savedPantry) + ";");
   }
