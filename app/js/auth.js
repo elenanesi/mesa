@@ -54,7 +54,7 @@
    appears not to work, since an installed PWA or a Safari cache can
    easily still be running last week's JavaScript.
    =================================================================== */
-const AUTH_BUILD = 'mesa-98301346cc5b'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
+const AUTH_BUILD = 'mesa-cf3aa4e9bb13'; // AUTO-STAMPED by tools/build-sw.js — do not edit by hand
 const AUTH_LOG_KEY = 'mesaAuthLog';
 const AUTH_LOG_MAX = 40;
 

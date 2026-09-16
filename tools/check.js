@@ -737,6 +737,26 @@ function testPantryReaddBeatsRemovalTombstone(ctx){
   }
 }
 
+// Regression (owner 2026-09-16): a supplement (e.g. Psyllogel psyllium fibre, dosed ~8g) the
+// user also marked breakfastPair was auto-added to breakfast and gram-stepped to 120g. Mesa's
+// promise is that the planner never auto-adds a supplement — breakfastPairFoodIds must exclude it
+// regardless of the breakfastPair flag.
+function testSupplementNotAutoPaired(ctx){
+  run(ctx, "__sfSnap = JSON.stringify(FOODS['cf-supp-test'] || null);");
+  try{
+    run(ctx, "FOODS['cf-supp-test'] = {name:'Test psyllium', unit:'g', per:100, kcal:35, protein:0, carbs:2, fat:0, satFat:0, fiber:100, sugars:0, freeSugars:0, cat:'Produce', season:'evergreen', breakfastPair:true, supplement:true, avgG:8};");
+    const withSupp = call(ctx, 'breakfastPairFoodIds', [[]]);
+    assert(withSupp.indexOf('cf-supp-test') === -1,
+      'breakfastPairFoodIds: a supplement is excluded from the breakfast auto-pair pool even when breakfastPair:true', JSON.stringify(withSupp));
+    run(ctx, "FOODS['cf-supp-test'].supplement = false;");
+    const withoutSupp = call(ctx, 'breakfastPairFoodIds', [[]]);
+    assert(withoutSupp.indexOf('cf-supp-test') !== -1,
+      'breakfastPairFoodIds: the same food WITHOUT the supplement flag IS eligible (control — the exclusion is the supplement flag, not something else)', JSON.stringify(withoutSupp));
+  } finally {
+    run(ctx, "var __s=JSON.parse(__sfSnap); if(__s){ FOODS['cf-supp-test']=__s; } else { delete FOODS['cf-supp-test']; } delete __sfSnap;");
+  }
+}
+
 // Regression (owner 2026-09-16): the sat-fat / free-sugar generation-steering ceilings in
 // dayImbalanceForPerson read a PER_DAY_BANDS.*.ceilMult that no longer exists (bands became
 // minorMult/outlierMult on 2026-09-08) -> satCeil/sugarCeil were NaN and those terms never fired.
@@ -14877,6 +14897,7 @@ function main(){
   runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
   runTest('Same-day lunch/dinner near-duplicate rule', function(){ testSameDayMainSimilarity(ctx); });
   runTest('Sat-fat / free-sugar generation steering fires', function(){ testSatFatSteeringFires(ctx); });
+  runTest('Supplement never enters the breakfast auto-pair pool', function(){ testSupplementNotAutoPaired(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });

@@ -980,10 +980,16 @@ function eligibleCombosForVariety(recipeId, avoidList, dietList, history, person
 // Decisions Q2 whitelist (breads + fruit) — FOODS[id].breakfastPair === true — filtered by
 // avoid-list and season (a summer breakfast shouldn't default-pair with a winter-only
 // fruit), sorted for deterministic iteration.
+// SUPPLEMENTS ARE EXCLUDED (owner 2026-09-16): Mesa's promise is "the planner never adds a
+// supplement on its own" (new-food form copy + boostCandidateFoodIds). A supplement a user
+// happened to also mark breakfastPair (e.g. Psyllogel, psyllium fibre) must NOT enter this
+// auto-add pool — the pairing amounts are food gram-steps (up to 120g via foodPairingSteps),
+// which for a pure-fibre supplement dosed ~8g is wildly, harmfully wrong. Supplements stay
+// hand-added only; this filter is the guardrail regardless of the breakfastPair flag.
 function breakfastPairFoodIds(avoidList){
   return Object.keys(FOODS).filter(function(id){
     const f = FOODS[id];
-    if(!f || f.breakfastPair !== true) return false;
+    if(!f || f.breakfastPair !== true || f.supplement === true) return false;
     if(typeof foodSeason === 'function' && typeof currentSeasonKey === 'function'){
       const s = foodSeason(id);
       if(s !== 'evergreen' && s !== currentSeasonKey()) return false;
