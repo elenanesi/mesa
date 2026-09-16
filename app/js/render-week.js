@@ -152,6 +152,12 @@ function weekNutriSummary(plan, person, dayViews){
   const avgFat = sum('fat') / days;
   const avgFiber = sum('fiber') / days;
   const avgFreeSugars = sum('freeSugars') / days;
+  // Sat-fat weekly % of energy from the SAME logged-overlay day views the macro averages and the
+  // fibre/free-sugar chips use (energy-weighted Σ satFat·9 ÷ Σ kcal) — NOT computeWeeklyCoverage,
+  // which reads the PLANNED menu only. Owner 2026-09-16: adding 500g burrata to today didn't move
+  // the sat-fat figure because the plan hadn't changed; the tile must reflect what you actually ate.
+  const kcalSum = sum('kcal');
+  const satFatEnergyShare = kcalSum > 0 ? (sum('satFat') * 9) / kcalSum : 0;
 
   const fiberTarget = WEEK_SUMMARY_THRESHOLDS.fiberMinPerDay; // single-sourced, never re-typed 25
   const cov = computeWeeklyCoverage(plan);
@@ -165,6 +171,7 @@ function weekNutriSummary(plan, person, dayViews){
   return {
     avgKcal: avgKcal, avgProtein: avgProtein, avgCarbs: avgCarbs, avgFat: avgFat,
     avgFiber: avgFiber, avgFreeSugars: avgFreeSugars,
+    satFatEnergyShare: satFatEnergyShare,
     fiberTarget: fiberTarget, sugarTargetG: sugarTargetG, gaps: gaps
   };
 }
@@ -400,10 +407,19 @@ function renderWeekNutriCard(plan, person, dayViews){
     + '<div class="nbar"><i style="width:'+sugarPct+'%"></i></div>'
     + '<div class="cap-note">Target ' + coverageTargetText(s.gaps.freeSugars) + ' — staying below is good</div></div>';
 
-  // Two headline household coverage chips, evaluated against the DISPLAYED week's plan
-  // (This or Next) via the exact same computeWeeklyCoverage/coverageGaps/coverageChipHtml
-  // Insights uses — never re-derived.
-  const covChips = ['satFat'].map(function(k){ return coverageChipHtml(s.gaps[k]); }).join('');
+  // Saturated fat: built from the LOGGED-OVERLAY weekly share (s.satFatEnergyShare, same day
+  // views as fibre/free-sugars/macros) so what you actually ate moves it — NOT s.gaps.satFat,
+  // which is computeWeeklyCoverage's PLAN-ONLY figure. The `value` is the TRUE percentage (never
+  // capped at the 10% target — only the bar WIDTH clamps to 100%), so the real number always shows.
+  const satPctNum = Math.round((s.satFatEnergyShare || 0) * 100);
+  const satTarget = NUTRITION_GUIDANCE.satFat.target;
+  const satOver = satPctNum >= satTarget;
+  const satFatGap = {
+    key: 'satFat', label: 'Saturated fat', value: satPctNum, target: satTarget, unit: '% of energy', cap: true,
+    gap: satOver ? Math.max(0.000001, (satPctNum - satTarget) / satTarget) : 0,
+    pct: Math.min(100, Math.round(satPctNum / satTarget * 100))
+  };
+  const covChips = coverageChipHtml(satFatGap);
 
   wrap.innerHTML = '<div class="sub week-nutri-avg">' + macroLine + '</div>'
     + '<div class="nutri week-nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
@@ -508,20 +524,20 @@ function renderWeekQuality(plan, person, dayViews){
   const panel = document.getElementById('weekQualityPanel');
   const summaryEl = document.getElementById('weekSummaryLine');
   const signalsEl = document.getElementById('weekQualitySignals');
-  const s = summarizeWeekPlan(plan, person);
-  const proteinOnTarget = s.targetProtein > 0 && s.avgProteinPerDay >= s.targetProtein;
-  // Variety is no longer surfaced as an explicit weekly GOAL (owner 2026-09-16): recipe/
-  // ingredient variety is enforced quietly in generation. The at-a-glance signals are the three
-  // real weekly measures — protein, fibre, saturated fat — kept to THREE so the row stays a
-  // balanced grid (two chips left an empty third column). Sat fat is energy-weighted (Σ satFat·9
-  // ÷ Σ kcal, summarizeWeekPlan.satFatEnergyShare) and flagged only at/over the WHO 10% line, the
-  // same amber cue the day rows use — never a red verdict.
+  // All three at-a-glance signals read the LOGGED-OVERLAY day views (weekNutriSummary), so what
+  // you actually ate this week is reflected — same source as the expanded chips below, and the
+  // reason a mid-day burrata now moves them (owner 2026-09-16). Variety is no longer a weekly GOAL,
+  // so the row is the three real measures — protein, fibre, saturated fat — a balanced 3-col grid.
+  // Sat fat is energy-weighted (Σ satFat·9 ÷ Σ kcal) and turns amber only at/over the WHO 10% line.
+  const s = weekNutriSummary(plan, person, dayViews);
+  const targetProtein = (PROF[person] && PROF[person].targetP) || 0;
+  const proteinOnTarget = targetProtein > 0 && s.avgProtein >= targetProtein;
   const satPct = Math.round((s.satFatEnergyShare || 0) * 100);
   const satOver = satPct >= NUTRITION_GUIDANCE.satFat.target;
-  if(summaryEl) summaryEl.textContent = s.metricText;
+  if(summaryEl) summaryEl.textContent = '≈' + Math.round(s.avgFiber) + 'g fibre/day';
   if(signalsEl){
-    signalsEl.innerHTML = '<span class="week-quality-signal signal-protein"><b>Protein</b><em>' + (proteinOnTarget ? 'On target' : Math.round(s.avgProteinPerDay) + 'g/day') + '</em></span>'
-      + '<span class="week-quality-signal signal-fiber"><b>Fibre</b><em>' + Math.round(s.avgFiberPerDay) + 'g/day</em></span>'
+    signalsEl.innerHTML = '<span class="week-quality-signal signal-protein"><b>Protein</b><em>' + (proteinOnTarget ? 'On target' : Math.round(s.avgProtein) + 'g/day') + '</em></span>'
+      + '<span class="week-quality-signal signal-fiber"><b>Fibre</b><em>' + Math.round(s.avgFiber) + 'g/day</em></span>'
       + '<span class="week-quality-signal signal-satfat' + (satOver ? ' is-over' : '') + '"><b>Sat fat</b><em>' + satPct + '%</em></span>';
   }
   if(row) row.classList.toggle('open', weekQualityExpanded);

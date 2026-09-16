@@ -7637,6 +7637,23 @@ function testWeekNutriSummary(ctx){
   assert(Math.abs(summary.avgFiber - expectedAvg.fiber) < 1e-6, 'B4: weekNutriSummary.avgFiber === sum/7 of day totals', 'got ' + summary.avgFiber + ', expected ' + expectedAvg.fiber);
   assert(Math.abs(summary.avgFreeSugars - expectedAvg.freeSugars) < 1e-6, 'B4: weekNutriSummary.avgFreeSugars === sum/7 of day totals', 'got ' + summary.avgFreeSugars + ', expected ' + expectedAvg.freeSugars);
 
+  // Sat-fat weekly share (owner 2026-09-16: "adding burrata today didn't move it"): must be the
+  // ENERGY-WEIGHTED figure over the SAME logged-overlay day views the macros use (Σ satFat·9 ÷ Σ
+  // kcal) — NOT computeWeeklyCoverage's plan-only share — so logged food moves it.
+  const dvSat = dayViews.reduce(function(s, d){ return s + d.totals.satFat; }, 0);
+  const dvKcal = dayViews.reduce(function(s, d){ return s + d.totals.kcal; }, 0);
+  const expectedSatShare = dvKcal > 0 ? dvSat * 9 / dvKcal : 0;
+  assert(Math.abs(summary.satFatEnergyShare - expectedSatShare) < 1e-9,
+    'B4: weekNutriSummary.satFatEnergyShare === Σ(dayView satFat)·9 ÷ Σ(dayView kcal) — from the logged-overlay views, not the plan',
+    'got ' + summary.satFatEnergyShare + ', expected ' + expectedSatShare);
+  // And it reports the TRUE percentage even above the 10% target (never capped) — 40g/day at
+  // 2000 kcal is 40·9/2000 = 18% of energy.
+  const bigDV = []; for(let i = 0; i < 7; i++) bigDV.push({totals: {kcal: 2000, protein: 0, carbs: 0, fat: 0, fiber: 0, sugars: 0, freeSugars: 0, satFat: 40}, views: {}});
+  const bigSummary = call(ctx, 'weekNutriSummary', [plan, person, bigDV]);
+  assert(Math.round(bigSummary.satFatEnergyShare * 100) === 18,
+    'B4: sat-fat share reports the TRUE % even over the 10% target (40g/2000kcal = 18%, never capped at 10)',
+    'pct=' + Math.round(bigSummary.satFatEnergyShare * 100));
+
   // weekNutriSummary called with no dayViews arg must self-derive the identical numbers
   // (renderWeekNutriCard always passes dayViews, but the function stays correct standalone).
   const summaryNoArg = call(ctx, 'weekNutriSummary', [plan, person]);
