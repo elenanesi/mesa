@@ -1777,6 +1777,10 @@ function canAutoMutateUnit(plan, unit){
   const meal = day.meals && day.meals[unit.slot];
   if(!meal) return false;
   if(diffDaysISO(day.date, todayISO()) < 0) return false;
+  // Day-scoped regenerate / re-balance (owner 2026-09-16): a day marked frozen for THIS
+  // operation is fixed context — the balance pass and the rebalance solver may read it for
+  // weekly totals but must never move a meal on it. Transient marker set by the caller.
+  if(plan.scopeFrozenDays && plan.scopeFrozenDays[unit.dayIndex]) return false;
   if(unit.shared || meal.shared){
     return !loggedSlotLocked(day.date, 'elena', unit.slot)
       && !loggedSlotLocked(day.date, 'partner', unit.slot)
@@ -1947,12 +1951,26 @@ function regenerateWeekPreservingLocks(monday, opts){
   // byte-identical to the current one (the "Regenerate does nothing" bug). Each tap advances
   // the variant; ensureWeekPlan preserves it so the reshuffle survives reloads/auto-regens.
   const nextVariant = ((prev && prev.regenVariant) || 0) + 1;
+  // Day-scoped regenerate (owner 2026-09-16): opts.onlyDayIndices limits the rebuild to those
+  // days; every other day is frozen (kept from prev, fed into the weekly balance as fixed
+  // context). Only meaningful when there IS a previous plan to freeze against.
+  const onlyDayIndices = (prev && opts && Array.isArray(opts.onlyDayIndices) && opts.onlyDayIndices.length && opts.onlyDayIndices.length < 7)
+    ? opts.onlyDayIndices.slice() : null;
   // previousPlan lets generateWeek keep AND consider logged/pinned slots (place them in-line,
   // seed variety/balance) and, for a manual regenerate, reshuffle the free slots off it.
-  const plan = generateWeek({weekStartDate: monday, signature: sig, variant: nextVariant, previousPlan: prev});
+  const plan = generateWeek({weekStartDate: monday, signature: sig, variant: nextVariant, previousPlan: prev, onlyDayIndices: onlyDayIndices});
   applyMealRulesToPlan(plan);
   preserveLoggedSlots(prev, plan);
   preservePinnedSlots(prev, plan);
+  // Insurance for a day-scoped regen: restore every FROZEN day byte-for-byte from prev, so no
+  // later pass (applyMealRulesToPlan, autoBalance) could ever have nudged a day the user chose to
+  // keep. generateWeek already keeps them via slotLocked; this makes the guarantee unconditional.
+  if(onlyDayIndices){
+    for(let d = 0; d < 7; d++){
+      if(onlyDayIndices.indexOf(d) !== -1) continue;
+      if(prev.days[d] && plan.days[d]) plan.days[d] = deepClone(prev.days[d]);
+    }
+  }
   // Opt-in "🔒 Keep our shared meals" (couples only, off by default — see
   // preserveSharedMealRecipes's own doc). Runs LAST so it never fights the byte-for-byte
   // logged/pinned restores above; every existing caller omits `opts`, so this stays
@@ -2657,8 +2675,17 @@ function generateWeek(seed){
   function excludeIdsFor(dayIndex, slot, person){
     return [prevRecipeId(dayIndex, slot, person), slotRecipeIdIn(reshuffleFrom, dayIndex, slot, person)];
   }
-  // A (day,slot,person) is LOCKED when it's already logged/skipped for that date or pinned.
+  // Day-scoped regenerate (owner 2026-09-16): when seed.onlyDayIndices is given, only those days
+  // are re-planned; every OTHER day is FROZEN — kept exactly as it was (from previousPlan) and fed
+  // into the variety/balance history so the chosen days plan around it. A frozen day behaves just
+  // like a day of all-pinned slots, reusing the existing lock machinery below. Absent/empty => the
+  // whole week is in scope (byte-identical to before).
+  const scopeDays = (Array.isArray(seed.onlyDayIndices) && seed.onlyDayIndices.length) ? seed.onlyDayIndices : null;
+  function dayFrozen(dayIndex){ return !!scopeDays && scopeDays.indexOf(dayIndex) === -1; }
+  // A (day,slot,person) is LOCKED when its day is frozen (out of a day-scoped regen), already
+  // logged/skipped for that date, or pinned.
   function slotLocked(dayIndex, slot, person){
+    if(dayFrozen(dayIndex)) return true;
     const date = addDaysISO(weekStartDate, dayIndex);
     return loggedSlotLocked(date, person, slot) || isMealPinned(weekStartDate, dayIndex, slot, person);
   }
@@ -2678,7 +2705,7 @@ function generateWeek(seed){
   function lockedSharedCell(dayIndex, slot){
     if(!beingReplaced || !beingReplaced.days[dayIndex]) return null;
     const date = addDaysISO(weekStartDate, dayIndex);
-    const locked = loggedSlotLocked(date, 'elena', slot) || loggedSlotLocked(date, 'partner', slot) || isMealPinned(weekStartDate, dayIndex, slot, 'shared');
+    const locked = dayFrozen(dayIndex) || loggedSlotLocked(date, 'elena', slot) || loggedSlotLocked(date, 'partner', slot) || isMealPinned(weekStartDate, dayIndex, slot, 'shared');
     if(!locked) return null;
     const m = beingReplaced.days[dayIndex].meals && beingReplaced.days[dayIndex].meals[slot];
     return (m && m.shared && mealRecipesValid(m)) ? deepClone(m) : null;
@@ -2837,7 +2864,16 @@ function generateWeek(seed){
   if(variant) plan.regenVariant = variant;
   // Post-generation balancing pass (see autoBalancePlan's doc, below) — deterministic and
   // bounded, so this stays a pure function of the same inputs generateWeek already is.
+  // Day-scoped regen: mark the frozen days so the balance pass evens ONLY the chosen days,
+  // treating the frozen ones as fixed context (canAutoMutateUnit honours this marker). The mark
+  // is TRANSIENT — cleared before the plan is returned/stored, so it never leaks into later
+  // whole-week balancing or gets persisted.
+  if(scopeDays){
+    plan.scopeFrozenDays = {};
+    for(let d = 0; d < 7; d++){ if(dayFrozen(d)) plan.scopeFrozenDays[d] = true; }
+  }
   autoBalancePlan(plan);
+  if(plan.scopeFrozenDays) delete plan.scopeFrozenDays;
   return plan;
 }
 
@@ -6104,8 +6140,12 @@ function todayRebalanceAcceptedPlan(prop){
   return resultPlan;
 }
 
-function proposeRebalanceSuggestions(weekStartDate){
+function proposeRebalanceSuggestions(weekStartDate, onlyDayIndices){
   const plan = ensureWeekPlan(weekStartDate);
+  // Day-scoped re-balance (owner 2026-09-16): restrict the moves to the chosen days (the frozen
+  // days still count toward the WEEKLY coverage the solver optimises — the marker only blocks
+  // MOVING them, via canAutoMutateUnit). Absent/all/one-short-of-all => whole-week, as before.
+  const scopeDays = (Array.isArray(onlyDayIndices) && onlyDayIndices.length && onlyDayIndices.length < 7) ? onlyDayIndices : null;
   const cov0 = computeWeeklyCoverage(plan);
   const gaps0 = coverageGaps(cov0);
   const worstKey = Object.keys(gaps0).reduce(function(a, b){ return gaps0[b].gap > gaps0[a].gap ? b : a; });
@@ -6120,6 +6160,9 @@ function proposeRebalanceSuggestions(weekStartDate){
     return {weekStartDate: plan.weekStartDate, mode: mode, metricKey: worstKey, gapInfo: worst, suggestions: [], before: cov0, after: cov0, spreadBefore: spreadBefore, spreadAfter: spreadBefore, resultPlan: plan};
   }
   let planCopy = deepClone(plan);
+  // Freeze the out-of-scope days for the whole solve (trials deep-clone planCopy, so they inherit
+  // the marker and skip those units too via canAutoMutateUnit). Cleared before we return the plan.
+  if(scopeDays){ planCopy.scopeFrozenDays = {}; for(let d = 0; d < 7; d++){ if(scopeDays.indexOf(d) === -1) planCopy.scopeFrozenDays[d] = true; } }
   const applied = [];
   const fixedPerson = worst.person; // only meaningful for 'fiber'
   for(let round = 0; round < 2; round++){
@@ -6159,6 +6202,7 @@ function proposeRebalanceSuggestions(weekStartDate){
     if(best.kind === 'swap') applied.push({kind:'swap', unit: best.unit, fromRecipeId: best.fromRecipeId, toRecipeId: best.candId, improvement: best.improvement});
     else applied.push({kind:'addSide', unit: best.unit, sideRecipeId: best.sideRecipeId, improvement: best.improvement});
   }
+  if(planCopy.scopeFrozenDays) delete planCopy.scopeFrozenDays; // transient — never persist onto the applied plan
   return {weekStartDate: plan.weekStartDate, mode: mode, metricKey: worstKey, gapInfo: worst, suggestions: applied, before: cov0, after: computeWeeklyCoverage(planCopy), spreadBefore: spreadBefore, spreadAfter: planImbalance(planCopy, people), resultPlan: planCopy};
 }
 

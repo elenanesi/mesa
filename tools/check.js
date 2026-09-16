@@ -798,6 +798,37 @@ function testPantryCustomFoodSurvivesValidation(ctx){
   }
 }
 
+// Day-scoped regenerate/re-balance (owner 2026-09-16): rebuild only some days, keeping the rest.
+function testDayScopedRegenerate(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {};");
+  run(ctx, "ensureWeekPlan(mondayOfWeek(todayISO()));");
+  const monday = get(ctx, "mondayOfWeek(todayISO())");
+  const daySig = function(d){
+    return get(ctx, "(function(){var m=weekPlans['" + monday + "'].days[" + d + "].meals; return SLOT_ORDER.map(function(s){var mm=m[s]||{}; return s+':'+(mm.shared?('S='+mm.recipeId):(((mm.elena&&mm.elena.recipeId)||'-')+'/'+((mm.partner&&mm.partner.recipeId)||'-')));}).join('|');})()");
+  };
+  const before = []; for(let d = 0; d < 7; d++) before.push(daySig(d));
+  // Regenerate ONLY day index 3 (a future day, no logs) — every other day must be untouched.
+  run(ctx, "regenerateWeekPreservingLocks(mondayOfWeek(todayISO()), {onlyDayIndices:[3]});");
+  const after = []; for(let d = 0; d < 7; d++) after.push(daySig(d));
+  for(let d = 0; d < 7; d++){
+    if(d === 3) continue;
+    assert(after[d] === before[d], 'day-scoped regenerate: day ' + d + ' (not chosen) is kept exactly', 'before=' + before[d] + ' after=' + after[d]);
+  }
+  // The stored plan must not carry the transient frozen marker.
+  assert(get(ctx, "!weekPlans['" + monday + "'].scopeFrozenDays"), 'day-scoped regenerate: the transient scopeFrozenDays marker is not persisted on the plan', '');
+  run(ctx, "MESA_TEST_TODAY = undefined; weekPlans = {}; weekPlan = null;");
+}
+function testDayScopedRebalanceUnits(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {}; ensureWeekPlan(mondayOfWeek(todayISO()));");
+  const monday = get(ctx, "mondayOfWeek(todayISO())");
+  // Freeze all days except index 3, then enumerate the units re-balance would consider.
+  run(ctx, "(function(){var p=weekPlans['" + monday + "']; p.scopeFrozenDays={}; for(var d=0;d<7;d++){ if(d!==3) p.scopeFrozenDays[d]=true; } __units=enumerateSwapUnits(p); delete p.scopeFrozenDays;})();");
+  const arr = JSON.parse(get(ctx, "JSON.stringify(__units.map(function(u){return u.dayIndex;}))"));
+  assert(arr.length > 0, 'day-scoped re-balance: the chosen day still offers movable units', JSON.stringify(arr));
+  assert(arr.every(function(x){ return x === 3; }), 'day-scoped re-balance: enumerateSwapUnits returns ONLY units on the non-frozen day (canAutoMutateUnit honours scopeFrozenDays)', JSON.stringify(arr));
+  run(ctx, "delete __units; MESA_TEST_TODAY = undefined; weekPlans = {}; weekPlan = null;");
+}
+
 // Same-day lunch/dinner near-duplicate rule (owner 2026-09-16): two different recipe ids that are
 // the same MEAL (prawn + pasta) must not land at lunch AND dinner the same day.
 // applySameDayMainSimilarityRule drops a main whose protein+starch signature already appears at a
@@ -14896,6 +14927,8 @@ function main(){
   runTest('Pantry custom-food entry survives load validation', function(){ testPantryCustomFoodSurvivesValidation(ctx); });
   runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
   runTest('Same-day lunch/dinner near-duplicate rule', function(){ testSameDayMainSimilarity(ctx); });
+  runTest('Day-scoped regenerate keeps the other days', function(){ testDayScopedRegenerate(ctx); });
+  runTest('Day-scoped re-balance restricts movable units', function(){ testDayScopedRebalanceUnits(ctx); });
   runTest('Sat-fat / free-sugar generation steering fires', function(){ testSatFatSteeringFires(ctx); });
   runTest('Supplement never enters the breakfast auto-pair pool', function(){ testSupplementNotAutoPaired(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });

@@ -569,7 +569,77 @@ function updateWeekActionsForMode(){
    plan — which normally only regenerates on a profile/target change. Pinned meals and
    anything already logged/skipped are kept; every other slot is rebuilt. Confirmed first,
    since it replaces any un-pinned manual swaps on the shown week. */
+/* ---------------- day-scope picker (owner 2026-09-16) ----------------
+   Regenerate / Re-balance can target SOME days instead of the whole week — the chosen days are
+   rebuilt while every other day is kept as fixed context, still aiming at weekly balance. One
+   calm chip row, shared by both sheets. Default = the whole (future) week, so the common case is
+   unchanged; tapping a single day "solos" it (start narrowing), then tap to add/remove. Past days
+   (already lived) can't be regenerated, so they aren't offered. */
+let weekScopeSel = null; // Set<dayIndex> of days to (re)build; equals all-selectable => whole week
+function weekScopeSelectableDays(){
+  const showingNext = weekScreenShowsNext;
+  const monday = showingNext ? nextMondayISO() : mondayOfWeek(todayISO());
+  const today = todayISO();
+  const out = [];
+  for(let d = 0; d < 7; d++){
+    if(showingNext || addDaysISO(monday, d) >= today) out.push(d); // a past day can't be rebuilt
+  }
+  return out;
+}
+function resetWeekScope(){ weekScopeSel = new Set(weekScopeSelectableDays()); }
+function weekScopeIsAll(){ return !!weekScopeSel && weekScopeSel.size === weekScopeSelectableDays().length; }
+// null when the whole (selectable) week is chosen — the callers treat null as "no scope", i.e.
+// exactly the pre-feature whole-week behaviour.
+function weekScopeDayIndices(){
+  if(!weekScopeSel || weekScopeIsAll()) return null;
+  return Array.from(weekScopeSel).sort(function(a, b){ return a - b; });
+}
+function toggleWeekScopeDay(d){
+  const selectable = weekScopeSelectableDays();
+  if(selectable.indexOf(d) === -1) return;
+  if(!weekScopeSel) resetWeekScope();
+  if(weekScopeIsAll()) weekScopeSel = new Set([d]);           // first narrowing tap solos that day
+  else if(weekScopeSel.has(d)) weekScopeSel.delete(d);
+  else weekScopeSel.add(d);
+  if(!weekScopeSel.size) weekScopeSel = new Set(selectable);  // never a dead (nothing chosen) state
+  onWeekScopeChange();
+}
+function setWeekScopeAll(){ resetWeekScope(); onWeekScopeChange(); }
+// Re-render whichever scope-aware sheet is open (regenerate = cheap chip refresh; rebalance
+// recomputes its proposal for the new day set).
+function onWeekScopeChange(){
+  if(document.getElementById('regenScope')){
+    document.getElementById('sheetBody').innerHTML = buildRegenerateSheet();
+  } else if(typeof buildRebalanceSheet === 'function' && document.getElementById('rebalanceScope')){
+    document.getElementById('sheetBody').innerHTML = buildRebalanceSheet();
+  }
+}
+function weekScopeDayChipLabel(d){
+  const monday = weekScreenShowsNext ? nextMondayISO() : mondayOfWeek(todayISO());
+  const date = addDaysISO(monday, d);
+  const dow = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'][d] || ('D' + d);
+  const dayNum = parseInt(date.slice(8, 10), 10);
+  return '<b>' + dow + '</b><small>' + dayNum + '</small>';
+}
+// The shared chip row + a one-line summary. `verb` is 'Regenerate' | 'Re-balance' for the copy.
+function weekScopeChipsHtml(verb){
+  if(!weekScopeSel) resetWeekScope();
+  const selectable = weekScopeSelectableDays();
+  const all = weekScopeIsAll();
+  let chips = '<button type="button" class="dayscope-chip dayscope-all' + (all ? ' sel' : '') + '" onclick="setWeekScopeAll()">All week</button>';
+  for(let d = 0; d < 7; d++){
+    if(selectable.indexOf(d) === -1) continue;
+    const sel = weekScopeSel.has(d);
+    chips += '<button type="button" class="dayscope-chip' + (sel && !all ? ' sel' : '') + '" onclick="toggleWeekScopeDay(' + d + ')" aria-pressed="' + (sel ? 'true' : 'false') + '">' + weekScopeDayChipLabel(d) + '</button>';
+  }
+  const summary = all
+    ? verb + ' the whole week.'
+    : verb + ' ' + weekScopeSel.size + ' day' + (weekScopeSel.size === 1 ? '' : 's') + ' — the rest stay as they are, still balanced across the week.';
+  return '<div class="dayscope"><div class="dayscope-chips">' + chips + '</div><div class="dayscope-note sub">' + summary + '</div></div>';
+}
+
 function openRegenerateSheet(){
+  resetWeekScope();
   document.getElementById('sheetBody').innerHTML = buildRegenerateSheet();
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');
@@ -577,17 +647,21 @@ function openRegenerateSheet(){
 }
 
 function buildRegenerateSheet(){
+  if(!weekScopeSel) resetWeekScope();
   const label = weekScreenShowsNext ? 'next week' : 'this week';
+  const all = weekScopeIsAll();
   // "🔒 Keep our shared meals" (owner request 2026-09-03): couples only — a solo household
   // has no shared meals for the option to act on. Default UNCHECKED (opt-in): a plain
   // Regenerate still reshuffles everything, exactly as before this feature existed.
   const lockOption = isSoloHousehold() ? '' :
     '<label class="card" style="padding:14px;margin-top:12px;display:flex;gap:12px;align-items:flex-start;cursor:pointer"><input id="regenLockShared" type="checkbox" style="margin-top:3px;min-width:18px;min-height:18px"><span><b>🔒 Keep our shared meals</b><small style="display:block;color:var(--muted);margin-top:4px">Shared dinners stay the same dish — only portions may change. Everything else reshuffles.</small></span></label>';
+  const btnLabel = all ? ('↻ Regenerate ' + label) : ('↻ Regenerate ' + weekScopeSel.size + ' day' + (weekScopeSel.size === 1 ? '' : 's'));
   return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Regenerate ' + label + '?</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
-    + '<p class="sub" style="margin-top:10px">Rebuilds ' + label + '’s plan ' + (isSoloHousehold() ? 'for you' : 'for both of you') + ' using the latest recipes and rules. '
-    + '<b>Pinned meals and anything you’ve already logged or skipped stay exactly as they are</b> — only the other meals are replaced. Any un-pinned manual swaps on ' + label + ' will be redone.</p>'
+    + '<p class="sub" style="margin-top:10px">Rebuilds ' + (all ? (label + '’s plan') : 'the days you pick') + ' ' + (isSoloHousehold() ? 'for you' : 'for both of you') + ' using the latest recipes and rules. '
+    + '<b>Pinned meals and anything you’ve already logged or skipped stay exactly as they are</b> — only the other meals are replaced.</p>'
+    + '<div id="regenScope">' + weekScopeChipsHtml('Regenerate') + '</div>'
     + lockOption
-    + '<button class="cta" onclick="confirmRegenerateWeek()">↻ Regenerate ' + label + '</button>'
+    + '<button class="cta" style="margin-top:12px" onclick="confirmRegenerateWeek()">' + btnLabel + '</button>'
     + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
 }
 
@@ -595,15 +669,21 @@ function confirmRegenerateWeek(){
   const showingNext = weekScreenShowsNext;
   const monday = showingNext ? nextMondayISO() : mondayOfWeek(todayISO());
   const lockShared = !!(document.getElementById('regenLockShared') && document.getElementById('regenLockShared').checked);
-  const regenOpts = lockShared ? {lockSharedRecipes: true} : undefined;
+  const onlyDays = weekScopeDayIndices();
+  const regenOpts = {};
+  if(lockShared) regenOpts.lockSharedRecipes = true;
+  if(onlyDays) regenOpts.onlyDayIndices = onlyDays;
   regenerateWeekPreservingLocks(monday, regenOpts);
   if(monday === mondayOfWeek(todayISO())) weekPlan = weekPlans[monday];
   // Regenerating the current week invalidates a stored next week (its cross-week variety
   // input just changed), so rebuild it too, same pairing ensureWeekPlan uses — paired with
-  // the SAME lock choice so the option applies consistently across both weeks.
-  if(!showingNext){
+  // the SAME lock choice. Skipped for a DAY-SCOPED regen: the user asked to touch only a few
+  // days of THIS week, so silently reshuffling the whole of next week would be surprising, and
+  // this week's day indices don't map onto next week anyway.
+  if(!showingNext && !onlyDays){
     const nm = nextMondayISO();
-    if(weekPlans[nm]) regenerateWeekPreservingLocks(nm, regenOpts);
+    const nextOpts = lockShared ? {lockSharedRecipes: true} : undefined;
+    if(weekPlans[nm]) regenerateWeekPreservingLocks(nm, nextOpts);
   }
   recomputeConsumed(currentProf);
   recomputeProf(currentProf);
@@ -613,7 +693,9 @@ function confirmRegenerateWeek(){
   renderWeek();
   persist();
   closeSheet();
-  toast('↻ Regenerated ' + (showingNext ? 'next week' : 'this week') + ' — pinned & logged meals kept');
+  toast(onlyDays
+    ? ('↻ Regenerated ' + onlyDays.length + ' day' + (onlyDays.length === 1 ? '' : 's') + ' — the rest kept')
+    : ('↻ Regenerated ' + (showingNext ? 'next week' : 'this week') + ' — pinned & logged meals kept'));
 }
 
 // 'tall' (not 'remove'): the sheet now has a "Best matches" + "All <slot> options" section

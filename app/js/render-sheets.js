@@ -312,7 +312,11 @@ function setRebalanceSuggestionChoice(index, accepted){
 
 function buildRebalanceSheet(){
   const weekStartDate = weekScreenShowsNext ? nextMondayISO() : mondayOfWeek(todayISO());
-  rebalanceProposal = proposeRebalanceSuggestions(weekStartDate);
+  // Day-scoped re-balance (owner 2026-09-16): weekScopeDayIndices() is null for the whole week
+  // (unchanged behaviour) or the chosen subset — the solver only moves those days, still
+  // optimising the WEEKLY coverage with the rest held fixed.
+  const onlyDays = (typeof weekScopeDayIndices === 'function') ? weekScopeDayIndices() : null;
+  rebalanceProposal = proposeRebalanceSuggestions(weekStartDate, onlyDays);
   return renderRebalanceSheet();
 }
 
@@ -326,6 +330,9 @@ function renderRebalanceSheet(){
   const spread = mode === 'spread';
   const acceptedPlan = rebalanceAcceptedPlan(rebalanceProposal);
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  // Day-scope picker — shared with Regenerate. Lets the user even out only some days while the
+  // rest are held fixed (still optimising the weekly targets). Whole week by default.
+  if(typeof weekScopeChipsHtml === 'function') html += '<div id="rebalanceScope">' + weekScopeChipsHtml('Re-balance') + '</div>';
   if(!rebalanceProposal.suggestions.length){
     html += '<p class="sub">' + (mode === 'none'
       ? 'This week is already a good fit — every weekly coverage target is met and your days are already even.'
@@ -399,6 +406,7 @@ function rebalanceBalancedDayCount(plan){
 }
 
 function openRebalanceSheet(){
+  if(typeof resetWeekScope === 'function') resetWeekScope();
   document.getElementById('sheetBody').innerHTML = buildRebalanceSheet();
   document.getElementById('sheet').classList.remove('tall');
   document.getElementById('sheetBackdrop').classList.add('show');

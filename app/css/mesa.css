@@ -502,6 +502,19 @@ h2{font-family:var(--font-script);font-size:25px;margin:22px 0 10px;font-weight:
    nutrient chips stack full-width (one column) so nothing wraps and no empty grid cell is left —
    calmer and more legible than the 2-col grid that stranded sat fat alone on a second row. */
 .week-nutri-avg{margin:0 0 10px;font-size:11px;font-weight:700;letter-spacing:.02em;color:var(--muted);}
+/* Day-scope picker (Regenerate / Re-balance some days — owner 2026-09-16): a calm chip row.
+   "All week" highlighted = whole week (default); individual day chips highlighted = a subset. */
+.dayscope{margin-top:12px;}
+.dayscope-chips{display:flex;flex-wrap:wrap;gap:8px;}
+.dayscope-chip{min-height:52px;min-width:46px;box-sizing:border-box;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;padding:6px 9px;border:1px solid var(--line);border-radius:13px;background:rgba(255,250,240,.85);color:var(--ink-soft);font:inherit;line-height:1.1;cursor:pointer;transition:transform .08s ease;}
+.dayscope-chip b{font-size:12.5px;font-weight:800;}
+.dayscope-chip small{font-size:11px;font-weight:600;color:var(--muted);}
+.dayscope-chip:active{transform:scale(.95);}
+.dayscope-chip.sel{border-color:var(--sage);background:var(--sage);color:#fff;}
+.dayscope-chip.sel small{color:rgba(255,255,255,.86);}
+.dayscope-all{min-width:auto;flex-direction:row;padding:0 14px;font-size:12.5px;font-weight:800;}
+.dayscope-all.sel{border-color:var(--sage-deep);background:var(--sage-deep);}
+.dayscope-note{margin-top:9px;line-height:1.45;}
 .nutri.week-nutri{grid-template-columns:1fr;gap:9px;}
 .nutri.week-nutri .n{background:rgba(255,250,240,.9);border-color:rgba(176,146,105,.28);padding:12px 14px;}
 .nutri.week-nutri .n .nt{font-size:12.5px;align-items:baseline;}
