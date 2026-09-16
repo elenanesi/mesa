@@ -3791,8 +3791,13 @@ function dayImbalanceForPerson(dayTotals, person){
   const fiberBase = fiberBandBaseFor(person);
   const fiberFloor = fiberBase * PER_DAY_BANDS.fiber.floorMult;
   const fiberCeil = fiberBase * PER_DAY_BANDS.fiber.ceilMult;
-  const sugarCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4) * PER_DAY_BANDS.freeSugars.ceilMult : 0;
-  const satCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.satFat.target / 100) * calGoal / 9) * PER_DAY_BANDS.satFat.ceilMult : 0;
+  // Steer under the WHO line (target% of energy → grams). BUGFIX 2026-09-16: these read a
+  // `.ceilMult` that stopped existing when free-sugars/sat-fat became two-tier (minorMult/
+  // outlierMult) on 2026-09-08 — so both ceilings were NaN and the sat-fat / free-sugar steering
+  // terms silently never fired (the generator stopped pulling days off high sat fat / added
+  // sugar). The WHO 10% line is freeSugars.outlierMult (1.0) and satFat.minorMult (1.0).
+  const sugarCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.freeSugars.target / 100) * calGoal / 4) * PER_DAY_BANDS.freeSugars.outlierMult : 0;
+  const satCeil = calGoal > 0 ? ((NUTRITION_GUIDANCE.satFat.target / 100) * calGoal / 9) * PER_DAY_BANDS.satFat.minorMult : 0;
   const fatCeil = calGoal > 0 ? ((fatSplitTargetFor(person) + PER_DAY_BANDS.fat.richAddPts) / 100) * calGoal / 9 : 0;
   let imb = 0;
   if(fiberFloor > 0 && dayTotals.fiber < fiberFloor){

@@ -737,6 +737,24 @@ function testPantryReaddBeatsRemovalTombstone(ctx){
   }
 }
 
+// Regression (owner 2026-09-16): the sat-fat / free-sugar generation-steering ceilings in
+// dayImbalanceForPerson read a PER_DAY_BANDS.*.ceilMult that no longer exists (bands became
+// minorMult/outlierMult on 2026-09-08) -> satCeil/sugarCeil were NaN and those terms never fired.
+// The fix reads the WHO-line multipliers; this proves the sat-fat term now scores an over-line day
+// worse than an under-line one (and returns finite numbers).
+function testSatFatSteeringFires(ctx){
+  const cal = get(ctx, "(PROF.elena && PROF.elena.calGoalNum) || 0");
+  assert(cal > 0, 'setup: elena has a calorie goal', String(cal));
+  const gAt10 = (0.10 * cal) / 9; // grams of sat fat at the WHO 10%-of-energy line
+  const baseDay = {kcal: cal, protein: 180, fiber: 30, freeSugars: 0, fat: (0.20 * cal) / 9};
+  const overSat = Object.assign({}, baseDay, {satFat: Math.round(gAt10 * 2)});   // ~20% of energy
+  const underSat = Object.assign({}, baseDay, {satFat: Math.round(gAt10 * 0.5)}); // ~5% of energy
+  const imbOver = call(ctx, 'dayImbalanceForPerson', [overSat, 'elena']);
+  const imbUnder = call(ctx, 'dayImbalanceForPerson', [underSat, 'elena']);
+  assert(isFinite(imbOver) && isFinite(imbUnder), 'dayImbalanceForPerson: returns finite numbers (satCeil/sugarCeil no longer NaN)', 'over=' + imbOver + ' under=' + imbUnder);
+  assert(imbOver > imbUnder, 'sat-fat steering: a day well over the WHO sat-fat line scores worse than one under it (steering fires)', 'over=' + imbOver + ' under=' + imbUnder);
+}
+
 // Regression (owner 2026-09-16: custom-food pantry items "keep disappearing", e.g. "Fior di
 // frutta fragole e fragoline"): loadState() populates customFoods BEFORE it validates pantry, but
 // custom foods are merged into the global FOODS only by applyCustomFoods() AFTER loadState — so
@@ -14841,6 +14859,7 @@ function main(){
   runTest('Pantry custom-food entry survives load validation', function(){ testPantryCustomFoodSurvivesValidation(ctx); });
   runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
   runTest('Same-day lunch/dinner near-duplicate rule', function(){ testSameDayMainSimilarity(ctx); });
+  runTest('Sat-fat / free-sugar generation steering fires', function(){ testSatFatSteeringFires(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
   runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });

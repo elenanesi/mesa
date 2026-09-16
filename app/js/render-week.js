@@ -405,8 +405,8 @@ function renderWeekNutriCard(plan, person, dayViews){
   // Insights uses — never re-derived.
   const covChips = ['satFat'].map(function(k){ return coverageChipHtml(s.gaps[k]); }).join('');
 
-  wrap.innerHTML = '<div class="sub" style="margin:0 0 10px">' + macroLine + '</div>'
-    + '<div class="nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
+  wrap.innerHTML = '<div class="sub week-nutri-avg">' + macroLine + '</div>'
+    + '<div class="nutri week-nutri">' + coverageChipHtml(fiberGap) + sugarChip + covChips + '</div>';
 }
 
 // Paints a plain-language balance check into the Planner drawer. The visible signals make
@@ -511,13 +511,18 @@ function renderWeekQuality(plan, person, dayViews){
   const s = summarizeWeekPlan(plan, person);
   const proteinOnTarget = s.targetProtein > 0 && s.avgProteinPerDay >= s.targetProtein;
   // Variety is no longer surfaced as an explicit weekly GOAL (owner 2026-09-16): recipe/
-  // ingredient variety is enforced quietly in generation (no lunch/dinner repeats, no same
-  // protein or two meatless dinners back-to-back), not shown as a dish-count score to hit.
-  // The balance tile keeps only the real nutrition targets — protein and fibre.
+  // ingredient variety is enforced quietly in generation. The at-a-glance signals are the three
+  // real weekly measures — protein, fibre, saturated fat — kept to THREE so the row stays a
+  // balanced grid (two chips left an empty third column). Sat fat is energy-weighted (Σ satFat·9
+  // ÷ Σ kcal, summarizeWeekPlan.satFatEnergyShare) and flagged only at/over the WHO 10% line, the
+  // same amber cue the day rows use — never a red verdict.
+  const satPct = Math.round((s.satFatEnergyShare || 0) * 100);
+  const satOver = satPct >= NUTRITION_GUIDANCE.satFat.target;
   if(summaryEl) summaryEl.textContent = s.metricText;
   if(signalsEl){
     signalsEl.innerHTML = '<span class="week-quality-signal signal-protein"><b>Protein</b><em>' + (proteinOnTarget ? 'On target' : Math.round(s.avgProteinPerDay) + 'g/day') + '</em></span>'
-      + '<span class="week-quality-signal signal-fiber"><b>Fiber</b><em>' + Math.round(s.avgFiberPerDay) + 'g/day</em></span>';
+      + '<span class="week-quality-signal signal-fiber"><b>Fibre</b><em>' + Math.round(s.avgFiberPerDay) + 'g/day</em></span>'
+      + '<span class="week-quality-signal signal-satfat' + (satOver ? ' is-over' : '') + '"><b>Sat fat</b><em>' + satPct + '%</em></span>';
   }
   if(row) row.classList.toggle('open', weekQualityExpanded);
   if(toggle) toggle.setAttribute('aria-expanded', weekQualityExpanded ? 'true' : 'false');
