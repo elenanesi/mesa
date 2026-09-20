@@ -132,10 +132,14 @@ function replaceBuiltinFoodsFromCatalogRows(rows){
     // A plain food needs a numeric macro surface (zero is legitimate, for example salt).
     // A composite instead resolves its nutrition from components in engine.js, so it has no
     // frozen macro fields and must remain valid here.
-    const macroKeys = ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'];
+    // kcal is always derived from protein/carbs/fat (the Mesa-wide 4/4/9 policy),
+    // rather than trusted as an independently typed value. This also repairs older
+    // admin-created ingredients that were saved with their initial kcal: 0.
+    const macroKeys = ['protein', 'carbs', 'fat', 'satFat', 'fiber'];
     const hasNumericMacros = !macroKeys.some(function(key){ return typeof food[key] !== 'number' || !isFinite(food[key]); });
     const isComposite = Array.isArray(food.components) && food.components.length > 0;
     if(!hasNumericMacros && !isComposite) return;
+    if(!isComposite) food.kcal = Math.round(4 * food.protein + 4 * food.carbs + 9 * food.fat);
     nextFoods[id] = food;
   });
   if(!Object.keys(nextFoods).length) return false;

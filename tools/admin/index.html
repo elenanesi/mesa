@@ -664,6 +664,10 @@
   function hasDirtyItems(){ return Object.keys(catalogState.dirty).length > 0 || Object.keys(catalogState.deleted).length > 0; }
 
   function validNewCatalogId(id){ return /^[a-z0-9][a-z0-9-]{0,119}$/.test(id); }
+  function foodKcal(data){
+    data = data || {};
+    return Math.round(4 * (parseFloat(data.protein) || 0) + 4 * (parseFloat(data.carbs) || 0) + 9 * (parseFloat(data.fat) || 0));
+  }
 
   function addCatalogItem(type){
     var label = type === 'recipe' ? 'recipe' : 'ingredient';
@@ -956,7 +960,7 @@
       var dirtyMark = isDirty('food', f.id) ? ' <span class="dirty-badge">edited</span>' : '';
       html += '<div class="item-row" data-id="' + escapeHtml(f.id) + '">'
         + '<div><div class="item-title">' + escapeHtml(d.name || f.name || f.id) + dirtyMark + '</div>'
-        + '<div class="item-sub">' + escapeHtml(f.id) + ' · ' + escapeHtml(d.cat || '') + ' · ' + Math.round((d.protein || 0) * 10) / 10 + 'p / ' + Math.round((d.carbs || 0) * 10) / 10 + 'c / ' + Math.round((d.fat || 0) * 10) / 10 + 'f per 100g</div></div>'
+        + '<div class="item-sub">' + escapeHtml(f.id) + ' · ' + escapeHtml(d.cat || '') + ' · ' + foodKcal(d) + ' kcal · ' + Math.round((d.protein || 0) * 10) / 10 + 'p / ' + Math.round((d.carbs || 0) * 10) / 10 + 'c / ' + Math.round((d.fat || 0) * 10) / 10 + 'f per 100g</div></div>'
         + '<span class="muted" style="font-size:12px">›</span></div>';
     });
     html += '</div>';
@@ -982,11 +986,13 @@
     var food = catalogState.foods.find(function(f){ return f.id === id; });
     if(!food || !food.data){ host.innerHTML = '<div class="empty-state">Ingredient not found.</div>'; return; }
     var d = food.data;
+    if(!Array.isArray(d.components)) d.kcal = foodKcal(d);
 
     var fields = [
       ['name', 'Name', 'text'], ['cat', 'Category', 'text'], ['season', 'Season', 'text'],
       ['protein', 'Protein (per 100g)', 'number'], ['carbs', 'Carbs (per 100g)', 'number'],
       ['fat', 'Fat (per 100g)', 'number'], ['satFat', 'Sat fat', 'number'],
+      ['kcal', 'Calories (computed from macros)', 'number', true],
       ['fiber', 'Fiber', 'number'], ['sugars', 'Sugars', 'number'], ['freeSugars', 'Free sugars', 'number'],
       ['unit', 'Unit (g/piece/ml)', 'text'], ['avgG', 'Avg weight (g)', 'number'],
       ['iconKey', 'Watercolor icon key (optional)', 'text']
@@ -999,7 +1005,7 @@
     fields.forEach(function(f){
       var val = d[f[0]];
       if(val === undefined || val === null) val = '';
-      html += '<div class="field"><label>' + escapeHtml(f[1]) + '</label><input class="inp" data-key="' + f[0] + '" type="' + f[2] + '" value="' + escapeHtml(String(val)) + '"></div>';
+      html += '<div class="field"><label>' + escapeHtml(f[1]) + '</label><input class="inp" data-key="' + f[0] + '" type="' + f[2] + '" value="' + escapeHtml(String(val)) + '"' + (f[3] ? ' readonly aria-readonly="true"' : '') + '></div>';
     });
 
     var flags = Array.isArray(d.flags) ? d.flags.join(', ') : '';
@@ -1027,6 +1033,9 @@
           d[key] = val;
         }
       });
+      d.kcal = foodKcal(d);
+      var kcalInp = host.querySelector('input[data-key="kcal"]');
+      if(kcalInp) kcalInp.value = d.kcal;
       food.name = d.name;
       markDirty('food', id);
       alertInline('✓ Changes staged — click "Save changes to D1" to push.');

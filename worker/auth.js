@@ -1263,15 +1263,29 @@ async function handleAdminLibraryPost(request, env, origin){
   function catalogId(v){ return String(v || '').trim(); }
   function validCatalogId(v){ return /^[a-z0-9][a-z0-9-]{0,119}$/.test(v); }
   function rowSource(v, allowed){ return allowed.indexOf(v) !== -1 ? v : 'builtin'; }
+  // Mesa uses Atwater 4/4/9 calories throughout the app.  Admin food macros are
+  // therefore authoritative and kcal is derived at the API boundary, preventing
+  // a new ingredient from being saved with its temporary default of 0 kcal.
+  function normalizeCatalogFoodData(raw){
+    var data = Object.assign({}, raw);
+    if(Array.isArray(data.components)) return data;
+    ['protein', 'carbs', 'fat'].forEach(function(key){
+      var n = Number(data[key]);
+      data[key] = isFinite(n) && n >= 0 ? n : 0;
+    });
+    data.kcal = Math.round(4 * data.protein + 4 * data.carbs + 9 * data.fat);
+    return data;
+  }
   for(var i = 0; i < foods.length; i++){
     var f = foods[i];
     var foodId = f && catalogId(f.id);
     if(!f || !isPlainObject(f) || !validCatalogId(foodId) || !isPlainObject(f.data)) continue;
     var foodSource = rowSource(f.source, ['builtin', 'custom']);
+    var foodData = normalizeCatalogFoodData(f.data);
     stmts.push(env.MESA_DB.prepare(
       'INSERT INTO foods (scope,id,source,name,category,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
       'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,name=excluded.name,category=excluded.category,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
-    ).bind('global', foodId, foodSource, String(f.data.name || foodId).slice(0, 240), f.data.cat || null, normSeason(f.data.season), Date.now(), sfj(f.data)));
+    ).bind('global', foodId, foodSource, String(foodData.name || foodId).slice(0, 240), foodData.cat || null, normSeason(foodData.season), Date.now(), sfj(foodData)));
   }
   for(var j = 0; j < recipes.length; j++){
     var r = recipes[j];
