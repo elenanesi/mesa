@@ -1225,6 +1225,59 @@ async function handleClaim(request, env, origin, url){
   return json({token: token}, 200, origin);
 }
 
+async function handleAdminLibraryGet(request, env, origin){
+  const gate = await loadAdminCaller(request, env);
+  if(gate.error) return json({error: gate.error}, gate.status, origin);
+  if(!env || !env.MESA_DB) return json({error: 'd1_not_configured'}, 503, origin);
+  const [foodRows, recipeRows] = await env.MESA_DB.batch([
+    env.MESA_DB.prepare(
+      'SELECT id,source,name,category,season,updated_at,data_json FROM foods WHERE scope=? AND deleted_at IS NULL ORDER BY name COLLATE NOCASE'
+    ).bind('global'),
+    env.MESA_DB.prepare(
+      'SELECT id,source,title,primary_slot,season,updated_at,data_json FROM recipes WHERE scope=? AND deleted_at IS NULL ORDER BY title COLLATE NOCASE'
+    ).bind('global')
+  ]);
+  function parseRow(r){ try{ r.data = JSON.parse(r.data_json); }catch(e){ r.data = null; } delete r.data_json; return r; }
+  return json({
+    foods: ((foodRows && foodRows.results) || []).map(parseRow),
+    recipes: ((recipeRows && recipeRows.results) || []).map(parseRow)
+  }, 200, origin);
+}
+
+async function handleAdminLibraryPost(request, env, origin){
+  var gate = await loadAdminCaller(request, env);
+  if(gate.error) return json({error: gate.error}, gate.status, origin);
+  if(!env || !env.MESA_DB) return json({error: 'd1_not_configured'}, 503, origin);
+  var bodyText;
+  try{ bodyText = await request.text(); }catch(e){ return json({error: 'bad_request'}, 400, origin); }
+  var parsed;
+  try{ parsed = JSON.parse(bodyText); }catch(e){ return json({error: 'invalid_json'}, 400, origin); }
+  if(!isPlainObject(parsed)) return json({error: 'invalid_body'}, 400, origin);
+  var stmts = [];
+  var foods = Array.isArray(parsed.foods) ? parsed.foods : [];
+  var recipes = Array.isArray(parsed.recipes) ? parsed.recipes : [];
+  function sfj(v){ try{ return JSON.stringify(v == null ? null : v); }catch(e){ return 'null'; } }
+  function normSeason(v){ return v === 'winter/autumn' || v === 'spring/summer' ? v : 'evergreen'; }
+  for(var i = 0; i < foods.length; i++){
+    var f = foods[i];
+    if(!f || !isPlainObject(f) || !f.id || !isPlainObject(f.data)) continue;
+    stmts.push(env.MESA_DB.prepare(
+      'INSERT INTO foods (scope,id,source,name,category,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
+      'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,name=excluded.name,category=excluded.category,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
+    ).bind('global', String(f.id).trim(), 'builtin', String(f.data.name || f.id).slice(0, 240), f.data.cat || null, normSeason(f.data.season), Date.now(), sfj(f.data)));
+  }
+  for(var j = 0; j < recipes.length; j++){
+    var r = recipes[j];
+    if(!r || !isPlainObject(r) || !r.id || !isPlainObject(r.data)) continue;
+    stmts.push(env.MESA_DB.prepare(
+      'INSERT INTO recipes (scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
+      'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,title=excluded.title,primary_slot=excluded.primary_slot,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
+    ).bind('global', String(r.id).trim(), 'builtin', String(r.data.title || r.id).slice(0, 240), r.data.slot || null, normSeason(r.data.season), Date.now(), sfj(r.data)));
+  }
+  if(stmts.length > 0) await env.MESA_DB.batch(stmts);
+  return json({ok: true, foods: foods.length, recipes: recipes.length}, 200, origin);
+}
+
 // Single entry point sync.js routes every "/auth/*" pathname to.
 export async function handleAuthRoute(request, env, origin, url){
   const pathname = url.pathname;
@@ -1255,6 +1308,12 @@ export async function handleAuthRoute(request, env, origin, url){
   }
   if(pathname === '/auth/admin/revoke' && request.method === 'POST'){
     return handleAdminRevoke(request, env, origin);
+  }
+  if(pathname === '/auth/admin/library' && request.method === 'GET'){
+    return handleAdminLibraryGet(request, env, origin);
+  }
+  if(pathname === '/auth/admin/library' && request.method === 'POST'){
+    return handleAdminLibraryPost(request, env, origin);
   }
 
   return json({error: 'not_found'}, 404, origin);

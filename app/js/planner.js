@@ -662,6 +662,7 @@ function candidatesFor(slot, styleKey, avoidList, persons, opts){
   return Object.keys(RECIPES_DB).filter(function(id){
     const r = RECIPES_DB[id];
     return !r.occasional
+      && r.role !== 'side'
       && (opts.includeThumbsDown || !recipeDownedByAny(id, persons))
       && (typeof recipeAllowedForCurrentSeason !== 'function' || recipeAllowedForCurrentSeason(id))
       && recipeSlotList(r).indexOf(slot) !== -1
@@ -2759,7 +2760,9 @@ function generateWeek(seed){
         let chE = lockedEntryFor(d, slot, 'elena');
         if(!chE){
           const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
-          chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
+          var fbE = poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena']);
+          if(!fbE.length) fbE = candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true});
+          chE = pickSoloMeal(fbE, 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
         }
         dayMeals[slot] = {shared: false, elena: chE, partner: emptyPlanEntry()};
         const soloNutE = planEntryNutrition(chE);
@@ -2777,7 +2780,9 @@ function generateWeek(seed){
           const pool = candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner']);
           // For shared slots both people ate the same dish last week — Elena's entry stands
           // for both (same convention as the variety filter's history handling).
-          chosen = pickSharedMeal(pool.length ? pool : candidatesFor(slot, styleKey, avoidBoth, ['elena', 'partner'], {includeThumbsDown: true}), slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
+          var fbS = pool.length ? pool : candidatesFor(slot, styleKey, [], ['elena', 'partner']);
+          if(!fbS.length) fbS = candidatesFor(slot, styleKey, [], ['elena', 'partner'], {includeThumbsDown: true});
+          chosen = pickSharedMeal(fbS, slot, d, si, remainingKcal, remainingProtein, remainingWeight, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
         }
         dayMeals[slot] = chosen;
         // Deduct the WHOLE unit (main + any composed extra) via planEntryNutrition, not the
@@ -2805,14 +2810,18 @@ function generateWeek(seed){
           chE = lockedEntryFor(d, slot, 'elena');
           if(!chE){
             const poolE = candidatesFor(slot, styleKey, avoidList.elena, ['elena']);
-            chE = pickSoloMeal(poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true}), 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
+            var fbE2 = poolE.length ? poolE : candidatesFor(slot, styleKey, [], ['elena']);
+            if(!fbE2.length) fbE2 = candidatesFor(slot, styleKey, [], ['elena'], {includeThumbsDown: true});
+            chE = pickSoloMeal(fbE2, 'elena', slot, d, si, remainingKcal.elena, remainingProtein.elena, remainingWeight.elena, history, weekSeed, excludeIdsFor(d, slot, 'elena'));
           }
         }
         if(aOn){
           chA = lockedEntryFor(d, slot, 'partner');
           if(!chA){
             const poolA = candidatesFor(slot, styleKey, avoidList.partner, ['partner']);
-            chA = pickSoloMeal(poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true}), 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight.partner, history, weekSeed, excludeIdsFor(d, slot, 'partner'));
+            var fbA = poolA.length ? poolA : candidatesFor(slot, styleKey, [], ['partner']);
+            if(!fbA.length) fbA = candidatesFor(slot, styleKey, [], ['partner'], {includeThumbsDown: true});
+            chA = pickSoloMeal(fbA, 'partner', slot, d, si, remainingKcal.partner, remainingProtein.partner, remainingWeight.partner, history, weekSeed, excludeIdsFor(d, slot, 'partner'));
           }
         }
         dayMeals[slot] = {shared: false, elena: chE, partner: chA};
@@ -4231,7 +4240,7 @@ function computeShoppingList(weekStartDate){
     const food = FOODS[foodId];
     if(!food) return;
     const name = food.name;
-    if(!totals[name]) totals[name] = {qty: 0, unit: food.unit === 'piece' ? '' : food.unit, foodIds: []};
+    if(!totals[name]) totals[name] = {qty: 0, unit: food.unit === 'piece' ? '' : food.unit, foodIds: [], countable: !!(food.countable && food.avgG > 0), avgG: food.avgG || 0};
     totals[name].qty += qtyByFood[foodId];
     if(totals[name].foodIds.indexOf(foodId) === -1) totals[name].foodIds.push(foodId);
   });
@@ -4259,10 +4268,10 @@ function computeShoppingList(weekStartDate){
     row.foodIds.forEach(function(foodId){ have += availableByFood[foodId] || 0; });
     if(have <= 1e-9) return;
     if(have >= row.qty - 1e-9){
-      alreadyHome.push({foodId: row.foodIds[0], foodIds: row.foodIds.slice(), name: name, have: have, unit: row.unit});
+      alreadyHome.push({foodId: row.foodIds[0], foodIds: row.foodIds.slice(), name: name, have: have, unit: row.unit, countable: row.countable, avgG: row.avgG});
       delete totals[name];
     } else {
-      covered[name] = {have: have, unit: row.unit};
+      covered[name] = {have: have, unit: row.unit, countable: row.countable, avgG: row.avgG};
       row.qty -= have;
     }
   });
@@ -4271,9 +4280,15 @@ function computeShoppingList(weekStartDate){
 }
 
 // Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs),
-// and ≥1000 g/ml promoted to kg/L for readability.
-function fmtShopQty(qty, unit){
+// and ≥1000 g/ml promoted to kg/L for readability. Countable foods
+// (avocados, lemons, etc.) show as item count with grams in parentheses.
+function fmtShopQty(qty, unit, row){
   if(unit === '') return '' + Math.ceil(qty);
+  if(row && row.countable && row.avgG > 0){
+    const count = Math.ceil(qty / row.avgG);
+    const g = Math.round(qty);
+    return count + ' (' + g + ' ' + unit + ')';
+  }
   const g = Math.round(qty);
   if(g >= 1000) return (Math.round(g / 10) / 100) + (unit === 'ml' ? ' L' : ' kg');
   return g + ' ' + unit;

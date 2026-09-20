@@ -313,6 +313,7 @@ function recipeDisplayIngredients(recipeId, opts, subs){
     const food = FOODS[foodId];
     if(!food){ console.error('recipeDisplayIngredients: "' + recipeId + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
     if(food.unit === 'piece') return [food.name, +(grams / food.avgG).toFixed(2), ''];
+    if(food.countable && food.avgG > 0) return [food.name, grams, food.unit, {countable: true, avgG: food.avgG}];
     return [food.name, grams, food.unit];
   });
   (src.toTaste || []).forEach(function(t){ ingredients.push([capitalizeFirst(t), null, 'to taste']); });
@@ -344,7 +345,9 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, ma
       const food = FOODS[ex.foodId];
       if(!food) return;
       const grams = (typeof ex.grams === 'number' ? ex.grams : 0) * sideFactor;
-      all.push(food.unit === 'piece' ? [food.name, +(grams / food.avgG).toFixed(2), ''] : [food.name, +grams.toFixed(1), food.unit]);
+      if(food.unit === 'piece') all.push([food.name, +(grams / food.avgG).toFixed(2), '']);
+      else if(food.countable && food.avgG > 0) all.push([food.name, +grams.toFixed(1), food.unit, {countable: true, avgG: food.avgG}]);
+      else all.push([food.name, +grams.toFixed(1), food.unit]);
     }
   });
   // Merge duplicate foods (same name+unit) into one summed row; dedupe "to taste" notes, kept last.
@@ -354,6 +357,7 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, ma
     const key = r[0] + '' + r[2];
     if(!(key in numeric)){ numeric[key] = [r[0], 0, r[2]]; order.push(key); }
     numeric[key][1] = +(numeric[key][1] + r[1]).toFixed(1);
+    if(r[3]) numeric[key][3] = r[3];
   });
   return order.map(function(k){ return numeric[k]; }).concat(toTaste);
 }
@@ -415,11 +419,11 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale, extras,
     const name = escapeHtml(food ? food.name : shownId);
     const amountPill = (s && typeof s.grams === 'number' && !(s.to && s.to !== fromId)) ? ' <span class="today-only-pill">today only</span>' : '';
     const pill = (shownId !== fromId) ? ' <span class="today-only-pill">today only</span>' : amountPill;
-    // Piece-unit foods (eggs, etc.) read as a COUNT — "number of eggs" — with the gram amount as a
-    // quiet sub-line beneath it (owner 2026-09-16); gram/ml foods stay a single amount.
     let qtyHtml;
     if(food && food.unit === 'piece' && food.avgG > 0){
       qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount((perServ / food.avgG) * scale) + '</span><span class="ing-qty-sub">' + Math.round(perServ * scale) + ' g</span></span>';
+    } else if(food && food.countable && food.avgG > 0){
+      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount((perServ * scale) / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(perServ * scale) + ' ' + escapeHtml(String(food.unit)) + '</span></span>';
     } else {
       qtyHtml = '<span class="ing-qty-main">' + (+(perServ * scale).toFixed(1)) + ' ' + escapeHtml(String(food ? food.unit : 'g')) + '</span>';
     }
@@ -458,15 +462,25 @@ function sideIngredientRowsHtml(ex, ingScale, total){
     const p = (typeof ex.portion === 'number' && ex.portion > 0) ? ex.portion : 1;
     return recipeDisplayIngredients(ex.recipeId, ex.opts, ex.ingredientSubs).map(function(ing){
       if(ing[1] === null) return row(escapeHtml(String(ing[0])), 'to taste');
-      return row(escapeHtml(String(ing[0])), (+(ing[1] * p * sideFactor).toFixed(1)) + ' ' + escapeHtml(String(ing[2])));
+      var scaled = +(ing[1] * p * sideFactor).toFixed(1);
+      var meta = ing[3];
+      if(meta && meta.countable && meta.avgG > 0){
+        return row(escapeHtml(String(ing[0])), '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(scaled / meta.avgG) + '</span><span class="ing-qty-sub">' + Math.round(scaled) + ' ' + escapeHtml(String(ing[2])) + '</span></span>');
+      }
+      return row(escapeHtml(String(ing[0])), scaled + ' ' + escapeHtml(String(ing[2])));
     }).join('');
   }
   if(ex && ex.foodId && FOODS[ex.foodId]){
     const food = FOODS[ex.foodId];
     const grams = (typeof ex.grams === 'number' ? ex.grams : 0) * sideFactor;
-    const qtyHtml = (food.unit === 'piece' && food.avgG > 0)
-      ? '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' g</span></span>'
-      : '<span class="ing-qty-main">' + (+grams.toFixed(1)) + ' ' + escapeHtml(String(food.unit)) + '</span>';
+    var qtyHtml;
+    if(food.unit === 'piece' && food.avgG > 0){
+      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' g</span></span>';
+    } else if(food.countable && food.avgG > 0){
+      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' ' + escapeHtml(String(food.unit)) + '</span></span>';
+    } else {
+      qtyHtml = '<span class="ing-qty-main">' + (+grams.toFixed(1)) + ' ' + escapeHtml(String(food.unit)) + '</span>';
+    }
     return row(escapeHtml(food.name), qtyHtml);
   }
   return '';
@@ -1729,6 +1743,10 @@ function updateServings(){
     ingListEl.innerHTML = ingredients.map(function(ing){
       const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
       if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
+      var meta = ing[3];
+      if(meta && meta.countable && meta.avgG > 0){
+        return '<li><span>'+name+'</span><span class="ing-qty-stack"><span class="ing-qty-main">'+fmtIngCount(qty / meta.avgG)+'</span><span class="ing-qty-sub">'+Math.round(qty)+' '+unit+'</span></span></li>';
+      }
       return '<li><span>'+name+'</span><span>'+qty+' '+unit+'</span></li>';
     }).join('');
   }

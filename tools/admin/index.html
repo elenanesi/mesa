@@ -91,6 +91,35 @@
 
   footer.note{margin-top:26px;font-size:11.5px;color:var(--muted);line-height:1.5;}
   a{color:var(--sage-deep);}
+
+  .tabs{display:flex;gap:0;border-bottom:2px solid var(--line);margin-bottom:14px;}
+  .tab{font:inherit;font-size:14px;font-weight:700;padding:10px 18px;border:0;background:transparent;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-2px;transition:color .15s,border-color .15s;}
+  .tab:hover{color:var(--ink-soft);}
+  .tab.active{color:var(--sage-deep);border-bottom-color:var(--sage-deep);}
+  .tab-pane{display:none;}
+  .tab-pane.active{display:block;}
+
+  .search-bar{margin-bottom:12px;}
+  .search-bar input{width:100%;box-sizing:border-box;}
+  .item-row{display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid rgba(223,209,187,.4);gap:10px;cursor:pointer;}
+  .item-row:hover{background:rgba(127,147,100,.06);}
+  .item-row .item-title{font-weight:700;font-size:14px;}
+  .item-row .item-sub{font-size:12px;color:var(--muted);}
+  .item-list{max-height:65vh;overflow-y:auto;}
+
+  .field{margin-bottom:12px;}
+  .field label{display:block;font-size:12px;font-weight:700;color:var(--muted);margin-bottom:4px;text-transform:uppercase;letter-spacing:.5px;}
+  .field .inp{font-size:14px;padding:10px 12px;}
+  .field textarea.inp{min-height:120px;resize:vertical;font-family:monospace;font-size:12.5px;line-height:1.45;}
+
+  .ing-row{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid rgba(223,209,187,.3);}
+  .ing-row .ing-id{flex:1;font-size:13px;font-weight:600;}
+  .ing-row .ing-g{width:70px;text-align:right;font-size:13px;font-variant-numeric:tabular-nums;}
+  .ing-row .ing-del{background:none;border:0;color:var(--terra);cursor:pointer;font-size:16px;padding:2px 6px;}
+  .add-ing-row{display:flex;gap:8px;margin-top:8px;}
+  .add-ing-row input{font-size:13px;padding:6px 10px;}
+  .back-link{font-size:13px;color:var(--sage-deep);cursor:pointer;margin-bottom:10px;display:inline-block;}
+  .dirty-badge{display:inline-block;background:var(--gold);color:#fff;font-size:10px;font-weight:700;padding:2px 7px;border-radius:999px;margin-left:6px;}
 </style>
 </head>
 <body>
@@ -297,11 +326,17 @@
     renderTopRight(user);
     adminState.selfEmail = (user.email || '').toLowerCase();
     appEl.innerHTML = ''
+      + '<div class="tabs" id="adminTabs">'
+      + '  <button class="tab active" data-tab="people">People</button>'
+      + '  <button class="tab" data-tab="recipes">Recipes</button>'
+      + '  <button class="tab" data-tab="ingredients">Ingredients</button>'
+      + '</div>'
+
+      + '<div class="tab-pane active" id="pane-people">'
       + '<div class="card" id="seatsCard">'
       + '  <p class="sub" style="margin:0 0 6px">Seats</p>'
       + '  <p style="margin:0;font-size:20px;font-weight:700" id="seatsLine">…</p>'
       + '</div>'
-
       + '<div class="card">'
       + '  <p class="sub" style="margin:0 0 10px">Invite someone new</p>'
       + '  <div class="row" style="align-items:flex-start;gap:10px;flex-wrap:wrap">'
@@ -310,14 +345,28 @@
       + '  </div>'
       + '  <p class="msg" id="inviteMsg"></p>'
       + '</div>'
-
       + '<div class="card">'
       + '  <div class="row between">'
       + '    <p class="sub" style="margin:0">People</p>'
       + '    <button class="cta ghostbtn small" id="refreshBtn" type="button">Refresh</button>'
       + '  </div>'
       + '  <div id="tableHost"></div>'
-      + '</div>';
+      + '</div>'
+      + '</div>'
+
+      + '<div class="tab-pane" id="pane-recipes"><div class="card" id="recipesHost"><p class="spinner-line">Loading…</p></div></div>'
+      + '<div class="tab-pane" id="pane-ingredients"><div class="card" id="ingredientsHost"><p class="spinner-line">Loading…</p></div></div>';
+
+    var tabBar = document.getElementById('adminTabs');
+    if(tabBar) tabBar.addEventListener('click', function(ev){
+      var btn = ev.target.closest('.tab[data-tab]');
+      if(!btn) return;
+      var target = btn.getAttribute('data-tab');
+      tabBar.querySelectorAll('.tab').forEach(function(b){ b.classList.toggle('active', b === btn); });
+      document.querySelectorAll('.tab-pane').forEach(function(p){ p.classList.toggle('active', p.id === 'pane-' + target); });
+      if(target === 'recipes' && !catalogState.loaded) loadCatalog();
+      if(target === 'ingredients' && !catalogState.loaded) loadCatalog();
+    });
 
     var inviteBtn = document.getElementById('inviteBtn');
     var inviteInput = document.getElementById('inviteEmailInput');
@@ -563,6 +612,326 @@
         setSeatsLine(body.seatsUsed, body.seatsMax);
       }
       renderTable();
+    });
+  }
+
+  /* ---------------- catalog (recipes + ingredients) ---------------- */
+
+  var catalogState = {
+    loaded: false,
+    recipes: [],
+    foods: [],
+    dirty: {},
+    editingRecipe: null,
+    editingFood: null,
+    recipeQuery: '',
+    foodQuery: ''
+  };
+
+  function loadCatalog(){
+    var rHost = document.getElementById('recipesHost');
+    var iHost = document.getElementById('ingredientsHost');
+    if(rHost) rHost.innerHTML = '<p class="spinner-line">Loading catalog…</p>';
+    if(iHost) iHost.innerHTML = '<p class="spinner-line">Loading catalog…</p>';
+    api('/auth/admin/library').then(function(res){
+      if(res.sessionDied) return;
+      if(!res.ok){
+        var msg = '<div class="empty-state">Could not load catalog.</div>';
+        if(rHost) rHost.innerHTML = msg;
+        if(iHost) iHost.innerHTML = msg;
+        return;
+      }
+      catalogState.loaded = true;
+      catalogState.recipes = Array.isArray(res.body.recipes) ? res.body.recipes : [];
+      catalogState.foods = Array.isArray(res.body.foods) ? res.body.foods : [];
+      catalogState.dirty = {};
+      renderRecipeList();
+      renderFoodList();
+    });
+  }
+
+  function markDirty(type, id){
+    catalogState.dirty[type + ':' + id] = true;
+    updateSaveBtnState();
+  }
+  function isDirty(type, id){ return !!catalogState.dirty[type + ':' + id]; }
+  function hasDirtyItems(){ return Object.keys(catalogState.dirty).length > 0; }
+
+  function updateSaveBtnState(){
+    var btn = document.getElementById('catalogSaveBtn');
+    if(btn) btn.disabled = !hasDirtyItems();
+    var badge = document.getElementById('dirtyCount');
+    var n = Object.keys(catalogState.dirty).length;
+    if(badge) badge.textContent = n > 0 ? (n + ' unsaved') : '';
+    if(badge) badge.style.display = n > 0 ? 'inline-block' : 'none';
+  }
+
+  function saveCatalog(){
+    if(!hasDirtyItems()) return;
+    var foods = [], recipes = [];
+    Object.keys(catalogState.dirty).forEach(function(key){
+      var parts = key.split(':');
+      var type = parts[0], id = parts.slice(1).join(':');
+      if(type === 'food'){
+        var f = catalogState.foods.find(function(x){ return x.id === id; });
+        if(f) foods.push({id: f.id, data: f.data});
+      } else if(type === 'recipe'){
+        var r = catalogState.recipes.find(function(x){ return x.id === id; });
+        if(r) recipes.push({id: r.id, data: r.data});
+      }
+    });
+    var btn = document.getElementById('catalogSaveBtn');
+    if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
+    api('/auth/admin/library', {method: 'POST', body: JSON.stringify({foods: foods, recipes: recipes})}).then(function(res){
+      if(btn){ btn.disabled = false; btn.textContent = 'Save changes to D1'; }
+      if(res.sessionDied) return;
+      if(res.ok){
+        catalogState.dirty = {};
+        updateSaveBtnState();
+        alertInline('✓ Saved ' + (foods.length + recipes.length) + ' item(s) to D1.');
+        if(catalogState.editingRecipe) renderRecipeDetail(catalogState.editingRecipe);
+        else renderRecipeList();
+        if(catalogState.editingFood) renderFoodDetail(catalogState.editingFood);
+        else renderFoodList();
+      } else {
+        alertInline('Save failed — ' + (res.body && res.body.error || 'unknown error'));
+      }
+    });
+  }
+
+  /* --- recipe list --- */
+
+  function renderRecipeList(){
+    catalogState.editingRecipe = null;
+    var host = document.getElementById('recipesHost');
+    if(!host) return;
+    var q = catalogState.recipeQuery.toLowerCase();
+    var filtered = catalogState.recipes.filter(function(r){
+      if(!q) return true;
+      return (r.title || '').toLowerCase().indexOf(q) !== -1 || (r.id || '').toLowerCase().indexOf(q) !== -1;
+    });
+    var html = '<div class="row between" style="margin-bottom:10px">'
+      + '<p class="sub" style="margin:0">' + catalogState.recipes.length + ' recipes in global catalog</p>'
+      + '<div class="row" style="gap:8px"><span id="dirtyCount" class="dirty-badge" style="display:none"></span>'
+      + '<button class="cta small" id="catalogSaveBtn" type="button" disabled>Save changes to D1</button></div>'
+      + '</div>'
+      + '<div class="search-bar"><input class="inp" type="search" placeholder="Search recipes…" value="' + escapeHtml(catalogState.recipeQuery) + '" id="recipeSearchInp"></div>'
+      + '<div class="item-list">';
+    filtered.forEach(function(r){
+      var d = r.data || {};
+      var dirtyMark = isDirty('recipe', r.id) ? ' <span class="dirty-badge">edited</span>' : '';
+      html += '<div class="item-row" data-id="' + escapeHtml(r.id) + '">'
+        + '<div><div class="item-title">' + escapeHtml(d.title || r.title || r.id) + dirtyMark + '</div>'
+        + '<div class="item-sub">' + escapeHtml(r.id) + ' · ' + escapeHtml(d.slot || '') + ' · ' + escapeHtml(d.season || 'evergreen') + '</div></div>'
+        + '<span class="muted" style="font-size:12px">›</span></div>';
+    });
+    html += '</div>';
+    host.innerHTML = html;
+    var searchInp = document.getElementById('recipeSearchInp');
+    if(searchInp) searchInp.addEventListener('input', function(){ catalogState.recipeQuery = this.value; renderRecipeList(); });
+    host.querySelectorAll('.item-row[data-id]').forEach(function(row){
+      row.addEventListener('click', function(){ renderRecipeDetail(row.getAttribute('data-id')); });
+    });
+    var saveBtn = document.getElementById('catalogSaveBtn');
+    if(saveBtn) saveBtn.addEventListener('click', saveCatalog);
+    updateSaveBtnState();
+  }
+
+  /* --- recipe detail/edit --- */
+
+  function renderRecipeDetail(id){
+    catalogState.editingRecipe = id;
+    var host = document.getElementById('recipesHost');
+    if(!host) return;
+    var rec = catalogState.recipes.find(function(r){ return r.id === id; });
+    if(!rec || !rec.data){ host.innerHTML = '<div class="empty-state">Recipe not found.</div>'; return; }
+    var d = rec.data;
+    var ings = Array.isArray(d.ingredients) ? d.ingredients : [];
+
+    var html = '<span class="back-link" id="recipeBack">← Back to list</span>'
+      + '<h2 style="margin:0 0 4px;font-size:20px">' + escapeHtml(d.title || id) + '</h2>'
+      + '<p class="muted" style="margin:0 0 16px;font-size:12px">' + escapeHtml(id) + '</p>';
+
+    html += '<div class="field"><label>Title</label><input class="inp" id="rdTitle" value="' + escapeHtml(d.title || '') + '"></div>';
+    html += '<div class="field"><label>Slot</label><input class="inp" id="rdSlot" value="' + escapeHtml(d.slot || '') + '"></div>';
+    html += '<div class="field"><label>Slots (comma-separated)</label><input class="inp" id="rdSlots" value="' + escapeHtml((d.slots || []).join(', ')) + '"></div>';
+    html += '<div class="field"><label>Styles (comma-separated)</label><input class="inp" id="rdStyles" value="' + escapeHtml((d.styles || []).join(', ')) + '"></div>';
+    html += '<div class="field"><label>Role</label><input class="inp" id="rdRole" value="' + escapeHtml(d.role || '') + '"></div>';
+    html += '<div class="field"><label>Season</label><input class="inp" id="rdSeason" value="' + escapeHtml(d.season || 'evergreen') + '"></div>';
+    html += '<div class="field"><label>Time (min)</label><input class="inp" id="rdTime" type="number" value="' + (d.time || '') + '"></div>';
+    html += '<div class="field"><label>Servings</label><input class="inp" id="rdServings" type="number" value="' + (d.servings || '') + '"></div>';
+
+    html += '<div class="field"><label>Ingredients</label><div id="rdIngs">';
+    ings.forEach(function(ing, idx){
+      html += '<div class="ing-row" data-idx="' + idx + '">'
+        + '<span class="ing-id">' + escapeHtml(ing[0]) + '</span>'
+        + '<input class="inp ing-g" style="width:70px;padding:4px 8px" type="number" value="' + (ing[1] || 0) + '" data-idx="' + idx + '" data-field="grams">'
+        + '<span class="muted" style="font-size:11px">g</span>'
+        + '<button class="ing-del" data-idx="' + idx + '" type="button">✕</button>'
+        + '</div>';
+    });
+    html += '</div>';
+    html += '<div class="add-ing-row">'
+      + '<input class="inp" id="rdNewIngId" placeholder="food-id" style="flex:1">'
+      + '<input class="inp" id="rdNewIngG" placeholder="grams" type="number" style="width:80px">'
+      + '<button class="cta small" id="rdAddIng" type="button">+ Add</button>'
+      + '</div></div>';
+
+    html += '<div class="field"><label>To taste (comma-separated)</label><input class="inp" id="rdToTaste" value="' + escapeHtml((d.toTaste || []).join(', ')) + '"></div>';
+
+    html += '<div class="field"><label>Steps (JSON array)</label><textarea class="inp" id="rdSteps">' + escapeHtml(JSON.stringify(d.steps || [], null, 2)) + '</textarea></div>';
+
+    if(d.optionGroups){
+      html += '<div class="field"><label>Option groups (JSON)</label><textarea class="inp" id="rdOptGroups">' + escapeHtml(JSON.stringify(d.optionGroups, null, 2)) + '</textarea></div>';
+    }
+
+    html += '<div style="margin-top:16px"><button class="cta" id="rdApply" type="button">Apply changes</button></div>';
+
+    host.innerHTML = html;
+
+    document.getElementById('recipeBack').addEventListener('click', function(){ renderRecipeList(); });
+
+    var ingsHost = document.getElementById('rdIngs');
+    ingsHost.querySelectorAll('input[data-field="grams"]').forEach(function(inp){
+      inp.addEventListener('change', function(){
+        var i = parseInt(inp.getAttribute('data-idx'), 10);
+        if(d.ingredients[i]) d.ingredients[i][1] = parseFloat(inp.value) || 0;
+      });
+    });
+    ingsHost.querySelectorAll('.ing-del').forEach(function(btn){
+      btn.addEventListener('click', function(){
+        var i = parseInt(btn.getAttribute('data-idx'), 10);
+        d.ingredients.splice(i, 1);
+        markDirty('recipe', id);
+        renderRecipeDetail(id);
+      });
+    });
+    document.getElementById('rdAddIng').addEventListener('click', function(){
+      var fid = document.getElementById('rdNewIngId').value.trim();
+      var fg = parseFloat(document.getElementById('rdNewIngG').value) || 0;
+      if(!fid) return;
+      if(!d.ingredients) d.ingredients = [];
+      d.ingredients.push([fid, fg]);
+      markDirty('recipe', id);
+      renderRecipeDetail(id);
+    });
+
+    document.getElementById('rdApply').addEventListener('click', function(){
+      d.title = document.getElementById('rdTitle').value.trim() || d.title;
+      d.slot = document.getElementById('rdSlot').value.trim() || d.slot;
+      var slotsVal = document.getElementById('rdSlots').value;
+      d.slots = slotsVal ? slotsVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : d.slots;
+      var stylesVal = document.getElementById('rdStyles').value;
+      d.styles = stylesVal ? stylesVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : d.styles;
+      d.role = document.getElementById('rdRole').value.trim() || d.role;
+      d.season = document.getElementById('rdSeason').value.trim() || 'evergreen';
+      var timeVal = document.getElementById('rdTime').value;
+      if(timeVal) d.time = parseInt(timeVal, 10);
+      var servVal = document.getElementById('rdServings').value;
+      if(servVal) d.servings = parseInt(servVal, 10);
+      var ttVal = document.getElementById('rdToTaste').value;
+      d.toTaste = ttVal ? ttVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+      try{ d.steps = JSON.parse(document.getElementById('rdSteps').value); }catch(e){}
+      var ogEl = document.getElementById('rdOptGroups');
+      if(ogEl){ try{ d.optionGroups = JSON.parse(ogEl.value); }catch(e){} }
+      rec.title = d.title;
+      markDirty('recipe', id);
+      alertInline('✓ Changes staged — click "Save changes to D1" to push.');
+    });
+  }
+
+  /* --- food/ingredient list --- */
+
+  function renderFoodList(){
+    catalogState.editingFood = null;
+    var host = document.getElementById('ingredientsHost');
+    if(!host) return;
+    var q = catalogState.foodQuery.toLowerCase();
+    var filtered = catalogState.foods.filter(function(f){
+      if(!q) return true;
+      return (f.name || '').toLowerCase().indexOf(q) !== -1 || (f.id || '').toLowerCase().indexOf(q) !== -1;
+    });
+    var html = '<div class="row between" style="margin-bottom:10px">'
+      + '<p class="sub" style="margin:0">' + catalogState.foods.length + ' ingredients in global catalog</p>'
+      + '<div class="row" style="gap:8px"><span id="dirtyCountI" class="dirty-badge" style="display:none"></span>'
+      + '<button class="cta small" id="catalogSaveBtnI" type="button" disabled>Save changes to D1</button></div>'
+      + '</div>'
+      + '<div class="search-bar"><input class="inp" type="search" placeholder="Search ingredients…" value="' + escapeHtml(catalogState.foodQuery) + '" id="foodSearchInp"></div>'
+      + '<div class="item-list">';
+    filtered.forEach(function(f){
+      var d = f.data || {};
+      var dirtyMark = isDirty('food', f.id) ? ' <span class="dirty-badge">edited</span>' : '';
+      html += '<div class="item-row" data-id="' + escapeHtml(f.id) + '">'
+        + '<div><div class="item-title">' + escapeHtml(d.name || f.name || f.id) + dirtyMark + '</div>'
+        + '<div class="item-sub">' + escapeHtml(f.id) + ' · ' + escapeHtml(d.cat || '') + ' · ' + Math.round((d.protein || 0) * 10) / 10 + 'p / ' + Math.round((d.carbs || 0) * 10) / 10 + 'c / ' + Math.round((d.fat || 0) * 10) / 10 + 'f per 100g</div></div>'
+        + '<span class="muted" style="font-size:12px">›</span></div>';
+    });
+    html += '</div>';
+    host.innerHTML = html;
+    var searchInp = document.getElementById('foodSearchInp');
+    if(searchInp) searchInp.addEventListener('input', function(){ catalogState.foodQuery = this.value; renderFoodList(); });
+    host.querySelectorAll('.item-row[data-id]').forEach(function(row){
+      row.addEventListener('click', function(){ renderFoodDetail(row.getAttribute('data-id')); });
+    });
+    var saveBtn = document.getElementById('catalogSaveBtnI');
+    if(saveBtn) saveBtn.addEventListener('click', saveCatalog);
+    var badge = document.getElementById('dirtyCountI');
+    var n = Object.keys(catalogState.dirty).length;
+    if(badge){ badge.textContent = n > 0 ? (n + ' unsaved') : ''; badge.style.display = n > 0 ? 'inline-block' : 'none'; }
+  }
+
+  /* --- food detail/edit --- */
+
+  function renderFoodDetail(id){
+    catalogState.editingFood = id;
+    var host = document.getElementById('ingredientsHost');
+    if(!host) return;
+    var food = catalogState.foods.find(function(f){ return f.id === id; });
+    if(!food || !food.data){ host.innerHTML = '<div class="empty-state">Ingredient not found.</div>'; return; }
+    var d = food.data;
+
+    var fields = [
+      ['name', 'Name', 'text'], ['cat', 'Category', 'text'], ['season', 'Season', 'text'],
+      ['protein', 'Protein (per 100g)', 'number'], ['carbs', 'Carbs (per 100g)', 'number'],
+      ['fat', 'Fat (per 100g)', 'number'], ['satFat', 'Sat fat', 'number'],
+      ['fiber', 'Fiber', 'number'], ['sugars', 'Sugars', 'number'], ['freeSugars', 'Free sugars', 'number'],
+      ['unit', 'Unit (g/piece/ml)', 'text'], ['avgG', 'Avg weight (g)', 'number']
+    ];
+
+    var html = '<span class="back-link" id="foodBack">← Back to list</span>'
+      + '<h2 style="margin:0 0 4px;font-size:20px">' + escapeHtml(d.name || id) + '</h2>'
+      + '<p class="muted" style="margin:0 0 16px;font-size:12px">' + escapeHtml(id) + '</p>';
+
+    fields.forEach(function(f){
+      var val = d[f[0]];
+      if(val === undefined || val === null) val = '';
+      html += '<div class="field"><label>' + escapeHtml(f[1]) + '</label><input class="inp" data-key="' + f[0] + '" type="' + f[2] + '" value="' + escapeHtml(String(val)) + '"></div>';
+    });
+
+    var flags = Array.isArray(d.flags) ? d.flags.join(', ') : '';
+    html += '<div class="field"><label>Flags (comma-separated)</label><input class="inp" data-key="flags" value="' + escapeHtml(flags) + '"></div>';
+
+    html += '<div style="margin-top:16px"><button class="cta" id="fdApply" type="button">Apply changes</button></div>';
+
+    host.innerHTML = html;
+
+    document.getElementById('foodBack').addEventListener('click', function(){ renderFoodList(); });
+
+    document.getElementById('fdApply').addEventListener('click', function(){
+      host.querySelectorAll('input[data-key]').forEach(function(inp){
+        var key = inp.getAttribute('data-key');
+        var val = inp.value;
+        if(key === 'flags'){
+          d.flags = val ? val.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : [];
+        } else if(inp.type === 'number'){
+          d[key] = val === '' ? undefined : parseFloat(val);
+        } else {
+          d[key] = val;
+        }
+      });
+      food.name = d.name;
+      markDirty('food', id);
+      alertInline('✓ Changes staged — click "Save changes to D1" to push.');
     });
   }
 

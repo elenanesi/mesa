@@ -137,10 +137,11 @@ function buildShopSheet(){
       // net of the pantry) but annotates what pantry already contributed — never silent.
       // Mirrors the existing .dm-t/.li-t small-under-title pattern (mesa.css) inline rather
       // than adding a new selector, since this file's scope doesn't include the stylesheet.
-      const haveNote = list.covered[name]
-        ? '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(list.covered[name].have, list.covered[name].unit) + '</small>'
+      const coveredRow = list.covered[name];
+      const haveNote = coveredRow
+        ? '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(coveredRow.have, coveredRow.unit, coveredRow) + '</small>'
         : '';
-      html += '<div class="shop-item'+inCartClass+'" id="'+id+'" data-food-ids="'+foodIdsAttr+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+haveNote+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit)+'</div></div>';
+      html += '<div class="shop-item'+inCartClass+'" id="'+id+'" data-food-ids="'+foodIdsAttr+'"><div class="sck">✓</div><div class="sname">'+escapeHtml(name)+haveNote+'</div><div class="sqty">'+fmtShopQty(t.qty, t.unit, t)+'</div></div>';
     });
   });
   if(!anyToBuy){
@@ -172,7 +173,7 @@ function buildShopSheet(){
       rows.forEach(function(row){
         const foodIdsAttr = htmlAttr(JSON.stringify(row.foodIds || []));
         html += '<div class="shop-item already-home"><div class="sck">✓</div><div class="sname">'+escapeHtml(row.name)
-          + '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(row.have, row.unit) + '</small></div>'
+          + '<small style="display:block;font-size:12px;color:var(--muted);font-weight:400">have ' + fmtShopQty(row.have, row.unit, row) + '</small></div>'
           + '<button class="backbtn" style="margin:0;min-height:36px;padding:4px 8px;font-size:12px" data-act="need-more" data-food-ids="'+foodIdsAttr+'">Need more?</button></div>';
       });
     });
@@ -227,16 +228,21 @@ function restockShopItemName(weekStartDate, name){
 function putShopCartAway(weekStartDate){
   const list = computeShoppingList(weekStartDate);
   const inCart = inCartSetForWeek(weekStartDate);
+  const remaining = pantryRemaining();
   let count = 0;
   const stockedFoodIds = {};
   Object.keys(list.totals).forEach(function(name){
     const row = list.totals[name];
     if(!shopRowIsInCart(row, inCart)) return;
-    const stocked = restockShopItemName(weekStartDate, name);
-    if(stocked){
-      (row.foodIds || []).forEach(function(foodId){ stockedFoodIds[foodId] = true; });
-      count += stocked;
-    }
+    (row.foodIds || []).forEach(function(foodId){
+      if(!FOODS[foodId]) return;
+      const have = (typeof remaining[foodId] === 'number') ? remaining[foodId] : 0;
+      const newQty = have + row.qty;
+      setPantryRemaining(foodId, newQty);
+      remaining[foodId] = newQty;
+      stockedFoodIds[foodId] = true;
+      count++;
+    });
   });
   if(count){
     Object.keys(stockedFoodIds).forEach(function(foodId){ delete inCart[foodId]; });

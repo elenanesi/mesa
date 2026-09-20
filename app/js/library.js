@@ -2834,6 +2834,7 @@ function attachLibRecipeListHandler(){
     else if(act === 'delete') deleteRecipe(id);
     else if(act === 'duplicate') duplicateRecipe(id);
     else if(act === 'addbook') addRecipeToBook(id);
+    else if(act === 'restore') restoreForkToOriginal(id);
     else if(act === 'removebook') removeRecipeFromBook(id);
   };
 }
@@ -3163,9 +3164,11 @@ function libRecipeRowHtml(id, isMarket){
     // delete only for a recipe you authored). Duplicate lives on the recipe DETAIL.
     const removeAct = customRecipes[id] ? 'delete' : 'removebook';
     const removeLabel = customRecipes[id] ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
+    const isFork = customRecipes[id] && customRecipes[id].forkedFrom && BUILTIN_RECIPES_DB[customRecipes[id].forkedFrom];
     actions = '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">' + lucideIcon('heart') + '</button>'
       + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">' + lucideIcon('thumbs-down') + '</button>'
       + '<button class="lib-edit" data-act="edit" aria-label="Edit ' + htmlAttr(r.title) + '">' + lucideIcon('pencil') + '</button>'
+      + (isFork ? '<button class="lib-edit" data-act="restore" aria-label="Restore original ' + htmlAttr(r.title) + '">' + lucideIcon('undo') + '</button>' : '')
       + '<button class="lib-del" data-act="' + removeAct + '" aria-label="' + removeLabel + '">' + lucideIcon('trash') + '</button>';
   }
   return '<div class="altrow" data-recipe-id="' + htmlAttr(id) + '" aria-label="View ' + htmlAttr(r.title) + '"><div class="ae recipe-list-art">' + recipeThumbnailHtml(r, id) + '</div>'
@@ -3186,7 +3189,8 @@ const LUCIDE_PATHS = {
   pencil: '<path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
   trash: '<path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>',
   heart: '<path d="M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.3 1.5 4.05 3 5.5l7 7Z"/>',
-  'thumbs-down': '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>'
+  'thumbs-down': '<path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/>',
+  undo: '<path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/>'
 };
 function lucideIcon(name){
   const body = LUCIDE_PATHS[name];
@@ -3808,9 +3812,9 @@ function buildRecipeBuilderSheet(){
   if(editing && BUILTIN_RECIPES_DB[rb.editingId] && recipeOverrides[rb.editingId]){
     html += '<button class="cta ghostbtn" style="margin-top:16px" onclick="resetRecipeBuilderOverride()">↺ Reset to default</button>';
   }
-  // Fork-on-edit note (owner spec 2026-08-30): editing a MARKET recipe saves a copy as YOURS and
-  // returns the untouched original to the market, so the two can sit side by side. Shown only for a
-  // fresh built-in edit (a legacy in-place override still offers Reset above instead).
+  else if(editing && customRecipes[rb.editingId] && customRecipes[rb.editingId].forkedFrom && BUILTIN_RECIPES_DB[customRecipes[rb.editingId].forkedFrom]){
+    html += '<button class="cta ghostbtn" style="margin-top:16px" onclick="restoreRecipeBuilderFork()">↺ Restore original</button>';
+  }
   else if(editing && BUILTIN_RECIPES_DB[rb.editingId]){
     html += '<div class="sub" style="margin-top:12px">Saving keeps this as <strong>your</strong> recipe and puts the original back in the market — you can re-add it anytime.</div>';
   }
@@ -4032,6 +4036,32 @@ function resetRecipeBuilderOverride(){
   if(!id) return;
   resetRecipeOverride(id);
   openEditRecipeForm(id); // re-opens on the now-restored built-in, options included
+}
+
+function restoreForkToOriginal(forkId){
+  var cr = customRecipes[forkId];
+  if(!cr || !cr.forkedFrom) return;
+  var origId = cr.forkedFrom;
+  if(!BUILTIN_RECIPES_DB[origId]) return;
+  var name = BUILTIN_RECIPES_DB[origId].title || 'recipe';
+  delete customRecipes[forkId];
+  deletedRecipes[forkId] = Date.now();
+  if(deletedFromBook[origId]) delete deletedFromBook[origId];
+  materializeRecipeBook();
+  if(!recipeBook[origId]) recipeBook[origId] = {u: Date.now()};
+  customRev++;
+  applyCustomRecipes();
+  applyProf(currentProf);
+  persist();
+  toast('✓ Restored ' + name);
+  renderFoodLibraryCount();
+}
+function restoreRecipeBuilderFork(){
+  var id = recipeBuilder && recipeBuilder.editingId;
+  if(!id || !customRecipes[id] || !customRecipes[id].forkedFrom) return;
+  restoreForkToOriginal(id);
+  recipeBuilder = null;
+  openMyRecipes();
 }
 
 function buildRecipeImageGrid(currentImageKey, query){
