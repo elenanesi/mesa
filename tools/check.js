@@ -4993,6 +4993,10 @@ function testRegenerateLockSharedMeals(ctx){
     const sheetCouple = call(ctx, 'buildRegenerateSheet', []);
     assert(sheetCouple.indexOf('id="regenLockShared"') !== -1,
       'buildRegenerateSheet: offers the "Keep our shared meals" checkbox for a two-person household', 'not found');
+    assert(sheetCouple.indexOf('data-week-action="confirm-regenerate"') !== -1
+      && sheetCouple.indexOf('data-week-action="scope-all"') !== -1
+      && sheetCouple.indexOf('onclick="confirmRegenerateWeek()"') === -1,
+      'buildRegenerateSheet: confirmation and scope controls use delegated actions, not fragile inline handlers', sheetCouple);
     run(ctx, "householdSize = 1; householdSizeManual = true;");
     const sheetSolo = call(ctx, 'buildRegenerateSheet', []);
     assert(sheetSolo.indexOf('id="regenLockShared"') === -1,
@@ -14392,9 +14396,14 @@ function testWeekCompactPlanningWorkspace(){
     'Week compact workspace: segmented control, toolbar, quality drawer, and plan list all exist', weekHtml.slice(0, 1200));
   assert(segIdx < toolbarIdx && toolbarIdx < listIdx && qualityIdx !== -1,
     'Week compact workspace: the balance tile and plan list are available', 'seg@' + segIdx + ' toolbar@' + toolbarIdx + ' quality@' + qualityIdx + ' list@' + listIdx);
-  assert(weekHtml.indexOf('onclick="openShopping()"') !== -1 && weekHtml.indexOf('onclick="openRebalanceSheet()"') !== -1 && weekHtml.indexOf('onclick="openRegenerateSheet()"') !== -1,
-    'Week toolbar: Shopping, Re-balance, and Regenerate are all top-level compact actions', weekHtml);
-  assert(/onclick="openShopping\(\)"[^>]*>[\s\S]*?week-tool-icon[\s\S]*?🛒/.test(weekHtml),
+  assert(weekHtml.indexOf('data-week-action="shopping"') !== -1 && weekHtml.indexOf('data-week-action="rebalance"') !== -1 && weekHtml.indexOf('data-week-action="regenerate"') !== -1,
+    'Week toolbar: Shopping, Re-balance, and Regenerate are all top-level compact delegated actions', weekHtml);
+  const weekSource = fs.readFileSync(path.join(APP_DIR, 'js', 'render-week.js'), 'utf8');
+  assert(weekSource.indexOf('function initWeekActionBindings()') !== -1
+    && weekSource.indexOf("document.addEventListener('click'") !== -1
+    && weekSource.indexOf("action === 'confirm-regenerate'") !== -1,
+    'Week controls: one delegated listener covers static controls and the regeneration confirmation sheet', weekSource.slice(0, 2400));
+  assert(/data-week-action="shopping"[^>]*>[\s\S]*?week-tool-icon[\s\S]*?🛒/.test(weekHtml),
     'Week toolbar: Shopping uses the same cart emoji as the Today shopping shortcut', weekHtml);
 
   const afterList = weekHtml.slice(listIdx);

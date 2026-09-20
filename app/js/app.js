@@ -763,6 +763,9 @@ function bootMesaApp(){
 }
 
 applyMonthlyBackground();
+// Install before first paint: delegated controls remain responsive on mobile WebViews that
+// do not reliably execute inline event attributes.
+if(typeof initWeekActionBindings === 'function') initWeekActionBindings();
 bootMesaApp();
 
 /* ---------------- service worker registration (task E1) ---------------- */

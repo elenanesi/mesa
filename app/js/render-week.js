@@ -12,6 +12,33 @@ const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 // across tab switches within a session).
 let weekScreenShowsNext = false;
 let weekQualityExpanded = false;
+// A delegated listener covers static planner controls and the dynamically-created sheets.
+// It avoids fragile inline handlers in strict mobile WebViews, and turns an unexpected
+// failure into visible feedback instead of an apparently dead tap.
+let weekActionBindingsInstalled = false;
+function initWeekActionBindings(){
+  if(weekActionBindingsInstalled || !document || typeof document.addEventListener !== 'function') return;
+  weekActionBindingsInstalled = true;
+  document.addEventListener('click', function(ev){
+    const target = ev.target && ev.target.closest ? ev.target.closest('[data-week-action]') : null;
+    if(!target) return;
+    const action = target.getAttribute('data-week-action');
+    try{
+      if(action === 'set-mode') setWeekScreenMode(target.getAttribute('data-week-mode'), target);
+      else if(action === 'shopping') openShopping();
+      else if(action === 'rebalance') openRebalanceSheet();
+      else if(action === 'regenerate') openRegenerateSheet();
+      else if(action === 'toggle-quality') toggleWeekQualityDrawer();
+      else if(action === 'scope-all') setWeekScopeAll();
+      else if(action === 'scope-day') toggleWeekScopeDay(Number(target.getAttribute('data-week-day')));
+      else if(action === 'confirm-regenerate') confirmRegenerateWeek();
+      else if(action === 'close-sheet') closeSheet();
+    }catch(err){
+      console.error('Mesa: planner action failed (' + action + ')', err);
+      if(typeof toast === 'function') toast('Couldn’t complete that yet — please try again.');
+    }
+  });
+}
 // A Planner repaint can happen while this screen is open (for example after a sync or a
 // nutrition refresh). Keep per-day disclosure state outside the rebuilt #weekList DOM so
 // an open day never snaps shut mid-read.
@@ -626,11 +653,11 @@ function weekScopeChipsHtml(verb){
   if(!weekScopeSel) resetWeekScope();
   const selectable = weekScopeSelectableDays();
   const all = weekScopeIsAll();
-  let chips = '<button type="button" class="dayscope-chip dayscope-all' + (all ? ' sel' : '') + '" onclick="setWeekScopeAll()">All week</button>';
+  let chips = '<button type="button" class="dayscope-chip dayscope-all' + (all ? ' sel' : '') + '" data-week-action="scope-all">All week</button>';
   for(let d = 0; d < 7; d++){
     if(selectable.indexOf(d) === -1) continue;
     const sel = weekScopeSel.has(d);
-    chips += '<button type="button" class="dayscope-chip' + (sel && !all ? ' sel' : '') + '" onclick="toggleWeekScopeDay(' + d + ')" aria-pressed="' + (sel ? 'true' : 'false') + '">' + weekScopeDayChipLabel(d) + '</button>';
+    chips += '<button type="button" class="dayscope-chip' + (sel && !all ? ' sel' : '') + '" data-week-action="scope-day" data-week-day="' + d + '" aria-pressed="' + (sel ? 'true' : 'false') + '">' + weekScopeDayChipLabel(d) + '</button>';
   }
   const summary = all
     ? verb + ' the whole week.'
@@ -656,13 +683,13 @@ function buildRegenerateSheet(){
   const lockOption = isSoloHousehold() ? '' :
     '<label class="card" style="padding:14px;margin-top:12px;display:flex;gap:12px;align-items:flex-start;cursor:pointer"><input id="regenLockShared" type="checkbox" style="margin-top:3px;min-width:18px;min-height:18px"><span><b>🔒 Keep our shared meals</b><small style="display:block;color:var(--muted);margin-top:4px">Shared dinners stay the same dish — only portions may change. Everything else reshuffles.</small></span></label>';
   const btnLabel = all ? ('↻ Regenerate ' + label) : ('↻ Regenerate ' + weekScopeSel.size + ' day' + (weekScopeSel.size === 1 ? '' : 's'));
-  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Regenerate ' + label + '?</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>'
+  return '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Regenerate ' + label + '?</h2><button type="button" class="backbtn" style="margin:0" data-week-action="close-sheet">✕ Close</button></div>'
     + '<p class="sub" style="margin-top:10px">Rebuilds ' + (all ? (label + '’s plan') : 'the days you pick') + ' ' + (isSoloHousehold() ? 'for you' : 'for both of you') + ' using the latest recipes and rules. '
     + '<b>Pinned meals and anything you’ve already logged or skipped stay exactly as they are</b> — only the other meals are replaced.</p>'
     + '<div id="regenScope">' + weekScopeChipsHtml('Regenerate') + '</div>'
     + lockOption
-    + '<button class="cta" style="margin-top:12px" onclick="confirmRegenerateWeek()">' + btnLabel + '</button>'
-    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+    + '<button type="button" class="cta" style="margin-top:12px" data-week-action="confirm-regenerate">' + btnLabel + '</button>'
+    + '<button type="button" class="cta ghostbtn" data-week-action="close-sheet">Cancel</button>';
 }
 
 function confirmRegenerateWeek(){
