@@ -12645,6 +12645,30 @@ function testRecipeOptionsBuilder(ctx){
     assert(call(ctx, 'recipeInBook', ['baked-fish']) === true, 'detail restore: the original built-in is back in the book', '');
     assert(call(ctx, 'builtinHasForkInBook', ['baked-fish']) === false, 'detail restore: no fork remains after restoring the original', '');
 
+    // (e) Orphan override deletion (owner 2026-09-20 "this one recipe I can't delete"): a legacy
+    // recipeOverrides entry whose built-in id is no longer in the catalog is applied to RECIPES_DB
+    // unconditionally (applyCustomRecipes ignores book membership for non-built-in overrides) and
+    // is never migrated (migrateRecipeOverridesToForks only touches built-in overrides), so
+    // "Remove from book" can't shift it. Its row must offer Delete, and deleteRecipe must tombstone
+    // it so it stays gone across a boot.
+    const orphanId = 'zz-orphan-override-test';
+    run(ctx, "recipeOverrides['" + orphanId + "'] = {title:'Orphan recipe', slot:'breakfast', time:5, servings:1, role:'full', ingredients:[['eggs',100]]}; libRecipeView='book'; applyCustomRecipes();");
+    assert(!get(ctx, 'BUILTIN_RECIPES_DB')[orphanId], 'orphan override: precondition — its id is not a bundled built-in', '');
+    const orphanRow = call(ctx, 'libRecipeRowHtml', [orphanId, false]);
+    assert(orphanRow.indexOf('data-act="delete"') !== -1,
+      'orphan override: the My-book row offers Delete (removebook cannot shift an unconditionally-applied override)', orphanRow.slice(0, 160));
+    ctx.confirm = function(){ return true; };
+    call(ctx, 'deleteRecipe', [orphanId]);
+    run(ctx, "applyCustomRecipes();");
+    assert(!get(ctx, 'recipeOverrides')[orphanId] && !get(ctx, 'RECIPES_DB')[orphanId],
+      'orphan override: Delete removes it from RECIPES_DB and clears the override', '');
+    assert(get(ctx, 'deletedRecipes')[orphanId] > 0, 'orphan override: Delete tombstones it', '');
+    run(ctx, "migrateRecipeOverridesToForks(); applyCustomRecipes();");
+    assert(!get(ctx, 'RECIPES_DB')[orphanId],
+      'orphan override: it does NOT resurrect after a boot (migration + reapply)', '');
+    delete ctx.confirm;
+    run(ctx, "delete recipeOverrides['" + orphanId + "']; delete deletedRecipes['" + orphanId + "']; applyCustomRecipes();");
+
     run(ctx, "delete customRecipes['" + forkId + "']; delete recipeOverrides['baked-fish']; var __b=" + __snap12 + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); recipeBuilder = null;");
   })();
 

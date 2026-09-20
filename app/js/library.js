@@ -3239,8 +3239,17 @@ function libRecipeRowHtml(id, isMarket){
   } else {
     // My book: favourite / thumbs (per-person), edit, and the calm reversible remove (permanent
     // delete only for a recipe you authored). Duplicate lives on the recipe DETAIL.
-    const removeAct = customRecipes[id] ? 'delete' : 'removebook';
-    const removeLabel = customRecipes[id] ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
+    // An ORPHAN override — a legacy recipeOverrides entry whose built-in id is no longer in the
+    // catalog (so migrateRecipeOverridesToForks, which only converts built-in overrides, never
+    // touched it) — is applied to RECIPES_DB unconditionally (applyCustomRecipes ignores book
+    // membership for non-built-in overrides), so "Remove from book" can't shift it: it reappears
+    // on the next applyCustomRecipes. It is really user content with no pristine original to fall
+    // back to, so it deletes (tombstones) like a custom recipe rather than pretending to be book-
+    // removable (owner 2026-09-20: "this one recipe I can't delete").
+    const isOrphanOverride = !customRecipes[id] && !!recipeOverrides[id] && !((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[id]);
+    const isDeletable = !!customRecipes[id] || isOrphanOverride;
+    const removeAct = isDeletable ? 'delete' : 'removebook';
+    const removeLabel = isDeletable ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
     const isFork = customRecipes[id] && customRecipes[id].forkedFrom && BUILTIN_RECIPES_DB[customRecipes[id].forkedFrom];
     actions = '<button class="lib-edit' + (pref === 'favorite' ? ' is-pref' : '') + '" data-act="favorite" aria-label="Favorite ' + htmlAttr(r.title) + '">' + lucideIcon('heart') + '</button>'
       + '<button class="lib-edit' + (pref === 'down' ? ' is-pref' : '') + '" data-act="down" aria-label="Thumbs down ' + htmlAttr(r.title) + '">' + lucideIcon('thumbs-down') + '</button>'
