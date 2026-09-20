@@ -754,6 +754,7 @@ function bootMesaApp(){
       return false;
     }).then(function(updated){
       if(updated){
+        bootStage('foods-refresh', applyCustomFoods);
         bootStage('recipes-refresh', applyCustomRecipes);
         bootStage('prof-refresh', function(){ applyProf(currentProf); });
       }

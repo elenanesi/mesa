@@ -578,10 +578,12 @@
     });
   }
 
-  // Small transient banner above the table for revoke errors (the invite form has its
-  // own inline message; this mirrors it without a full alert() dialog).
+  // Small transient banner on the active tab. The catalogue editor uses the same feedback
+  // channel as the people controls, so a staged save/delete never reports off-screen.
   function alertInline(text){
-    var host = document.getElementById('tableHost');
+    var active = document.querySelector('.tab-pane.active');
+    var host = active && (active.querySelector('#tableHost') || active.querySelector('#recipesHost') || active.querySelector('#ingredientsHost'));
+    if(!host) host = document.getElementById('tableHost');
     if(!host) return;
     var el = document.createElement('p');
     el.className = 'msg error';
@@ -622,6 +624,7 @@
     recipes: [],
     foods: [],
     dirty: {},
+    deleted: {},
     editingRecipe: null,
     editingFood: null,
     recipeQuery: '',
@@ -645,25 +648,86 @@
       catalogState.recipes = Array.isArray(res.body.recipes) ? res.body.recipes : [];
       catalogState.foods = Array.isArray(res.body.foods) ? res.body.foods : [];
       catalogState.dirty = {};
+      catalogState.deleted = {};
       renderRecipeList();
       renderFoodList();
     });
   }
 
   function markDirty(type, id){
+    if(isDeleted(type, id)) return;
     catalogState.dirty[type + ':' + id] = true;
     updateSaveBtnState();
   }
   function isDirty(type, id){ return !!catalogState.dirty[type + ':' + id]; }
-  function hasDirtyItems(){ return Object.keys(catalogState.dirty).length > 0; }
+  function isDeleted(type, id){ return !!catalogState.deleted[type + ':' + id]; }
+  function hasDirtyItems(){ return Object.keys(catalogState.dirty).length > 0 || Object.keys(catalogState.deleted).length > 0; }
+
+  function validNewCatalogId(id){ return /^[a-z0-9][a-z0-9-]{0,119}$/.test(id); }
+
+  function addCatalogItem(type){
+    var label = type === 'recipe' ? 'recipe' : 'ingredient';
+    var id = window.prompt('Choose an ID for this ' + label + ' (lowercase letters, numbers and hyphens).');
+    if(id === null) return;
+    id = id.trim();
+    if(!validNewCatalogId(id)){
+      alertInline('Use lowercase letters, numbers and hyphens only for the ' + label + ' ID.');
+      return;
+    }
+    var rows = type === 'recipe' ? catalogState.recipes : catalogState.foods;
+    if(rows.some(function(row){ return row.id === id; })){
+      alertInline('That ' + label + ' ID already exists.');
+      return;
+    }
+    var data;
+    if(type === 'recipe'){
+      data = {title: 'New recipe', slot: 'dinner', slots: ['dinner'], styles: ['balanced'], role: 'full', season: 'evergreen', time: 20, servings: 1, ingredients: [], toTaste: [], steps: []};
+      catalogState.recipes.push({id: id, source: 'custom', title: data.title, data: data, _new: true});
+      markDirty('recipe', id);
+      renderRecipeDetail(id);
+    } else {
+      data = {name: 'New ingredient', per: 100, unit: 'g', kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, flags: [], cat: 'Produce', season: 'evergreen'};
+      catalogState.foods.push({id: id, source: 'custom', name: data.name, data: data, _new: true});
+      markDirty('food', id);
+      renderFoodDetail(id);
+    }
+  }
+
+  function stageDelete(type, id){
+    var rows = type === 'recipe' ? catalogState.recipes : catalogState.foods;
+    var row = rows.find(function(item){ return item.id === id; });
+    if(!row) return;
+    if(type === 'food'){
+      var usedBy = catalogState.recipes.filter(function(recipe){
+        return !isDeleted('recipe', recipe.id) && Array.isArray(recipe.data && recipe.data.ingredients)
+          && recipe.data.ingredients.some(function(ing){ return ing && ing[0] === id; });
+      });
+      if(usedBy.length){
+        alertInline('Replace or remove this ingredient from ' + usedBy.map(function(recipe){ return recipe.data.title || recipe.id; }).slice(0, 3).join(', ') + ' before deleting it.');
+        return;
+      }
+    }
+    var index = rows.indexOf(row);
+    rows.splice(index, 1);
+    delete catalogState.dirty[type + ':' + id];
+    if(!row._new) catalogState.deleted[type + ':' + id] = true;
+    updateSaveBtnState();
+    if(type === 'recipe') renderRecipeList();
+    else renderFoodList();
+  }
 
   function updateSaveBtnState(){
     var btn = document.getElementById('catalogSaveBtn');
     if(btn) btn.disabled = !hasDirtyItems();
+    var foodBtn = document.getElementById('catalogSaveBtnI');
+    if(foodBtn) foodBtn.disabled = !hasDirtyItems();
     var badge = document.getElementById('dirtyCount');
-    var n = Object.keys(catalogState.dirty).length;
+    var foodBadge = document.getElementById('dirtyCountI');
+    var n = Object.keys(catalogState.dirty).length + Object.keys(catalogState.deleted).length;
     if(badge) badge.textContent = n > 0 ? (n + ' unsaved') : '';
     if(badge) badge.style.display = n > 0 ? 'inline-block' : 'none';
+    if(foodBadge) foodBadge.textContent = n > 0 ? (n + ' unsaved') : '';
+    if(foodBadge) foodBadge.style.display = n > 0 ? 'inline-block' : 'none';
   }
 
   function saveCatalog(){
@@ -674,21 +738,38 @@
       var type = parts[0], id = parts.slice(1).join(':');
       if(type === 'food'){
         var f = catalogState.foods.find(function(x){ return x.id === id; });
-        if(f) foods.push({id: f.id, data: f.data});
+        if(f) foods.push({id: f.id, source: f.source, data: f.data});
       } else if(type === 'recipe'){
         var r = catalogState.recipes.find(function(x){ return x.id === id; });
-        if(r) recipes.push({id: r.id, data: r.data});
+        if(r) recipes.push({id: r.id, source: r.source, data: r.data});
       }
     });
+    var deletedFoods = [], deletedRecipes = [];
+    Object.keys(catalogState.deleted).forEach(function(key){
+      var parts = key.split(':');
+      var type = parts[0], id = parts.slice(1).join(':');
+      if(type === 'food') deletedFoods.push(id);
+      else if(type === 'recipe') deletedRecipes.push(id);
+    });
+    var invalidNewRecipe = recipes.find(function(row){
+      var live = catalogState.recipes.find(function(item){ return item.id === row.id; });
+      var d = live && live.data;
+      return live && live._new && (!d || !Array.isArray(d.ingredients) || !d.ingredients.length);
+    });
+    if(invalidNewRecipe){
+      alertInline('Add at least one ingredient to "' + ((invalidNewRecipe.data && invalidNewRecipe.data.title) || invalidNewRecipe.id) + '" before saving it.');
+      return;
+    }
     var btn = document.getElementById('catalogSaveBtn');
     if(btn){ btn.disabled = true; btn.textContent = 'Saving…'; }
-    api('/auth/admin/library', {method: 'POST', body: JSON.stringify({foods: foods, recipes: recipes})}).then(function(res){
+    api('/auth/admin/library', {method: 'POST', body: JSON.stringify({foods: foods, recipes: recipes, deletedFoods: deletedFoods, deletedRecipes: deletedRecipes})}).then(function(res){
       if(btn){ btn.disabled = false; btn.textContent = 'Save changes to D1'; }
       if(res.sessionDied) return;
       if(res.ok){
         catalogState.dirty = {};
+        catalogState.deleted = {};
         updateSaveBtnState();
-        alertInline('✓ Saved ' + (foods.length + recipes.length) + ' item(s) to D1.');
+        alertInline('✓ Saved ' + (foods.length + recipes.length) + ' update(s) and ' + (deletedFoods.length + deletedRecipes.length) + ' removal(s) to D1.');
         if(catalogState.editingRecipe) renderRecipeDetail(catalogState.editingRecipe);
         else renderRecipeList();
         if(catalogState.editingFood) renderFoodDetail(catalogState.editingFood);
@@ -713,6 +794,7 @@
     var html = '<div class="row between" style="margin-bottom:10px">'
       + '<p class="sub" style="margin:0">' + catalogState.recipes.length + ' recipes in global catalog</p>'
       + '<div class="row" style="gap:8px"><span id="dirtyCount" class="dirty-badge" style="display:none"></span>'
+      + '<button class="cta ghostbtn small" id="addRecipeBtn" type="button">+ Add recipe</button>'
       + '<button class="cta small" id="catalogSaveBtn" type="button" disabled>Save changes to D1</button></div>'
       + '</div>'
       + '<div class="search-bar"><input class="inp" type="search" placeholder="Search recipes…" value="' + escapeHtml(catalogState.recipeQuery) + '" id="recipeSearchInp"></div>'
@@ -734,6 +816,8 @@
     });
     var saveBtn = document.getElementById('catalogSaveBtn');
     if(saveBtn) saveBtn.addEventListener('click', saveCatalog);
+    var addBtn = document.getElementById('addRecipeBtn');
+    if(addBtn) addBtn.addEventListener('click', function(){ addCatalogItem('recipe'); });
     updateSaveBtnState();
   }
 
@@ -758,6 +842,7 @@
     html += '<div class="field"><label>Styles (comma-separated)</label><input class="inp" id="rdStyles" value="' + escapeHtml((d.styles || []).join(', ')) + '"></div>';
     html += '<div class="field"><label>Role</label><input class="inp" id="rdRole" value="' + escapeHtml(d.role || '') + '"></div>';
     html += '<div class="field"><label>Season</label><input class="inp" id="rdSeason" value="' + escapeHtml(d.season || 'evergreen') + '"></div>';
+    html += '<div class="field"><label>Recipe image key (optional)</label><input class="inp" id="rdImageKey" value="' + escapeHtml(d.imageKey || '') + '" placeholder="for example: salad"></div>';
     html += '<div class="field"><label>Time (min)</label><input class="inp" id="rdTime" type="number" value="' + (d.time || '') + '"></div>';
     html += '<div class="field"><label>Servings</label><input class="inp" id="rdServings" type="number" value="' + (d.servings || '') + '"></div>';
 
@@ -785,11 +870,15 @@
       html += '<div class="field"><label>Option groups (JSON)</label><textarea class="inp" id="rdOptGroups">' + escapeHtml(JSON.stringify(d.optionGroups, null, 2)) + '</textarea></div>';
     }
 
-    html += '<div style="margin-top:16px"><button class="cta" id="rdApply" type="button">Apply changes</button></div>';
+    html += '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap"><button class="cta" id="rdApply" type="button">Apply changes</button>'
+      + '<button class="cta ghostbtn" id="rdDeleteStart" type="button">Remove recipe</button></div>';
 
     host.innerHTML = html;
 
     document.getElementById('recipeBack').addEventListener('click', function(){ renderRecipeList(); });
+    document.getElementById('rdDeleteStart').addEventListener('click', function(){
+      if(window.confirm('Remove "' + (d.title || id) + '" from the live catalog? This takes effect when you save.')) stageDelete('recipe', id);
+    });
 
     var ingsHost = document.getElementById('rdIngs');
     ingsHost.querySelectorAll('input[data-field="grams"]').forEach(function(inp){
@@ -825,6 +914,9 @@
       d.styles = stylesVal ? stylesVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : d.styles;
       d.role = document.getElementById('rdRole').value.trim() || d.role;
       d.season = document.getElementById('rdSeason').value.trim() || 'evergreen';
+      var imageKey = document.getElementById('rdImageKey').value.trim();
+      if(imageKey) d.imageKey = imageKey;
+      else delete d.imageKey;
       var timeVal = document.getElementById('rdTime').value;
       if(timeVal) d.time = parseInt(timeVal, 10);
       var servVal = document.getElementById('rdServings').value;
@@ -854,6 +946,7 @@
     var html = '<div class="row between" style="margin-bottom:10px">'
       + '<p class="sub" style="margin:0">' + catalogState.foods.length + ' ingredients in global catalog</p>'
       + '<div class="row" style="gap:8px"><span id="dirtyCountI" class="dirty-badge" style="display:none"></span>'
+      + '<button class="cta ghostbtn small" id="addFoodBtn" type="button">+ Add ingredient</button>'
       + '<button class="cta small" id="catalogSaveBtnI" type="button" disabled>Save changes to D1</button></div>'
       + '</div>'
       + '<div class="search-bar"><input class="inp" type="search" placeholder="Search ingredients…" value="' + escapeHtml(catalogState.foodQuery) + '" id="foodSearchInp"></div>'
@@ -875,9 +968,9 @@
     });
     var saveBtn = document.getElementById('catalogSaveBtnI');
     if(saveBtn) saveBtn.addEventListener('click', saveCatalog);
-    var badge = document.getElementById('dirtyCountI');
-    var n = Object.keys(catalogState.dirty).length;
-    if(badge){ badge.textContent = n > 0 ? (n + ' unsaved') : ''; badge.style.display = n > 0 ? 'inline-block' : 'none'; }
+    var addBtn = document.getElementById('addFoodBtn');
+    if(addBtn) addBtn.addEventListener('click', function(){ addCatalogItem('food'); });
+    updateSaveBtnState();
   }
 
   /* --- food detail/edit --- */
@@ -895,7 +988,8 @@
       ['protein', 'Protein (per 100g)', 'number'], ['carbs', 'Carbs (per 100g)', 'number'],
       ['fat', 'Fat (per 100g)', 'number'], ['satFat', 'Sat fat', 'number'],
       ['fiber', 'Fiber', 'number'], ['sugars', 'Sugars', 'number'], ['freeSugars', 'Free sugars', 'number'],
-      ['unit', 'Unit (g/piece/ml)', 'text'], ['avgG', 'Avg weight (g)', 'number']
+      ['unit', 'Unit (g/piece/ml)', 'text'], ['avgG', 'Avg weight (g)', 'number'],
+      ['iconKey', 'Watercolor icon key (optional)', 'text']
     ];
 
     var html = '<span class="back-link" id="foodBack">← Back to list</span>'
@@ -911,11 +1005,15 @@
     var flags = Array.isArray(d.flags) ? d.flags.join(', ') : '';
     html += '<div class="field"><label>Flags (comma-separated)</label><input class="inp" data-key="flags" value="' + escapeHtml(flags) + '"></div>';
 
-    html += '<div style="margin-top:16px"><button class="cta" id="fdApply" type="button">Apply changes</button></div>';
+    html += '<div class="row" style="margin-top:16px;gap:8px;flex-wrap:wrap"><button class="cta" id="fdApply" type="button">Apply changes</button>'
+      + '<button class="cta ghostbtn" id="fdDeleteStart" type="button">Remove ingredient</button></div>';
 
     host.innerHTML = html;
 
     document.getElementById('foodBack').addEventListener('click', function(){ renderFoodList(); });
+    document.getElementById('fdDeleteStart').addEventListener('click', function(){
+      if(window.confirm('Remove "' + (d.name || id) + '" from the live catalog? This takes effect when you save.')) stageDelete('food', id);
+    });
 
     document.getElementById('fdApply').addEventListener('click', function(){
       host.querySelectorAll('input[data-key]').forEach(function(inp){

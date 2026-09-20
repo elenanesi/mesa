@@ -1256,26 +1256,50 @@ async function handleAdminLibraryPost(request, env, origin){
   var stmts = [];
   var foods = Array.isArray(parsed.foods) ? parsed.foods : [];
   var recipes = Array.isArray(parsed.recipes) ? parsed.recipes : [];
+  var deletedFoods = Array.isArray(parsed.deletedFoods) ? parsed.deletedFoods : [];
+  var deletedRecipes = Array.isArray(parsed.deletedRecipes) ? parsed.deletedRecipes : [];
   function sfj(v){ try{ return JSON.stringify(v == null ? null : v); }catch(e){ return 'null'; } }
   function normSeason(v){ return v === 'winter/autumn' || v === 'spring/summer' ? v : 'evergreen'; }
+  function catalogId(v){ return String(v || '').trim(); }
+  function validCatalogId(v){ return /^[a-z0-9][a-z0-9-]{0,119}$/.test(v); }
+  function rowSource(v, allowed){ return allowed.indexOf(v) !== -1 ? v : 'builtin'; }
   for(var i = 0; i < foods.length; i++){
     var f = foods[i];
-    if(!f || !isPlainObject(f) || !f.id || !isPlainObject(f.data)) continue;
+    var foodId = f && catalogId(f.id);
+    if(!f || !isPlainObject(f) || !validCatalogId(foodId) || !isPlainObject(f.data)) continue;
+    var foodSource = rowSource(f.source, ['builtin', 'custom']);
     stmts.push(env.MESA_DB.prepare(
       'INSERT INTO foods (scope,id,source,name,category,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
       'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,name=excluded.name,category=excluded.category,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
-    ).bind('global', String(f.id).trim(), 'builtin', String(f.data.name || f.id).slice(0, 240), f.data.cat || null, normSeason(f.data.season), Date.now(), sfj(f.data)));
+    ).bind('global', foodId, foodSource, String(f.data.name || foodId).slice(0, 240), f.data.cat || null, normSeason(f.data.season), Date.now(), sfj(f.data)));
   }
   for(var j = 0; j < recipes.length; j++){
     var r = recipes[j];
-    if(!r || !isPlainObject(r) || !r.id || !isPlainObject(r.data)) continue;
+    var recipeId = r && catalogId(r.id);
+    if(!r || !isPlainObject(r) || !validCatalogId(recipeId) || !isPlainObject(r.data)) continue;
+    var recipeSource = rowSource(r.source, ['builtin', 'custom', 'override']);
     stmts.push(env.MESA_DB.prepare(
       'INSERT INTO recipes (scope,id,source,title,primary_slot,season,updated_at,deleted_at,data_json) VALUES (?,?,?,?,?,?,?,NULL,?) ' +
       'ON CONFLICT(scope,id) DO UPDATE SET source=excluded.source,title=excluded.title,primary_slot=excluded.primary_slot,season=excluded.season,updated_at=excluded.updated_at,deleted_at=NULL,data_json=excluded.data_json'
-    ).bind('global', String(r.id).trim(), 'builtin', String(r.data.title || r.id).slice(0, 240), r.data.slot || null, normSeason(r.data.season), Date.now(), sfj(r.data)));
+    ).bind('global', recipeId, recipeSource, String(r.data.title || recipeId).slice(0, 240), r.data.slot || null, normSeason(r.data.season), Date.now(), sfj(r.data)));
   }
+  var deletedAt = Date.now();
+  deletedFoods.forEach(function(rawId){
+    var id = catalogId(rawId);
+    if(!validCatalogId(id)) return;
+    stmts.push(env.MESA_DB.prepare(
+      'UPDATE foods SET deleted_at=?,updated_at=? WHERE scope=? AND id=? AND deleted_at IS NULL'
+    ).bind(deletedAt, deletedAt, 'global', id));
+  });
+  deletedRecipes.forEach(function(rawId){
+    var id = catalogId(rawId);
+    if(!validCatalogId(id)) return;
+    stmts.push(env.MESA_DB.prepare(
+      'UPDATE recipes SET deleted_at=?,updated_at=? WHERE scope=? AND id=? AND deleted_at IS NULL'
+    ).bind(deletedAt, deletedAt, 'global', id));
+  });
   if(stmts.length > 0) await env.MESA_DB.batch(stmts);
-  return json({ok: true, foods: foods.length, recipes: recipes.length}, 200, origin);
+  return json({ok: true, foods: foods.length, recipes: recipes.length, deletedFoods: deletedFoods.length, deletedRecipes: deletedRecipes.length}, 200, origin);
 }
 
 // Single entry point sync.js routes every "/auth/*" pathname to.

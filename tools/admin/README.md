@@ -4,6 +4,13 @@ A small local page for the app owner to manage Mesa seats and invites. It is
 **not** part of the PWA — not under `app/`, not in the service worker's
 shell, never deployed anywhere. It only exists on your machine.
 
+The Recipes and Ingredients tabs are a live global-catalog editor. You can
+add a new row (give it a lowercase ID), edit it, or stage a removal; nothing
+changes for users until **Save changes to D1** is pressed. Ingredient removal
+is blocked while a catalog recipe still directly uses it, so replace/remove it
+from those recipes first. New recipes require at least one ingredient before
+they can be saved.
+
 ## Run it
 
 ```
@@ -43,6 +50,12 @@ uses:
   account row or their household's meal data — re-inviting the same email
   undoes it.
 - `POST /auth/logout` — best-effort on sign-out.
+
+Admin-created catalog rows use the global `custom` source so they are not
+removed by the normal code-seeding process. Recipes and ingredients are both
+loaded by the PWA from this catalog at launch; after deploying a change to the
+admin tool/Worker itself, deploy both the Worker and Pages shell before relying
+on the new controls.
 
 The session token is stored in this page's own `localStorage` under
 `mesaAdminAuth` (a different key than the app's `mesaAuth` — they're

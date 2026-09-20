@@ -760,9 +760,12 @@ function fetchBuiltinRecipeCatalogFromD1(){
     if(!res.ok) throw new Error('catalog http ' + res.status);
     return res.json();
   }).then(function(payload){
-    if(!payload || !Array.isArray(payload.recipes)) return false;
-    if(typeof replaceBuiltinRecipesFromCatalogRows !== 'function') return false;
-    return replaceBuiltinRecipesFromCatalogRows(payload.recipes);
+    if(!payload || (!Array.isArray(payload.recipes) && !Array.isArray(payload.foods))) return false;
+    const foodsUpdated = typeof replaceBuiltinFoodsFromCatalogRows === 'function' && Array.isArray(payload.foods)
+      ? replaceBuiltinFoodsFromCatalogRows(payload.foods) : false;
+    const recipesUpdated = typeof replaceBuiltinRecipesFromCatalogRows === 'function' && Array.isArray(payload.recipes)
+      ? replaceBuiltinRecipesFromCatalogRows(payload.recipes) : false;
+    return foodsUpdated || recipesUpdated;
   }).catch(function(err){
     console.warn('Mesa catalog: using bundled recipes fallback', err);
     return false;
