@@ -115,6 +115,36 @@ function normalizeRecipeRoleField(recipe){
 // DB below ~72 recipes and made DB deletes look like they "didn't take".)
 const CATALOG_REPLACE_MIN_ABSOLUTE = 10;
 
+// Foods travel with the same GLOBAL catalog payload as recipes. Keeping this separate from
+// replaceBuiltinRecipesFromCatalogRows means an admin-added ingredient is available to a recipe
+// immediately after app launch instead of existing only in the admin tool/D1.
+function replaceBuiltinFoodsFromCatalogRows(rows){
+  if(!Array.isArray(rows)) return false;
+  const nextFoods = {};
+  rows.forEach(function(row){
+    if(!row || row.deleted_at || row.deletedAt) return;
+    if(row.scope !== 'global' || (row.source !== 'builtin' && row.source !== 'custom')) return;
+    const id = String(row.id || '').trim();
+    const data = row.data;
+    if(!/^[a-z0-9][a-z0-9-]{0,119}$/.test(id) || !data || typeof data !== 'object' || Array.isArray(data)) return;
+    if(typeof data.name !== 'string' || !data.name.trim()) return;
+    const food = deepClone(data);
+    // A plain food needs a numeric macro surface (zero is legitimate, for example salt).
+    // A composite instead resolves its nutrition from components in engine.js, so it has no
+    // frozen macro fields and must remain valid here.
+    const macroKeys = ['kcal', 'protein', 'carbs', 'fat', 'satFat', 'fiber'];
+    const hasNumericMacros = !macroKeys.some(function(key){ return typeof food[key] !== 'number' || !isFinite(food[key]); });
+    const isComposite = Array.isArray(food.components) && food.components.length > 0;
+    if(!hasNumericMacros && !isComposite) return;
+    nextFoods[id] = food;
+  });
+  if(!Object.keys(nextFoods).length) return false;
+
+  Object.keys(BUILTIN_FOODS_DB).forEach(function(id){ delete BUILTIN_FOODS_DB[id]; delete FOODS[id]; });
+  Object.keys(nextFoods).forEach(function(id){ BUILTIN_FOODS_DB[id] = nextFoods[id]; });
+  return true;
+}
+
 function replaceBuiltinRecipesFromCatalogRows(rows){
   if(!Array.isArray(rows)) return false;
   const nextRecipes = {};
@@ -123,7 +153,7 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
   const rejectedIds = [];
   rows.forEach(function(row){
     if(!row || row.deleted_at || row.deletedAt) return;
-    if(row.scope !== 'global' || row.source !== 'builtin') return;
+    if(row.scope !== 'global' || (row.source !== 'builtin' && row.source !== 'custom')) return;
     const id = String(row.id || '').trim();
     const data = row.data;
     if(!id || !data || typeof data !== 'object' || Array.isArray(data)) return;
@@ -1325,7 +1355,8 @@ function componentCountLabel(components){
 function componentAmountLabel(foodId, grams){
   const food = FOODS[foodId];
   if(!food) return grams + 'g';
-  if(food.unit === 'piece') return fmtShopQty(grams / (food.avgG || 1), '');
+  // Same "count (weight)" shape every item-weight food gets elsewhere (piece or countable alike).
+  if(foodIsItemCountable(food)) return fmtIngCount(grams / Number(food.avgG)) + ' (' + Math.round(grams) + ' ' + foodCountSubUnit(food) + ')';
   return fmtShopQty(grams, food.unit);
 }
 
@@ -2551,11 +2582,13 @@ function renderPantryListMarkup(query){
     const food = FOODS[id];
     const entry = pantry[id];
     const remain = Math.max(0, remaining[id] || 0);
-    const isPiece = food.unit === 'piece';
-    const isCountable = !isPiece && food.countable && food.avgG > 0;
-    const unit = isPiece ? '' : food.unit;
-    const displayVal = isPiece ? +(remain.toFixed(2)) : Math.round(remain);
-    const countHint = isCountable ? '<span style="font-size:12px;color:var(--muted);margin-left:2px">≈' + fmtIngCount(remain / food.avgG) + '</span>' : '';
+    // Uniform across every item-weight food (eggs, avocado, courgette…): a weight is the editable
+    // primary and the item count is a "≈" hint, exactly like the countable gram foods — no more
+    // piece foods showing a bare count while the rest show grams (owner 2026-09-20).
+    const q = pantryQtyParts(food, remain);
+    const unit = q.unit;
+    const displayVal = q.val;
+    const countHint = q.hint ? '<span style="font-size:12px;color:var(--muted);margin-left:2px">≈' + q.hint + '</span>' : '';
     return '<div class="altrow" data-food-id="' + htmlAttr(id) + '" style="cursor:default">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(food.name) + '</div>'
@@ -2606,18 +2639,17 @@ function attachPantryListHandler(){
   };
 }
 
-// Pure ("no DOM") one-step decrease of a single food's pantry remaining — the app's
-// standard step (10g/ml per tap for gram/ml foods; whole pieces for unit:'piece' foods),
-// floored at 0 by setPantryRemaining itself. Extracted so the Pantry page's row decrease
-// button (decreasePantryItem below) and the shopping sheet's "Already home" row "need
-// more?" stepper (render-sheets.js:requestShopNeedMore — Defect C redesign's sanctioned
-// manual adjust) go through the EXACT same rule and the same setPantryRemaining mutator,
-// rather than two copies of the step logic drifting apart.
+// Pure ("no DOM") one-step decrease of a single food's pantry remaining — one tap removes one
+// ITEM for an item-weight food (1 piece, or avgG grams for a countable gram food) and 10 g/ml
+// otherwise, in the food's native stored basis. Floored at 0 by setPantryRemaining itself.
+// Extracted so the Pantry page's row decrease button (decreasePantryItem below) and the shopping
+// sheet's "Already home" row "need more?" stepper (render-sheets.js:requestShopNeedMore) go
+// through the EXACT same rule and the same setPantryRemaining mutator.
 function stepPantryRemainingDown(foodId){
   const food = FOODS[foodId];
   if(!food) return;
   const current = pantryRemaining()[foodId] || 0;
-  const step = food.unit === 'piece' ? 1 : (food.countable && food.avgG > 0) ? food.avgG : 10;
+  const step = food.unit === 'piece' ? 1 : (foodIsItemCountable(food) ? Number(food.avgG) : 10);
   setPantryRemaining(foodId, current - step);
 }
 
@@ -2641,7 +2673,9 @@ function removePantryItem(foodId){
 // Typed "set-exact" correction — the row's qty input doubles as both the at-a-glance
 // number and the direct-edit field (FIX 2's typeable-everywhere convention). Invalid/empty
 // text reverts to the real stored value with a toast, same convention as
-// commitRecipeIngredientGrams.
+// commitRecipeIngredientGrams. The input is shown in the SAME basis pantryQtyParts renders —
+// grams for an item-weight food — so it is converted back to the food's native stored basis
+// (pieces for a piece food) before setPantryRemaining, which stores native.
 function commitPantryQtyInput(foodId, raw){
   const food = FOODS[foodId];
   if(!food) return;
@@ -2651,7 +2685,7 @@ function commitPantryQtyInput(foodId, raw){
     refreshPantryList();
     return;
   }
-  setPantryRemaining(foodId, n);
+  setPantryRemaining(foodId, foodIsItemCountable(food) ? foodGramsToNative(food, n) : n);
   refreshPantryList();
 }
 
@@ -2682,13 +2716,24 @@ function openPantryAddSheet(){
   if(input) input.focus();
 }
 
-// Formats a pantry amount in a food's own basis. fmtShopQty (planner.js) ALREADY appends
-// the unit ("100 g"), so the three call sites that also appended `' ' + food.unit` rendered
-// "100 g g" — visible in the add toast, the "Already have …" note and the picker's in-stock
-// pill. One helper so a fourth call site can't reintroduce it. Piece foods pass '' to
-// fmtShopQty and get a bare count ("2"), which reads correctly next to the food name.
+// The ONE decision for how a stored pantry amount (nativeQty — pieces for a unit:'piece' food,
+// grams/ml otherwise) is shown. An item-weight food (eggs, avocado, courgette…) reads its WEIGHT
+// as the primary editable number with the item count as a "≈" hint; everything else shows its
+// plain native amount. Returns {val, unit, hint} so the row can lay the parts out and the pill
+// helper below can string them together — one definition, so the list and the "in stock"/"already
+// have" pills can never drift apart again.
+function pantryQtyParts(food, nativeQty){
+  if(foodIsItemCountable(food)){
+    const grams = foodNativeToGrams(food, nativeQty);
+    return {val: Math.round(grams), unit: foodCountSubUnit(food), hint: fmtIngCount(grams / Number(food.avgG))};
+  }
+  return {val: Math.round(nativeQty), unit: (food.unit === 'piece' ? '' : food.unit), hint: ''};
+}
+
+// String form for inline pills ("Already have 100 g ≈2", "2 in stock"). Same parts as the list row.
 function fmtPantryQty(qty, food){
-  return fmtShopQty(qty, food.unit === 'piece' ? '' : food.unit);
+  const p = pantryQtyParts(food, qty);
+  return p.val + (p.unit ? ' ' + p.unit : '') + (p.hint ? ' ≈' + p.hint : '');
 }
 
 // Jumps straight to the quantity step for ONE known food, skipping openPantryAddSheet's

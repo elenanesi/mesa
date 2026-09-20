@@ -312,8 +312,9 @@ function recipeDisplayIngredients(recipeId, opts, subs){
     const foodId = ing[0], grams = +(ing[1] / batchYield).toFixed(1);
     const food = FOODS[foodId];
     if(!food){ console.error('recipeDisplayIngredients: "' + recipeId + '" ingredient food id "' + foodId + '" not found in FOODS'); return [foodId, grams, 'g']; }
-    if(food.unit === 'piece') return [food.name, +(grams / food.avgG).toFixed(2), ''];
-    if(food.countable && food.avgG > 0) return [food.name, grams, food.unit, {countable: true, avgG: food.avgG}];
+    // Uniform row shape for EVERY item-countable food (piece or countable-gram): the value is
+    // always GRAMS and the item meta carries avgG + the sub-unit, so downstream renders one stack.
+    if(foodIsItemCountable(food)) return [food.name, grams, foodCountSubUnit(food), {item: true, avgG: Number(food.avgG)}];
     return [food.name, grams, food.unit];
   });
   (src.toTaste || []).forEach(function(t){ ingredients.push([capitalizeFirst(t), null, 'to taste']); });
@@ -350,8 +351,7 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, ma
       const food = FOODS[ex.foodId];
       if(!food) return;
       const grams = (typeof ex.grams === 'number' ? ex.grams : 0) * sideFactor;
-      if(food.unit === 'piece') all.push([food.name, +(grams / food.avgG).toFixed(2), '']);
-      else if(food.countable && food.avgG > 0) all.push([food.name, +grams.toFixed(1), food.unit, {countable: true, avgG: food.avgG}]);
+      if(foodIsItemCountable(food)) all.push([food.name, +grams.toFixed(1), foodCountSubUnit(food), {item: true, avgG: Number(food.avgG)}]);
       else all.push([food.name, +grams.toFixed(1), food.unit]);
     }
   });
@@ -379,6 +379,15 @@ function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, ma
 function fmtIngCount(n){
   const r = Math.round(n * 10) / 10;
   return Number.isInteger(r) ? String(r) : r.toFixed(1);
+}
+
+// The count-primary / weight-sub two-line cell EVERY recipe ingredient surface uses for an
+// item-countable food (foodIsItemCountable). `grams` is the already-scaled weight for the shown
+// portion; `avgG` and `unit` come from the food (foodCountSubUnit). One definition so eggs (a
+// piece food) and bananas (a countable gram food) render identically instead of drifting apart.
+function itemCountStackHtml(grams, avgG, unit){
+  return '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / avgG)
+    + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' ' + escapeHtml(String(unit)) + '</span></span>';
 }
 
 // The tappable ingredient list for a substitutable meal. Each row maps 1:1 to a base effective
@@ -425,10 +434,8 @@ function substitutableIngredientListHtml(recipeId, opts, subs, ingScale, extras,
     const amountPill = (s && typeof s.grams === 'number' && !(s.to && s.to !== fromId)) ? ' <span class="today-only-pill">today only</span>' : '';
     const pill = (shownId !== fromId) ? ' <span class="today-only-pill">today only</span>' : amountPill;
     let qtyHtml;
-    if(food && food.unit === 'piece' && food.avgG > 0){
-      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount((perServ / food.avgG) * scale) + '</span><span class="ing-qty-sub">' + Math.round(perServ * scale) + ' g</span></span>';
-    } else if(food && food.countable && food.avgG > 0){
-      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount((perServ * scale) / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(perServ * scale) + ' ' + escapeHtml(String(food.unit)) + '</span></span>';
+    if(foodIsItemCountable(food)){
+      qtyHtml = itemCountStackHtml(perServ * scale, Number(food.avgG), foodCountSubUnit(food));
     } else {
       qtyHtml = '<span class="ing-qty-main">' + (+(perServ * scale).toFixed(1)) + ' ' + escapeHtml(String(food ? food.unit : 'g')) + '</span>';
     }
@@ -469,8 +476,8 @@ function sideIngredientRowsHtml(ex, ingScale, total){
       if(ing[1] === null) return row(escapeHtml(String(ing[0])), 'to taste');
       var scaled = +(ing[1] * p * sideFactor).toFixed(1);
       var meta = ing[3];
-      if(meta && meta.countable && meta.avgG > 0){
-        return row(escapeHtml(String(ing[0])), '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(scaled / meta.avgG) + '</span><span class="ing-qty-sub">' + Math.round(scaled) + ' ' + escapeHtml(String(ing[2])) + '</span></span>');
+      if(meta && meta.item && meta.avgG > 0){
+        return row(escapeHtml(String(ing[0])), itemCountStackHtml(scaled, meta.avgG, ing[2]));
       }
       return row(escapeHtml(String(ing[0])), scaled + ' ' + escapeHtml(String(ing[2])));
     }).join('');
@@ -478,14 +485,9 @@ function sideIngredientRowsHtml(ex, ingScale, total){
   if(ex && ex.foodId && FOODS[ex.foodId]){
     const food = FOODS[ex.foodId];
     const grams = (typeof ex.grams === 'number' ? ex.grams : 0) * sideFactor;
-    var qtyHtml;
-    if(food.unit === 'piece' && food.avgG > 0){
-      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' g</span></span>';
-    } else if(food.countable && food.avgG > 0){
-      qtyHtml = '<span class="ing-qty-stack"><span class="ing-qty-main">' + fmtIngCount(grams / food.avgG) + '</span><span class="ing-qty-sub">' + Math.round(grams) + ' ' + escapeHtml(String(food.unit)) + '</span></span>';
-    } else {
-      qtyHtml = '<span class="ing-qty-main">' + (+grams.toFixed(1)) + ' ' + escapeHtml(String(food.unit)) + '</span>';
-    }
+    var qtyHtml = foodIsItemCountable(food)
+      ? itemCountStackHtml(grams, Number(food.avgG), foodCountSubUnit(food))
+      : '<span class="ing-qty-main">' + (+grams.toFixed(1)) + ' ' + escapeHtml(String(food.unit)) + '</span>';
     return row(escapeHtml(food.name), qtyHtml);
   }
   return '';
@@ -545,10 +547,10 @@ function currentIngredientState(fromFoodId){
 function amountStepperHtml(st){
   if(!st || !st.shownFood) return '';
   const perServG = st.batchGrams / st.batchYield;
-  const isPiece = st.shownFood.unit === 'piece' && st.shownFood.avgG > 0;
-  const stepPerServG = isPiece ? st.shownFood.avgG : 5;
-  const display = isPiece
-    ? fmtIngCount(perServG / st.shownFood.avgG) + ' · ' + Math.round(perServG) + ' g'
+  const item = foodIsItemCountable(st.shownFood);
+  const stepPerServG = item ? Number(st.shownFood.avgG) : 5;
+  const display = item
+    ? fmtIngCount(perServG / Number(st.shownFood.avgG)) + ' · ' + Math.round(perServG) + ' ' + escapeHtml(foodCountSubUnit(st.shownFood))
     : Math.round(perServG) + ' ' + escapeHtml(String(st.shownFood.unit || 'g'));
   return '<div class="ing-amount-row"><span class="ing-amount-label">Amount today</span>'
     + '<span class="ing-amount-ctrl">'
@@ -1749,8 +1751,8 @@ function updateServings(){
       const name = escapeHtml(ing[0]), qty = ing[1], unit = escapeHtml(String(ing[2]));
       if(qty === null) return '<li><span>'+name+'</span><span>'+unit+'</span></li>';
       var meta = ing[3];
-      if(meta && meta.countable && meta.avgG > 0){
-        return '<li><span>'+name+'</span><span class="ing-qty-stack"><span class="ing-qty-main">'+fmtIngCount(qty / meta.avgG)+'</span><span class="ing-qty-sub">'+Math.round(qty)+' '+unit+'</span></span></li>';
+      if(meta && meta.item && meta.avgG > 0){
+        return '<li><span>'+name+'</span>'+itemCountStackHtml(qty, meta.avgG, ing[2])+'</li>';
       }
       return '<li><span>'+name+'</span><span>'+qty+' '+unit+'</span></li>';
     }).join('');

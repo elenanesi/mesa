@@ -4073,6 +4073,41 @@ function addFoodQty(out, foodId, grams, seen, depth){
   out[foodId] = (food.unit === 'piece') ? (out[foodId] || 0) + grams / food.avgG : (out[foodId] || 0) + grams;
 }
 
+/* ---------------- item-countable foods: ONE decision, used everywhere ----------------
+   A food is shown as a COUNT of items (2 eggs, 1.5 avocados) rather than a bare weight when it
+   has a per-item weight (avgG) AND is either a native piece food (unit:'piece') or a gram food
+   flagged `countable` (avocado, banana, courgette…). Historically piece foods and countable
+   foods had SEPARATE display branches at every surface (recipe lists, pantry, shopping) and they
+   drifted — a piece food showed a bare count with no grams here, a count+grams there; a countable
+   food showed grams+count somewhere else (owner 2026-09-20: "not uniform across foods that have
+   item weight defined"). These four helpers are the single source of truth so every surface makes
+   the same decision and renders the same shape.
+
+   Two quantity bases exist and must not be confused:
+     - RECIPE ingredient amounts are always GRAMS (recipes store grams regardless of unit).
+     - PANTRY / SHOPPING quantities are in the food's NATIVE basis — pieces for a unit:'piece'
+       food (foodQuantitiesForComponents/addFoodQty above divides by avgG), grams otherwise.
+   foodNativeToGrams / foodGramsToNative convert between them; they are the ONLY place that
+   piece↔gram arithmetic lives. */
+function foodIsItemCountable(food){
+  return !!(food && Number(food.avgG) > 0 && (food.unit === 'piece' || food.countable));
+}
+// The gram/ml label shown beneath an item count. A piece food carries no stored weight unit, so
+// its secondary line reads grams; a countable gram/ml food keeps its own unit.
+function foodCountSubUnit(food){
+  return (food && food.unit === 'piece') ? 'g' : ((food && food.unit) || 'g');
+}
+// Grams for a quantity held in the food's NATIVE pantry/shopping basis (pieces for unit:'piece',
+// grams/ml otherwise).
+function foodNativeToGrams(food, nativeQty){
+  return (food && food.unit === 'piece' && Number(food.avgG) > 0) ? nativeQty * Number(food.avgG) : nativeQty;
+}
+// Inverse: the native basis for a gram amount — used when a pantry edit typed in grams is written
+// back through setPantryRemaining, which stores the native basis.
+function foodGramsToNative(food, grams){
+  return (food && food.unit === 'piece' && Number(food.avgG) > 0) ? grams / Number(food.avgG) : grams;
+}
+
 // This is a PURE REFACTOR of the old addRecipe/addFood bodies (tools/check.js's
 // decomposition-parity test is the contract) — preserves batch-yield (r.servings),
 // optionGroups resolution via recipeEffectiveIngredients(r, opts), and the exact
@@ -4240,7 +4275,10 @@ function computeShoppingList(weekStartDate){
     const food = FOODS[foodId];
     if(!food) return;
     const name = food.name;
-    if(!totals[name]) totals[name] = {qty: 0, unit: food.unit === 'piece' ? '' : food.unit, foodIds: [], countable: !!(food.countable && food.avgG > 0), avgG: food.avgG || 0};
+    // `qty` is native (pieces for a piece food, grams/ml otherwise — foodQuantitiesForComponents);
+    // `unit` is always the gram/ml label to show (piece foods read 'g'), and `item`/`piece`/`avgG`
+    // let fmtShopQty render every item-weight food as one uniform "count (weight)" (owner 2026-09-20).
+    if(!totals[name]) totals[name] = {qty: 0, unit: foodCountSubUnit(food), foodIds: [], item: foodIsItemCountable(food), piece: food.unit === 'piece', avgG: Number(food.avgG) || 0};
     totals[name].qty += qtyByFood[foodId];
     if(totals[name].foodIds.indexOf(foodId) === -1) totals[name].foodIds.push(foodId);
   });
@@ -4268,10 +4306,10 @@ function computeShoppingList(weekStartDate){
     row.foodIds.forEach(function(foodId){ have += availableByFood[foodId] || 0; });
     if(have <= 1e-9) return;
     if(have >= row.qty - 1e-9){
-      alreadyHome.push({foodId: row.foodIds[0], foodIds: row.foodIds.slice(), name: name, have: have, unit: row.unit, countable: row.countable, avgG: row.avgG});
+      alreadyHome.push({foodId: row.foodIds[0], foodIds: row.foodIds.slice(), name: name, have: have, unit: row.unit, item: row.item, piece: row.piece, avgG: row.avgG});
       delete totals[name];
     } else {
-      covered[name] = {have: have, unit: row.unit, countable: row.countable, avgG: row.avgG};
+      covered[name] = {have: have, unit: row.unit, item: row.item, piece: row.piece, avgG: row.avgG};
       row.qty -= have;
     }
   });
@@ -4279,16 +4317,18 @@ function computeShoppingList(weekStartDate){
   return {totals: totals, staples: staples, weekStartDate: plan.weekStartDate, covered: covered, alreadyHome: alreadyHome};
 }
 
-// Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs),
-// and ≥1000 g/ml promoted to kg/L for readability. Countable foods
-// (avocados, lemons, etc.) show as item count with grams in parentheses.
+// Whole grams/ml, whole items rounded up (you can't buy 31.5 eggs), and ≥1000 g/ml promoted to
+// kg/L for readability. EVERY item-weight food — a piece food (eggs) or a countable gram food
+// (avocado, lemon) alike — shows the same "count (weight)" shape (owner 2026-09-20: eggs used to
+// show a bare count while the rest showed count+grams). `qty` is native, so a piece row's count is
+// its stored pieces and its weight is qty×avgG; a countable row's qty is already grams. `row.unit`
+// is the gram/ml label for the parenthetical.
 function fmtShopQty(qty, unit, row){
-  if(unit === '') return '' + Math.ceil(qty);
-  if(row && row.countable && row.avgG > 0){
-    const count = Math.ceil(qty / row.avgG);
-    const g = Math.round(qty);
-    return count + ' (' + g + ' ' + unit + ')';
+  if(row && row.item && row.avgG > 0){
+    const grams = row.piece ? qty * row.avgG : qty;
+    return Math.ceil(grams / row.avgG) + ' (' + Math.round(grams) + ' ' + unit + ')';
   }
+  if(unit === '') return '' + Math.ceil(qty); // safety: a legacy piece row with no item flag
   const g = Math.round(qty);
   if(g >= 1000) return (Math.round(g / 10) / 100) + (unit === 'ml' ? ' L' : ' kg');
   return g + ' ' + unit;

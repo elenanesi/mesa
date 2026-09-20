@@ -653,10 +653,12 @@ function testAddToPantryOnIngredientCards(ctx){
   // note and the picker's in-stock pill, and was only caught by looking at the screen.
   // fmtPantryQty is the single formatter; assert both that it is correct and that no call
   // site re-appends the unit around it.
-  assert(call(ctx, 'fmtPantryQty', [100, get(ctx, "FOODS['apples']")]) === '100 g',
-    'fmtPantryQty: a gram food formats once, not "100 g g"', call(ctx, 'fmtPantryQty', [100, get(ctx, "FOODS['apples']")]));
-  assert(call(ctx, 'fmtPantryQty', [2, get(ctx, "FOODS['eggs']")]) === '2',
-    'fmtPantryQty: a piece food formats as a bare count', call(ctx, 'fmtPantryQty', [2, get(ctx, "FOODS['eggs']")]));
+  // Uniform "weight ≈count" for every item-weight food: a countable gram food (apples, avgG 182)
+  // and a piece food (eggs, avgG 50, native qty in PIECES → 2 pieces = 100 g) format the SAME way.
+  assert(call(ctx, 'fmtPantryQty', [100, get(ctx, "FOODS['apples']")]) === '100 g ≈0.5',
+    'fmtPantryQty: a countable gram food shows weight + item hint', call(ctx, 'fmtPantryQty', [100, get(ctx, "FOODS['apples']")]));
+  assert(call(ctx, 'fmtPantryQty', [2, get(ctx, "FOODS['eggs']")]) === '100 g ≈2',
+    'fmtPantryQty: a piece food shows weight + item hint (native pieces→grams), like every other item food', call(ctx, 'fmtPantryQty', [2, get(ctx, "FOODS['eggs']")]));
   assert(!/fmtPantryQty\([^)]*\)\s*\+\s*\(?[a-z]*\.?unit/.test(listSrc),
     'no pantry call site re-appends the unit around fmtPantryQty (the "100 g g" bug)');
 }
@@ -1591,8 +1593,8 @@ const EXPECTED_RECIPE_DISPLAY = {
     protein: 25,
     tags: [['terra', 'High protein'], ['berry', 'Thyroid-friendly']],
     ingredients: [
-      ['Eggs, whole', 3, ''],
-      ['Bell pepper, red, raw', 50, 'g', {countable: true, avgG: 119}],
+      ['Eggs, whole', 150, 'g', {item: true, avgG: 50}],
+      ['Bell pepper, red, raw', 50, 'g', {item: true, avgG: 119}],
       ['Spinach, baby leaf, raw', 30, 'g'],
       ['Rye bread', 60, 'g'],
       ['Olive oil, extra virgin', 5, 'ml'],
@@ -1616,7 +1618,7 @@ const EXPECTED_RECIPE_DISPLAY = {
       ['Chicken breast, grilled, skinless', 130, 'g'],
       ['Couscous, dry', 80, 'g'],
       ['Cherry tomatoes, raw', 80, 'g'],
-      ['Cucumber, raw, with peel', 60, 'g', {countable: true, avgG: 300}],
+      ['Cucumber, raw, with peel', 60, 'g', {item: true, avgG: 300}],
       ['Olive oil, extra virgin', 5, 'ml'],
       ['Lemon', null, 'to taste'],
       ['Herbs', null, 'to taste']
@@ -1903,6 +1905,40 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
     assert(Object.keys(db).length === bundledIds.length,
       'replaceBuiltinRecipesFromCatalogRows: an all-invalid payload leaves BUILTIN_RECIPES_DB untouched',
       Object.keys(db).length + ' vs ' + bundledIds.length);
+  } finally {
+    restore();
+  }
+}
+
+// The admin catalog can now add ingredients as well as recipes. Verify that GLOBAL food
+// rows replace the app's bundled fallback, including component-derived foods (which correctly
+// have no frozen macros) and a custom-source row created by the admin tool.
+function testReplaceBuiltinFoodsFromCatalogRows(ctx){
+  const builtinSnapshot = cloneJSON(get(ctx, 'BUILTIN_FOODS_DB'));
+  const foodsSnapshot = cloneJSON(get(ctx, 'FOODS'));
+  function restore(){
+    ctx.__restoreBuiltinFoods__ = builtinSnapshot;
+    ctx.__restoreFoods__ = foodsSnapshot;
+    run(ctx,
+      "Object.keys(BUILTIN_FOODS_DB).forEach(function(id){ delete BUILTIN_FOODS_DB[id]; });" +
+      "Object.keys(__restoreBuiltinFoods__).forEach(function(id){ BUILTIN_FOODS_DB[id] = __restoreBuiltinFoods__[id]; });" +
+      "Object.keys(FOODS).forEach(function(id){ delete FOODS[id]; });" +
+      "Object.keys(__restoreFoods__).forEach(function(id){ FOODS[id] = __restoreFoods__[id]; });" +
+      "delete __restoreBuiltinFoods__; delete __restoreFoods__;"
+    );
+  }
+  try{
+    const ids = Object.keys(builtinSnapshot);
+    const rows = ids.map(function(id){ return {id: id, scope: 'global', source: 'builtin', data: builtinSnapshot[id]}; });
+    const compositeId = ids.find(function(id){ return Array.isArray(builtinSnapshot[id].components) && builtinSnapshot[id].components.length; });
+    const adminFood = {name: 'Admin test ingredient', per: 100, unit: 'g', kcal: 10, protein: 1, carbs: 1, fat: 0, satFat: 0, fiber: 1, flags: [], cat: 'Produce', season: 'evergreen'};
+    rows.push({id: 'admin-test-ingredient', scope: 'global', source: 'custom', data: adminFood});
+    const result = call(ctx, 'replaceBuiltinFoodsFromCatalogRows', [rows]);
+    const installed = get(ctx, 'BUILTIN_FOODS_DB');
+    assert(result === true && !!installed['admin-test-ingredient'],
+      'replaceBuiltinFoodsFromCatalogRows: installs a GLOBAL custom ingredient from the admin catalog', JSON.stringify(result));
+    assert(!compositeId || !!installed[compositeId],
+      'replaceBuiltinFoodsFromCatalogRows: keeps component-derived foods that have no frozen macro fields', compositeId || 'no composite fixture');
   } finally {
     restore();
   }
@@ -10351,7 +10387,7 @@ function testShoppingListDecompositionParity(ctx){
       '    var food = FOODS[foodId];',
       '    if(!food) return;',
       '    var name = food.name;',
-      '    if(!rebuilt[name]) rebuilt[name] = {qty: 0, unit: food.unit === "piece" ? "" : food.unit, foodIds: [], countable: !!(food.countable && food.avgG > 0), avgG: food.avgG || 0};',
+      '    if(!rebuilt[name]) rebuilt[name] = {qty: 0, unit: foodCountSubUnit(food), foodIds: [], item: foodIsItemCountable(food), piece: food.unit === "piece", avgG: Number(food.avgG) || 0};',
       '    rebuilt[name].qty += qtyByFood[foodId];',
       '    if(rebuilt[name].foodIds.indexOf(foodId) === -1) rebuilt[name].foodIds.push(foodId);',
       '  });',
@@ -10445,7 +10481,7 @@ function testHouseholdSizeSoloMode(ctx){
       '    var food = FOODS[foodId];',
       '    if(!food) return;',
       '    var name = food.name;',
-      '    if(!rebuilt[name]) rebuilt[name] = {qty: 0, unit: food.unit === "piece" ? "" : food.unit, foodIds: [], countable: !!(food.countable && food.avgG > 0), avgG: food.avgG || 0};',
+      '    if(!rebuilt[name]) rebuilt[name] = {qty: 0, unit: foodCountSubUnit(food), foodIds: [], item: foodIsItemCountable(food), piece: food.unit === "piece", avgG: Number(food.avgG) || 0};',
       '    rebuilt[name].qty += qtyByFood[foodId];',
       '    if(rebuilt[name].foodIds.indexOf(foodId) === -1) rebuilt[name].foodIds.push(foodId);',
       '  });',
@@ -14953,6 +14989,7 @@ function main(){
   runTest('recipe image helpers (task B)', function(){ testRecipeImageHelpers(ctx); });
   runTest('recipe catalog cleanup', function(){ testRecipeCatalogCleanup(ctx); });
   runTest('replaceBuiltinRecipesFromCatalogRows: D1 catalog sanity floor + validation', function(){ testReplaceBuiltinRecipesFromCatalogRows(ctx); });
+  runTest('replaceBuiltinFoodsFromCatalogRows: GLOBAL ingredient catalog', function(){ testReplaceBuiltinFoodsFromCatalogRows(ctx); });
   runTest('recipe image picker', function(){ testRecipeImagePicker(ctx); });
   runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
