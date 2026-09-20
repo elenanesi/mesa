@@ -947,6 +947,7 @@ const RECIPES_DB = {
   },
   'roasted-potatoes': {
     title: 'Roasted potatoes', emoji: '🥔', slot: 'side', role: 'side',
+    imageKey: 'roasted-potatoes',
     slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 35,
     ingredients: [['potatoes', 220], ['olive-oil', 10]],
     toTaste: ['rosemary', 'salt', 'black pepper'],
@@ -966,7 +967,7 @@ const RECIPES_DB = {
   },
   'steamed-rice': {
     title: 'Steamed rice', emoji: '🍚', slot: 'side', role: 'side',
-    imageKey: 'onigiri',
+    imageUri: 'assets/ingredients/rice.png',
     slots: ['side', 'lunch', 'dinner'], styles: ['balanced', 'highprotein'], time: 18,
     ingredients: [['rice', 60], ['olive-oil', 3]],
     toTaste: ['salt'],
@@ -984,6 +985,7 @@ const RECIPES_DB = {
   },
   'steamed-green-beans': {
     title: 'Steamed green beans', emoji: '🫛', slot: 'side', role: 'side',
+    imageUri: 'assets/ingredients/green-beans.png',
     slots: ['side', 'lunch', 'dinner'], season: 'spring/summer', styles: ['lowcarb', 'balanced'], time: 12,
     ingredients: [['green-beans', 200], ['olive-oil', 8]],
     toTaste: ['lemon', 'salt', 'black pepper'],
@@ -2229,6 +2231,7 @@ const RECIPES_DB = {
   },
   'sweet-potato-gnocchi-sage': {
     title: 'Sweet-potato gnocchi, sage butter', emoji: '🍠', slot: 'dinner', role: 'full',
+    imageKey: 'gnocchi',
     season: 'winter/autumn', styles: ['balanced'], time: 40,
     ingredients: [['sweet-potato', 180], ['potatoes', 130], ['00-flour', 80], ['eggs', 20], ['butter', 16], ['parmesan', 18]],
     toTaste: ['sage', 'garlic', 'nutmeg', 'black pepper', 'salt'],
@@ -2349,7 +2352,7 @@ const RECIPES_DB = {
   },
   'pumpkin-gnocchi-2ing': {
     title: 'Two-ingredient pumpkin gnocchi', emoji: '🎃', slot: 'dinner', role: 'full',
-    imageKey: 'pasta',
+    imageKey: 'gnocchi',
     season: 'winter/autumn', styles: ['balanced'], time: 40,
     ingredients: [['pumpkin', 250], ['00-flour', 98], ['olive-oil', 8], ['parmesan', 15]],
     toTaste: ['sage', 'nutmeg', 'black pepper', 'salt'],

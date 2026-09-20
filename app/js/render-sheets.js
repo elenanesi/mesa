@@ -323,6 +323,19 @@ function buildRebalanceSheet(){
   // optimising the WEEKLY coverage with the rest held fixed.
   const onlyDays = (typeof weekScopeDayIndices === 'function') ? weekScopeDayIndices() : null;
   rebalanceProposal = proposeRebalanceSuggestions(weekStartDate, onlyDays);
+  // At the tail of the current week, all earlier meals are intentionally locked and
+  // one remaining day often has no calorie-safe improvement. Rather than present a
+  // seemingly broken Re-balance button, offer useful next-week suggestions automatically.
+  // We only do this when the current calendar week has one selectable day left; earlier
+  // in the week the visible-week contract remains exact.
+  const selectableCount = typeof weekScopeSelectableDays === 'function' ? weekScopeSelectableDays().length : 7;
+  if(!weekScreenShowsNext && !rebalanceProposal.suggestions.length && selectableCount <= 1){
+    const nextProposal = proposeRebalanceSuggestions(nextMondayISO(), null);
+    if(nextProposal.suggestions.length){
+      nextProposal.autoAdvancedFromCurrentWeek = true;
+      rebalanceProposal = nextProposal;
+    }
+  }
   return renderRebalanceSheet();
 }
 
@@ -336,6 +349,9 @@ function renderRebalanceSheet(){
   const spread = mode === 'spread';
   const acceptedPlan = rebalanceAcceptedPlan(rebalanceProposal);
   let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  if(rebalanceProposal.autoAdvancedFromCurrentWeek){
+    html += '<p class="sub">This week has only locked or completed meals left, so these are gentle options for next week instead.</p>';
+  }
   // Day-scope picker — shared with Regenerate. Lets the user even out only some days while the
   // rest are held fixed (still optimising the weekly targets). Whole week by default.
   if(typeof weekScopeChipsHtml === 'function') html += '<div id="rebalanceScope">' + weekScopeChipsHtml('Re-balance') + '</div>';

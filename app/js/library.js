@@ -43,6 +43,11 @@ const BUILTIN_RECIPE_COUNT = Object.keys(RECIPES_DB).length;
 const BUILTIN_FOODS_DB = deepClone(FOODS);
 const BUILTIN_RECIPES_DB = deepClone(RECIPES_DB);
 const BUILTIN_RECIPE_SLOT_DB = deepClone(RECIPE_SLOT_DB);
+// Recipes created in the owner-managed GLOBAL catalog are part of Mesa's shared
+// defaults. Unlike household-created recipes, they must not be hidden merely
+// because an older device's personal Recipe Market book was initialised before
+// the recipe existed.
+const GLOBAL_CATALOG_CUSTOM_RECIPE_IDS = {};
 // Removed bundled recipes may still exist in an older device's saved override or a
 // stale remote catalog. Keep them out of the live library rather than resurrecting a
 // default the household explicitly removed; custom recipes use their own `cr-` ids.
@@ -135,11 +140,19 @@ function replaceBuiltinFoodsFromCatalogRows(rows){
     // kcal is always derived from protein/carbs/fat (the Mesa-wide 4/4/9 policy),
     // rather than trusted as an independently typed value. This also repairs older
     // admin-created ingredients that were saved with their initial kcal: 0.
-    const macroKeys = ['protein', 'carbs', 'fat', 'satFat', 'fiber'];
+    const macroKeys = ['protein', 'carbs', 'fat'];
     const hasNumericMacros = !macroKeys.some(function(key){ return typeof food[key] !== 'number' || !isFinite(food[key]); });
     const isComposite = Array.isArray(food.components) && food.components.length > 0;
     if(!hasNumericMacros && !isComposite) return;
-    if(!isComposite) food.kcal = Math.round(4 * food.protein + 4 * food.carbs + 9 * food.fat);
+    if(!isComposite){
+      // Secondary nutrition fields are optional when an ingredient is authored in
+      // the admin tool; engine.js treats them as zero too. Normalise them here so
+      // a blank sat-fat or fibre field cannot make the whole D1 food disappear.
+      ['satFat', 'fiber', 'sugars', 'freeSugars'].forEach(function(key){
+        if(typeof food[key] !== 'number' || !isFinite(food[key])) food[key] = 0;
+      });
+      food.kcal = Math.round(4 * food.protein + 4 * food.carbs + 9 * food.fat);
+    }
     nextFoods[id] = food;
   });
   if(!Object.keys(nextFoods).length) return false;
@@ -153,6 +166,7 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
   if(!Array.isArray(rows)) return false;
   const nextRecipes = {};
   const nextSlots = {};
+  const nextGlobalCustomRecipeIds = {};
   let rejectedCount = 0;
   const rejectedIds = [];
   rows.forEach(function(row){
@@ -180,6 +194,7 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
     }
     nextRecipes[id] = recipe;
     nextSlots[id] = recipe.slot;
+    if(row.source === 'custom') nextGlobalCustomRecipeIds[id] = true;
   });
   const acceptedCount = Object.keys(nextRecipes).length;
   if(!acceptedCount) return false;
@@ -203,10 +218,12 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
 
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){ delete BUILTIN_RECIPES_DB[id]; });
   Object.keys(BUILTIN_RECIPE_SLOT_DB).forEach(function(id){ delete BUILTIN_RECIPE_SLOT_DB[id]; });
+  Object.keys(GLOBAL_CATALOG_CUSTOM_RECIPE_IDS).forEach(function(id){ delete GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id]; });
   Object.keys(nextRecipes).forEach(function(id){
     BUILTIN_RECIPES_DB[id] = nextRecipes[id];
     BUILTIN_RECIPE_SLOT_DB[id] = nextSlots[id];
   });
+  Object.keys(nextGlobalCustomRecipeIds).forEach(function(id){ GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id] = true; });
   return true;
 }
 
@@ -220,7 +237,7 @@ function applyCustomRecipes(){
   const bookActive = recipeBookInit > 0;
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
     if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
-    if(bookActive && !recipeBook[id]) return;
+    if(bookActive && !recipeBook[id] && !GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id]) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
     RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(src));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
