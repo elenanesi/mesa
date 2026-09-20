@@ -3460,17 +3460,23 @@ function addRecipeToBook(id){
 // The link is `forkedFrom` (stamped on new forks + the legacy override->fork migration); we also
 // honour the migration's deterministic `cr-fork-<id>` id so forks made before `forkedFrom` existed
 // still light up. A fork counts only while it's actually in the book (not hard-deleted).
-function builtinHasForkInBook(builtinId){
-  if(!builtinId || builtinId.indexOf('cr-') === 0) return false;
+// The id of the edited fork of `builtinId` currently in the book, or null. builtinHasForkInBook
+// is the boolean shorthand. Both the Market tag/label and the recipe-detail "Restore original"
+// action read this, so a fork is found the same way everywhere.
+function forkInBookFor(builtinId){
+  if(!builtinId || builtinId.indexOf('cr-') === 0) return null;
   const legacyForkId = 'cr-fork-' + builtinId;
-  if(customRecipes[legacyForkId] && recipeInBook(legacyForkId)) return true;
+  if(customRecipes[legacyForkId] && recipeInBook(legacyForkId)) return legacyForkId;
   const ids = Object.keys(customRecipes);
   for(let i = 0; i < ids.length; i++){
     const cid = ids[i];
     const c = customRecipes[cid];
-    if(c && c.forkedFrom === builtinId && recipeInBook(cid)) return true;
+    if(c && c.forkedFrom === builtinId && recipeInBook(cid)) return cid;
   }
-  return false;
+  return null;
+}
+function builtinHasForkInBook(builtinId){
+  return !!forkInBookFor(builtinId);
 }
 
 // Remove a BUILT-IN from the book — the calm, reversible counterpart to deleteRecipe. NOT a
@@ -4139,6 +4145,21 @@ function restoreRecipeBuilderFork(){
   restoreForkToOriginal(id);
   recipeBuilder = null;
   openMyRecipes();
+}
+
+// "Restore original" from the recipe DETAIL screen — invoked both when viewing a fork (its own
+// detail) and when viewing the pristine built-in of a fork you hold. Captures the original id
+// BEFORE the fork is deleted, then re-renders the detail on the now-restored built-in so the
+// screen updates in place (its actions become the normal in-book management set) instead of
+// leaving the just-deleted fork on screen.
+function restoreForkFromDetail(forkId){
+  var cr = customRecipes[forkId];
+  if(!cr || !cr.forkedFrom) return;
+  var origId = cr.forkedFrom;
+  restoreForkToOriginal(forkId);
+  if(typeof renderRecipe === 'function' && (RECIPES_DB[origId] || (typeof BUILTIN_RECIPES_DB !== 'undefined' && BUILTIN_RECIPES_DB[origId]))){
+    renderRecipe(origId);
+  }
 }
 
 function buildRecipeImageGrid(currentImageKey, query){

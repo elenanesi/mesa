@@ -12611,6 +12611,8 @@ function testRecipeOptionsBuilder(ctx){
       'fork provenance: the fork stores forkedFrom = the source built-in id', String(get(ctx, 'customRecipes')[forkId].forkedFrom));
     assert(call(ctx, 'builtinHasForkInBook', ['baked-fish']) === true,
       'fork awareness: builtinHasForkInBook() sees the in-book fork of baked-fish', '');
+    assert(call(ctx, 'forkInBookFor', ['baked-fish']) === forkId,
+      'fork awareness: forkInBookFor() returns the fork id (drives the detail-view Restore original)', String(call(ctx, 'forkInBookFor', ['baked-fish'])));
     run(ctx, "libRecipeView = 'market';");
     const marketRow = call(ctx, 'libRecipeRowHtml', ['baked-fish', true]);
     assert(marketRow.indexOf('edited version in your book') !== -1,
@@ -12631,6 +12633,17 @@ function testRecipeOptionsBuilder(ctx){
     html = call(ctx, 'buildRecipeBuilderSheet', []);
     assert(html.indexOf('Reset to default') === -1 && html.indexOf('original back in the market') === -1,
       'fork note: neither the Reset button nor the fork note shows for a brand-new custom recipe', '');
+
+    // (d) Restore original (owner 2026-09-20 "there was supposed to be a reset here, instead it's
+    // an add to book"): the detail-view "Restore original" runs restoreForkToOriginal (the DOM-free
+    // core restoreForkFromDetail wraps) — it deletes the edited fork and brings the pristine
+    // built-in back into the book, the reset the detail view now offers for a forked built-in.
+    run(ctx, "recipeBuilder = null;");
+    assert(call(ctx, 'recipeInBook', ['baked-fish']) === false, 'detail restore: precondition — the forked built-in is out of the book', '');
+    call(ctx, 'restoreForkToOriginal', [forkId]);
+    assert(!get(ctx, 'customRecipes')[forkId], 'detail restore: the edited fork is removed', '');
+    assert(call(ctx, 'recipeInBook', ['baked-fish']) === true, 'detail restore: the original built-in is back in the book', '');
+    assert(call(ctx, 'builtinHasForkInBook', ['baked-fish']) === false, 'detail restore: no fork remains after restoring the original', '');
 
     run(ctx, "delete customRecipes['" + forkId + "']; delete recipeOverrides['baked-fish']; var __b=" + __snap12 + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); recipeBuilder = null;");
   })();

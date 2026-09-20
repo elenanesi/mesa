@@ -1167,7 +1167,19 @@ function renderRecipeDetailActions(){
   let html = '';
   // RECIPE-MARKET: a built-in the household hasn't added yet leads with "Add to your book"; the
   // rest of the management actions only make sense once it's in the book.
+  const forkOfThis = (typeof forkInBookFor === 'function') ? forkInBookFor(key) : null;
   if(!isCustom && !inBook){
+    if(forkOfThis){
+      // You've EDITED this built-in — its edited version is the copy in your book, so viewing the
+      // pristine original leads with "Restore original" (discard your edits, bring the built-in
+      // back) — the reset you'd expect here — with adding the pristine copy alongside as the quiet
+      // secondary. Without this the screen showed only "Add to your book", hiding that an edit even
+      // existed (owner 2026-09-20).
+      html += '<button class="recipe-action recipe-action-primary" onclick="restoreForkFromDetail(\'' + forkOfThis + '\')">↺ Restore original</button>';
+      html += '<button class="recipe-action recipe-action-quiet" onclick="addRecipeToBookFromDetail()">＋ Add a copy alongside</button>';
+      wrap.innerHTML = html;
+      return;
+    }
     // Market preview: add-only. Duplicate/edit belong to My book, so a catalog recipe is added
     // first, then tweaked — keeps the market a browse-and-add surface (owner's call).
     html += '<button class="recipe-action recipe-action-primary" onclick="addRecipeToBookFromDetail()">＋ Add to your book</button>';
@@ -1180,6 +1192,13 @@ function renderRecipeDetailActions(){
   if(hasMeal){
     html += '<button class="recipe-action" onclick="manageRecipeMealFromDetail()">☷ Manage meal</button>';
     html += '<button class="recipe-action recipe-action-quiet" onclick="openSwap(recipeServingCtx.slot,null)">↔ Swap</button>';
+  }
+  // A recipe you edited is a FORK of a built-in (customRecipes[key].forkedFrom) — offer restoring
+  // the original from the fork's own detail too, matching the recipe-list undo. The legacy
+  // recipeOverrides reset still applies to any pre-fork-migration override.
+  const forkedFrom = isCustom && customRecipes[key] && customRecipes[key].forkedFrom;
+  if(forkedFrom && (typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[forkedFrom]){
+    html += '<button class="recipe-action recipe-action-quiet" onclick="restoreForkFromDetail(\'' + key + '\')">↺ Restore original</button>';
   }
   if(recipeOverrides[key]) html += '<button class="recipe-action recipe-action-quiet" onclick="resetRecipeFromDetail()">↺ Reset</button>';
   if(isCustom){
