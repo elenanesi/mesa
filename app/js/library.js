@@ -2523,8 +2523,11 @@ function renderPantryListMarkup(query){
     const food = FOODS[id];
     const entry = pantry[id];
     const remain = Math.max(0, remaining[id] || 0);
-    const unit = food.unit === 'piece' ? '' : food.unit;
-    const displayVal = food.unit === 'piece' ? +(remain.toFixed(2)) : Math.round(remain);
+    const isPiece = food.unit === 'piece';
+    const isCountable = !isPiece && food.countable && food.avgG > 0;
+    const unit = isPiece ? '' : food.unit;
+    const displayVal = isPiece ? +(remain.toFixed(2)) : Math.round(remain);
+    const countHint = isCountable ? '<span style="font-size:12px;color:var(--muted);margin-left:2px">≈' + fmtIngCount(remain / food.avgG) + '</span>' : '';
     return '<div class="altrow" data-food-id="' + htmlAttr(id) + '" style="cursor:default">'
       + '<div class="ae">' + foodIconHtml(id) + '</div>'
       + '<div class="at"><div class="an">' + escapeHtml(food.name) + '</div>'
@@ -2533,6 +2536,7 @@ function renderPantryListMarkup(query){
       + '<button class="lib-edit" data-act="dec" aria-label="Decrease ' + htmlAttr(food.name) + '">–</button>'
       + '<input class="pantry-qty-input" type="text" inputmode="decimal" value="' + displayVal + '" aria-label="Remaining ' + htmlAttr(food.name) + '" onfocus="this.select()" onkeydown="if(event.key===\'Enter\'){this.blur();}" style="font-size:16px;width:3.4em;height:44px;text-align:center;border:1px solid var(--line);border-radius:10px;box-sizing:border-box;padding:0 2px">'
       + (unit ? '<span class="sv-unit" style="margin-left:-2px">' + unit + '</span>' : '')
+      + countHint
       + '<button class="lib-del" data-act="remove" aria-label="Remove ' + htmlAttr(food.name) + '">✕</button>'
       + '</div></div>';
     }).join('');
@@ -2585,7 +2589,7 @@ function stepPantryRemainingDown(foodId){
   const food = FOODS[foodId];
   if(!food) return;
   const current = pantryRemaining()[foodId] || 0;
-  const step = food.unit === 'piece' ? 1 : 10;
+  const step = food.unit === 'piece' ? 1 : (food.countable && food.avgG > 0) ? food.avgG : 10;
   setPantryRemaining(foodId, current - step);
 }
 

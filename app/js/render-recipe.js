@@ -332,7 +332,12 @@ function recipeDisplayIngredients(recipeId, opts, subs){
 // recipe list, byte-identical. With extras it appends each side/food and MERGES duplicate foods
 // (e.g. olive oil from the main and a side) into one summed row, keeping "to taste" notes once.
 function mealDetailIngredientRows(mainId, mainOpts, mainScale, total, extras, mainSubs){
-  function scaleRow(ing, f){ return ing[1] === null ? ing : [ing[0], +(ing[1] * f).toFixed(1), ing[2]]; }
+  function scaleRow(ing, f){
+    if(ing[1] === null) return ing;
+    var r = [ing[0], +(ing[1] * f).toFixed(1), ing[2]];
+    if(ing[3]) r[3] = ing[3];
+    return r;
+  }
   const mainRows = recipeDisplayIngredients(mainId, mainOpts, mainSubs).map(function(ing){ return scaleRow(ing, mainScale); });
   if(!extras || !extras.length) return mainRows;
   const all = mainRows.slice();
