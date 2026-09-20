@@ -60,7 +60,35 @@ function applyCustomFoods(){
     if(id.indexOf('cf-') === 0 && !customFoods[id]) delete FOODS[id];
   });
   Object.keys(BUILTIN_FOODS_DB).forEach(function(id){
-    FOODS[id] = deepClone(foodOverrides[id] || BUILTIN_FOODS_DB[id]);
+    const builtin = BUILTIN_FOODS_DB[id];
+    const food = deepClone(foodOverrides[id] || builtin);
+    // Heal a food-edit override that lost its "counted as items" identity. The food editor
+    // exposes only name/macros/flags/measures — never a food's unit basis — and its save path
+    // rebases every edited food to per:100/unit:'g' AND drops the `countable` display flag (the
+    // form doesn't carry it). So editing eggs (unit:'piece') or a countable food (avocado,
+    // banana…) used to silently turn it into bare grams everywhere — recipes, pantry, shopping
+    // list (owner 2026-09-20: "eggs still shows 120 g"). Re-assert the per-item identity here,
+    // the one place every override is applied (boot + after each save). We deliberately keep the
+    // override's unit:'g' rather than restoring unit:'piece': the stored pantry qty and all
+    // consumption math for an edited food are already in GRAMS, so flipping the unit back would
+    // reinterpret e.g. 120 g of eggs as 120 eggs. Marking it `countable` (+ its avgG) instead
+    // makes every surface render a count via the countable path while the gram quantity — and
+    // the per-100g macros, which stay untouched and correct — remain the anchor.
+    if(foodOverrides[id] && builtin){
+      if(builtin.unit === 'piece'){
+        // A piece food's per-item weight is STRUCTURAL, not a user measure. An older save path
+        // dropped avgG entirely; restore it so the food still reads as a count, then mark the
+        // now-gram-based override countable.
+        if(!(food.avgG > 0) && builtin.avgG > 0) food.avgG = builtin.avgG;
+        if(food.avgG > 0 && food.unit !== 'piece') food.countable = true;
+      } else if(builtin.countable && food.avgG > 0 && food.unit !== 'piece'){
+        // A countable gram food (avocado, banana…): the editor preserves its EDITABLE item
+        // weight but drops the countable flag. Re-assert it — but only while an item weight
+        // remains, since clearing avgG is the user intentionally making it a plain gram food.
+        food.countable = true;
+      }
+    }
+    FOODS[id] = food;
   });
   Object.keys(customFoods).forEach(function(id){ FOODS[id] = customFoods[id]; });
 }

@@ -537,6 +537,18 @@ function testEditableFoodMeasures(ctx){
     assert(Number(eggs.avgG) > 0, 'saveNewFood: editing a piece food keeps its per-item weight', JSON.stringify({avgG: eggs.avgG, unit: eggs.unit}));
     const perEgg = call(ctx, 'foodMacros', ['eggs', Number(eggs.avgG)]);
     assert(Math.abs(perEgg.protein - 6.3) < 0.3, 'foodMacros: 1 egg is still ~6.3 g protein after editing (macro round-trip correct)', String(perEgg.protein));
+    // (b2) heal: an edited piece food is rebased to unit:'g' by the save path, but applyCustomFoods
+    // re-asserts its count identity so it never renders as bare grams (owner 2026-09-20 "eggs shows 120 g").
+    assert(eggs.countable === true && eggs.avgG > 0,
+      'applyCustomFoods: an edited piece food (eggs) stays countable so recipes/pantry/shopping show a count',
+      JSON.stringify({unit: eggs.unit, countable: eggs.countable, avgG: eggs.avgG}));
+    // (b3) heal even when an OLD save path dropped avgG entirely: a bare unit:'g' override of a
+    // piece builtin gets its structural per-item weight + countable flag restored from the builtin.
+    run(ctx, "foodOverrides['eggs'] = {name: FOODS['eggs'].name, per: 100, unit: 'g', kcal: 140, protein: 12.6, carbs: 0.8, fat: 9.6, satFat: 3.2, fiber: 0, sugars: 0, freeSugars: 0, cat: 'Protein', flags: []}; applyCustomFoods();");
+    const eggsBare = get(ctx, 'FOODS')['eggs'];
+    assert(eggsBare.countable === true && Number(eggsBare.avgG) === 50,
+      'applyCustomFoods: a piece-food override that lost avgG is healed (avgG restored from builtin, countable set)',
+      JSON.stringify({unit: eggsBare.unit, countable: eggsBare.countable, avgG: eggsBare.avgG}));
 
     // (c) clearing a measure removes it.
     call(ctx, 'openEditFoodForm', ['apples']);
