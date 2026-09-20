@@ -668,6 +668,15 @@
     data = data || {};
     return Math.round(4 * (parseFloat(data.protein) || 0) + 4 * (parseFloat(data.carbs) || 0) + 9 * (parseFloat(data.fat) || 0));
   }
+  // Filter the already-rendered rows instead of redrawing the whole panel on every
+  // keystroke. Redrawing replaces the <input>, which used to drop focus after the
+  // first character and made the admin search feel broken on desktop and mobile.
+  function filterCatalogRows(host, query){
+    var q = String(query || '').trim().toLowerCase();
+    host.querySelectorAll('.item-row[data-id]').forEach(function(row){
+      row.style.display = !q || row.textContent.toLowerCase().indexOf(q) !== -1 ? '' : 'none';
+    });
+  }
 
   function addCatalogItem(type){
     var label = type === 'recipe' ? 'recipe' : 'ingredient';
@@ -814,7 +823,10 @@
     html += '</div>';
     host.innerHTML = html;
     var searchInp = document.getElementById('recipeSearchInp');
-    if(searchInp) searchInp.addEventListener('input', function(){ catalogState.recipeQuery = this.value; renderRecipeList(); });
+    if(searchInp) searchInp.addEventListener('input', function(){
+      catalogState.recipeQuery = this.value;
+      filterCatalogRows(host, this.value);
+    });
     host.querySelectorAll('.item-row[data-id]').forEach(function(row){
       row.addEventListener('click', function(){ renderRecipeDetail(row.getAttribute('data-id')); });
     });
@@ -966,7 +978,10 @@
     html += '</div>';
     host.innerHTML = html;
     var searchInp = document.getElementById('foodSearchInp');
-    if(searchInp) searchInp.addEventListener('input', function(){ catalogState.foodQuery = this.value; renderFoodList(); });
+    if(searchInp) searchInp.addEventListener('input', function(){
+      catalogState.foodQuery = this.value;
+      filterCatalogRows(host, this.value);
+    });
     host.querySelectorAll('.item-row[data-id]').forEach(function(row){
       row.addEventListener('click', function(){ renderFoodDetail(row.getAttribute('data-id')); });
     });
