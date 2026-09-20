@@ -235,6 +235,16 @@ const FOODS = {
     kcal: 58, protein: 0.3, carbs: 13.8, fat: 0.2, satFat: 0.0, fiber: 2.4, sugars: 10.4, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'apples', src: 'USDA FDC 171688 (apple, raw, with skin)'
   },
+  'apples-without-skin': {
+    name: 'Apples, raw, without skin', per: 100, unit: 'g', avgG: 182,
+    kcal: 52, protein: 0.3, carbs: 13.8, fat: 0.1, satFat: 0.0, fiber: 1.3, sugars: 10.1, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'apples', src: 'USDA FDC 171690 (apple, raw, without skin)'
+  },
+  'pomegranate': {
+    name: 'Pomegranate arils, raw', per: 100, unit: 'g', avgG: 174,
+    kcal: 83, protein: 1.7, carbs: 18.7, fat: 1.2, satFat: 0.1, fiber: 4.0, sugars: 13.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'pomegranate', src: 'USDA FDC 169134 (pomegranate, raw)'
+  },
   'bananas': {
     name: 'Bananas, raw', per: 100, unit: 'g', avgG: 118,
     kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6, sugars: 12.2, freeSugars: 0, sugarQuality: 'intrinsic',

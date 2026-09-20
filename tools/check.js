@@ -265,7 +265,7 @@ function testBarcodeSugarImport(ctx){
    approved whitelist of foods (Decisions Q2) carries breakfastPair — no more, no less.
    Also covers applyCustomRecipes()'s read-time normalization of a legacy custom recipe
    saved before `role` existed, and the library-sync round-trip for both new fields. */
-const BREAKFAST_PAIR_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'white-bread', 'apples', 'pears', 'bananas', 'oranges', 'peaches', 'mixed-berries'];
+const BREAKFAST_PAIR_FOOD_IDS = ['rye-bread', 'wholewheat-bread', 'white-bread', 'apples', 'apples-without-skin', 'pears', 'bananas', 'oranges', 'peaches', 'pomegranate', 'mixed-berries'];
 
 function testRecipeRolesAndBreakfastPair(ctx){
   const RECIPES_DB = get(ctx, 'RECIPES_DB');
