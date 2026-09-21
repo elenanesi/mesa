@@ -1,4 +1,4 @@
-/* render-week.js — week grid, nutri cards, week summary, swap, regenerate, routines */
+/* render-week.js — week grid, nutri cards, week summary, swap, regenerate, rebalance, routines */
 /* ---------------- week screen rendering ---------------- */
 // weekPlan.weekStartDate is always a Monday (planner.js:mondayOfWeek), so the day index
 // maps straight onto Mon..Sun.

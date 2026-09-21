@@ -1,4 +1,4 @@
-/* render-sheets.js — shopping sheet, food search, quick add, export/import */
+/* render-sheets.js — shopping sheet, food search, quick add, export/import, rebalance */
 
 // Two-week horizon: which week the shopping sheet currently shows ('current'|'next').
 // Reset every time the sheet is opened fresh (openShopping()) to whichever week the Week
