@@ -32,6 +32,9 @@ function initWeekActionBindings(){
       else if(action === 'scope-all') setWeekScopeAll();
       else if(action === 'scope-day') toggleWeekScopeDay(Number(target.getAttribute('data-week-day')));
       else if(action === 'confirm-regenerate') confirmRegenerateWeek();
+      else if(action === 'confirm-rebalance') applyRebalance();
+      else if(action === 'rebalance-accept') setRebalanceSuggestionChoice(Number(target.getAttribute('data-week-idx')), true);
+      else if(action === 'rebalance-refuse') setRebalanceSuggestionChoice(Number(target.getAttribute('data-week-idx')), false);
       else if(action === 'close-sheet') closeSheet();
     }catch(err){
       console.error('Mesa: planner action failed (' + action + ')', err);
@@ -740,7 +743,12 @@ function confirmRegenerateWeek(){
   if(!showingNext && !onlyDays){
     const nm = nextMondayISO();
     const nextOpts = lockShared ? {lockSharedRecipes: true} : undefined;
-    if(weekPlans[nm]) regenerateWeekPreservingLocks(nm, nextOpts);
+    try{
+      if(weekPlans[nm]) regenerateWeekPreservingLocks(nm, nextOpts);
+    }catch(err){
+      console.error('Mesa: next-week regeneration failed', err);
+      if(typeof authLog === 'function') authLog('planner.regenerate.nextweek.fail', (err && err.message) || String(err));
+    }
   }
   // Persist and close before refreshing the surrounding screens. The plan cannot be lost
   // just because a cosmetic surface has a malformed catalog row to paint.

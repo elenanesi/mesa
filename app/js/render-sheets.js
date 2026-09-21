@@ -348,7 +348,7 @@ function renderRebalanceSheet(){
   const mode = rebalanceProposal.mode || (g && g.gap <= 1e-9 ? 'none' : 'gap');
   const spread = mode === 'spread';
   const acceptedPlan = rebalanceAcceptedPlan(rebalanceProposal);
-  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button class="backbtn" style="margin:0" onclick="closeSheet()">✕ Close</button></div>';
+  let html = '<div class="row between" style="margin-top:6px"><h2 style="margin:0">Re-balance ' + rebalanceProposalLabel() + '</h2><button type="button" class="backbtn" style="margin:0" data-week-action="close-sheet">✕ Close</button></div>';
   if(rebalanceProposal.autoAdvancedFromCurrentWeek){
     html += '<p class="sub">This week has only locked or completed meals left, so these are gentle options for next week instead.</p>';
   }
@@ -362,7 +362,7 @@ function renderRebalanceSheet(){
         ? 'Every weekly target is already met; a day or two runs a little rich or light, but no small swap evens them out further right now.'
         : 'The biggest gap right now is <b>' + g.label + '</b> (' + coverageValueText(g) + ' vs ' + coverageTargetText(g) + '), but no legal suggestion improves it for this week.')
       + '</p>'
-      + '<button class="cta ghostbtn" onclick="closeSheet()">Close</button>';
+      + '<button type="button" class="cta ghostbtn" data-week-action="close-sheet">Close</button>';
     return html;
   }
   html += '<p class="sub">Keeps fixed: pinned meals, logged or skipped slots, foods you avoid, and past dates. '
@@ -390,8 +390,8 @@ function renderRebalanceSheet(){
       + '<div class="li-t">' + rebalanceSuggestionLabel(s) + who
       + '<small>' + note + '</small></div>'
       + '<div class="row" style="gap:8px">'
-      + '<button class="backbtn' + (accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',true)">Accept</button>'
-      + '<button class="backbtn' + (!accepted ? ' on' : '') + '" onclick="setRebalanceSuggestionChoice(' + i + ',false)">Refuse</button>'
+      + '<button type="button" class="backbtn' + (accepted ? ' on' : '') + '" data-week-action="rebalance-accept" data-week-idx="' + i + '">Accept</button>'
+      + '<button type="button" class="backbtn' + (!accepted ? ' on' : '') + '" data-week-action="rebalance-refuse" data-week-idx="' + i + '">Refuse</button>'
       + '</div></div>';
   });
   html += '</div>';
@@ -405,8 +405,8 @@ function renderRebalanceSheet(){
     const acceptedGap = coverageGaps(computeWeeklyCoverage(acceptedPlan))[rebalanceProposal.metricKey];
     html += '<p class="sub">' + g.label + ' after accepted suggestions: <b>' + coverageValueText(acceptedGap) + '</b> (now ' + coverageValueText(g) + ').</p>';
   }
-  html += '<button class="cta" onclick="applyRebalance()">Apply re-balance</button>'
-    + '<button class="cta ghostbtn" onclick="closeSheet()">Cancel</button>';
+  html += '<button type="button" class="cta" data-week-action="confirm-rebalance">Apply re-balance</button>'
+    + '<button type="button" class="cta ghostbtn" data-week-action="close-sheet">Cancel</button>';
   return html;
 }
 
@@ -456,14 +456,9 @@ function applyRebalance(){
   weekPlans[rebalanceProposal.weekStartDate] = resultPlan;
   if(rebalanceProposal.weekStartDate === mondayOfWeek(todayISO())) weekPlan = resultPlan;
   rebalanceProposal = null;
-  recomputeConsumed(currentProf);
-  recomputeProf(currentProf);
-  refreshRingAndBars();
-  renderTodayMeals();
-  renderLogScreen();
-  renderWeek();
   persist();
   closeSheet();
+  if(typeof refreshAfterWeekRegenerate === 'function') refreshAfterWeekRegenerate();
   toast('✓ Plan re-balanced — ' + g.label + ' now ' + afterText);
 }
 
