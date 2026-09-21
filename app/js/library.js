@@ -108,6 +108,36 @@ function normalizeRecipeRoleField(recipe){
   return recipe;
 }
 
+// `avoid` is the allergen-KEY list every candidate filter reads (planner.js:recipeHitsAvoid).
+// data/validate.js requires it, but that only covers the BUNDLED files — a row authored straight
+// into the D1 catalog, or a customRecipes entry from an older client, can arrive without it, and
+// the planner then crashed mid-generation (2026-09-21: four global 'custom' dinner rows had no
+// avoid, so Regenerate/Re-balance failed for every day whose slots reached one of them).
+// Derived from the ingredients exactly the way the in-app builder does (deriveRecipeMeta), NOT
+// defaulted to []: `avoid` carries allergen KEYS while the ingredient scan in recipeHitsAvoid
+// matches food IDs, so an empty list would silently tell a nut-avoiding person that a satay dish
+// is safe.
+function deriveRecipeAvoidKeys(recipe){
+  if(typeof foodHitsAvoid !== 'function') return [];
+  const keys = (typeof VALID_AVOID !== 'undefined') ? VALID_AVOID : ['lactose', 'gluten', 'shellfish', 'nuts'];
+  const hit = {};
+  ((recipe && Array.isArray(recipe.ingredients)) ? recipe.ingredients : []).forEach(function(ing){
+    const foodId = Array.isArray(ing) ? ing[0] : (ing && ing.foodId);
+    if(!foodId) return;
+    keys.forEach(function(k){ if(foodHitsAvoid(foodId, [k])) hit[k] = true; });
+  });
+  return Object.keys(hit);
+}
+function normalizeRecipeAvoidField(recipe){
+  if(recipe && !Array.isArray(recipe.avoid)) recipe.avoid = deriveRecipeAvoidKeys(recipe);
+  return recipe;
+}
+// The single normalizer for a recipe record read from storage — every write into
+// BUILTIN_RECIPES_DB / RECIPES_DB goes through it, so the planner can rely on role and avoid.
+function normalizeStoredRecipe(recipe){
+  return normalizeRecipeAvoidField(normalizeRecipeRoleField(recipe));
+}
+
 // The D1 GLOBAL catalog is the SOURCE OF TRUTH for built-in recipes; data/recipes.js (the
 // bundled BUILTIN_RECIPES_DB) is only the offline/emergency fallback. So the owner must be able
 // to curate the catalog directly in D1 — add, edit, and DELETE recipes — and see it reflected
@@ -175,7 +205,7 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
     const id = String(row.id || '').trim();
     const data = row.data;
     if(!id || !data || typeof data !== 'object' || Array.isArray(data)) return;
-    const recipe = normalizeRecipeRoleField(deepClone(data));
+    const recipe = normalizeStoredRecipe(deepClone(data));
     const titleValid = typeof recipe.title === 'string' && !!recipe.title;
     const slotValid = typeof recipe.slot === 'string' && VALID_SLOTS.indexOf(recipe.slot) !== -1;
     // A recipe legitimately carries an empty `ingredients` list when it gets them another way:
@@ -239,17 +269,17 @@ function applyCustomRecipes(){
     if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     if(bookActive && !recipeBook[id] && !GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id]) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
-    RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(src));
+    RECIPES_DB[id] = normalizeStoredRecipe(deepClone(src));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
   });
   Object.keys(recipeOverrides).forEach(function(id){
     if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
-    RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(recipeOverrides[id]));
+    RECIPES_DB[id] = normalizeStoredRecipe(deepClone(recipeOverrides[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
   Object.keys(customRecipes).forEach(function(id){
     if(deletedRecipes[id]) return;
-    RECIPES_DB[id] = normalizeRecipeRoleField(deepClone(customRecipes[id]));
+    RECIPES_DB[id] = normalizeStoredRecipe(deepClone(customRecipes[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
 }

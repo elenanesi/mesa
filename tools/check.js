@@ -1905,6 +1905,60 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
     assert(Object.keys(db).length === bundledIds.length,
       'replaceBuiltinRecipesFromCatalogRows: an all-invalid payload leaves BUILTIN_RECIPES_DB untouched',
       Object.keys(db).length + ' vs ' + bundledIds.length);
+
+    // -------- (5) a row with NO `avoid` array (2026-09-21 crash) --------
+    // Four global 'custom' dinner rows were authored straight into D1 without `avoid`, the field
+    // data/validate.js requires but only enforces on the BUNDLED files. planner.js:recipeHitsAvoid
+    // dereferenced it directly, so week generation threw TypeError and Regenerate/Re-balance failed
+    // for every day whose slots reached one of them. The row must install with a DERIVED avoid list
+    // (not simply []): `avoid` carries allergen KEYS, while recipeHitsAvoid's ingredient scan only
+    // matches food IDs, so defaulting to empty would silently drop allergen filtering.
+    restore();
+    const avoidlessIds = bundledIds.slice(0, Math.ceil(bundledIds.length * 0.6));
+    const dairyRecipeId = avoidlessIds.find(function(id){
+      return (bundled[id].ingredients || []).some(function(ing){
+        const food = get(ctx, 'FOODS')[ing[0]];
+        return food && food.cat === 'Dairy' && !food.dairyFree;
+      });
+    });
+    const avoidlessRows = avoidlessIds.map(function(id){
+      const data = Object.assign({}, bundled[id]);
+      delete data.avoid;
+      return rowFor(id, data);
+    });
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [avoidlessRows]);
+    assert(result === true,
+      'replaceBuiltinRecipesFromCatalogRows: a payload whose rows omit `avoid` still installs', String(result));
+    db = get(ctx, 'BUILTIN_RECIPES_DB');
+    assert(avoidlessIds.every(function(id){ return Array.isArray(db[id].avoid); }),
+      'replaceBuiltinRecipesFromCatalogRows: every installed row gets an `avoid` array even when the D1 row omitted it',
+      avoidlessIds.filter(function(id){ return !Array.isArray(db[id].avoid); }).join(', '));
+    if(dairyRecipeId){
+      assert(db[dairyRecipeId].avoid.indexOf('lactose') !== -1,
+        'replaceBuiltinRecipesFromCatalogRows: a missing `avoid` is DERIVED from the ingredients (a dairy recipe still reads as lactose), never defaulted to []',
+        dairyRecipeId + ' -> ' + JSON.stringify(db[dairyRecipeId].avoid));
+    }
+
+    // recipeHitsAvoid itself must never throw on a record that reached it without `avoid`
+    // (a caller's own object bypasses normalizeStoredRecipe) — it narrows the filter instead.
+    let threw = null;
+    try{
+      call(ctx, 'recipeHitsAvoid', [{title: 'no avoid field', ingredients: []}, ['lactose']]);
+    }catch(err){ threw = err; }
+    assert(threw === null,
+      'recipeHitsAvoid: a recipe with no `avoid` field is filtered, not a thrown TypeError',
+      threw && threw.message);
+
+    // Same for the Profile screen's avoid-key counter, the other unguarded `.avoid` deref.
+    threw = null;
+    try{
+      run(ctx, 'RECIPES_DB["__no_avoid_probe__"] = {title: "probe", slot: "dinner", ingredients: []};');
+      call(ctx, 'countRecipesWithAvoidKey', ['lactose']);
+    }catch(err){ threw = err; }
+    finally{ run(ctx, 'delete RECIPES_DB["__no_avoid_probe__"];'); }
+    assert(threw === null,
+      'countRecipesWithAvoidKey: a RECIPES_DB entry with no `avoid` field is skipped, not a thrown TypeError',
+      threw && threw.message);
   } finally {
     restore();
   }

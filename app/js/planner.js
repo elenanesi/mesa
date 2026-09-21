@@ -584,7 +584,10 @@ function ingredientIdAvoided(foodId, avoidList){
 }
 function recipeHitsAvoid(recipe, avoidList){
   if(!avoidList || !avoidList.length) return false;
-  if(recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; })) return true;
+  // Array.isArray, not a bare deref: library.js:normalizeStoredRecipe fills `avoid` in for every
+  // recipe reaching RECIPES_DB, but a candidate can also arrive straight from a caller's own
+  // record — a missing list must narrow this filter, never abort week generation.
+  if(Array.isArray(recipe.avoid) && recipe.avoid.some(function(a){ return avoidList.indexOf(a) !== -1; })) return true;
   // Avoided specific ingredients (PROF.avoidFoods): exclude a recipe whose BASE ingredients — or
   // any sub-recipe it aggregates via `components` (a component ALWAYS contributes) — contain one.
   // An option recipe's per-CHOICE ingredients are handled separately by choiceHitsAvoid/
@@ -4000,7 +4003,7 @@ function buildInsightCallouts(avgProtein, targetProtein, avgFiber, satFatEnergyP
 // recipes available to you"). Independent of anyone's CURRENT avoid list: it's just how
 // many recipes that single key touches across the whole DB.
 function countRecipesWithAvoidKey(key){
-  return Object.keys(RECIPES_DB).filter(function(id){ return RECIPES_DB[id].avoid.indexOf(key) !== -1; }).length;
+  return Object.keys(RECIPES_DB).filter(function(id){ return (RECIPES_DB[id].avoid || []).indexOf(key) !== -1; }).length;
 }
 
 /* ---------------- shopping list (computed from weekPlan) ---------------- */
