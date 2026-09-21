@@ -38,7 +38,8 @@ function initWeekActionBindings(){
       else if(action === 'close-sheet') closeSheet();
     }catch(err){
       console.error('Mesa: planner action failed (' + action + ')', err);
-      if(typeof toast === 'function') toast('Couldn’t complete that yet — please try again.');
+      if(typeof authLog === 'function') authLog('planner.action.fail', action + ': ' + ((err && err.message) || String(err)));
+      if(typeof toast === 'function') toast('Action failed: ' + ((err && err.message) || 'unknown error'));
     }
   });
 }
