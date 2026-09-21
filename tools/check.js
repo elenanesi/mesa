@@ -4997,6 +4997,10 @@ function testRegenerateLockSharedMeals(ctx){
       && sheetCouple.indexOf('data-week-action="scope-all"') !== -1
       && sheetCouple.indexOf('onclick="confirmRegenerateWeek()"') === -1,
       'buildRegenerateSheet: confirmation and scope controls use delegated actions, not fragile inline handlers', sheetCouple);
+    const regenerateUiSource = fs.readFileSync(path.join(APP_DIR, 'js', 'render-week.js'), 'utf8');
+    assert(regenerateUiSource.indexOf('function refreshAfterWeekRegenerate()') !== -1
+      && regenerateUiSource.indexOf('persist();\n  closeSheet();\n  refreshAfterWeekRegenerate();') !== -1,
+      'confirmRegenerateWeek: persists and closes after the rebuild before isolated nonessential surface refreshes', regenerateUiSource.slice(regenerateUiSource.indexOf('function refreshAfterWeekRegenerate()'), regenerateUiSource.indexOf('function openSwapSheetForContext')));
     run(ctx, "householdSize = 1; householdSizeManual = true;");
     const sheetSolo = call(ctx, 'buildRegenerateSheet', []);
     assert(sheetSolo.indexOf('id="regenLockShared"') === -1,

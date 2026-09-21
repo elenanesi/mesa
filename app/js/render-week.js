@@ -692,6 +692,29 @@ function buildRegenerateSheet(){
     + '<button type="button" class="cta ghostbtn" data-week-action="close-sheet">Cancel</button>';
 }
 
+// A successful regeneration is valuable state in its own right. Do not let a secondary
+// repaint (Today, Log, the nutrition ring, …) make the whole action look like it failed.
+// This is particularly important for a catalog row with imperfect data: rendering one
+// affected surface may fail, but the newly-built week is still valid and must be saved.
+function refreshAfterWeekRegenerate(){
+  const steps = [
+    ['consumed', function(){ recomputeConsumed(currentProf); }],
+    ['profile', function(){ recomputeProf(currentProf); }],
+    ['ring', refreshRingAndBars],
+    ['today', renderTodayMeals],
+    ['log', renderLogScreen],
+    ['planner', renderWeek]
+  ];
+  steps.forEach(function(step){
+    try{
+      step[1]();
+    }catch(err){
+      console.error('Mesa: regenerate refresh failed (' + step[0] + ')', err);
+      if(typeof authLog === 'function') authLog('planner.refresh.fail', step[0] + ': ' + ((err && err.message) || String(err)));
+    }
+  });
+}
+
 function confirmRegenerateWeek(){
   const showingNext = weekScreenShowsNext;
   const monday = showingNext ? nextMondayISO() : mondayOfWeek(todayISO());
@@ -700,7 +723,14 @@ function confirmRegenerateWeek(){
   const regenOpts = {};
   if(lockShared) regenOpts.lockSharedRecipes = true;
   if(onlyDays) regenOpts.onlyDayIndices = onlyDays;
-  regenerateWeekPreservingLocks(monday, regenOpts);
+  try{
+    regenerateWeekPreservingLocks(monday, regenOpts);
+  }catch(err){
+    console.error('Mesa: week regeneration failed', err);
+    if(typeof authLog === 'function') authLog('planner.regenerate.fail', (err && err.message) || String(err));
+    toast('Couldn’t regenerate this week — please try again.');
+    return false;
+  }
   if(monday === mondayOfWeek(todayISO())) weekPlan = weekPlans[monday];
   // Regenerating the current week invalidates a stored next week (its cross-week variety
   // input just changed), so rebuild it too, same pairing ensureWeekPlan uses — paired with
@@ -712,14 +742,11 @@ function confirmRegenerateWeek(){
     const nextOpts = lockShared ? {lockSharedRecipes: true} : undefined;
     if(weekPlans[nm]) regenerateWeekPreservingLocks(nm, nextOpts);
   }
-  recomputeConsumed(currentProf);
-  recomputeProf(currentProf);
-  refreshRingAndBars();
-  renderTodayMeals();
-  renderLogScreen();
-  renderWeek();
+  // Persist and close before refreshing the surrounding screens. The plan cannot be lost
+  // just because a cosmetic surface has a malformed catalog row to paint.
   persist();
   closeSheet();
+  refreshAfterWeekRegenerate();
   toast(onlyDays
     ? ('↻ Regenerated ' + onlyDays.length + ' day' + (onlyDays.length === 1 ? '' : 's') + ' — the rest kept')
     : ('↻ Regenerated ' + (showingNext ? 'next week' : 'this week') + ' — pinned & logged meals kept'));
