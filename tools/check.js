@@ -1806,14 +1806,21 @@ function testRecipeCatalogCleanup(ctx){
 function testReplaceBuiltinRecipesFromCatalogRows(ctx){
   const recipesSnapshot = cloneJSON(get(ctx, 'BUILTIN_RECIPES_DB'));
   const slotsSnapshot = cloneJSON(get(ctx, 'BUILTIN_RECIPE_SLOT_DB'));
+  const recipeBookSnapshot = cloneJSON(get(ctx, 'recipeBook'));
+  const deletedRecipesSnapshot = cloneJSON(get(ctx, 'deletedRecipes'));
+  const recipeBookInitSnapshot = get(ctx, 'recipeBookInit');
+  const globalCustomSnapshot = cloneJSON(get(ctx, 'GLOBAL_CATALOG_CUSTOM_RECIPE_IDS'));
   function restore(){
     ctx.__restoreRecipes__ = recipesSnapshot;
     ctx.__restoreSlots__ = slotsSnapshot;
+    ctx.__restoreGlobalCustom__ = globalCustomSnapshot;
     run(ctx,
       "Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){ delete BUILTIN_RECIPES_DB[id]; });" +
       "Object.keys(__restoreRecipes__).forEach(function(id){ BUILTIN_RECIPES_DB[id] = __restoreRecipes__[id]; });" +
       "Object.keys(BUILTIN_RECIPE_SLOT_DB).forEach(function(id){ delete BUILTIN_RECIPE_SLOT_DB[id]; });" +
       "Object.keys(__restoreSlots__).forEach(function(id){ BUILTIN_RECIPE_SLOT_DB[id] = __restoreSlots__[id]; });" +
+      "Object.keys(GLOBAL_CATALOG_CUSTOM_RECIPE_IDS).forEach(function(id){ delete GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id]; });" +
+      "Object.keys(__restoreGlobalCustom__).forEach(function(id){ GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id] = __restoreGlobalCustom__[id]; });" +
       "delete __restoreRecipes__; delete __restoreSlots__;");
   }
 
@@ -1939,6 +1946,22 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
         dairyRecipeId + ' -> ' + JSON.stringify(db[dairyRecipeId].avoid));
     }
 
+    // An admin-created global recipe is live immediately even for households whose Recipe
+    // Market is already curated. It must also behave consistently in the book checks: before
+    // this, applyCustomRecipes exposed it while recipeInBook called it "out of book", making
+    // its detail action offer an ineffective Add/Remove cycle (Toastie regression).
+    restore();
+    const globalCustomRows = bundledIds.map(function(id){ return rowFor(id); });
+    globalCustomRows.push({id: 'admin-toastie-probe', scope: 'global', source: 'custom', data: {title: 'Admin Toastie', slot: 'snack', ingredients: [['white-bread', 60]]}});
+    result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [globalCustomRows]);
+    run(ctx, "recipeBookInit = 1; recipeBook = {}; deletedRecipes = {};");
+    call(ctx, 'applyCustomRecipes', []);
+    assert(result === true && call(ctx, 'recipeInBook', ['admin-toastie-probe']) === true && !!get(ctx, 'RECIPES_DB')['admin-toastie-probe'],
+      'admin global custom recipe: is consistently in the active book and opens from RECIPES_DB without an ineffective Add action', JSON.stringify({result: result, inBook: call(ctx, 'recipeInBook', ['admin-toastie-probe'])}));
+    run(ctx, "deletedRecipes['admin-toastie-probe'] = Date.now(); applyCustomRecipes();");
+    assert(call(ctx, 'recipeInBook', ['admin-toastie-probe']) === false && !get(ctx, 'RECIPES_DB')['admin-toastie-probe'],
+      'admin global custom recipe: a local delete tombstone hides it from this household without altering the global catalog', 'still visible');
+
     // recipeHitsAvoid itself must never throw on a record that reached it without `avoid`
     // (a caller's own object bypasses normalizeStoredRecipe) — it narrows the filter instead.
     let threw = null;
@@ -1961,6 +1984,11 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
       threw && threw.message);
   } finally {
     restore();
+    ctx.__restoreRecipeBook__ = recipeBookSnapshot;
+    ctx.__restoreDeletedRecipes__ = deletedRecipesSnapshot;
+    run(ctx,
+      "recipeBook = __restoreRecipeBook__; deletedRecipes = __restoreDeletedRecipes__; recipeBookInit = " + JSON.stringify(recipeBookInitSnapshot) + ";" +
+      "delete __restoreRecipeBook__; delete __restoreDeletedRecipes__; applyCustomRecipes();");
   }
 }
 

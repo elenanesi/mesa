@@ -1165,6 +1165,7 @@ function renderRecipeDetailActions(){
   const r = RECIPES_DB[key] || ((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[key]);
   if(!wrap || !r) return;
   const isCustom = !!customRecipes[key];
+  const isGlobalCatalogCustom = (typeof isGlobalCatalogCustomRecipe === 'function') && isGlobalCatalogCustomRecipe(key);
   const inBook = (typeof recipeInBook === 'function') ? recipeInBook(key) : true;
   const hasMeal = !!(recipeServingCtx && recipeServingCtx.slot);
   let html = '';
@@ -1204,9 +1205,9 @@ function renderRecipeDetailActions(){
     html += '<button class="recipe-action recipe-action-quiet" onclick="restoreForkFromDetail(\'' + key + '\')">↺ Restore original</button>';
   }
   if(recipeOverrides[key]) html += '<button class="recipe-action recipe-action-quiet" onclick="resetRecipeFromDetail()">↺ Reset</button>';
-  if(isCustom){
-    // A recipe you authored — delete is permanent (its data is destroyed); Duplicate above is the
-    // safe way to experiment.
+  if(isCustom || isGlobalCatalogCustom){
+    // A household recipe, or a shared catalog recipe the household chose to hide. The latter
+    // writes only a local tombstone — the global admin record remains intact for others.
     html += '<button class="recipe-action recipe-action-danger" onclick="deleteRecipeFromDetail()">Delete</button>';
   } else {
     // A built-in — "remove" is the calm, reversible book removal (re-add from the market anytime),

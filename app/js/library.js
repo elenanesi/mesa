@@ -48,6 +48,10 @@ const BUILTIN_RECIPE_SLOT_DB = deepClone(RECIPE_SLOT_DB);
 // because an older device's personal Recipe Market book was initialised before
 // the recipe existed.
 const GLOBAL_CATALOG_CUSTOM_RECIPE_IDS = {};
+// Admin-created recipes are shared catalog entries, not a household's `cr-` recipe.
+// They are nevertheless live immediately (including on an already-curated Recipe Market),
+// and a household must be able to hide one with its normal local delete tombstone.
+function isGlobalCatalogCustomRecipe(id){ return !!(id && GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id]); }
 // Removed bundled recipes may still exist in an older device's saved override or a
 // stale remote catalog. Keep them out of the live library rather than resurrecting a
 // default the household explicitly removed; custom recipes use their own `cr-` ids.
@@ -3298,7 +3302,7 @@ function libRecipeRowHtml(id, isMarket){
     // back to, so it deletes (tombstones) like a custom recipe rather than pretending to be book-
     // removable (owner 2026-09-20: "this one recipe I can't delete").
     const isOrphanOverride = !customRecipes[id] && !!recipeOverrides[id] && !((typeof BUILTIN_RECIPES_DB !== 'undefined') && BUILTIN_RECIPES_DB[id]);
-    const isDeletable = !!customRecipes[id] || isOrphanOverride;
+    const isDeletable = !!customRecipes[id] || isOrphanOverride || isGlobalCatalogCustomRecipe(id);
     const removeAct = isDeletable ? 'delete' : 'removebook';
     const removeLabel = isDeletable ? ('Delete ' + htmlAttr(r.title)) : ('Remove ' + htmlAttr(r.title) + ' from your book');
     const isFork = customRecipes[id] && customRecipes[id].forkedFrom && BUILTIN_RECIPES_DB[customRecipes[id].forkedFrom];
@@ -3431,8 +3435,12 @@ const STARTER_MIN_TO_ACTIVATE = 8;
 // Is this recipe id currently in the household's book (i.e. live for the planner)?
 function recipeInBook(id){
   if(!id) return false;
-  if(id.indexOf('cr-') === 0) return !deletedRecipes[id]; // custom: in unless hard-deleted
   if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
+  // Admin-created global recipes are already available in every household. Treating one as
+  // "out of book" contradicted applyCustomRecipes() (which correctly makes it live), so its
+  // detail view offered Add and its Remove action could not affect it.
+  if(isGlobalCatalogCustomRecipe(id)) return true;
+  if(id.indexOf('cr-') === 0) return true; // household custom: in unless hard-deleted above
   if(recipeBookInit > 0) return !!recipeBook[id];
   return true; // uninitialised == full catalog
 }
