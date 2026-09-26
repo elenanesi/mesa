@@ -3023,6 +3023,64 @@ function boostDayTotals(dateISO, person){
   return views[dayIdx] ? views[dayIdx].totals : null;
 }
 
+// Log-aware twin of planner.js:macroConcernForDay, and the version the Today screen uses. Same
+// return shape and the same perDayBalanceState bands, but computed over the day's ACTUAL intake
+// (weekDayNutriViews: a logged slot's real macros, skipped slots dropped, plus items logged
+// outside a meal) rather than the planned menu — so a snack added outside meals, a skip, or a
+// swap-vs-log moves the Today free-sugars / sat-fat readout and keeps the popover consistent with
+// the ring above it. Meal contributors stay meal-level; items logged outside a meal have no slot
+// to attribute to, so they fold into one "Added outside meals" row. The pure, plan-only
+// macroConcernForDay stays in planner.js for callers that judge a plan day with no log.
+function macroConcernForDate(dateISO, person){
+  const out = {
+    freeSugars: {high: false, pct: 0, grams: 0, contributors: []},
+    satFat: {high: false, pct: 0, grams: 0, contributors: []}
+  };
+  if(typeof ensureWeekPlan !== 'function' || typeof weekDayNutriViews !== 'function'
+    || typeof mondayOfWeek !== 'function' || typeof diffDaysISO !== 'function') return out;
+  const plan = ensureWeekPlan(mondayOfWeek(dateISO));
+  if(!plan || !plan.days) return out;
+  const dayIdx = Math.max(0, Math.min(6, diffDaysISO(dateISO, plan.weekStartDate)));
+  const dayView = weekDayNutriViews(plan, person)[dayIdx];
+  if(!dayView) return out;
+  const totals = dayView.totals;
+  const state = (typeof perDayBalanceState === 'function') ? perDayBalanceState(totals, person) : {};
+  const kcal = totals.kcal || 0;
+  out.freeSugars.high = state.freeSugars === 'high';
+  out.satFat.high = state.satFat === 'high';
+  out.freeSugars.grams = Math.round(totals.freeSugars || 0);
+  out.satFat.grams = Math.round(totals.satFat || 0);
+  out.freeSugars.pct = kcal > 0 ? Math.round((totals.freeSugars * 4 / kcal) * 100) : 0;
+  out.satFat.pct = kcal > 0 ? Math.round((totals.satFat * 9 / kcal) * 100) : 0;
+
+  const MIN = (typeof MACRO_CONCERN_MIN_CONTRIB_G === 'number') ? MACRO_CONCERN_MIN_CONTRIB_G : 2;
+  ['freeSugars', 'satFat'].forEach(function(nutrient){
+    const rows = [];
+    // Meal slots: dayView.views[slot] is the SAME displayed (logged-override-or-plan) view that
+    // dayView.totals summed. weekDayNutriViews drops a 'skipped' slot from those totals, so drop
+    // it here too or a contributor would be listed that the total never counted.
+    SLOT_ORDER.forEach(function(slot){
+      const view = dayView.views[slot];
+      if(!view || !view.recipe) return;
+      if(typeof slotLogStatus === 'function' && slotLogStatus(dateISO, person, slot) === 'skipped') return;
+      const g = view[nutrient] || 0;
+      if(g < MIN) return;
+      rows.push({slot: slot, label: view.recipe.title || (SLOT_LABEL[slot] || slot), grams: Math.round(g)});
+    });
+    // Items logged outside a meal — no slot to attribute to, so they collapse into one row.
+    let extraG = 0;
+    (dayView.standaloneEntries || []).forEach(function(e){ extraG += (e[nutrient] || 0); });
+    if(extraG >= MIN) rows.push({slot: null, label: 'Added outside meals', grams: Math.round(extraG)});
+
+    rows.sort(function(a, b){ return b.grams - a.grams; });
+    const total = out[nutrient].grams || 0;
+    out[nutrient].contributors = rows.map(function(x){
+      return {slot: x.slot, label: x.label, grams: x.grams, pct: total > 0 ? Math.round(x.grams / total * 100) : 0};
+    });
+  });
+  return out;
+}
+
 // The single nutrient this running day is light on, or null when neither axis needs a
 // boost (day is fine, or there isn't enough data to say). Fiber is checked first — the
 // stronger/most flexible booster set (legumes cover both) — but either flag is enough.
@@ -3284,11 +3342,9 @@ function showArcPopover(macro, event){
   // — always shown here so the user can actually SEE sat fat / free sugars (not only when high),
   // with the top contributing meals; emphasized when it's a real WHO outlier. Meal titles are
   // catalog/user copy, so escape them before they enter this innerHTML string.
-  if((macro === 'carbs' || macro === 'fat') && typeof macroConcernForDay === 'function'){
+  if((macro === 'carbs' || macro === 'fat') && typeof macroConcernForDate === 'function'){
     try{
-      var plan2 = ensureWeekPlan(mondayOfWeek(todayISO()));
-      var day2 = plan2 && plan2.days && plan2.days[todayDayIndex()];
-      var c2 = day2 ? macroConcernForDay(day2, currentProf) : null;
+      var c2 = macroConcernForDate(todayISO(), currentProf);
       var subKey = macro === 'carbs' ? 'freeSugars' : 'satFat';
       var subLabel = macro === 'carbs' ? 'Free sugars' : 'Saturated fat';
       if(c2 && c2[subKey]){

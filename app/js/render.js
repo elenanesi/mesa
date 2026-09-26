@@ -608,12 +608,10 @@ function refreshRingAndBars(){
    tapping Fat always shows saturated fat, tapping Carbs always shows free sugars. */
 function renderTodayMacroConcerns(){
   if(typeof document === 'undefined' || !document.getElementById) return;
-  if(typeof macroConcernForDay !== 'function' || typeof ensureWeekPlan !== 'function') return;
+  if(typeof macroConcernForDate !== 'function') return;
   let c = null;
   try{
-    const plan = ensureWeekPlan(mondayOfWeek(todayISO()));
-    const day = plan && plan.days && plan.days[todayDayIndex()];
-    c = day ? macroConcernForDay(day, currentProf) : null;
+    c = macroConcernForDate(todayISO(), currentProf);
   }catch(e){ c = null; }
   ['carbs', 'fat'].forEach(function(which){
     const nut = which === 'carbs' ? 'freeSugars' : 'satFat';

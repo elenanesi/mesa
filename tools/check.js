@@ -5297,6 +5297,65 @@ function testMacroConcern(ctx){
     'macroConcernForDay: an empty day is a no-op (no concern, no contributors)');
 }
 
+// Log-aware Today macro concern (2026-09-26): macroConcernForDate is the version the Today
+// screen actually reads. Unlike the plan-only macroConcernForDay, it is computed over what was
+// really eaten (weekDayNutriViews) — items logged outside a meal are counted and surfaced as one
+// "Added outside meals" contributor, and a skipped slot drops out — so the ring's Carbs/Fat
+// popover agrees with the ring totals above it instead of showing the untouched planned menu.
+function testMacroConcernLogAware(ctx){
+  run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; mealPins = {}; mealRules = []; currentProf = 'elena'; householdSize = 2; PROF.elena.calGoalNum = 1400; ensureWeekPlan(mondayOfWeek(todayISO()));");
+  // today === FIXED_MONDAY, so today is days[0]. Pin its four elena slots to known recipes (a
+  // sugary breakfast + snack, two low-sugar mains) so the baseline is deterministic.
+  run(ctx, [
+    "var __d0 = weekPlans[mondayOfWeek(todayISO())].days[0];",
+    "__d0.meals.breakfast = {shared:false, elena: makePlanEntry('french-toast-fruit-maple',1), partner: __d0.meals.breakfast.partner};",
+    "__d0.meals.lunch = {shared:false, elena: makePlanEntry('lemon-herb-chicken-breast',1), partner: __d0.meals.lunch.partner};",
+    "__d0.meals.dinner = {shared:false, elena: makePlanEntry('pollo-al-forno',1), partner: __d0.meals.dinner.partner};",
+    "__d0.meals.snack = {shared:false, elena: makePlanEntry('yogurt-fruit-snack',1), partner: __d0.meals.snack.partner};"
+  ].join('\n'));
+  const today = get(ctx, 'todayISO()');
+
+  // (1) With nothing logged, the log-aware view agrees with the plan-only one (small rounding
+  // tolerance: totals sum per-entry ROUNDED macros, macroConcernForDay rounds the raw sum).
+  const planOnly0 = call(ctx, 'macroConcernForDay', [get(ctx, 'weekPlans[mondayOfWeek(todayISO())].days[0]'), 'elena']);
+  const logAware0 = call(ctx, 'macroConcernForDate', [today, 'elena']);
+  assert(Math.abs(logAware0.freeSugars.grams - planOnly0.freeSugars.grams) <= 3 && Math.abs(logAware0.satFat.grams - planOnly0.satFat.grams) <= 3,
+    'macroConcernForDate: with no log, matches plan-only macroConcernForDay grams (±3g rounding)',
+    JSON.stringify({logAware: [logAware0.freeSugars.grams, logAware0.satFat.grams], planOnly: [planOnly0.freeSugars.grams, planOnly0.satFat.grams]}));
+  assert(logAware0.freeSugars.grams >= 2,
+    'macroConcernForDate test setup: the planned day carries measurable free sugars to move', 'got ' + logAware0.freeSugars.grams);
+
+  // (2) A sugary item logged OUTSIDE meals is counted and folded into one contributor row.
+  call(ctx, 'logFoodEntry', [today, 'elena', 'fruit-jam', 40]);
+  const logAware1 = call(ctx, 'macroConcernForDate', [today, 'elena']);
+  assert(logAware1.freeSugars.grams > logAware0.freeSugars.grams,
+    'macroConcernForDate: a sugary item logged outside meals raises the day free-sugars total',
+    'before ' + logAware0.freeSugars.grams + ', after ' + logAware1.freeSugars.grams);
+  const added = logAware1.freeSugars.contributors.filter(function(c){ return c.slot === null; });
+  assert(added.length === 1 && /Added outside meals/.test(added[0].label) && added[0].grams >= 2,
+    'macroConcernForDate: outside-meal items appear as exactly one "Added outside meals" contributor',
+    JSON.stringify(logAware1.freeSugars.contributors));
+
+  // (3) The crux: the plan-only view still reports the untouched menu, so the log-aware view now
+  // reads higher — this is the divergence the Today popover previously showed.
+  const planOnly1 = call(ctx, 'macroConcernForDay', [get(ctx, 'weekPlans[mondayOfWeek(todayISO())].days[0]'), 'elena']);
+  assert(logAware1.freeSugars.grams > planOnly1.freeSugars.grams,
+    'macroConcernForDate: reflects an outside-meal add that plan-only macroConcernForDay misses',
+    JSON.stringify({logAware: logAware1.freeSugars.grams, planOnly: planOnly1.freeSugars.grams}));
+
+  // (4) A skipped slot drops out of both the total and the contributor list.
+  call(ctx, 'markSlotSkipped', [today, 'elena', 'breakfast']);
+  const logAware2 = call(ctx, 'macroConcernForDate', [today, 'elena']);
+  assert(logAware2.freeSugars.contributors.filter(function(c){ return c.slot === 'breakfast'; }).length === 0,
+    'macroConcernForDate: a skipped slot is dropped from the contributors',
+    JSON.stringify(logAware2.freeSugars.contributors));
+  assert(logAware2.freeSugars.grams < logAware1.freeSugars.grams,
+    'macroConcernForDate: skipping a sugary slot lowers the day free-sugars total',
+    'before ' + logAware1.freeSugars.grams + ', after ' + logAware2.freeSugars.grams);
+
+  run(ctx, "logHistory = {}; weekPlans = {}; weekPlan = null;"); // leave no fixture behind
+}
+
 // Per-day per-ingredient QUANTITY cap (owner 2026-09-06 "no ~1kg carrots / 6 eggs a day"): a
 // SOFT, bounded, purely-additive score term that grows with how far a candidate pushes a single
 // food's DAILY total past its ceiling. Distinct from ingredientDiversityPenalty (same KEY across
@@ -15159,6 +15218,7 @@ function main(){
   runTest('over-scale comfort penalty (portionScalePenalty, 2026-09-03)', function(){ testOverScalePenalty(ctx); });
   runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
   runTest('Today macro concern: free sugars / sat fat outlier + contributors (2026-09-14)', function(){ testMacroConcern(ctx); });
+  runTest('Today macro concern is log-aware: outside-meal adds counted, skips dropped (2026-09-26)', function(){ testMacroConcernLogAware(ctx); });
   runTest('side/pairing appropriateness (slot + flavor gates, 2026-09-06)', function(){ testSideAndPairingAppropriateness(ctx); });
   runTest('add-meal search ranks Sides/Full by the query (2026-09-14)', function(){ testAddMealSearchRanking(ctx); });
   runTest('options-recipe = one recipe per combo (variety, 2026-09-06)', function(){ testOptionComboVariety(ctx); });

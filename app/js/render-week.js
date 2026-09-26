@@ -148,7 +148,7 @@ function weekDayNutriViews(plan, person){
         const title = e.kind === 'food'
           ? ((FOODS[e.ref] && FOODS[e.ref].name) || 'Ingredient')
           : recipeDisplayTitle(e.ref, e.opts);
-        standaloneEntries.push({title: title, kcal: nut.kcal, freeSugars: nut.freeSugars});
+        standaloneEntries.push({title: title, kcal: nut.kcal, freeSugars: nut.freeSugars, satFat: nut.satFat});
       });
     }
     return {views: views, totals: totals, quickAddCount: standaloneEntries.length, standaloneEntries: standaloneEntries};
