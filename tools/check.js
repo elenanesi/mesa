@@ -1928,23 +1928,42 @@ function testReplaceBuiltinRecipesFromCatalogRows(ctx){
         return food && food.cat === 'Dairy' && !food.dairyFree;
       });
     });
+    // Strip avoid AND tags AND styles — the trio the admin tool cannot derive, and every field
+    // week generation dereferences unguarded (recipeHitsAvoid / hasTag->recipeHasOmega3 /
+    // candidatesFor's styles filter). A row missing any of them must still install AND be
+    // generation-safe (2026-09-28: a tagless custom 'toastie' row re-broke Regenerate).
     const avoidlessRows = avoidlessIds.map(function(id){
       const data = Object.assign({}, bundled[id]);
-      delete data.avoid;
+      delete data.avoid; delete data.tags; delete data.styles;
       return rowFor(id, data);
     });
     result = call(ctx, 'replaceBuiltinRecipesFromCatalogRows', [avoidlessRows]);
     assert(result === true,
-      'replaceBuiltinRecipesFromCatalogRows: a payload whose rows omit `avoid` still installs', String(result));
+      'replaceBuiltinRecipesFromCatalogRows: a payload whose rows omit avoid/tags/styles still installs', String(result));
     db = get(ctx, 'BUILTIN_RECIPES_DB');
     assert(avoidlessIds.every(function(id){ return Array.isArray(db[id].avoid); }),
       'replaceBuiltinRecipesFromCatalogRows: every installed row gets an `avoid` array even when the D1 row omitted it',
       avoidlessIds.filter(function(id){ return !Array.isArray(db[id].avoid); }).join(', '));
+    assert(avoidlessIds.every(function(id){ return Array.isArray(db[id].tags); }),
+      'normalizeStoredRecipe: every installed row gets a `tags` array even when the D1 row omitted it',
+      avoidlessIds.filter(function(id){ return !Array.isArray(db[id].tags); }).join(', '));
+    assert(avoidlessIds.every(function(id){ return Array.isArray(db[id].styles) && db[id].styles.length > 0; }),
+      'normalizeStoredRecipe: every installed row gets a non-empty `styles` array even when the D1 row omitted it',
+      avoidlessIds.filter(function(id){ return !(Array.isArray(db[id].styles) && db[id].styles.length); }).join(', '));
     if(dairyRecipeId){
       assert(db[dairyRecipeId].avoid.indexOf('lactose') !== -1,
         'replaceBuiltinRecipesFromCatalogRows: a missing `avoid` is DERIVED from the ingredients (a dairy recipe still reads as lactose), never defaulted to []',
         dairyRecipeId + ' -> ' + JSON.stringify(db[dairyRecipeId].avoid));
     }
+
+    // hasTag (state.js) is the exact deref that threw on the tagless 'toastie' row: it must read a
+    // missing tags list as "no tags", never crash generation.
+    var hasTagThrew = null, hasTagResult = null;
+    try{ hasTagResult = call(ctx, 'hasTag', [{title: 'no tags field'}, 'omega3']); }
+    catch(err){ hasTagThrew = err; }
+    assert(hasTagThrew === null && hasTagResult === false,
+      'hasTag: a recipe with no `tags` field reads false, not a thrown TypeError',
+      hasTagThrew ? hasTagThrew.message : ('returned ' + hasTagResult));
 
     // An admin-created global recipe is live immediately even for households whose Recipe
     // Market is already curated. It must also behave consistently in the book checks: before

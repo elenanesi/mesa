@@ -137,9 +137,24 @@ function normalizeRecipeAvoidField(recipe){
   return recipe;
 }
 // The single normalizer for a recipe record read from storage — every write into
-// BUILTIN_RECIPES_DB / RECIPES_DB goes through it, so the planner can rely on role and avoid.
+// BUILTIN_RECIPES_DB / RECIPES_DB goes through it, so the planner can rely on the fields it
+// dereferences unguarded during generation. A row authored straight into the D1 catalog (the
+// admin tool cannot derive these) or an older customRecipes entry can arrive without `tags` or
+// `styles`, and generation then crashed exactly the way a missing `avoid` did (2026-09-28: a
+// tagless 'toastie' custom row broke Regenerate via state.js:hasTag -> recipeHasOmega3). `tags`
+// defaults to [] (a recipe simply forgoes its tag bonuses — omega3/highFiber/…) and `styles` to
+// ['balanced'] (the universal style every household style maps onto, and never empty or the recipe
+// is unplannable). This is a crash floor, not a substitute for the in-app builder's real
+// deriveRecipeMeta() derivation on save. `emoji` gets a plate fallback so a bare row shows an icon.
 function normalizeStoredRecipe(recipe){
-  return normalizeRecipeAvoidField(normalizeRecipeRoleField(recipe));
+  normalizeRecipeRoleField(recipe);
+  normalizeRecipeAvoidField(recipe);
+  if(recipe){
+    if(!Array.isArray(recipe.tags)) recipe.tags = [];
+    if(!Array.isArray(recipe.styles) || !recipe.styles.length) recipe.styles = ['balanced'];
+    if(!recipe.emoji) recipe.emoji = '🍽️';
+  }
+  return recipe;
 }
 
 // The D1 GLOBAL catalog is the SOURCE OF TRUTH for built-in recipes; data/recipes.js (the

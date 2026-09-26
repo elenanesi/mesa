@@ -163,7 +163,11 @@ function recipeFlagSet(recipeId){
   });
   return set;
 }
-function hasTag(recipe, tag){ return recipe.tags.indexOf(tag) !== -1; }
+// Array.isArray guard, not a bare deref: library.js:normalizeStoredRecipe fills `tags` for every
+// recipe reaching RECIPES_DB, but a caller can pass a recipe object straight from storage (a logged
+// entry, a market row not yet normalized) — a missing tags list must read as "no tags", never crash
+// week generation (2026-09-28 regression: a tagless custom catalog row threw here via recipeHasOmega3).
+function hasTag(recipe, tag){ return !!(recipe && Array.isArray(recipe.tags)) && recipe.tags.indexOf(tag) !== -1; }
 
 // Each rule contributes at most one clause, keyed by `goal` so a recipe never mentions
 // the same goal twice. `clause` returns a lowercase sentence fragment (no leading capital,
