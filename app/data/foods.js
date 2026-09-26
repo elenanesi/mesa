@@ -245,6 +245,11 @@ const FOODS = {
     kcal: 83, protein: 1.7, carbs: 18.7, fat: 1.2, satFat: 0.1, fiber: 4.0, sugars: 13.7, freeSugars: 0, sugarQuality: 'intrinsic',
     flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'winter/autumn', breakfastPair: true, iconKey: 'pomegranate', src: 'USDA FDC 169134 (pomegranate, raw)'
   },
+  'figs': {
+    name: 'Figs, raw', per: 100, unit: 'g', avgG: 50, countable: true,
+    kcal: 74, protein: 0.8, carbs: 19.2, fat: 0.3, satFat: 0.1, fiber: 2.9, sugars: 16.3, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['highFiber'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'figs', src: 'USDA FDC 168796 (figs, raw)'
+  },
   'bananas': {
     name: 'Bananas, raw', per: 100, unit: 'g', avgG: 118, countable: true,
     kcal: 98, protein: 1.1, carbs: 22.8, fat: 0.3, satFat: 0.1, fiber: 2.6, sugars: 12.2, freeSugars: 0, sugarQuality: 'intrinsic',
