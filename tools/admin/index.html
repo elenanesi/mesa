@@ -854,7 +854,7 @@
 
     html += '<div class="field"><label>Title</label><input class="inp" id="rdTitle" value="' + escapeHtml(d.title || '') + '"></div>';
     html += '<div class="field"><label>Slot</label><input class="inp" id="rdSlot" value="' + escapeHtml(d.slot || '') + '"></div>';
-    html += '<div class="field"><label>Slots (comma-separated)</label><input class="inp" id="rdSlots" value="' + escapeHtml((d.slots || []).join(', ')) + '"></div>';
+    html += '<div class="field"><label>Slots (comma-separated)</label><input class="inp" id="rdSlots" value="' + escapeHtml((d.slots || []).join(', ')) + '"><div class="muted" style="font-size:11px;margin-top:4px">Every slot the planner may use this recipe in. Leave empty to use just the Slot above. The Slot above is always kept in this list.</div></div>';
     html += '<div class="field"><label>Styles (comma-separated)</label><input class="inp" id="rdStyles" value="' + escapeHtml((d.styles || []).join(', ')) + '"></div>';
     html += '<div class="field"><label>Role</label><input class="inp" id="rdRole" value="' + escapeHtml(d.role || '') + '"></div>';
     html += '<div class="field"><label>Season</label><input class="inp" id="rdSeason" value="' + escapeHtml(d.season || 'evergreen') + '"></div>';
@@ -924,8 +924,16 @@
     document.getElementById('rdApply').addEventListener('click', function(){
       d.title = document.getElementById('rdTitle').value.trim() || d.title;
       d.slot = document.getElementById('rdSlot').value.trim() || d.slot;
-      var slotsVal = document.getElementById('rdSlots').value;
-      d.slots = slotsVal ? slotsVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : d.slots;
+      // `slots` is what the app's planner reads for eligibility (data/recipes.js:recipeSlotList
+      // unions the primary slot in). Clearing this field means "just the primary slot" — it must
+      // NOT silently keep the previous list, which was the "my slot change keeps reverting" bug.
+      // Keep the two coherent so they can never contradict: the primary slot is always an eligible
+      // slot and comes first.
+      var slotsList = document.getElementById('rdSlots').value.split(',').map(function(s){ return s.trim(); }).filter(Boolean);
+      if(!slotsList.length && d.slot) slotsList = [d.slot];
+      if(d.slot && slotsList.indexOf(d.slot) === -1) slotsList.unshift(d.slot);
+      if(!d.slot && slotsList.length) d.slot = slotsList[0];
+      if(slotsList.length) d.slots = slotsList;
       var stylesVal = document.getElementById('rdStyles').value;
       d.styles = stylesVal ? stylesVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : d.styles;
       d.role = document.getElementById('rdRole').value.trim() || d.role;
@@ -943,6 +951,10 @@
       var ogEl = document.getElementById('rdOptGroups');
       if(ogEl){ try{ d.optionGroups = JSON.parse(ogEl.value); }catch(e){} }
       rec.title = d.title;
+      // Reflect the normalized slot/slots back into the inputs so a cleared or corrected Slots
+      // field visibly shows what will actually be saved (no more "did my change take?" doubt).
+      document.getElementById('rdSlot').value = d.slot || '';
+      document.getElementById('rdSlots').value = (d.slots || []).join(', ');
       markDirty('recipe', id);
       alertInline('✓ Changes staged — click "Save changes to D1" to push.');
     });
