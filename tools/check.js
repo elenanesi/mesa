@@ -5344,6 +5344,28 @@ function testMacroConcern(ctx){
     'macroConcernForDay: an empty day is a no-op (no concern, no contributors)');
 }
 
+// Season boundaries (2026-10): spring/summer is the spring→autumn equinox window (Mar 20–Sep 22);
+// everything else is winter/autumn. Regression guard for the old Apr–Sep check that mislabelled
+// late September as summer and hid autumn/winter dishes through all of September.
+function testSeasonBoundaries(ctx){
+  const cases = [
+    ['2026-03-19', 'winter/autumn'], ['2026-03-20', 'spring/summer'],
+    ['2026-06-21', 'spring/summer'], ['2026-09-22', 'spring/summer'],
+    ['2026-09-23', 'winter/autumn'], ['2026-09-28', 'winter/autumn'],
+    ['2026-12-25', 'winter/autumn'], ['2026-01-10', 'winter/autumn']
+  ];
+  const saved = get(ctx, 'typeof MESA_TEST_TODAY !== "undefined" ? MESA_TEST_TODAY : undefined');
+  try{
+    cases.forEach(function(c){
+      run(ctx, "MESA_TEST_TODAY = '" + c[0] + "';");
+      const got = call(ctx, 'currentSeasonKey', []);
+      assert(got === c[1], 'currentSeasonKey(' + c[0] + ') === ' + c[1], 'got ' + got);
+    });
+  } finally {
+    run(ctx, "MESA_TEST_TODAY = " + (saved ? "'" + saved + "'" : 'undefined') + ";");
+  }
+}
+
 // Log-aware Today macro concern (2026-09-26): macroConcernForDate is the version the Today
 // screen actually reads. Unlike the plan-only macroConcernForDay, it is computed over what was
 // really eaten (weekDayNutriViews) — items logged outside a meal are counted and surfaced as one
@@ -11598,8 +11620,10 @@ function testEatenOutToggleWiring(){
 
   const recordsFn = fnBody('renderTodayRecords');
   assert(recordsFn.length > 0, 'wiring setup: renderTodayRecords() function body found in render.js', 'not found');
-  assert(recordsFn.indexOf("filter(function(group){ return group.kind === 'food'; })") !== -1,
-    'renderTodayRecords(): filters out planned meals so it never repeats the meal cards', recordsFn);
+  // Now includes a recipe logged WITHOUT a meal (a "little extra" like a cinnamon roll) but still
+  // excludes slot-bound plan entries, which are confirmed meals shown on their own cards.
+  assert(/group\.entry\s*&&\s*group\.entry\.slot/.test(recordsFn) && recordsFn.indexOf("group.kind === 'plan'") !== -1,
+    'renderTodayRecords(): shows standalone extras (food + no-meal recipe) but excludes slot-bound meals', recordsFn);
   assert(recordsFn.indexOf('toggleTodayRecordGroupEatenOut(') === -1,
     'renderTodayRecords(): has no inline eaten-out toggle because it only displays compact quick-add rows', recordsFn);
   assert(recordsFn.indexOf('chip-computed') !== -1, 'renderTodayRecords(): an eaten-out quick add shows an at-a-glance pill (reuses the chip-computed style)', recordsFn);
@@ -15266,6 +15290,7 @@ function main(){
   runTest('per-day per-ingredient quantity cap (dailyGramCapPenalty, 2026-09-06)', function(){ testDailyGramCap(ctx); });
   runTest('Today macro concern: free sugars / sat fat outlier + contributors (2026-09-14)', function(){ testMacroConcern(ctx); });
   runTest('Today macro concern is log-aware: outside-meal adds counted, skips dropped (2026-09-26)', function(){ testMacroConcernLogAware(ctx); });
+  runTest('season boundaries follow the equinoxes (Mar 20 – Sep 22 = spring/summer)', function(){ testSeasonBoundaries(ctx); });
   runTest('side/pairing appropriateness (slot + flavor gates, 2026-09-06)', function(){ testSideAndPairingAppropriateness(ctx); });
   runTest('add-meal search ranks Sides/Full by the query (2026-09-14)', function(){ testAddMealSearchRanking(ctx); });
   runTest('options-recipe = one recipe per combo (variety, 2026-09-06)', function(){ testOptionComboVariety(ctx); });

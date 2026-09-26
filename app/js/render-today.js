@@ -1765,7 +1765,7 @@ function groupedTodayRecords(){
       foodByRef[key].kcal += logEntryNutrition(e).kcal;
       if((e.t || '') < (foodByRef[key].t || '99:99')) foodByRef[key].t = e.t || '';
     } else {
-      groups.push({kind: 'plan', entry: e, indices: [i], t: e.t || ''});
+      groups.push({kind: 'plan', entry: e, indices: [i], t: e.t || '', kcal: logEntryNutrition(e).kcal});
     }
   });
   return groups.sort(function(a, b){ return ((a.t || '00:00') < (b.t || '00:00')) ? -1 : 1; });
@@ -1857,8 +1857,13 @@ function renderTodayRecords(){
   const pill = document.getElementById('todayRecordsPill');
   const count = document.getElementById('todayRecordsCount');
   if(!list || !card) return;
-  // Planned meal status lives on the meal cards; this list is only for independent quick adds.
-  todayRecordGroups = groupedTodayRecords().filter(function(group){ return group.kind === 'food'; });
+  // Planned meal status lives on the meal cards; this list is for independent extras — quick-added
+  // foods AND a recipe logged WITHOUT a meal (slot === null, e.g. a cinnamon roll added via the Log
+  // picker's "No meal"). A slot-bound plan entry is a confirmed meal and belongs on its card, so it
+  // stays excluded here.
+  todayRecordGroups = groupedTodayRecords().filter(function(group){
+    return group.kind === 'food' || (group.kind === 'plan' && !(group.entry && group.entry.slot));
+  });
   if(!todayRecordGroups.length){
     card.hidden = true;
     list.innerHTML = '';
@@ -1871,6 +1876,17 @@ function renderTodayRecords(){
   list.innerHTML = todayRecordGroups.map(function(group, gi){
     const editBtn = '<button class="li-x" aria-label="Edit this item" onclick="openEditTodayRecord('+gi+')">✎</button>';
     const deleteBtn = '<button class="li-x" aria-label="Delete this item" onclick="deleteTodayRecordGroup('+gi+')">✕</button>';
+    // A recipe logged without a meal (cinnamon roll etc.): show it as an extra with the recipe's own
+    // title/emoji/kcal. No grams edit (it's a recipe, not a weighed food), so only a delete control.
+    if(group.kind === 'plan'){
+      const e = group.entry;
+      const r = RECIPES_DB[e.ref];
+      const emoji = r ? r.emoji : '🍽️';
+      const title = escapeHtml(logEntryTitleWithComponents(e));
+      const nut = logEntryNutrition(e);
+      const label = 'Extra · ' + macroSummaryFromTotals(nut);
+      return '<div class="logitem"><div class="li-i">'+emoji+'</div><div class="li-t">'+title+'<small>'+label+'</small></div><div class="li-k">'+Math.round(nut.kcal)+'</div>'+deleteBtn+'</div>';
+    }
     // FAVORITES-EATENOUT-plan.md item 3: same toggle as "Today so far", but at the GROUP
     // level (groupedTodayRecords merges repeat quick-adds of the same food into one row) —
     // Its status is summarised from the full merged group, not the first entry alone.

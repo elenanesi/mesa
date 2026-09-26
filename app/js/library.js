@@ -477,8 +477,14 @@ function recipeSeason(recipeOrId){
 }
 function currentSeasonKey(){
   const d = (typeof todayISO === 'function') ? parseISODate(todayISO()) : new Date();
-  const m = d.getMonth() + 1;
-  return (m >= 4 && m <= 9) ? 'spring/summer' : 'winter/autumn';
+  const m = d.getMonth() + 1, day = d.getDate();
+  // spring/summer runs from the spring equinox (~Mar 20) up to the autumn equinox (Sep 23);
+  // the rest of the year is winter/autumn (owner 2026-10: "autumn/winter starts Sept 23 and
+  // ends with spring"). Was a plain Apr–Sep check, which mislabelled late Sept as summer and
+  // hid autumn/winter dishes (e.g. gnocchi) through the whole of September.
+  const afterSpringStart = (m > 3) || (m === 3 && day >= 20);
+  const beforeAutumnStart = (m < 9) || (m === 9 && day < 23);
+  return (afterSpringStart && beforeAutumnStart) ? 'spring/summer' : 'winter/autumn';
 }
 function recipeAllowedForCurrentSeason(recipeId){
   const s = recipeSeason(recipeId);
