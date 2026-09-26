@@ -373,6 +373,11 @@ const FOODS = {
     kcal: 129, protein: 21.0, carbs: 0, fat: 5.0, satFat: 2.1, fiber: 0,
     flags: ['selenium'], cat: 'Protein', iconKey: 'beef-mince-lean', src: 'USDA FDC 174036-style (beef, ground, 95% lean, raw)'
   },
+  'beef-fillet': {
+    name: 'Beef fillet (tenderloin), raw', per: 100, unit: 'g', avgG: 150,
+    kcal: 145, protein: 22.0, carbs: 0, fat: 6.0, satFat: 2.3, fiber: 0,
+    flags: ['selenium'], cat: 'Protein', iconKey: 'beef-mince-lean', src: 'USDA FDC 168624-style (beef tenderloin, lean, raw)'
+  },
   'pork-loin': {
     name: 'Pork loin, lean, raw', per: 100, unit: 'g',
     kcal: 127, protein: 21.5, carbs: 0, fat: 4.5, satFat: 1.6, fiber: 0,
