@@ -356,12 +356,12 @@ const FOODS = {
   'eel': {
     name: 'Eel (unagi), raw', per: 100, unit: 'g',
     kcal: 179, protein: 18.4, carbs: 0, fat: 11.7, satFat: 2.4, fiber: 0,
-    flags: ['omega3', 'selenium'], cat: 'Protein', src: 'USDA FDC-style (fish, eel, mixed species, raw); kcal per 4/4/9'
+    flags: ['omega3', 'selenium'], cat: 'Protein', iconKey: 'eel', src: 'USDA FDC-style (fish, eel, mixed species, raw); kcal per 4/4/9'
   },
   'octopus': {
     name: 'Octopus, raw', per: 100, unit: 'g',
     kcal: 77, protein: 14.9, carbs: 2.2, fat: 1.0, satFat: 0.2, fiber: 0,
-    flags: ['selenium', 'highIodine'], cat: 'Protein', src: 'USDA FDC-style (octopus, common, raw); kcal per 4/4/9'
+    flags: ['selenium', 'highIodine'], cat: 'Protein', iconKey: 'octopus', src: 'USDA FDC-style (octopus, common, raw); kcal per 4/4/9'
   },
   'chicken-thigh': {
     name: 'Chicken thigh, skinless, raw', per: 100, unit: 'g',
@@ -452,7 +452,7 @@ const FOODS = {
   'tempeh': {
     name: 'Tempeh, raw', per: 100, unit: 'g',
     kcal: 216, protein: 20.3, carbs: 9.4, fat: 10.8, satFat: 1.8, fiber: 4.9,
-    flags: ['fermented', 'glutenFree', 'highFiber'], cat: 'Protein', src: 'USDA FDC 174303-style (tempeh); kcal per 4/4/9'
+    flags: ['fermented', 'glutenFree', 'highFiber'], cat: 'Protein', iconKey: 'tempeh', src: 'USDA FDC 174303-style (tempeh); kcal per 4/4/9'
   },
   // Shelled soybeans — a real vegan protein bump for the miso aubergine main (whole
   // aubergine alone falls short of the 12g/serving protein floor a role:'main' needs).
@@ -531,7 +531,7 @@ const FOODS = {
   'cottage-cheese': {
     name: 'Cottage cheese, creamed', per: 100, unit: 'g',
     kcal: 98, protein: 11.1, carbs: 3.4, fat: 4.3, satFat: 2.7, fiber: 0,
-    flags: [], cat: 'Dairy', src: 'USDA FDC 173420 (cheese, cottage, creamed, large or small curd)'
+    flags: [], cat: 'Dairy', iconKey: 'cottage-cheese', src: 'USDA FDC 173420 (cheese, cottage, creamed, large or small curd)'
   },
   'butter': {
     name: 'Butter, salted', per: 100, unit: 'g',
@@ -722,7 +722,7 @@ const FOODS = {
   'miso-paste': {
     name: 'Miso paste (white/yellow)', per: 100, unit: 'g',
     kcal: 186, protein: 12.0, carbs: 21.0, fat: 6.0, satFat: 0.9, fiber: 5.4, sugars: 6.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['fermented'], cat: 'Pantry', src: 'USDA FDC-style (miso paste); kcal per 4/4/9'
+    flags: ['fermented'], cat: 'Pantry', iconKey: 'miso-paste', src: 'USDA FDC-style (miso paste); kcal per 4/4/9'
   },
   // Recipe-batch addition: the sauce for the tahini-roasted cauliflower steak. Used in
   // real weighed grams (not toTaste) since it materially contributes calories/fat here,
@@ -731,14 +731,14 @@ const FOODS = {
   'tahini': {
     name: 'Tahini (sesame paste)', per: 100, unit: 'g',
     kcal: 637, protein: 17.0, carbs: 21.2, fat: 53.8, satFat: 7.5, fiber: 9.3, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Pantry', src: 'USDA FDC-style (sesame butter / tahini); kcal per 4/4/9'
+    flags: [], cat: 'Pantry', iconKey: 'tahini', src: 'USDA FDC-style (sesame butter / tahini); kcal per 4/4/9'
   },
   // Recipe-batch addition: the harissa chicken thighs' marinade. A jarred/oil-based chili
   // paste — genuinely spicy (avoid:['spicy'] on the recipe, not derived from this food).
   'harissa-paste': {
     name: 'Harissa paste', per: 100, unit: 'g',
     kcal: 179, protein: 2.0, carbs: 9.0, fat: 15.0, satFat: 2.0, fiber: 4.0, sugars: 3.0, freeSugars: 1.0, sugarQuality: 'mixed',
-    flags: [], cat: 'Pantry', src: 'USDA FDC-style (harissa / oil-based chili paste); kcal per 4/4/9'
+    flags: [], cat: 'Pantry', iconKey: 'harissa-paste', src: 'USDA FDC-style (harissa / oil-based chili paste); kcal per 4/4/9'
   },
   'tomato-puree': {
     name: 'Tomato purée, concentrated', per: 100, unit: 'g',
@@ -1102,13 +1102,13 @@ const FOODS = {
   'mango': {
     name: 'Mango, raw', per: 100, unit: 'g', avgG: 200,
     kcal: 63, protein: 0.8, carbs: 14.0, fat: 0.4, satFat: 0.1, fiber: 1.6, sugars: 13.5, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: [], cat: 'Produce', sub: 'fruit', season: 'spring/summer',
+    flags: [], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'mango',
     src: 'USDA FDC 169910-style (mango, raw); kcal per 4/4/9'
   },
   'surimi': {
     name: 'Surimi / crab stick', per: 100, unit: 'g',
     kcal: 97, protein: 8.0, carbs: 14.0, fat: 1.0, satFat: 0.2, fiber: 0, sugars: 5.0, freeSugars: 4.0, sugarQuality: 'added/free',
-    flags: [], cat: 'Protein',
+    flags: [], cat: 'Protein', iconKey: 'surimi',
     src: 'USDA FDC 174204-style (surimi, imitation crab); kcal per 4/4/9'
   },
   'wakame-salad': {
@@ -1120,19 +1120,19 @@ const FOODS = {
   'tobiko': {
     name: 'Tobiko (flying-fish roe)', per: 100, unit: 'g',
     kcal: 136, protein: 20.0, carbs: 5.0, fat: 4.0, satFat: 1.0, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
-    flags: [], cat: 'Protein',
+    flags: [], cat: 'Protein', iconKey: 'tobiko',
     src: 'Fish-roe representative table (tobiko/caviale); kcal per 4/4/9'
   },
   'teriyaki-sauce': {
     name: 'Teriyaki sauce', per: 100, unit: 'ml',
     kcal: 76, protein: 3.0, carbs: 16.0, fat: 0, satFat: 0, fiber: 0, sugars: 14.0, freeSugars: 13.0, sugarQuality: 'added/free',
-    flags: [], cat: 'Pantry',
+    flags: [], cat: 'Pantry', iconKey: 'teriyaki',
     src: 'USDA FDC 174046-style (teriyaki sauce, ready-to-serve); kcal per 4/4/9'
   },
   'poppy-seeds': {
     name: 'Poppy seeds', per: 100, unit: 'g',
     kcal: 562, protein: 18.0, carbs: 28.0, fat: 42.0, satFat: 4.5, fiber: 19.5, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
-    flags: ['highFiber'], cat: 'Pantry',
+    flags: ['highFiber'], cat: 'Pantry', iconKey: 'poppy-seeds',
     src: 'USDA FDC 170188-style (poppy seeds); kcal per 4/4/9 (used in tiny topping amounts)'
   },
   'goma-dressing': {
@@ -1140,6 +1140,70 @@ const FOODS = {
     kcal: 383, protein: 5.0, carbs: 12.0, fat: 35.0, satFat: 5.0, fiber: 2.0, sugars: 9.0, freeSugars: 8.0, sugarQuality: 'added/free',
     flags: [], cat: 'Pantry',
     src: 'Japanese creamy sesame (goma) dressing, representative table (sesame paste + soy + a little sugar/oil); kcal per 4/4/9'
+  },
+
+  // Ingredient expansion (2026-09-27). These records use representative food-table
+  // values and keep the generated watercolor art on the food record, so the catalog,
+  // offline fallback, and custom-food picker all resolve the same icon.
+  'blackberries': {
+    name: 'Blackberries, raw', per: 100, unit: 'g',
+    kcal: 43, protein: 1.4, carbs: 9.6, fat: 0.5, satFat: 0.0, fiber: 5.3, sugars: 4.9, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['highFiber', 'lowGI'], cat: 'Produce', sub: 'fruit', season: 'spring/summer', iconKey: 'blackberries', src: 'USDA FDC-style (blackberries, raw); kcal per 4/4/9'
+  },
+  'peas': {
+    name: 'Peas, green, cooked', per: 100, unit: 'g',
+    kcal: 81, protein: 5.4, carbs: 14.5, fat: 0.4, satFat: 0.1, fiber: 5.7, sugars: 5.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['highFiber', 'lowGI', 'glutenFree'], cat: 'Produce', season: 'spring/summer', iconKey: 'peas', src: 'USDA FDC-style (green peas, cooked); kcal per 4/4/9'
+  },
+  'anchovies': {
+    name: 'Anchovies, raw', per: 100, unit: 'g',
+    kcal: 210, protein: 29.0, carbs: 0, fat: 10.9, satFat: 2.3, fiber: 0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['omega3', 'selenium', 'highIodine'], cat: 'Protein', iconKey: 'anchovies', src: 'USDA FDC-style (anchovy, raw); kcal per 4/4/9'
+  },
+  'cheddar': {
+    name: 'Cheddar cheese', per: 100, unit: 'g',
+    kcal: 403, protein: 25.0, carbs: 1.3, fat: 33.1, satFat: 18.9, fiber: 0, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['fermented'], cat: 'Dairy', iconKey: 'cheddar', src: 'USDA FDC-style (cheddar cheese); kcal per 4/4/9'
+  },
+  'custard': {
+    name: 'Custard', per: 100, unit: 'g',
+    kcal: 120, protein: 3.0, carbs: 17.0, fat: 4.0, satFat: 2.3, fiber: 0, sugars: 12.0, freeSugars: 8.0, sugarQuality: 'mixed',
+    flags: [], cat: 'Dairy', iconKey: 'custard', src: 'Representative vanilla custard table; kcal per 4/4/9'
+  },
+  'brioche': {
+    name: 'Brioche', per: 100, unit: 'g',
+    kcal: 406, protein: 8.0, carbs: 52.0, fat: 17.0, satFat: 8.0, fiber: 1.5, sugars: 10.0, freeSugars: 8.0, sugarQuality: 'added/free',
+    flags: [], cat: 'Bakery', iconKey: 'brioche', src: 'Representative brioche bread table; kcal per 4/4/9'
+  },
+  'fruit-juice': {
+    name: 'Fruit juice', per: 100, unit: 'ml',
+    kcal: 45, protein: 0.7, carbs: 10.4, fat: 0.2, satFat: 0.0, fiber: 0.2, sugars: 9.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Pantry', iconKey: 'fruit-juice', src: 'Representative unsweetened fruit juice table; kcal per 4/4/9'
+  },
+  'egg-white': {
+    name: 'Egg white', per: 100, unit: 'g',
+    kcal: 52, protein: 10.9, carbs: 0.7, fat: 0.2, satFat: 0.1, fiber: 0, sugars: 0.7, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['selenium'], cat: 'Protein', iconKey: 'eggs', src: 'USDA FDC-style (egg white, raw); reuses the whole-egg watercolor icon'
+  },
+  'egg-yolk': {
+    name: 'Egg yolk', per: 100, unit: 'g',
+    kcal: 322, protein: 15.9, carbs: 3.6, fat: 26.5, satFat: 8.2, fiber: 0, sugars: 0.6, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: ['selenium'], cat: 'Protein', iconKey: 'eggs', src: 'USDA FDC-style (egg yolk, raw); reuses the whole-egg watercolor icon'
+  },
+  'seaweed': {
+    name: 'Seaweed', per: 100, unit: 'g',
+    kcal: 232, protein: 41.0, carbs: 12.0, fat: 1.5, satFat: 0.3, fiber: 30.0, sugars: 0, freeSugars: 0, sugarQuality: 'unknown',
+    flags: ['highIodine', 'highFiber'], cat: 'Produce', iconKey: 'nori', src: 'Dried seaweed representative table; reuses the existing nori watercolor icon'
+  },
+  'besciamelle': {
+    name: 'Besciamelle / béchamel sauce', per: 100, unit: 'g',
+    kcal: 153, protein: 5.0, carbs: 8.0, fat: 11.0, satFat: 6.8, fiber: 0, sugars: 3.0, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Dairy', iconKey: 'besciamelle', src: 'Representative milk, butter and flour béchamel table; kcal per 4/4/9'
+  },
+  'udon': {
+    name: 'Udon noodles, cooked', per: 100, unit: 'g',
+    kcal: 127, protein: 3.0, carbs: 25.0, fat: 0.2, satFat: 0.0, fiber: 0.9, sugars: 0.5, freeSugars: 0, sugarQuality: 'intrinsic',
+    flags: [], cat: 'Pantry', iconKey: 'pasta', src: 'Representative cooked udon noodle table; reuses the pasta watercolor icon'
   }
 
 };
