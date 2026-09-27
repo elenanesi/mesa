@@ -4196,18 +4196,74 @@ function slotLoggedReadOnly(dateISO, personKey, slot){
 // excludeLogged=true for the current week. slotLoggedEatenOut (log.js) is the same
 // side-effect-free "check logHistory[dateISO] first" read as slotLoggedReadOnly above, so
 // this stays a pure read like the rest of this function.
+// Single-day slice of weekPlanComponents' walk (same excludeLogged/eaten-out exclusion,
+// same slot/person order) — factored out so PANTRY-BACKDATE's per-day baseline filter below
+// can resolve each day's components (and so its food quantities) WITHOUT weekPlanComponents
+// itself losing the day, which its other callers (staples in computeShoppingList) still need
+// as a flat list. weekPlanComponents' own signature/behavior is unchanged.
+function dayPlanComponents(day, excludeLogged){
+  const components = [];
+  SLOT_ORDER.forEach(function(slot){
+    const m = day.meals[slot];
+    const elenaDone = (excludeLogged && slotLoggedReadOnly(day.date, 'elena', slot)) || slotLoggedEatenOut(day.date, 'elena', slot);
+    const partnerDone = (excludeLogged && slotLoggedReadOnly(day.date, 'partner', slot)) || slotLoggedEatenOut(day.date, 'partner', slot);
+    if(!elenaDone) planEntryComponents(m.elena).forEach(function(c){ components.push(c); });
+    if(!partnerDone) planEntryComponents(m.partner).forEach(function(c){ components.push(c); });
+  });
+  return components;
+}
+
 function weekPlanComponents(plan, excludeLogged){
   const components = [];
   plan.days.forEach(function(day){
-    SLOT_ORDER.forEach(function(slot){
-      const m = day.meals[slot];
-      const elenaDone = (excludeLogged && slotLoggedReadOnly(day.date, 'elena', slot)) || slotLoggedEatenOut(day.date, 'elena', slot);
-      const partnerDone = (excludeLogged && slotLoggedReadOnly(day.date, 'partner', slot)) || slotLoggedEatenOut(day.date, 'partner', slot);
-      if(!elenaDone) planEntryComponents(m.elena).forEach(function(c){ components.push(c); });
-      if(!partnerDone) planEntryComponents(m.partner).forEach(function(c){ components.push(c); });
-    });
+    dayPlanComponents(day, excludeLogged).forEach(function(c){ components.push(c); });
   });
   return components;
+}
+
+// PANTRY-BACKDATE fix (2026-09-27): a pending (not logged, not skipped) day's demand for a
+// food only still "impacts the pantry" — i.e. counts as OUTSTANDING this-week consumption —
+// if the food's last-known baseline predates that day's end. Per the owner: an unlogged meal
+// affects the pantry only if the last edit timestamp for those items is older than that meal's
+// date, else the most recent timestamp wins. Concretely, per (day D, foodId F):
+//   baselineMs(F) < mealDayEndMs(D)
+// where mealDayEndMs(D) is D's local end-of-day (23:59:59.999 — the same null-time convention
+// logEntryEatenAtMs, pantry.js, uses), and baselineMs(F) is pantry[F].setAt when F has a pantry
+// baseline, else startOfTodayMs (todayISO() at local midnight — NOT Date.now(), so this stays
+// deterministic under MESA_TEST_TODAY). A past pending day (D's end already before the
+// baseline) is excluded; today/future pending days are included. For a future week every D is
+// necessarily after today, so baselineMs < mealDayEndMs(D) always holds — the filter is a
+// no-op there, and callers passing next week's (or any future week's) plan see unchanged
+// totals.
+//
+// This has to be computed PER (day, foodId) rather than by filtering weekPlanComponents'
+// flat list, because the filter depends on both which day a component came from AND which
+// foodId(s) it resolves to (a composite recipe's ingredients can each carry a different
+// pantry baseline) — weekPlanComponents discards the day on purpose for its other callers, so
+// this walks the plan itself instead, resolving each day's components separately via
+// dayPlanComponents/foodQuantitiesForComponents before filtering and aggregating.
+function mealDayEndMs(dateISO){
+  const d = parseISODate(dateISO);
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+
+function outstandingWeekFoodQuantities(plan, excludeLogged){
+  const startOfTodayMs = parseISODate(todayISO()).getTime();
+  const out = {};
+  plan.days.forEach(function(day){
+    const dayComponents = dayPlanComponents(day, excludeLogged);
+    if(!dayComponents.length) return;
+    const dayQty = foodQuantitiesForComponents(dayComponents);
+    const dayEndMs = mealDayEndMs(day.date);
+    Object.keys(dayQty).forEach(function(foodId){
+      const entry = pantry[foodId];
+      const baselineMs = (entry && typeof entry.setAt === 'number') ? entry.setAt : startOfTodayMs;
+      if(!(baselineMs < dayEndMs)) return; // baseline as new or newer than this meal day: not outstanding
+      out[foodId] = (out[foodId] || 0) + dayQty[foodId];
+    });
+  });
+  return out;
 }
 
 // {foodId: qty} for the CURRENT week's plan, counting only what's still OUTSTANDING (not
@@ -4219,7 +4275,7 @@ function weekPlanComponents(plan, excludeLogged){
 // keeps that file to pure pantry-baseline derivation.
 function currentWeekRemainingFoodQuantities(){
   const plan = ensureWeekPlan(mondayOfWeek(todayISO()));
-  return foodQuantitiesForComponents(weekPlanComponents(plan, true));
+  return outstandingWeekFoodQuantities(plan, true);
 }
 
 // Walks the full 7-day plan for BOTH people and aggregates identical ingredient (food)
@@ -4273,7 +4329,11 @@ function computeShoppingList(weekStartDate){
   // 1:1 in practice (FOODS has no duplicate display names) so this is normally a
   // one-element array; built as an array rather than a single id purely as a defensive
   // hedge against that legacy name-keying wart, never assumed elsewhere.
-  const qtyByFood = foodQuantitiesForComponents(allComponents);
+  // PANTRY-BACKDATE fix: current-week demand walks per-day (see outstandingWeekFoodQuantities
+  // doc above) so a past pending day's ingredients drop off the "to buy" list too; a future
+  // week's filter is a no-op (every day is still ahead of today), so this stays the same
+  // totals as the old single foodQuantitiesForComponents(allComponents) call for next week+.
+  const qtyByFood = outstandingWeekFoodQuantities(plan, isCurrentWeek);
   Object.keys(qtyByFood).forEach(function(foodId){
     const food = FOODS[foodId];
     if(!food) return;

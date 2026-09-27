@@ -10719,6 +10719,15 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
   const FOOD_ID = '__pantry_p3_fixture_food__';
   const RECIPE_ID = '__pantry_p3_fixture_recipe__';
   const FOOD_NAME = 'P3 fixture food';
+  // All fixture meals in this test live on FIXED_MONDAY's day0 (Monday), which IS "today"
+  // under MESA_TEST_TODAY = FIXED_MONDAY. PANTRY-BACKDATE's baseline<mealDayEnd filter
+  // (planner.js:outstandingWeekFoodQuantities) compares a pantry entry's setAt against that
+  // real calendar day's end-of-day epoch ms — so a literal Date.now() (the REAL wall clock,
+  // which can be months after the fixed test date) would read as "baselined after the meal",
+  // wrongly excluding it. Every pantry fixture below uses this fixed, mid-Monday timestamp
+  // instead, so it stays safely BEFORE FIXED_MONDAY's end-of-day exactly like a real "pantry
+  // set earlier today" baseline would.
+  const FIXTURE_NOW_MS = new Date(2026, 6, 13, 12, 0, 0, 0).getTime();
   ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
   ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
   const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
@@ -10819,7 +10828,7 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
       }
 
       // Partial: pantry has LESS than planned.
-      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 120, setAt: Date.now(), u: Date.now()};");
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 120, setAt: " + FIXTURE_NOW_MS + ", u: " + FIXTURE_NOW_MS + "};");
       const partial = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
       assert(!!partial.totals[FOOD_NAME], 'partially-covered row: still on the list (need > 0)', JSON.stringify(Object.keys(partial.totals)));
       assert(Math.abs(partial.totals[FOOD_NAME].qty - 80) < 1e-6,
@@ -10830,7 +10839,7 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
 
       // Full: pantry has AT LEAST as much as planned — the row drops off `totals` entirely,
       // but is never silently missing: it's a structured row in alreadyHome instead.
-      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: Date.now(), u: Date.now()};");
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: " + FIXTURE_NOW_MS + ", u: " + FIXTURE_NOW_MS + "};");
       const full = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
       assert(!full.totals[FOOD_NAME], 'fully-covered row: disappears entirely from totals once the pantry fully covers it', JSON.stringify(Object.keys(full.totals)));
       const fullHomeRow = findAlreadyHome(full, FOOD_NAME);
@@ -10843,7 +10852,7 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
 
       // Over-coverage: pantry has MORE than planned — still fully covered, still dropped,
       // and alreadyHome shows the FULL have-qty (500), not capped at what was needed.
-      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: Date.now(), u: Date.now()};");
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 500, setAt: " + FIXTURE_NOW_MS + ", u: " + FIXTURE_NOW_MS + "};");
       const over = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
       assert(!over.totals[FOOD_NAME], 'over-coverage: still fully covered when the pantry has MORE than needed', JSON.stringify(Object.keys(over.totals)));
       const overHomeRow = findAlreadyHome(over, FOOD_NAME);
@@ -10867,7 +10876,7 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
 
       // (c1) pantry has EXACTLY as much as this week still needs -> projected leftover for
       // next week is 0 -> next week's list must show the FULL 200g, untouched.
-      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: Date.now(), u: Date.now()};");
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 200, setAt: " + FIXTURE_NOW_MS + ", u: " + FIXTURE_NOW_MS + "};");
       const projected1 = call(ctx, 'pantryProjectedForNextWeek', []);
       assert((projected1[FOOD_ID] || 0) === 0,
         'pantryProjectedForNextWeek: a pantry item fully eaten by this week\'s remaining plan projects to 0 for next week', 'got ' + projected1[FOOD_ID]);
@@ -10877,7 +10886,7 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
         'got ' + JSON.stringify(nextList1.totals[FOOD_NAME]));
 
       // (c2) pantry has MORE than this week needs -> only the SURPLUS projects forward.
-      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 350, setAt: Date.now(), u: Date.now()};");
+      run(ctx, "pantry['" + FOOD_ID + "'] = {qty: 350, setAt: " + FIXTURE_NOW_MS + ", u: " + FIXTURE_NOW_MS + "};");
       const projected2 = call(ctx, 'pantryProjectedForNextWeek', []);
       assert(Math.abs(projected2[FOOD_ID] - 150) < 1e-6,
         'pantryProjectedForNextWeek: only the surplus over this week\'s outstanding demand projects forward (350 - 200 = 150)', 'got ' + projected2[FOOD_ID]);
@@ -10907,6 +10916,156 @@ function testShoppingListLoggedExclusionAndPantrySubtraction(ctx){
 }
 
 /* ===================================================================
+   PANTRY-BACKDATE fix (2026-09-27): "this week's still-outstanding demand"
+   (currentWeekRemainingFoodQuantities, and computeShoppingList's current-week totals) used
+   to count every non-logged, non-skipped slot across all 7 days with NO date check — so a
+   PAST pending day (a Mon-Thu meal never logged/skipped, viewed on Friday) was still counted
+   as future consumption, over-subtracting from next week's pantry projection and keeping the
+   passed day's ingredients on the current-week "to buy" list. The fix (planner.js:
+   outstandingWeekFoodQuantities) drops a (day, foodId) pair whose baseline (pantry[F].setAt,
+   or todayISO() midnight when F has no pantry baseline) is NOT strictly before that day's
+   local end-of-day (23:59:59.999). This pins the exact worked cases from the fix spec: a past
+   pending day is excluded, a future/today pending day is included, the setAt<mealDayEnd
+   boundary itself, and that a future week (always "after today") is completely unaffected.
+   =================================================================== */
+function testCurrentWeekOutstandingDemandDropsPastPendingDays(ctx){
+  const TODAY = '2026-07-17'; // Friday of FIXED_MONDAY's week — days 0-3 (Mon-Thu) are past, 4-6 (Fri-Sun) are today/future
+  const WED = '2026-07-15';   // day index 2 — past pending day
+  const FRI = TODAY;          // day index 4 — today
+  const nextMonday = call(ctx, 'addDaysISO', [FIXED_MONDAY, 7]);
+
+  const FOOD_PAST = '__pantry_backdate_food_past__';
+  const FOOD_FUTURE = '__pantry_backdate_food_future__';
+  const FOOD_BOUNDARY = '__pantry_backdate_food_boundary__';
+  const RECIPE_PAST = '__pantry_backdate_recipe_past__';
+  const RECIPE_FUTURE = '__pantry_backdate_recipe_future__';
+  const RECIPE_BOUNDARY = '__pantry_backdate_recipe_boundary__';
+  const NAME_PAST = 'Pantry backdate fixture (past)';
+  const NAME_FUTURE = 'Pantry backdate fixture (future)';
+  const NAME_BOUNDARY = 'Pantry backdate fixture (boundary)';
+
+  function makeFixture(foodId, recipeId, name){
+    run(ctx, "FOODS['" + foodId + "'] = " + JSON.stringify({
+      name: name, per: 100, unit: 'g',
+      kcal: 30, protein: 3, carbs: 4, fat: 0, satFat: 0, fiber: 2, sugars: 0, freeSugars: 0,
+      flags: [], cat: 'Produce', iconKey: 'spinach', src: 'test fixture'
+    }) + ';');
+    run(ctx, "RECIPES_DB['" + recipeId + "'] = " + JSON.stringify({
+      title: name + ' dish', emoji: '🧪', slot: 'dinner', role: 'full',
+      occasional: true, // keeps candidatesFor()/the generator from ever picking it on its own
+      styles: ['balanced'], time: 5, servings: 1,
+      ingredients: [[foodId, 200]], toTaste: [], steps: ['Combine.'], tags: [], avoid: []
+    }) + ';');
+  }
+  function entryJSON(recipeId){ return JSON.stringify({recipeId: recipeId, portion: 1, kcal: 0, protein: 0}); }
+
+  ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
+  ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
+  const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
+  const savedPantry = cloneJSON(get(ctx, 'pantry'));
+  try{
+    makeFixture(FOOD_PAST, RECIPE_PAST, NAME_PAST);
+    makeFixture(FOOD_FUTURE, RECIPE_FUTURE, NAME_FUTURE);
+    makeFixture(FOOD_BOUNDARY, RECIPE_BOUNDARY, NAME_BOUNDARY);
+
+    // ---- (a) a past pending day (Monday, never logged/skipped) is excluded from both the
+    // next-week feed (currentWeekRemainingFoodQuantities) and the current-week "to buy" list
+    // (computeShoppingList) — the food has NO pantry baseline, so it falls back to
+    // todayISO() midnight (Friday), which is after Monday's end-of-day. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[0].meals.dinner.elena = " + entryJSON(RECIPE_PAST) + ';');
+
+      const remaining = call(ctx, 'currentWeekRemainingFoodQuantities', []);
+      assert(!(remaining[FOOD_PAST] > 0),
+        'currentWeekRemainingFoodQuantities: a past pending day (Monday, viewed on Friday) is EXCLUDED from outstanding demand', JSON.stringify(remaining[FOOD_PAST]));
+
+      const list = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!list.totals[NAME_PAST],
+        'computeShoppingList (current week): a past pending day\'s ingredients are dropped from the "to buy" list', JSON.stringify(Object.keys(list.totals)));
+    })();
+
+    // ---- (b) a future/today pending day is still fully counted (same no-pantry-baseline
+    // fallback, but the meal's day-end is AFTER today's midnight). ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[4].meals.dinner.elena = " + entryJSON(RECIPE_FUTURE) + ';'); // day index 4 = Friday = today
+
+      const remaining = call(ctx, 'currentWeekRemainingFoodQuantities', []);
+      assert(Math.abs((remaining[FOOD_FUTURE] || 0) - 200) < 1e-6,
+        'currentWeekRemainingFoodQuantities: a today/future pending day is STILL counted as outstanding demand (200g)', 'got ' + remaining[FOOD_FUTURE]);
+
+      const list = call(ctx, 'computeShoppingList', [FIXED_MONDAY]);
+      assert(!!list.totals[NAME_FUTURE] && Math.abs(list.totals[NAME_FUTURE].qty - 200) < 1e-6,
+        'computeShoppingList (current week): a today/future pending day\'s ingredients stay on the "to buy" list (200g)', JSON.stringify(list.totals[NAME_FUTURE]));
+    })();
+
+    // ---- (c) the setAt < mealDayEnd boundary itself, on a food WITH a pantry baseline. Same
+    // past (Wednesday) meal, three different baselines: an old baseline (predates Wednesday's
+    // end) still counts it; a baseline set THIS morning (after Wednesday's end) excludes it;
+    // moving that same meal to today flips it back to included. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [FIXED_MONDAY]);
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[2].meals.dinner.elena = " + entryJSON(RECIPE_BOUNDARY) + ';'); // day index 2 = Wednesday, past
+
+      // c1: pantry baseline set last Monday (well before Wednesday's end) -> included.
+      const oldSetAt = new Date(2026, 6, 6, 8, 0, 0, 0).getTime(); // Mon 2026-07-06, the PREVIOUS week
+      run(ctx, "pantry['" + FOOD_BOUNDARY + "'] = {qty: 0, setAt: " + oldSetAt + ", u: " + oldSetAt + "};");
+      const remainingOld = call(ctx, 'currentWeekRemainingFoodQuantities', []);
+      assert(Math.abs((remainingOld[FOOD_BOUNDARY] || 0) - 200) < 1e-6,
+        'boundary (c1): pantry baseline older than the meal\'s day-end -> Wednesday\'s pending demand IS counted (200g)', 'got ' + remainingOld[FOOD_BOUNDARY]);
+
+      // c2: pantry re-baselined THIS morning (after Wednesday's end-of-day) -> excluded.
+      const thisMorning = new Date(2026, 6, 17, 9, 0, 0, 0).getTime(); // Friday (today) 09:00
+      run(ctx, "pantry['" + FOOD_BOUNDARY + "'] = {qty: 0, setAt: " + thisMorning + ", u: " + thisMorning + "};");
+      const remainingNew = call(ctx, 'currentWeekRemainingFoodQuantities', []);
+      assert(!(remainingNew[FOOD_BOUNDARY] > 0),
+        'boundary (c2): pantry re-baselined after the meal\'s day-end (this morning, meal was Wednesday) -> EXCLUDED (baseline wins)', JSON.stringify(remainingNew[FOOD_BOUNDARY]));
+
+      // c3: same "this morning" baseline, but the meal is TODAY instead of Wednesday -> back
+      // to included, since today's day-end (23:59:59.999) is still after 9am today.
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[2].meals.dinner.elena = {};"); // clear Wednesday
+      run(ctx, "weekPlans['" + FIXED_MONDAY + "'].days[4].meals.dinner.elena = " + entryJSON(RECIPE_BOUNDARY) + ';'); // day index 4 = Friday = today
+      const remainingToday = call(ctx, 'currentWeekRemainingFoodQuantities', []);
+      assert(Math.abs((remainingToday[FOOD_BOUNDARY] || 0) - 200) < 1e-6,
+        'boundary (c3): the SAME "set this morning" baseline still counts a meal on TODAY (baseline < today\'s day-end)', 'got ' + remainingToday[FOOD_BOUNDARY]);
+    })();
+
+    // ---- (d) a future week's totals are completely unaffected: every day of next week is
+    // necessarily after today, so the filter is a no-op there — computeShoppingList for next
+    // week must still show the raw planned quantity for a past-relative-to-current-week (but
+    // future-relative-to-today) pending day, exactly like before this fix. ----
+    (function(){
+      run(ctx, "MESA_TEST_TODAY = '" + TODAY + "'; weekPlans = {}; weekPlan = null; logHistory = {}; pantry = {};");
+      call(ctx, 'ensureWeekPlan', [nextMonday]);
+      run(ctx, "weekPlans['" + nextMonday + "'].days[0].meals.dinner.elena = " + entryJSON(RECIPE_FUTURE) + ';'); // next week's OWN Monday — still in the future relative to today
+
+      const nextList = call(ctx, 'computeShoppingList', [nextMonday]);
+      assert(!!nextList.totals[NAME_FUTURE] && Math.abs(nextList.totals[NAME_FUTURE].qty - 200) < 1e-6,
+        'computeShoppingList (next week): unaffected by the fix — every day of a future week is after today, so the baseline filter is a no-op (200g)', JSON.stringify(nextList.totals[NAME_FUTURE]));
+
+      // Cross-check directly against the pre-fix formula (foodQuantitiesForComponents over
+      // weekPlanComponents(plan, false)) to prove the no-op claim isn't a coincidence.
+      const plan = get(ctx, "weekPlans['" + nextMonday + "']");
+      ctx.__plan__ = plan;
+      const rawQty = run(ctx, 'foodQuantitiesForComponents(weekPlanComponents(__plan__, false))');
+      delete ctx.__plan__;
+      assert(Math.abs((rawQty[FOOD_FUTURE] || 0) - (nextList.totals[NAME_FUTURE] ? nextList.totals[NAME_FUTURE].qty : 0)) < 1e-6,
+        'sanity: next week\'s filtered total matches the OLD unfiltered weekPlanComponents+foodQuantitiesForComponents formula exactly (no-op proven, not assumed)',
+        'raw=' + rawQty[FOOD_FUTURE]);
+    })();
+  } finally {
+    run(ctx, "delete RECIPES_DB['" + RECIPE_PAST + "']; delete RECIPES_DB['" + RECIPE_FUTURE + "']; delete RECIPES_DB['" + RECIPE_BOUNDARY + "'];");
+    run(ctx, "delete FOODS['" + FOOD_PAST + "']; delete FOODS['" + FOOD_FUTURE + "']; delete FOODS['" + FOOD_BOUNDARY + "'];");
+    run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
+    run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + ';');
+  }
+}
+
+/* ===================================================================
    Defect C redesign — "Put cart away": putShopCartAway() (js/render-sheets.js), the pure
    (no-DOM) logic behind the shopping sheet's "Put cart away" button. Supersedes the old
    name-keyed restockTickedShopItems()/checkedShopByWeek pair (PANTRY-plan.md P3 step 4)
@@ -10916,11 +11075,23 @@ function testPutShopCartAway(ctx){
   const FOOD_ID = '__pantry_p3_restock_fixture_food__';
   const RECIPE_ID = '__pantry_p3_restock_fixture_recipe__';
   const FOOD_NAME = 'P3 restock fixture food';
+  // putShopCartAway/setPantryRemaining (production code) stamp pantry setAt/u with the
+  // REAL Date.now() — fine in production (todayISO() also reads the real clock there), but
+  // this test pins MESA_TEST_TODAY to the fixed FIXED_MONDAY, which can be months away from
+  // the host's real wall clock. Since PANTRY-BACKDATE's baseline<mealDayEnd filter
+  // (planner.js:outstandingWeekFoodQuantities) compares setAt against FIXED_MONDAY's real
+  // calendar end-of-day, an uncontrolled real Date.now() would land "after" the fixture
+  // meal's day and wrongly exclude it. Temporarily pin the sandbox's Date.now() to a fixed
+  // mid-Monday instant for this test only (restored in `finally`), so every production
+  // timestamp this test triggers is consistent with its own fixed "today".
+  const FIXTURE_NOW_MS = new Date(2026, 6, 13, 12, 0, 0, 0).getTime();
   ctx.__savedWeekPlans__ = get(ctx, 'weekPlans');
   ctx.__savedWeekPlan__ = get(ctx, 'weekPlan');
   const savedLogHistory = cloneJSON(get(ctx, 'logHistory'));
   const savedPantry = cloneJSON(get(ctx, 'pantry'));
   const savedInCart = cloneJSON(get(ctx, 'inCartShopByWeek'));
+  ctx.__origDateNow__ = get(ctx, 'Date.now');
+  run(ctx, 'Date.now = function(){ return ' + FIXTURE_NOW_MS + '; };');
   try{
     run(ctx, "FOODS['" + FOOD_ID + "'] = " + JSON.stringify({
       name: FOOD_NAME, per: 100, unit: 'g',
@@ -10960,7 +11131,7 @@ function testPutShopCartAway(ctx){
     // TOP of the 80g already there — expected new remaining = 80 + 220 = 300.
     run(ctx, "inCartShopByWeek['" + FIXED_MONDAY + "'] = " + JSON.stringify({[FOOD_ID]: true}) + ';');
 
-    const beforePutAway = Date.now();
+    const beforePutAway = FIXTURE_NOW_MS;
     const count = call(ctx, 'putShopCartAway', [FIXED_MONDAY]);
     assert(count === 1, 'putShopCartAway: writes exactly one foodId (the single in-cart row\'s single foodId)', 'got ' + count);
     const remaining = call(ctx, 'pantryRemaining', []);
@@ -11028,6 +11199,7 @@ function testPutShopCartAway(ctx){
     run(ctx, "delete RECIPES_DB['" + RECIPE_ID + "']; delete FOODS['" + FOOD_ID + "'];");
     run(ctx, 'weekPlans = __savedWeekPlans__; weekPlan = __savedWeekPlan__; delete __savedWeekPlans__; delete __savedWeekPlan__;');
     run(ctx, 'logHistory = ' + JSON.stringify(savedLogHistory) + '; pantry = ' + JSON.stringify(savedPantry) + '; inCartShopByWeek = ' + JSON.stringify(savedInCart) + ';');
+    run(ctx, 'Date.now = __origDateNow__; delete __origDateNow__;');
   }
 }
 
@@ -15333,6 +15505,7 @@ function main(){
   runTest('foodQuantitiesForComponents decomposition (PANTRY-plan.md P1)', function(){ testFoodQuantitiesForComponents(ctx); });
   runTest('computeShoppingList decomposition parity (PANTRY-plan.md P1)', function(){ testShoppingListDecompositionParity(ctx); });
   runTest('computeShoppingList: Q1 logged-exclusion + pantry subtraction + next-week projection (PANTRY-plan.md P3)', function(){ testShoppingListLoggedExclusionAndPantrySubtraction(ctx); });
+  runTest('outstanding this-week demand drops past pending days by baseline<mealDayEnd (PANTRY-BACKDATE fix)', function(){ testCurrentWeekOutstandingDemandDropsPastPendingDays(ctx); });
   runTest('solo households: no ghost-planned partner, no shopping doubling, two-person round-trip byte-identical (Phase 3B B3)', function(){ testHouseholdSizeSoloMode(ctx); });
   runTest('putShopCartAway: "Put cart away" writes exactly the in-cart items once (Defect C redesign)', function(){ testPutShopCartAway(ctx); });
   runTest('required lunch/dinner structure + retired sauce role', function(){ testRequiredLunchDinnerStructure(ctx); });
