@@ -1416,7 +1416,13 @@ function sugarQualityLabel(q){
 
 function isCompositeFood(food){ return !!(food && Array.isArray(food.components)); }
 function isMadeCompositeFood(food){ return isCompositeFood(food) && food.bought !== true; }
-function foodCanBePantryBaselined(foodId){ return !!FOODS[foodId] && !isMadeCompositeFood(FOODS[foodId]); }
+// Batch-pantry feature (2026-09): a made composite (pesto-elena, the dressing, guacamole)
+// can now be baselined into the pantry as a WHOLE batch — see planner.js:addFoodQty's
+// compositeStockedAsBatch doc for the consumption-side half of this. This function only
+// gates whether an ingredient id is a real, pantry-eligible food at all; it no longer
+// excludes made composites (that used to be the "tracked through ingredients only" rule,
+// now retired — stocking IS the switch between batch-whole and flatten-to-components).
+function foodCanBePantryBaselined(foodId){ return !!FOODS[foodId]; }
 
 function compositeModeLabel(food){
   if(!isCompositeFood(food)) return '';
@@ -2443,7 +2449,7 @@ function attachFoodDetailHandler(){
     if(!id) return;
     const act = btn.getAttribute('data-act');
     if(act === 'pantry'){
-      if(!foodCanBePantryBaselined(id)){ toast('Made composites are tracked through their ingredients'); return; }
+      if(!foodCanBePantryBaselined(id)){ toast('Ingredient not found'); return; }
       openPantryAddForFood(id);
     }
     else if(act === 'edit') openEditFoodForm(id);
@@ -2822,7 +2828,7 @@ function fmtPantryQty(qty, food){
 // dropping the user into a food search they never asked for.
 function openPantryAddForFood(foodId){
   if(!FOODS[foodId]){ toast('Ingredient not found'); return; }
-  if(!foodCanBePantryBaselined(foodId)){ toast('Made composites are tracked through their ingredients'); return; }
+  if(!foodCanBePantryBaselined(foodId)){ toast('Ingredient not found'); return; }
   pantryAdd = {query: '', selectedId: null, qty: 0, direct: true};
   selectPantryAddFood(foodId); // sets the per-unit default qty and paints the qty sheet
   document.getElementById('sheet').classList.remove('tall');
@@ -2863,7 +2869,7 @@ function onPantryAddSearchInput(value){
 
 function selectPantryAddFood(id){
   if(!FOODS[id]) return;
-  if(!foodCanBePantryBaselined(id)){ toast('Made composites are tracked through their ingredients'); return; }
+  if(!foodCanBePantryBaselined(id)){ toast('Ingredient not found'); return; }
   pantryAdd.selectedId = id;
   pantryAdd.qty = FOODS[id].unit === 'piece' ? 1 : 100;
   document.getElementById('sheetBody').innerHTML = buildPantryAddQtySheet();
@@ -2908,7 +2914,7 @@ function buildPantryAddQtySheet(){
 function confirmPantryAdd(){
   const food = FOODS[pantryAdd.selectedId];
   if(!food || !(pantryAdd.qty > 0)){ toast('Enter an amount above 0'); return; }
-  if(!foodCanBePantryBaselined(pantryAdd.selectedId)){ toast('Made composites are tracked through their ingredients'); return; }
+  if(!foodCanBePantryBaselined(pantryAdd.selectedId)){ toast('Ingredient not found'); return; }
   const current = pantryRemaining()[pantryAdd.selectedId] || 0;
   setPantryRemaining(pantryAdd.selectedId, current + pantryAdd.qty);
   toast('✓ Added ' + fmtPantryQty(pantryAdd.qty, food) + ' ' + food.name);

@@ -617,10 +617,13 @@ function testAddToPantryOnIngredientCards(ctx){
   const pantryEligibleCount = Object.keys(FOODS).filter(function(id){ return call(ctx, 'foodCanBePantryBaselined', [id]); }).length;
   assert(rowCount > 0, 'setup: the ingredients list rendered at least one row', 'rows=' + rowCount);
   assert(pantryBtnCount === pantryEligibleCount,
-    'renderLibFoodListMarkup: only pantry-baselineable ingredients offer Add to pantry (made composites are tracked through components)',
+    'renderLibFoodListMarkup: only pantry-baselineable ingredients offer Add to pantry',
     'rows=' + rowCount + ' eligible=' + pantryEligibleCount + ' pantryButtons=' + pantryBtnCount);
-  assert(call(ctx, 'foodCanBePantryBaselined', ['pesto-elena']) === false && call(ctx, 'foodCanBePantryBaselined', ['mayonnaise']) === true,
-    'foodCanBePantryBaselined: made composites are excluded, bought composites remain pantry items',
+  // Batch-pantry feature (2026-09): made composites (pesto-elena) are now pantry-eligible
+  // too — stocking one is what switches it from "flatten to ingredients" to "whole batch"
+  // (planner.js:compositeStockedAsBatch). Bought composites (mayonnaise) were always eligible.
+  assert(call(ctx, 'foodCanBePantryBaselined', ['pesto-elena']) === true && call(ctx, 'foodCanBePantryBaselined', ['mayonnaise']) === true,
+    'foodCanBePantryBaselined: made composites are pantry-eligible (batch-stockable), same as bought composites',
     JSON.stringify({pesto: call(ctx, 'foodCanBePantryBaselined', ['pesto-elena']), mayonnaise: call(ctx, 'foodCanBePantryBaselined', ['mayonnaise'])}));
 
   // Regression guard of the same class the README calls out for recipe rows: the row BODY
@@ -2075,17 +2078,30 @@ function testCompositeIngredientUi(ctx){
     assert(detailHtml.indexOf('Composite ingredient') !== -1 && detailHtml.indexOf('made from components') !== -1 && detailHtml.indexOf('Milk') !== -1 && detailHtml.indexOf('Vegan besciamella') !== -1,
       'composite UI detail: shows mode, component breakdown and diet variants', detailHtml);
     const listHtml = call(ctx, 'renderLibFoodListMarkup', ['Besciamella']);
-    assert(listHtml.indexOf('made of 3 ingredients') !== -1 && listHtml.indexOf('data-act="pantry"') === -1,
-      'composite UI list: made composites get a component badge and no direct pantry button', listHtml);
+    // Batch-pantry feature (2026-09): made composites now get a component badge AND a
+    // pantry button — stocking it is what makes it a whole batch (planner.js:addFoodQty's
+    // compositeStockedAsBatch), not a permanently-excluded thing.
+    assert(listHtml.indexOf('made of 3 ingredients') !== -1 && listHtml.indexOf('data-act="pantry"') !== -1,
+      'composite UI list: made composites get a component badge AND a pantry button (batch-stockable)', listHtml);
 
     run(ctx, "pantryAdd = {query:'Besciamella', selectedId:null, qty:0};");
     const pantrySearchHtml = call(ctx, 'renderPantryAddResults', []);
-    assert(pantrySearchHtml.indexOf(savedId) === -1,
-      'pantry add search: made composites are excluded from the direct pantry baseline picker', pantrySearchHtml);
+    assert(pantrySearchHtml.indexOf(savedId) !== -1,
+      'pantry add search: made composites now appear in the direct pantry baseline picker', pantrySearchHtml);
     run(ctx, "pantryAdd = {query:'', selectedId:'apples', qty:1};");
-    call(ctx, 'openPantryAddForFood', [savedId]);
-    assert(get(ctx, 'pantryAdd').selectedId === 'apples',
-      'openPantryAddForFood: made composites return before selecting a pantry item', JSON.stringify(get(ctx, 'pantryAdd')));
+    // openPantryAddForFood now runs to completion for a made composite (previously it
+    // returned early at the foodCanBePantryBaselined guard, before touching the DOM) — it
+    // paints #sheetBody via selectPantryAddFood, so this needs the richer fake document
+    // (base stub's getElementById always returns null, per this file's header comment).
+    const savedDocumentForPantryAdd = ctx.document;
+    ctx.document = makeObFakeDocument();
+    try {
+      call(ctx, 'openPantryAddForFood', [savedId]);
+    } finally {
+      ctx.document = savedDocumentForPantryAdd;
+    }
+    assert(get(ctx, 'pantryAdd').selectedId === savedId,
+      'openPantryAddForFood: made composites can now be selected as a pantry item', JSON.stringify(get(ctx, 'pantryAdd')));
 
     run(ctx, "customFoods['" + savedId + "'].bought = true; applyCustomFoods(); pantryAdd = {query:'Besciamella', selectedId:null, qty:0};");
     const boughtSearchHtml = call(ctx, 'renderPantryAddResults', []);
@@ -14089,6 +14105,75 @@ function testCompositeIngredients(ctx){
       call(ctx, 'logFoodEntry', ['2026-07-10', 'elena', 'pesto-elena', 60]);
       const remaining = call(ctx, 'pantryRemaining', []);
       assert(remaining['parmesan'] < 100 && remaining['parmesan'] >= 0, "pantryRemaining: logging pesto-elena depletes the parmesan baseline (made composite consumes its components)", 'got=' + remaining['parmesan']);
+    })();
+
+    // -------- (6b) BATCH-PANTRY feature (2026-09, owner-approved): stocking a made
+    // composite is the switch between "flatten to components" and "whole batch" —
+    // planner.js:compositeStockedAsBatch / addFoodQty. --------
+    (function(){
+      // (a) UNSTOCKED made composite: still flattens (unchanged baseline behavior).
+      run(ctx, "pantry = {};");
+      const unstocked = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'pesto-elena', grams: 60}]]);
+      assert(unstocked['pesto-elena'] === undefined && typeof unstocked['basil'] === 'number' && unstocked['basil'] > 0,
+        'batch-pantry (a): an UNSTOCKED made composite still flattens into its components', JSON.stringify(unstocked));
+
+      // (b) STOCKED made composite: emits itself whole, with no component lines at all.
+      run(ctx, "pantry = {'pesto-elena': {qty: 200, setAt: 0, u: 1}};");
+      const stocked = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'pesto-elena', grams: 60}]]);
+      assert(Math.abs(stocked['pesto-elena'] - 60) < 1e-9 && stocked['basil'] === undefined && stocked['parmesan'] === undefined,
+        'batch-pantry (b): a STOCKED made composite emits itself whole (60g), not its components', JSON.stringify(stocked));
+
+      // (c) shopping list consistency: unstocked buys components (never the composite);
+      // a fully-covered stocked batch drops off the list entirely, and its components are
+      // NOT also listed — proving there's no double-count between demand and pantry credit.
+      withFixtureRecipe('__composite_batch_pesto__', [['pasta', 100], ['pesto-elena', 60]], function(){
+        run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; logHistory = {};");
+        const wk = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+        call(ctx, 'ensureWeekPlan', [wk]);
+        // Wipe every other day/slot the auto-generated week filled in (parmesan etc. show
+        // up plenty elsewhere in the catalog) so demand here is ISOLATED to the one fixture
+        // meal — otherwise "no double-count" below could pass/fail on unrelated recipes.
+        // Empty cells must be emptyPlanEntry() shape ({recipeId:null,...}), NOT null —
+        // planReferencesMissingRecipe() (planner.js) treats a bare null m.elena/m.partner as
+        // a corrupt plan and silently regenerates the whole week back to defaults, wiping
+        // this isolation out from under the test.
+        run(ctx, "SLOT_ORDER.forEach(function(slot){ weekPlan.days.forEach(function(day){ day.meals[slot] = {shared: false, elena: emptyPlanEntry(), partner: emptyPlanEntry()}; }); });");
+        run(ctx, "weekPlan.days[0].meals.dinner.elena = {recipeId: '__composite_batch_pesto__', portion: 1, shared: false};");
+
+        run(ctx, "pantry = {};");
+        const listUnstocked = call(ctx, 'computeShoppingList', [wk]);
+        const namesUnstocked = Object.keys(listUnstocked.totals);
+        assert(namesUnstocked.indexOf('Pesto Elena (basil, parmesan, pecorino, almonds)') === -1 && namesUnstocked.indexOf('Basil, fresh') !== -1,
+          'batch-pantry (c1): unstocked pesto-elena still buys its components, never itself', JSON.stringify(namesUnstocked));
+
+        run(ctx, "pantry = {'pesto-elena': {qty: 500, setAt: 0, u: 1}};");
+        const listStocked = call(ctx, 'computeShoppingList', [wk]);
+        const namesStocked = Object.keys(listStocked.totals);
+        assert(namesStocked.indexOf('Pesto Elena (basil, parmesan, pecorino, almonds)') === -1,
+          'batch-pantry (c2): a fully-covered stocked batch drops off the shopping list, same as any other covered pantry item', JSON.stringify(namesStocked));
+        ['Basil, fresh', 'Parmesan, grated', 'Pecorino romano, grated', 'Almonds'].forEach(function(n){
+          assert(namesStocked.indexOf(n) === -1,
+            'batch-pantry (c3): a stocked batch does not ALSO list its component "' + n + '" — no double-count', JSON.stringify(namesStocked));
+        });
+      });
+
+      // (d) bought composite (mayonnaise) is unaffected by this feature either way — it
+      // was always emitted whole, stocked or not.
+      run(ctx, "pantry = {};");
+      const mayoUnstocked = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'mayonnaise', grams: 30}]]);
+      run(ctx, "pantry = {'mayonnaise': {qty: 200, setAt: 0, u: 1}};");
+      const mayoStocked = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'mayonnaise', grams: 30}]]);
+      assert(Math.abs(mayoUnstocked['mayonnaise'] - 30) < 1e-9 && Math.abs(mayoStocked['mayonnaise'] - 30) < 1e-9,
+        'batch-pantry (d): a BOUGHT composite (mayonnaise) is unchanged by this feature — always whole', JSON.stringify({unstocked: mayoUnstocked, stocked: mayoStocked}));
+
+      // (e) depletion: a batch run down to qty 0 reverts to flattening — the intended
+      // consequence the task brief calls out explicitly.
+      run(ctx, "pantry = {'pesto-elena': {qty: 0, setAt: 0, u: 1}};");
+      const depleted = call(ctx, 'foodQuantitiesForComponents', [[{foodId: 'pesto-elena', grams: 60}]]);
+      assert(depleted['pesto-elena'] === undefined && typeof depleted['basil'] === 'number' && depleted['basil'] > 0,
+        'batch-pantry (e): a batch depleted to qty 0 reverts to flattening into components', JSON.stringify(depleted));
+
+      run(ctx, "pantry = {};");
     })();
 
     // -------- (7) nested composites: allowed, guarded against cycles. --------

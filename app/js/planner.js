@@ -4054,12 +4054,24 @@ function foodCategoryForName(name){
 //     like a plain food, because that's what actually gets bought off a shelf.
 // This is the single decomposition path both addFromIngredient and addFromFoodComponent
 // below funnel into — there is deliberately no second place a composite gets exploded.
+//
+// Batch-pantry feature (2026-09, owner-approved): a made composite that is CURRENTLY
+// STOCKED in the pantry (pantry[foodId].qty > 0) is treated like a bought composite —
+// added whole, not flattened — because stocking it IS the household's signal "I keep a
+// batch of this" rather than "I make it fresh from ingredients". `pantry` is the
+// state.js global (foodId -> {qty, setAt, u}); this file loads after state.js in every
+// app entrypoint and in tools/check.js's APP_SCRIPT_ORDER, so it's always in scope here.
+// Depleting the batch to qty 0 intentionally reverts to flattening — the shopping list
+// goes back to buying its ingredients, because there is no batch left to draw from.
+function compositeStockedAsBatch(foodId){
+  return typeof pantry !== 'undefined' && !!pantry[foodId] && pantry[foodId].qty > 0;
+}
 function addFoodQty(out, foodId, grams, seen, depth){
   seen = seen || {};
   depth = depth || 0;
   const food = FOODS[foodId];
   if(!food) return;
-  if(Array.isArray(food.components) && !food.bought && !seen[foodId] && depth <= 6){
+  if(Array.isArray(food.components) && !food.bought && !compositeStockedAsBatch(foodId) && !seen[foodId] && depth <= 6){
     const combo = (typeof activeCompositeVariant === 'function') ? activeCompositeVariant(food) : food;
     const yieldG = (typeof combo.yieldG === 'number' && combo.yieldG > 0) ? combo.yieldG
       : (typeof food.yieldG === 'number' && food.yieldG > 0) ? food.yieldG : null;
