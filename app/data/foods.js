@@ -1019,6 +1019,14 @@ const FOODS = {
     cat: 'Pantry', season: 'spring/summer',
     iconKey: 'basil', src: 'Composite Elena recipe: 50g fresh basil + 70g parmesan + 30g pecorino romano + 15g almonds + 20g olive oil ("a sentimento"); vegan variant swaps the two cheeses for nutritional yeast + more almonds. Macros/flags/allergens computed from these grams (data/foods.js composite-ingredient machinery), never hand-frozen.'
   },
+  'cinnamon-roll-baked': {
+    name: 'Cinnamon roll (baked batch)', per: 100, unit: 'g', avgG: 86, countable: true,
+    components: [['00-flour', 615], ['granulated-sugar', 150], ['butter', 75], ['milk', 120], ['eggs', 60], ['cinnamon', 15]],
+    yieldG: 1035,
+    bought: false,
+    cat: 'Bakery', season: 'winter/autumn',
+    iconKey: 'brioche', src: 'Composite: one home batch = ~12 rolls from the Cinnamon roll recipe (00-flour 615 + granulated sugar 150 + butter 75 + milk 120 + eggs 60 + cinnamon 15), ~86g/roll. Stock the batch in the pantry and each roll eaten draws down the batch; macros computed from the components.'
+  },
   'oats': {
     name: 'Oats, rolled, dry', per: 100, unit: 'g',
     kcal: 395, protein: 16.9, carbs: 66.3, fat: 6.9, satFat: 1.2, fiber: 10.6,
