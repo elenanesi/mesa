@@ -987,10 +987,13 @@ function placePantryRecipeSlot(slot){
 // removed back-to-back without reopening.
 function removeMealExtraRecipe(recipeId){
   if(!addMealCtx) return;
-  if(!confirmDeletion()) return;
   const ctx = addMealCtx;
-  // Owner request: removing an extra mirrors to both sides of a shared cell too — ask after
-  // the permanent-delete confirm, before either mutator below runs.
+  // No confirmDeletion() here: removing a side is reversible (re-add it), so the "can't be
+  // undone" native confirm was both misleading AND — stacked with the shared-meal confirm below
+  // — the cause of the "removing a side takes two taps" bug (iOS PWAs drop the second of two
+  // back-to-back window.confirm() dialogs, silently aborting the removal). The shared-meal
+  // acknowledgement stays (owner request), but it fires at most once per session and never as
+  // the second of two dialogs.
   if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = RECIPES_DB[recipeId] ? RECIPES_DB[recipeId].title : 'item';
@@ -1013,9 +1016,9 @@ function removeMealExtraRecipe(recipeId){
 
 function removeMealExtraFood(foodId){
   if(!addMealCtx) return;
-  if(!confirmDeletion()) return;
   const ctx = addMealCtx;
-  // Same shared-mirror confirm as removeMealExtraRecipe above.
+  // No confirmDeletion() here (reversible removal; avoids the stacked-dialog two-tap bug) —
+  // same reasoning as removeMealExtraRecipe above. Shared-meal acknowledgement stays.
   if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = FOODS[foodId] ? FOODS[foodId].name : 'item';
