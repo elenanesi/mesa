@@ -1949,7 +1949,6 @@ function attachNewFoodComponentHandlers(){
       const row = btn.closest('.altrow[data-comp-index]');
       const rows = componentTargetRows(target);
       if(!row || !rows) return;
-      if(!confirmDeletion()) return;
       rows.splice(+row.getAttribute('data-comp-index'), 1);
       renderNewFoodFormSheet();
     };
@@ -2038,7 +2037,6 @@ function addNewFoodVariant(){
   renderNewFoodFormSheet();
 }
 function removeNewFoodVariant(index){
-  if(!confirmDeletion()) return;
   newFoodForm.variants.splice(index, 1);
   renderNewFoodFormSheet();
 }
@@ -2255,17 +2253,23 @@ function deleteCustomFood(id){
     toast('Can’t delete — used in ' + names + '. Delete that recipe first.');
     return;
   }
-  if(!confirmDeletion()) return;
   const name = customFoods[id].name;
-  delete customFoods[id];
-  deletedFoods[id] = Date.now(); // tombstone so couple-sync's per-id merge doesn't resurrect it (js/sync.js:mergeLibrarySection)
-  customRev++;
-  applyCustomFoods();
-  applyProf(currentProf);
-  toast('✓ Deleted ' + name);
-  renderFoodLibraryCount();
-  if(document.getElementById('libFoodList')) renderFoodLibraryList(captureLibraryScroll());
-  else if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) returnToFoodLibrary();
+  openConfirmDialog({
+    title: 'Delete ingredient',
+    message: 'Delete “' + name + '”? This can’t be undone.',
+    confirmLabel: 'Delete',
+    onConfirm: function(){
+      delete customFoods[id];
+      deletedFoods[id] = Date.now(); // tombstone so couple-sync's per-id merge doesn't resurrect it (js/sync.js:mergeLibrarySection)
+      customRev++;
+      applyCustomFoods();
+      applyProf(currentProf);
+      toast('✓ Deleted ' + name);
+      renderFoodLibraryCount();
+      if(document.getElementById('libFoodList')) renderFoodLibraryList(captureLibraryScroll());
+      else if(document.getElementById('libraryIngredients') && document.getElementById('libraryIngredients').classList.contains('active')) returnToFoodLibrary();
+    }
+  });
 }
 
 /* ===================================================================
@@ -2746,7 +2750,6 @@ function decreasePantryItem(foodId){
 // remote edit could beat in mergePantrySection.
 function removePantryItem(foodId){
   const food = FOODS[foodId];
-  if(!confirmDeletion()) return;
   setPantryRemaining(foodId, 0);
   toast('Removed' + (food ? ' ' + food.name : '') + ' from pantry');
   refreshPantryList();
@@ -3403,24 +3406,30 @@ function buildMyRecipesSheet(){
 function deleteRecipe(id){
   const r = RECIPES_DB[id] || customRecipes[id] || recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
   if(!r) return;
-  if(!confirmDeletion('“' + r.title + '”')) return;
   const title = r.title;
-  // Both branches tombstone: without it, couple-sync's per-id merge (js/sync.js:
-  // mergeLibrarySection) is a plain union and would resurrect the delete from whichever
-  // phone hasn't seen it yet — exactly the "clone under a freeConflictId every sync round"
-  // ratchet this fix targets. applyCustomRecipes() already treats deletedRecipes[id] as
-  // "hide this id" for BOTH built-in-override and custom (cr-) ids (see the function above).
-  if(customRecipes[id]) delete customRecipes[id];
-  else if(recipeOverrides[id]) delete recipeOverrides[id];
-  deletedRecipes[id] = Date.now();
-  customRev++;
-  applyCustomRecipes();
-  applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
-  toast('✓ Deleted ' + title);
-  renderFoodLibraryCount();
-  // Refresh the list IN PLACE (preserving the active search/filters + My-book/Market view) rather
-  // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
-  if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
+  openConfirmDialog({
+    title: 'Delete recipe',
+    message: 'Delete “' + title + '”? This can’t be undone.',
+    confirmLabel: 'Delete',
+    onConfirm: function(){
+      // Both branches tombstone: without it, couple-sync's per-id merge (js/sync.js:
+      // mergeLibrarySection) is a plain union and would resurrect the delete from whichever
+      // phone hasn't seen it yet — exactly the "clone under a freeConflictId every sync round"
+      // ratchet this fix targets. applyCustomRecipes() already treats deletedRecipes[id] as
+      // "hide this id" for BOTH built-in-override and custom (cr-) ids (see the function above).
+      if(customRecipes[id]) delete customRecipes[id];
+      else if(recipeOverrides[id]) delete recipeOverrides[id];
+      deletedRecipes[id] = Date.now();
+      customRev++;
+      applyCustomRecipes();
+      applyProf(currentProf); // refreshes library-derived UI without resetting the existing plan
+      toast('✓ Deleted ' + title);
+      renderFoodLibraryCount();
+      // Refresh the list IN PLACE (preserving the active search/filters + My-book/Market view) rather
+      // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
+      if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
+    }
+  });
 }
 
 /* ---------------- recipe market / book (RECIPE-MARKET, 2026-08) ----------------
@@ -4130,7 +4139,6 @@ function addRecipeOptionGroup(){
 }
 function removeRecipeOptionGroup(gi){
   if(!recipeBuilder.optionGroups) return;
-  if(!confirmDeletion()) return;
   recipeBuilder.optionGroups.splice(gi, 1);
   renderRecipeBuilderSheet();
 }
@@ -4152,7 +4160,6 @@ function toggleRecipeOptionChoiceDiet(gi, ci, key){
 function removeRecipeOptionChoice(gi, ci){
   const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
   if(!group || !group.choices) return;
-  if(!confirmDeletion()) return;
   group.choices.splice(ci, 1);
   renderRecipeBuilderSheet();
 }
@@ -4187,7 +4194,6 @@ function removeRecipeOptionIngredient(gi, ci, ii){
   const group = recipeBuilder.optionGroups && recipeBuilder.optionGroups[gi];
   const choice = group && group.choices && group.choices[ci];
   if(!choice || !choice.ingredients) return;
-  if(!confirmDeletion()) return;
   choice.ingredients.splice(ii, 1);
   renderRecipeBuilderSheet();
 }
@@ -4385,7 +4391,6 @@ function commitRecipeIngredientGrams(i, raw){
   renderRecipeBuilderSheet();
 }
 function removeRecipeIngredient(i){
-  if(!confirmDeletion()) return;
   recipeBuilder.ingredients.splice(i, 1);
   renderRecipeBuilderSheet();
 }

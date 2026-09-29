@@ -184,10 +184,10 @@ function mealPageSetExtraRecipePortion(recipeId, newPortion){
   const person = recipeServingCtx.person || currentProf;
   // Owner request: an extra mirrors to BOTH sides of a shared cell (mutateMealExtras), even
   // from the 'logged' branch above (its plan-side mirror call a few lines down still hits a
-  // shared cell) — see render.js:confirmSharedMealChange's doc. This is the single funnel
+  // shared cell) — see render.js:withSharedMealConfirm's doc. This is the single funnel
   // both the +/- stepper (adjMealPageExtra) and the typed commit
   // (commitMealPageExtraRecipePortion) go through, so gating here covers both taps.
-  if(!confirmSharedMealChange(weekStartDate, dayIndex, recipeServingCtx.slot, person)) return;
+  withSharedMealConfirm(weekStartDate, dayIndex, recipeServingCtx.slot, person, function(){
   if(recipeServingCtx.source === 'logged'){
     if(!setExtraPortionInLoggedMeal(dateISO, person, recipeServingCtx.slot, recipeId, newPortion)) return;
     setExtraRecipePortion(weekStartDate, dayIndex, recipeServingCtx.slot, person, recipeId, newPortion);
@@ -195,6 +195,7 @@ function mealPageSetExtraRecipePortion(recipeId, newPortion){
     if(!setExtraRecipePortion(weekStartDate, dayIndex, recipeServingCtx.slot, person, recipeId, newPortion)) return;
   }
   refreshMealPageAfterExtraChange(dateISO);
+  });
 }
 
 // Same as above for a FOOD extra's grams (setExtraFoodGrams / setFoodExtraGramsInLoggedMeal).
@@ -206,7 +207,7 @@ function mealPageSetExtraFoodGrams(foodId, newGrams){
   const person = recipeServingCtx.person || currentProf;
   // Same shared-mirror confirm as mealPageSetExtraRecipePortion above — the single funnel
   // for both the +/- stepper and the typed commit (commitMealPageExtraFoodGrams).
-  if(!confirmSharedMealChange(weekStartDate, dayIndex, recipeServingCtx.slot, person)) return;
+  withSharedMealConfirm(weekStartDate, dayIndex, recipeServingCtx.slot, person, function(){
   if(recipeServingCtx.source === 'logged'){
     if(!setFoodExtraGramsInLoggedMeal(dateISO, person, recipeServingCtx.slot, foodId, newGrams)) return;
     setExtraFoodGrams(weekStartDate, dayIndex, recipeServingCtx.slot, person, foodId, newGrams);
@@ -214,6 +215,7 @@ function mealPageSetExtraFoodGrams(foodId, newGrams){
     if(!setExtraFoodGrams(weekStartDate, dayIndex, recipeServingCtx.slot, person, foodId, newGrams)) return;
   }
   refreshMealPageAfterExtraChange(dateISO);
+  });
 }
 
 // Typed-entry commit for an extra RECIPE's portion input (recipeDetailExtraRowHtml, above) —
@@ -245,16 +247,16 @@ function commitMealPageExtraFoodGrams(i, raw){
 // removeFoodExtraFromLoggedMeal (logged) rather than new mutation logic.
 function removeMealPageExtra(i){
   if(!recipeDetailExtrasCtx || !recipeDetailExtrasCtx[i] || !recipeServingCtx || !recipeServingCtx.slot) return;
-  if(!confirmDeletion()) return;
   const c = recipeDetailExtrasCtx[i];
   const dateISO = recipeServingCtx.dateISO || todayISO();
   const weekStartDate = recipeServingCtx.weekStartDate || mondayOfWeek(dateISO);
   const dayIndex = typeof recipeServingCtx.dayIndex === 'number' ? recipeServingCtx.dayIndex : todayDayIndex();
   const person = recipeServingCtx.person || currentProf;
-  // Owner request: removing an extra mirrors to both sides of a shared cell too (same
-  // funnel as the add/adjust handlers above) — ask after the permanent-delete confirm,
-  // before either mutator below runs.
-  if(!confirmSharedMealChange(weekStartDate, dayIndex, recipeServingCtx.slot, person)) return;
+  // Owner request: removing an extra is a reversible plan edit (re-add it), not a "delete
+  // from the books", so no permanent-delete confirm here — only the shared-mirror gate
+  // (removing an extra mirrors to both sides of a shared cell, same funnel as the
+  // add/adjust handlers above).
+  withSharedMealConfirm(weekStartDate, dayIndex, recipeServingCtx.slot, person, function(){
   const title = c.recipeId ? (RECIPES_DB[c.recipeId] ? RECIPES_DB[c.recipeId].title : 'item') : (FOODS[c.foodId] ? FOODS[c.foodId].name : 'item');
   let removed;
   if(recipeServingCtx.source === 'logged'){
@@ -272,6 +274,7 @@ function removeMealPageExtra(i){
   }
   refreshMealPageAfterExtraChange(dateISO);
   toast('✕ Removed ' + title);
+  });
 }
 
 // One shared refresh funnel for every extras edit above: reuses
@@ -598,7 +601,7 @@ function stepMealIngredientAmount(deltaPerServG){
   const c = ingSubCtx;
   const st = currentIngredientState(c.fromFoodId);
   if(!st || st.removed) return;
-  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const proceed = function(){
   const perServG = st.batchGrams / st.batchYield;
   const newPerServG = Math.max(1, Math.round(perServG + deltaPerServG));
   const newBatchG = Math.max(1, Math.round(newPerServG * st.batchYield));
@@ -617,6 +620,9 @@ function stepMealIngredientAmount(deltaPerServG){
   if(typeof persist === 'function') persist();
   if(typeof currentRecipeKey === 'string' && currentRecipeKey) renderRecipe(currentRecipeKey);
   refreshIngredientSubSheet(); // repaint the sheet's amount value; keep it open
+  };
+  if(typeof withSharedMealConfirm === 'function') withSharedMealConfirm(c.weekStartDate, c.dayIndex, c.slot, c.person, proceed);
+  else proceed();
 }
 
 function ingSubOptionRowHtml(toId){
@@ -648,7 +654,7 @@ function renderIngSubResults(query){
 function chooseMealIngredientSub(toFoodId){
   if(!ingSubCtx || !FOODS[toFoodId]) return;
   const c = ingSubCtx;
-  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const proceed = function(){
   // Dual-write, mirroring chooseMealExtraRecipe: when the slot is already logged, update the log
   // snapshot too, so a later undo+reconfirm (which rebuilds the log from the plan) keeps the sub.
   const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
@@ -656,6 +662,9 @@ function chooseMealIngredientSub(toFoodId){
   const ok = setEntryIngredientSub(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId, toFoodId);
   if(!ok && !wasLogged) return;
   afterIngredientSubChange(c, {toFoodId: toFoodId});
+  };
+  if(typeof withSharedMealConfirm === 'function') withSharedMealConfirm(c.weekStartDate, c.dayIndex, c.slot, c.person, proceed);
+  else proceed();
 }
 
 // Leave an ingredient out of THIS meal, today only (owner follow-up 2026-09-15). Same dual-write
@@ -663,23 +672,29 @@ function chooseMealIngredientSub(toFoodId){
 function removeMealIngredient(fromFoodId){
   const c = ingredientSubCtxFor(fromFoodId);
   if(!c || !FOODS[fromFoodId]) return;
-  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const proceed = function(){
   const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
   const ok = removeEntryIngredientForDay(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId);
   if(!ok){ if(typeof toast === 'function') toast('Keep at least one ingredient'); return; }
   if(wasLogged) writeLoggedIngredientSub(c.dateISO, c.person, c.slot, c.fromFoodId, {from: c.fromFoodId, remove: true});
   afterIngredientSubChange(c, {removed: true});
+  };
+  if(typeof withSharedMealConfirm === 'function') withSharedMealConfirm(c.weekStartDate, c.dayIndex, c.slot, c.person, proceed);
+  else proceed();
 }
 
 // Undo a swap OR a removal, back to the recipe's original ingredient.
 function restoreMealIngredient(fromFoodId){
   const c = ingredientSubCtxFor(fromFoodId);
   if(!c) return;
-  if(typeof confirmSharedMealChange === 'function' && !confirmSharedMealChange(c.weekStartDate, c.dayIndex, c.slot, c.person)) return;
+  const proceed = function(){
   const wasLogged = (typeof loggedPlanEntryForSlot === 'function') && loggedPlanEntryForSlot(c.dateISO, c.person, c.slot);
   if(wasLogged) writeLoggedIngredientSub(c.dateISO, c.person, c.slot, c.fromFoodId, null);
   removeEntryIngredientSub(c.weekStartDate, c.dayIndex, c.slot, c.person, c.fromFoodId);
   afterIngredientSubChange(c, null);
+  };
+  if(typeof withSharedMealConfirm === 'function') withSharedMealConfirm(c.weekStartDate, c.dayIndex, c.slot, c.person, proceed);
+  else proceed();
 }
 
 // The sheet's "↺ Back to X" button (revert a swap while the picker is open).
@@ -1565,11 +1580,16 @@ function commitMealCompPortion(i, raw){
   // the viewer's own log entry (log.js:logPlanEntry is per-person) — so gate only when
   // source is 'plan', before recipeMealCompsCtx is mutated (a cancel must leave the shown
   // portions untouched, not just the persisted ones).
-  if(recipeServingCtx && recipeServingCtx.source === 'plan'
-    && !confirmSharedMealChange(recipeServingCtx.weekStartDate, recipeServingCtx.dayIndex, recipeServingCtx.slot, recipeServingCtx.person)) return;
-  recipeMealCompsCtx[i].portion = clamped;
-  updateMealDetail();
-  applyMealCompsOverride();
+  const proceed = function(){
+    recipeMealCompsCtx[i].portion = clamped;
+    updateMealDetail();
+    applyMealCompsOverride();
+  };
+  if(recipeServingCtx && recipeServingCtx.source === 'plan'){
+    withSharedMealConfirm(recipeServingCtx.weekStartDate, recipeServingCtx.dayIndex, recipeServingCtx.slot, recipeServingCtx.person, proceed);
+  } else {
+    proceed();
+  }
 }
 
 // Step one sub-recipe's portion by ±0.5 (clamped 0–3; 0 = removed). Re-renders the meal detail +
@@ -1577,13 +1597,18 @@ function commitMealCompPortion(i, raw){
 function adjMealComp(i, delta){
   if(!recipeMealCompsCtx || !recipeMealCompsCtx[i]) return;
   // Same shared-mirror confirm as commitMealCompPortion above.
-  if(recipeServingCtx && recipeServingCtx.source === 'plan'
-    && !confirmSharedMealChange(recipeServingCtx.weekStartDate, recipeServingCtx.dayIndex, recipeServingCtx.slot, recipeServingCtx.person)) return;
-  const c = recipeMealCompsCtx[i];
-  const cur = (typeof c.portion === 'number') ? c.portion : 0;
-  c.portion = Math.min(3, Math.max(0, +((cur + delta).toFixed(1))));
-  updateMealDetail();
-  applyMealCompsOverride();
+  const proceed = function(){
+    const c = recipeMealCompsCtx[i];
+    const cur = (typeof c.portion === 'number') ? c.portion : 0;
+    c.portion = Math.min(3, Math.max(0, +((cur + delta).toFixed(1))));
+    updateMealDetail();
+    applyMealCompsOverride();
+  };
+  if(recipeServingCtx && recipeServingCtx.source === 'plan'){
+    withSharedMealConfirm(recipeServingCtx.weekStartDate, recipeServingCtx.dayIndex, recipeServingCtx.slot, recipeServingCtx.person, proceed);
+  } else {
+    proceed();
+  }
 }
 
 // Persist the current per-component portions back to whichever slot the meal detail screen is

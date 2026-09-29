@@ -14,16 +14,44 @@ function toast(msg){
   clearTimeout(tT); tT=setTimeout(()=>t.classList.remove('show'),1900);
 }
 
-// Confirmation for a genuinely PERMANENT delete (a recipe or ingredient you authored — its data
-// is destroyed). Reversible book removals (built-in recipes) go through removeRecipeFromBook and
-// never reach here, so this copy can be honest and specific rather than an all-caps scare. Non-
-// browser render/test contexts have no native dialog, so their mutation helpers stay usable while
-// the app itself always asks first. `what` is an optional noun for a clearer message.
-function confirmDeletion(what){
-  const noun = (typeof what === 'string' && what) ? what : 'this';
-  return (typeof window === 'undefined' || typeof window.confirm !== 'function')
-    ? true
-    : window.confirm('Delete ' + noun + '? This can’t be undone.');
+/* ---------------- in-app confirm dialog (non-blocking) ----------------
+   Replaces window.confirm/alert everywhere: on iOS standalone PWAs the native dialogs are
+   unreliable (they can auto-dismiss and return false, silently aborting an edit). This is a
+   small dedicated overlay (#confirmBackdrop/#confirmDialog in index.html) stacked above the
+   bottom sheet (#sheet) so it can be opened even while a sheet/recipe page is already showing.
+   Callback-based since it can't block like window.confirm did: openConfirmDialog({title,
+   message, confirmLabel, cancelLabel, onConfirm}) renders the dialog; Continue runs onConfirm()
+   then closes, Cancel/backdrop/✕ just close. Outside a real browser (no document, or the
+   dialog markup isn't present — e.g. tools/check.js's DOM-free stub) there is no way to ask,
+   so it runs onConfirm() immediately — same "stay usable for a direct test call" contract
+   confirmDeletion below always had for window.confirm. */
+function openConfirmDialog(opts){
+  opts = opts || {};
+  const bypass = function(){ if(typeof opts.onConfirm === 'function') opts.onConfirm(); };
+  if(typeof document === 'undefined') { bypass(); return; }
+  const backdrop = document.getElementById('confirmBackdrop');
+  const dialog = document.getElementById('confirmDialog');
+  if(!backdrop || !dialog) { bypass(); return; }
+  document.getElementById('confirmDialogTitle').textContent = opts.title || '';
+  document.getElementById('confirmDialogMessage').textContent = opts.message || '';
+  const cancelBtn = document.getElementById('confirmDialogCancel');
+  const confirmBtn = document.getElementById('confirmDialogConfirm');
+  cancelBtn.textContent = opts.cancelLabel || 'Cancel';
+  confirmBtn.textContent = opts.confirmLabel || 'Continue';
+  confirmBtn.onclick = function(){
+    closeConfirmDialog();
+    if(typeof opts.onConfirm === 'function') opts.onConfirm();
+  };
+  backdrop.classList.add('show');
+  dialog.classList.add('show');
+}
+
+function closeConfirmDialog(){
+  if(typeof document === 'undefined') return;
+  const backdrop = document.getElementById('confirmBackdrop');
+  const dialog = document.getElementById('confirmDialog');
+  if(backdrop) backdrop.classList.remove('show');
+  if(dialog) dialog.classList.remove('show');
 }
 
 /* ---------------- shared-meal change confirmation (owner request) ----------------
@@ -76,6 +104,31 @@ function confirmSharedMealChange(weekStartDate, dayIndex, slot, person){
   const ok = window.confirm('This is a shared ' + slotLabel + ' — changing it changes ' + otherName + '’s ' + slotLabel + ' too. Continue?');
   if(ok) sharedMealChangeAcknowledged = true;
   return ok;
+}
+
+// Non-blocking replacement for the guard-and-return `if(!confirmSharedMealChange(...)) return;`
+// pattern above. Same semantics (ask once per session, only when the cell actually affects both
+// people), but since an in-app dialog can't block synchronously, callers hand the rest of their
+// handler to proceedFn: it runs immediately (no dialog) when the edit doesn't need asking or was
+// already acknowledged this session, otherwise it runs only after the user taps Continue.
+function withSharedMealConfirm(weekStartDate, dayIndex, slot, person, proceedFn){
+  if(typeof window === 'undefined' || typeof window.confirm !== 'function'
+     || !isSharedMealChangeAffectingBoth(weekStartDate, dayIndex, slot) || sharedMealChangeAcknowledged){
+    proceedFn();
+    return;
+  }
+  const otherKey = person === 'elena' ? 'partner' : 'elena';
+  const otherName = (typeof resolveDisplayName === 'function') ? resolveDisplayName(otherKey) : 'your partner';
+  const slotLabel = (SLOT_LABEL[slot] || slot).toLowerCase();
+  openConfirmDialog({
+    title: 'Shared ' + slotLabel,
+    message: 'This is a shared ' + slotLabel + ' — changing it changes ' + otherName + '’s ' + slotLabel + ' too. Continue?',
+    confirmLabel: 'Continue',
+    onConfirm: function(){
+      sharedMealChangeAcknowledged = true;
+      proceedFn();
+    }
+  });
 }
 
 /* ---------------- Botanical log rewards ----------------

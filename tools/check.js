@@ -1352,24 +1352,6 @@ function testReconcileInCartShopSet(ctx){
   assert(removedAgain === 0, 'reconcileInCartShopSet: idempotent once the in-cart set is already reconciled', String(removedAgain));
 }
 
-function testDeletionConfirmation(ctx){
-  let asked = '';
-  ctx.confirm = function(message){ asked = message; return false; };
-  assert(call(ctx, 'confirmDeletion', []) === false,
-    'deletion confirmation: cancelling native prompt blocks the destructive action', '');
-  assert(asked === 'Delete this? This can’t be undone.',
-    'deletion confirmation: permanent-delete wording is honest and specific', asked);
-  // With an explicit noun (e.g. a recipe title) the message names what is being deleted.
-  ctx.confirm = function(message){ asked = message; return false; };
-  call(ctx, 'confirmDeletion', ['“Omelette”']);
-  assert(asked === 'Delete “Omelette”? This can’t be undone.',
-    'deletion confirmation: an explicit noun is folded into the wording', asked);
-  ctx.confirm = function(){ return true; };
-  assert(call(ctx, 'confirmDeletion', []) === true,
-    'deletion confirmation: accepting native prompt permits the action', '');
-  delete ctx.confirm;
-}
-
 // Owner request: warn before a SHARED meal edit that changes BOTH people's plates (a recipe
 // swap, an extra add/remove/adjust, or a composite sub-recipe portion tweak — the three
 // mutateMealExtras/setMealComponentsOverride/applySwapToPlan families that mirror onto both
@@ -1440,6 +1422,69 @@ function testSharedMealChangeConfirmation(ctx){
     run(ctx, "weekPlans = " + JSON.stringify(savedWeekPlans) + "; weekPlan = null; mealShareOverrides = " + JSON.stringify(savedOverrides)
       + "; householdSize = " + JSON.stringify(savedHouseholdSize) + "; householdSizeManual = " + JSON.stringify(savedHouseholdSizeManual)
       + "; sharedMealChangeAcknowledged = false;");
+  }
+}
+
+// withSharedMealConfirm (render.js) is the non-blocking replacement for the old
+// guard-and-return `if(!confirmSharedMealChange(...)) return;` pattern: it always runs
+// proceedFn, either synchronously (right away, same "never blocks" cases confirmSharedMealChange
+// covered above) or deferred until openConfirmDialog's Continue button fires onConfirm. This
+// test exercises both halves: the three synchronous-bypass cases, and — by wiring up a minimal
+// fake #confirmDialog into the stubbed `document` for just this test — the deferred path, proving
+// proceedFn genuinely does NOT run while the dialog is merely open.
+function testWithSharedMealConfirm(ctx){
+  const savedWeekPlans = cloneJSON(get(ctx, 'weekPlans'));
+  const savedOverrides = cloneJSON(get(ctx, 'mealShareOverrides'));
+  const savedHouseholdSize = get(ctx, 'householdSize');
+  const savedHouseholdSizeManual = get(ctx, 'householdSizeManual');
+  try{
+    run(ctx, "MESA_TEST_TODAY = '" + FIXED_MONDAY + "'; weekPlans = {}; weekPlan = null; mealShareOverrides = {}; householdSize = 2; householdSizeManual = true; sharedMealChangeAcknowledged = false;");
+    const wsd = call(ctx, 'mondayOfWeek', [call(ctx, 'todayISO', [])]);
+    call(ctx, 'ensureWeekPlan', [wsd]);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[2].meals.dinner.shared") === true,
+      'setup: day-2 dinner is shared, as SHARED.dinner default predicts');
+    call(ctx, 'setMealShareOverride', [wsd, 3, 'dinner', false]);
+    run(ctx, "weekPlans = {}; weekPlan = null;");
+    call(ctx, 'ensureWeekPlan', [wsd]);
+    assert(get(ctx, "weekPlans['" + wsd + "'].days[3].meals.dinner.shared") === false,
+      'setup: day-3 dinner is solo under the per-cell override');
+
+    // (1) Not both-affecting (solo override, day 3) — proceedFn runs synchronously, no dialog touched.
+    let ran = false;
+    call(ctx, 'withSharedMealConfirm', [wsd, 3, 'dinner', 'elena', function(){ ran = true; }]);
+    assert(ran === true, 'withSharedMealConfirm: runs proceedFn synchronously for a cell that is not both-affecting');
+
+    // (2) sharedMealChangeAcknowledged already true — synchronous even on a both-affecting cell.
+    run(ctx, "sharedMealChangeAcknowledged = true;");
+    ran = false;
+    call(ctx, 'withSharedMealConfirm', [wsd, 2, 'dinner', 'elena', function(){ ran = true; }]);
+    assert(ran === true, 'withSharedMealConfirm: runs proceedFn synchronously once already acknowledged this session');
+    run(ctx, "sharedMealChangeAcknowledged = false;");
+
+    // (3) No window.confirm wired (this harness's default) — same non-blocking bypass
+    // confirmSharedMealChange always had, so a direct test/mutator call is never gated.
+    ran = false;
+    call(ctx, 'withSharedMealConfirm', [wsd, 2, 'dinner', 'elena', function(){ ran = true; }]);
+    assert(ran === true, 'withSharedMealConfirm: with no window.confirm available, runs proceedFn synchronously');
+
+    // (4) A both-affecting, not-yet-acknowledged edit WITH window.confirm + a real #confirmDialog
+    // present must defer: proceedFn does not run until the dialog's Continue button (onConfirm) fires.
+    run(ctx,
+      "window.confirm = function(){ return true; };" +
+      "(function(){ var els = {}; ['confirmBackdrop','confirmDialog','confirmDialogTitle','confirmDialogMessage','confirmDialogCancel','confirmDialogConfirm'].forEach(function(id){ els[id] = {classList: {add: function(){}, remove: function(){}}, textContent: '', onclick: null}; }); document.getElementById = function(id){ return els[id] || null; }; document.__confirmEls = els; })();"
+    );
+    ran = false;
+    call(ctx, 'withSharedMealConfirm', [wsd, 2, 'dinner', 'elena', function(){ ran = true; }]);
+    assert(ran === false, 'withSharedMealConfirm: defers — proceedFn does not run while the in-app dialog is only open');
+    run(ctx, "document.__confirmEls.confirmDialogConfirm.onclick();");
+    assert(ran === true, 'withSharedMealConfirm: runs proceedFn once the dialog Continue button fires onConfirm');
+    assert(get(ctx, 'sharedMealChangeAcknowledged') === true,
+      'withSharedMealConfirm: latches sharedMealChangeAcknowledged after Continue, same as confirmSharedMealChange');
+    run(ctx, "delete window.confirm; document.getElementById = function(){ return null; }; delete document.__confirmEls;");
+  } finally {
+    run(ctx, "weekPlans = " + JSON.stringify(savedWeekPlans) + "; weekPlan = null; mealShareOverrides = " + JSON.stringify(savedOverrides)
+      + "; householdSize = " + JSON.stringify(savedHouseholdSize) + "; householdSizeManual = " + JSON.stringify(savedHouseholdSizeManual)
+      + "; sharedMealChangeAcknowledged = false; if(typeof window.confirm === 'function') delete window.confirm; document.getElementById = function(){ return null; }; delete document.__confirmEls;");
   }
 }
 
@@ -15471,8 +15516,8 @@ function main(){
   runTest('Sat-fat / free-sugar generation steering fires', function(){ testSatFatSteeringFires(ctx); });
   runTest('Supplement never enters the breakfast auto-pair pool', function(){ testSupplementNotAutoPaired(ctx); });
   runTest('Cook from what I have: pantry recipe scorer + sheet (#7)', function(){ testPantryCookFromWhatIHave(ctx); });
-  runTest('destructive actions require a clear confirmation', function(){ testDeletionConfirmation(ctx); });
   runTest('shared-meal change confirmation: shared-detection predicate + non-blocking bypass paths', function(){ testSharedMealChangeConfirmation(ctx); });
+  runTest('withSharedMealConfirm: runs proceedFn synchronously when acknowledged/not-both-affecting, defers to an in-app dialog otherwise', function(){ testWithSharedMealConfirm(ctx); });
   runTest('reconcileInCartShopSet: prunes stale shopping-list in-cart ticks (Defect C redesign)', function(){ testReconcileInCartShopSet(ctx); });
   runTest('ingredient icon picker (task C5)', function(){ testIconPicker(ctx); });
   runTest('composite ingredient UI: save/detail/pantry/persist/D1 guards', function(){ testCompositeIngredientUi(ctx); });

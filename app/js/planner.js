@@ -5285,12 +5285,13 @@ function chooseSwap(i){
 function chooseSwapRecipe(recipeId, alt){
   if(!swapCtx || !RECIPES_DB[recipeId]) return;
   // Owner request: a shared slot's recipe swap changes BOTH people's dish (applySwapToPlan
-  // rewrites m.elena and m.partner below), so confirm first — render.js:confirmSharedMealChange
-  // is a no-op (true) for a solo household/solo meal/non-browser context, and only asks once
-  // per session. This is the UI action layer (the swap sheet's real apply path, driven by a
-  // user tap) — applySwap/applySwapToPlan themselves stay ungated so determinism tests that
-  // call them directly are unaffected.
-  if(!confirmSharedMealChange(swapCtx.weekStartDate, swapCtx.dayIndex, swapCtx.slot, swapCtx.person)) return;
+  // rewrites m.elena and m.partner below), so confirm first — withSharedMealConfirm
+  // (render.js) runs proceedFn immediately (no dialog) for a solo household/solo meal/
+  // non-browser context, and only asks once per session otherwise. This is the UI action
+  // layer (the swap sheet's real apply path, driven by a user tap) — applySwap/
+  // applySwapToPlan themselves stay ungated so determinism tests that call them directly
+  // are unaffected.
+  withSharedMealConfirm(swapCtx.weekStartDate, swapCtx.dayIndex, swapCtx.slot, swapCtx.person, function(){
   const resolvedWeekStartDate = swapCtx.weekStartDate || mondayOfWeek(todayISO());
   const swapDateISO = addDaysISO(resolvedWeekStartDate, swapCtx.dayIndex);
   if(!alt){
@@ -5353,6 +5354,7 @@ function chooseSwapRecipe(recipeId, alt){
   if(typeof playSwapReward === 'function'){
     playSwapReward({dateISO: swapDateISO, person: swapCtx.person, slot: swapCtx.slot, recipeId: alt.id, title: view.title});
   }
+  });
 }
 
 /* ---------------- re-balance (task C2 item 4) ---------------- */

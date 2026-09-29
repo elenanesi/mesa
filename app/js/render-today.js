@@ -771,9 +771,9 @@ function chooseMealExtraRecipe(recipeId){
   const ctx = addMealCtx;
   // Owner request: an added extra mirrors onto both sides of a shared cell even when this
   // slot is already logged (the plan-side addExtraRecipeToMeal call below still hits a
-  // shared cell) — render.js:confirmSharedMealChange only asks once per session and is a
-  // no-op for a solo household/meal/non-browser context.
-  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
+  // shared cell) — render.js:withSharedMealConfirm only asks once per session and runs
+  // proceedFn immediately for a solo household/meal/non-browser context.
+  withSharedMealConfirm(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, function(){
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
     // Symmetric with removeMealExtraRecipe below: update BOTH the log entry AND the plan
@@ -793,6 +793,7 @@ function chooseMealExtraRecipe(recipeId){
   persist();
   closeSheet();
   toast('＋ Added ' + RECIPES_DB[recipeId].title);
+  });
 }
 
 // gramsOverride (BOOST CHIP): a suggested-booster row carries its own hand-picked amount
@@ -803,7 +804,7 @@ function chooseMealExtraFood(foodId, gramsOverride){
   if(!addMealCtx || !FOODS[foodId]) return;
   const ctx = addMealCtx;
   // Same shared-mirror confirm as chooseMealExtraRecipe above.
-  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
+  withSharedMealConfirm(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, function(){
   const grams = (typeof gramsOverride === 'number' && gramsOverride > 0) ? gramsOverride : defaultMealFoodGrams(foodId);
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   if(ctx.logged){
@@ -822,6 +823,7 @@ function chooseMealExtraFood(foodId, gramsOverride){
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
   toast('＋ Added ' + FOODS[foodId].name);
+  });
 }
 
 // ── Cook from what I have (#7) ─────────────────────────────────────────────
@@ -994,7 +996,7 @@ function removeMealExtraRecipe(recipeId){
   // back-to-back window.confirm() dialogs, silently aborting the removal). The shared-meal
   // acknowledgement stays (owner request), but it fires at most once per session and never as
   // the second of two dialogs.
-  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
+  withSharedMealConfirm(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, function(){
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = RECIPES_DB[recipeId] ? RECIPES_DB[recipeId].title : 'item';
   if(ctx.logged){
@@ -1012,6 +1014,7 @@ function removeMealExtraRecipe(recipeId){
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
   toast('✕ Removed ' + title);
+  });
 }
 
 function removeMealExtraFood(foodId){
@@ -1019,7 +1022,7 @@ function removeMealExtraFood(foodId){
   const ctx = addMealCtx;
   // No confirmDeletion() here (reversible removal; avoids the stacked-dialog two-tap bug) —
   // same reasoning as removeMealExtraRecipe above. Shared-meal acknowledgement stays.
-  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
+  withSharedMealConfirm(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, function(){
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const title = FOODS[foodId] ? FOODS[foodId].name : 'item';
   if(ctx.logged){
@@ -1037,6 +1040,7 @@ function removeMealExtraFood(foodId){
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
   toast('✕ Removed ' + title);
+  });
 }
 
 // A logged entry's components is a snapshot taken at confirm time (state.js:logPlanEntry),
@@ -1161,7 +1165,7 @@ function stepMealExtraPortion(recipeId, delta){
   const ctx = addMealCtx;
   // Owner request: an extra's portion mirrors to both sides of a shared cell (same funnel
   // as chooseMealExtraRecipe above) — ask before either mutator below runs.
-  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
+  withSharedMealConfirm(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, function(){
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   const loggedComp = ctx.logged ? loggedPlanEntryForSlot(dateISO, ctx.person, ctx.slot) : null;
   let current = 1;
@@ -1194,6 +1198,7 @@ function stepMealExtraPortion(recipeId, delta){
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
+  });
 }
 
 // The current grams of a meal EXTRA food for the active add-meal context (defaults if not present).
@@ -1228,7 +1233,7 @@ function applyMealExtraFoodGrams(foodId, newGrams){
   // Same shared-mirror confirm as stepMealExtraPortion above — this is the single funnel
   // both the +/- stepper (stepMealExtraFoodGrams) and the typed commits
   // (commitMealExtraFoodGrams/commitMealExtraFoodAmount) go through.
-  if(!confirmSharedMealChange(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person)) return;
+  withSharedMealConfirm(ctx.weekStartDate, ctx.dayIndex, ctx.slot, ctx.person, function(){
   const dateISO = addDaysISO(ctx.weekStartDate, ctx.dayIndex);
   newGrams = Math.max(1, Math.min(2000, Math.round(newGrams)));
   if(ctx.logged){
@@ -1245,6 +1250,7 @@ function applyMealExtraFoodGrams(foodId, newGrams){
   renderWeek();
   persist();
   openAddMealRecipeSheet(ctx.slot, dateISO);
+  });
 }
 
 function stepMealExtraFoodGrams(foodId, delta){
@@ -1489,7 +1495,6 @@ function commitMealBuilderRowGrams(i, raw){
 
 function removeMealBuilderRow(i){
   if(!mealBuilder) return;
-  if(!confirmDeletion()) return;
   mealBuilder.rows.splice(i, 1);
   repaintMealBuilderSheet();
 }
@@ -1832,7 +1837,6 @@ function renderTodaySoFar(){
 
 function removeTodayEntryGroup(indices){
   if(!Array.isArray(indices) || !indices.length) return;
-  if(!confirmDeletion()) return;
   let removed = 0;
   indices.slice().sort(function(a,b){ return b-a; }).forEach(function(index){ if(removeLogEntryAt(currentLogDateISO(), currentProf, index)) removed++; });
   if(!removed) return;
@@ -1931,7 +1935,6 @@ function toggleTodayRecordGroupEatenOut(groupIndex){
 function deleteTodayRecordGroup(groupIndex){
   const group = todayRecordGroups[groupIndex];
   if(!group) return;
-  if(!confirmDeletion()) return;
   group.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(todayISO(), currentProf, i); });
   refreshAfterLogChange();
   toast('✕ Removed item');
@@ -2024,7 +2027,6 @@ function saveEditTodayFood(){
 
 function deleteEditingTodayFood(){
   if(!editTodayFoodCtx) return;
-  if(!confirmDeletion()) return;
   const dateISO = editTodayFoodCtx.dateISO || todayISO();
   const person = editTodayFoodCtx.person || currentProf;
   editTodayFoodCtx.indices.slice().sort(function(a, b){ return b - a; }).forEach(function(i){ removeLogEntryAt(dateISO, person, i); });
@@ -2128,7 +2130,6 @@ function undoLogSlot(slot){
 // state is re-derived from slotLogStatus on the renderTodayCardActions() rebuild, same
 // path as undoLogSlot — the two stay consistent by construction).
 function removeTodayEntry(index){
-  if(!confirmDeletion()) return;
   const removed = removeLogEntryAt(currentLogDateISO(), currentProf, index);
   if(!removed) return;
   let name = 'entry';
@@ -2565,29 +2566,33 @@ function commitLogPickerAdd(){
   // doc comment), so the confirm belongs here, not there. An unassigned add never touches a
   // plan slot (it logs standalone, bypassing the meal-plan extras funnel entirely per
   // applyUnassignedLogPickerAdd's doc), so only the slot-targeted branch can be both-affecting.
+  const proceed = function(){
+    const result = ctx.unassigned
+      ? applyUnassignedLogPickerAdd(dateISO, ctx.kind, ctx.id, amount, currentProf)
+      : applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
+    if(!result){ toast('Could not add — try again'); return; }
+    recomputeConsumed(currentProf);
+    recomputeProf(currentProf);
+    refreshRingAndBars();
+    renderTodayMeals();
+    logSearchQuery = ''; // ready for the next search
+    renderLogScreen();
+    renderWeek();
+    persist();
+    closeSheet();
+    logPickerCtx = null;
+    const dest = ctx.unassigned
+      ? 'without a meal'
+      : 'to ' + logDateLabel().toLowerCase() + '’s ' + (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
+    toast('＋ Added ' + result.title + ' ' + dest);
+  };
   if(ctx.slot && !ctx.unassigned){
     const weekStartDate = mondayOfWeek(dateISO);
     const dayIndex = diffDaysISO(dateISO, weekStartDate);
-    if(!confirmSharedMealChange(weekStartDate, dayIndex, ctx.slot, currentProf)) return;
+    withSharedMealConfirm(weekStartDate, dayIndex, ctx.slot, currentProf, proceed);
+  } else {
+    proceed();
   }
-  const result = ctx.unassigned
-    ? applyUnassignedLogPickerAdd(dateISO, ctx.kind, ctx.id, amount, currentProf)
-    : applyLogPickerAdd(dateISO, ctx.slot, ctx.kind, ctx.id, amount, currentProf);
-  if(!result){ toast('Could not add — try again'); return; }
-  recomputeConsumed(currentProf);
-  recomputeProf(currentProf);
-  refreshRingAndBars();
-  renderTodayMeals();
-  logSearchQuery = ''; // ready for the next search
-  renderLogScreen();
-  renderWeek();
-  persist();
-  closeSheet();
-  logPickerCtx = null;
-  const dest = ctx.unassigned
-    ? 'without a meal'
-    : 'to ' + logDateLabel().toLowerCase() + '’s ' + (SLOT_LABEL[ctx.slot] || ctx.slot).toLowerCase();
-  toast('＋ Added ' + result.title + ' ' + dest);
 }
 
 // Repaints the Log screen's search box/results plus the shared "so far"/coffee widgets —

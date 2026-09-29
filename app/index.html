@@ -12,7 +12,7 @@
 <link rel="apple-touch-icon" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="apple-touch-icon-precomposed" sizes="180x180" href="https://mesa-sync.elenanesi55.workers.dev/assets/icon-180.png?v=mesa-v53" />
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-<link rel="stylesheet" href="css/mesa.css?v=mesa-dd17f4bab1a4" />
+<link rel="stylesheet" href="css/mesa.css?v=mesa-94a7076f269f" />
 </head>
 <body>
 
@@ -809,6 +809,19 @@
     <div class="sheet-body" id="sheetBody"></div>
   </div>
 
+  <!-- in-app confirm dialog (non-blocking replacement for window.confirm/alert — see
+       openConfirmDialog in render.js) -->
+  <div class="confirm-backdrop" id="confirmBackdrop" onclick="closeConfirmDialog()"></div>
+  <div class="confirm-dialog" id="confirmDialog" role="alertdialog" aria-modal="true" aria-labelledby="confirmDialogTitle">
+    <button class="confirm-x" onclick="closeConfirmDialog()" aria-label="Close">✕</button>
+    <h2 id="confirmDialogTitle"></h2>
+    <p id="confirmDialogMessage"></p>
+    <div class="confirm-actions">
+      <button class="cta ghostbtn" id="confirmDialogCancel" onclick="closeConfirmDialog()">Cancel</button>
+      <button class="cta" id="confirmDialogConfirm">Continue</button>
+    </div>
+  </div>
+
   <!-- onboarding -->
   <div class="onboard hidden" id="onboard">
     <button class="ob-skip" onclick="finishOnboarding()">Fill in later</button>
@@ -1046,6 +1059,6 @@
 <script src="js/library.js"></script>
 <script src="js/sync.js"></script>
 <script src="js/auth.js"></script>
-<script src="js/app.js?v=mesa-dd17f4bab1a4"></script>
+<script src="js/app.js?v=mesa-94a7076f269f"></script>
 </body>
 </html>

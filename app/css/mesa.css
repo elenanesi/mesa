@@ -957,6 +957,19 @@ ol.steps li{font-size:14px;line-height:1.55;margin-bottom:10px;color:var(--ink-s
 .sheet-handle{width:38px;height:5px;border-radius:999px;background:var(--line);margin:10px auto 0;flex:0 0 auto;}
 .sheet-body{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:4px 18px 30px;}
 
+/* in-app confirm dialog — non-blocking replacement for window.confirm. Stacked above the
+   bottom sheet (higher z-index) since a confirm can be opened while a sheet/recipe page is
+   already showing (e.g. deleting an extra from inside a recipe page). */
+.confirm-backdrop{position:absolute;inset:0;background:rgba(52,45,37,.5);opacity:0;pointer-events:none;transition:opacity .2s ease;z-index:90;}
+.confirm-backdrop.show{opacity:1;pointer-events:auto;}
+.confirm-dialog{position:absolute;left:16px;right:16px;top:50%;transform:translateY(-50%) scale(.96);opacity:0;visibility:hidden;background:var(--paper);border-radius:18px;box-shadow:0 14px 44px rgba(73,54,32,.32);border:1px solid rgba(176,146,105,.42);padding:20px 20px 16px;max-width:420px;margin:0 auto;z-index:91;transition:opacity .2s ease,transform .2s ease,visibility 0s linear .2s;}
+.confirm-dialog.show{opacity:1;visibility:visible;transform:translateY(-50%) scale(1);transition:opacity .2s ease,transform .2s ease;}
+.confirm-dialog h2{margin:0 0 8px;font-size:18px;padding-right:22px;}
+.confirm-dialog p{margin:0 0 18px;color:var(--muted);font-size:14.5px;line-height:1.4;}
+.confirm-dialog .confirm-actions{display:flex;gap:10px;}
+.confirm-dialog .confirm-actions .cta{flex:1;}
+.confirm-x{position:absolute;top:12px;right:12px;background:none;border:none;font-size:16px;line-height:1;color:var(--muted);cursor:pointer;padding:6px;min-width:32px;min-height:32px;}
+
 /* swap alternatives */
 .altrow{display:flex;align-items:center;gap:12px;padding:13px;border:1px solid rgba(176,146,105,.38);border-radius:14px;margin-top:10px;cursor:pointer;background:rgba(255,250,240,.9);min-height:44px;}
 .altrow:active{transform:scale(.98);}
