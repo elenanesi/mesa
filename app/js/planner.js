@@ -1091,6 +1091,10 @@ function recordDayUsage(history, entry, person, dayIndex, slot){
     if(kind === 'red' || kind === 'poultry'){
       history[person].meatUse[kind]++;
       history[person].meatUse.total++;
+    } else if(kind === 'fish' && history[person].meatUse){
+      // Counted but NOT added to `total` — fish has no weekly ceiling (MEAT_WEEK_LIMITS caps
+      // only red+poultry); this tally only feeds the soft fish incentive's taper.
+      history[person].meatUse.fish = (history[person].meatUse.fish || 0) + 1;
     }
   }
   // Consecutive-dinner protein/diet variety (applyConsecutiveDinnerProteinRule): remember what
@@ -2634,8 +2638,11 @@ function generateWeek(seed){
   history.elena.weekUse = {}; history.partner.weekUse = {};
   // Per-person tracking for the lunch/dinner main-course rules only.
   history.elena.lunchDinnerMainUse = {}; history.partner.lunchDinnerMainUse = {};
-  history.elena.meatUse = {red: 0, poultry: 0, total: 0};
-  history.partner.meatUse = {red: 0, poultry: 0, total: 0};
+  // fish is tracked alongside red/poultry (it does NOT count toward `total`, which is the
+  // red+poultry weekly cap) — read by fishIncentiveBonus to taper the soft fish nudge once
+  // ~FISH_WEEK_TARGET fish mains have been placed for this person this week.
+  history.elena.meatUse = {red: 0, poultry: 0, fish: 0, total: 0};
+  history.partner.meatUse = {red: 0, poultry: 0, fish: 0, total: 0};
   // Consecutive-dinner protein/diet variety (owner 2026-09-16): per-person dinner protein kind
   // by dayIndex (sparse) — 'red'|'poultry'|'fish'|null (meatless) — read by
   // applyConsecutiveDinnerProteinRule so tomorrow's dinner avoids repeating tonight's protein.
@@ -3042,6 +3049,182 @@ function buildSidePools(avoid, persons, history, dayIndex, slot){
   return {carbPool: pool(isCarbSide), vegPool: pool(isVegOnlySide)};
 }
 
+/* ---------------- fish floor: incentive (soft) + fallback (never-empty) — owner 2026-10-04 ----
+   The weekly meat rules (MEAT_WEEK_LIMITS) CAP red meat and poultry but place no floor on, and
+   no incentive toward, FISH — so a generated week could land 0 fish dinners, and once the meat
+   caps were hit a lunch/dinner main could be left EMPTY ("couldn't fit a dinner") even though a
+   legal fish main existed. Two pieces address that, both deliberately conservative:
+
+   1. INCENTIVE (fishIncentiveBonus) — a soft, additive score term (sibling to tuningBonus /
+      ingredientDiversityPenalty) that nudges the generator toward ~FISH_WEEK_TARGET fish MAIN
+      meals per person-week, tapering to 0 once that many are placed. Magnitude sits in the
+      tuning band: big enough to break an otherwise-close tie in a fish main's favour, far below
+      kcalErr*1000 / proteinShort*100 so it NEVER forces a fish when the calorie/protein fit is
+      worse, and purely additive so it can only re-rank candidates that already passed every
+      filter (it can never empty a pool, force an illegal fish, or starve a slot).
+
+   2. FALLBACK (fishFallback*Candidates) — reached ONLY when the normal candidate pool for a
+      lunch/dinner main comes up empty (pickSharedMeal/pickSoloMeal's `!best` branch, which
+      otherwise returns reason:'no-candidates'). It rebuilds candidates from the LEGAL
+      (in-season, non-avoided, diet-valid, in-book) fish mains, composing with whatever sides
+      exist — relaxing the normal "needs a full carb+veg pairing" gate down to carb-only,
+      veg-only, or a standalone main rather than leaving the slot empty. Because it runs only on
+      the empty path, it can NEVER alter a slot the normal path already filled: it only ever
+      turns an empty dinner into a fish one when a fish is available. */
+const FISH_WEEK_TARGET = 2;    // aim for ~2 fish MAIN meals per person-week
+const FISH_INCENTIVE_BONUS = 55; // full bonus when 0 fish placed; linear taper to 0 at the target
+
+// The protein grams a recipe carries UNDER a specific option-combo (mirrors
+// mealStructureForRecipe's protein rule, but reads the EFFECTIVE ingredients so an
+// optionGroups choice — e.g. baked-fish's chosen salmon — is counted). Needed because
+// isProteinMain()/isAutoLunchDinnerMain() judge the BASE ingredients only, so an
+// options recipe whose protein lives in a choice (baked-fish) reads as NOT a protein
+// main there and is structurally excluded from normal main planning — exactly the kind
+// of legal fish main the fallback below is meant to reach.
+function recipeProteinGramsUnderOpts(id, opts){
+  const r = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[id];
+  if(!r || typeof recipeEffectiveIngredients !== 'function') return 0;
+  let protein = 0;
+  recipeEffectiveIngredients(r, opts).forEach(function(ing){
+    const food = FOODS[ing[0]];
+    if(!food) return;
+    const m = foodMacros(ing[0], Number(ing[1]) || 0);
+    if(food.cat === 'Protein' || food.cat === 'Dairy' || m.protein >= 12) protein += m.protein;
+  });
+  return protein;
+}
+// Could this recipe be a FISH main under some legal option-combo? (A baked-fish's salmon/cod/…
+// choices, a pasta's tuna sauce, etc.) Judged across the viable combos for this avoid/diet list,
+// so a fish option excluded by the avoid list isn't counted. Deliberately does NOT gate on
+// isAutoLunchDinnerMain (which reads base ingredients and so rejects an options recipe whose fish
+// is a choice); instead it requires the chosen combo to be a real protein main (>=12g protein).
+// `id` is expected to come from a candidatesFor() pool, so slot/season/style/book eligibility is
+// already satisfied. Pure + deterministic.
+function recipeCanBeFishMain(id, avoidList, dietList){
+  const r = (typeof RECIPES_DB !== 'undefined') && RECIPES_DB[id];
+  if(!r || r.role === 'side') return false;
+  return viableRecipeOptionCombos(id, avoidList, dietList).some(function(o){
+    return recipeProteinKind(id, o) === 'fish' && recipeProteinGramsUnderOpts(id, o) >= 12;
+  });
+}
+// The fish option-combos of a recipe, legal for this avoid/diet list — preferring ones not yet
+// used this week (per-combo rotation, "rotate the fish, don't repeat one"), but never returning
+// empty when a legal fish combo exists (a repeat beats an empty slot). Used by the fallback.
+function legalFishCombos(id, avoidList, dietList, history, persons){
+  const fishCombos = viableRecipeOptionCombos(id, avoidList, dietList).filter(function(o){
+    return recipeProteinKind(id, o) === 'fish' && recipeProteinGramsUnderOpts(id, o) >= 12;
+  });
+  if(fishCombos.length <= 1) return fishCombos;
+  const unused = fishCombos.filter(function(o){
+    const k = comboVarietyKey(id, o);
+    return persons.every(function(p){ return !(history[p].weekUse[k] > 0); });
+  });
+  return unused.length ? unused : fishCombos;
+}
+// Soft per-person nudge toward FISH_WEEK_TARGET fish mains/week, tapering to 0 at the target.
+// Applies only to a lunch/dinner MAIN that resolves to fish under THIS candidate's own combo.
+function fishIncentiveBonus(mainId, opts, slot, history, person){
+  if(slot !== 'lunch' && slot !== 'dinner') return 0;
+  if(recipeProteinKind(mainId, opts) !== 'fish') return 0;
+  const placed = (history[person] && history[person].meatUse && history[person].meatUse.fish) || 0;
+  if(placed >= FISH_WEEK_TARGET) return 0;
+  return FISH_INCENTIVE_BONUS * (FISH_WEEK_TARGET - placed) / FISH_WEEK_TARGET;
+}
+
+// Build fallback candidates (pickSharedMeal shape: per-person portions/totals) from the legal
+// fish mains in `legalPool`, composing with whatever sides exist. Side gate is relaxed: a full
+// carb+veg pairing if both pools have one, else carb-only or veg-only, else a standalone main —
+// anything legal beats an empty slot. One candidate per legal fish combo per side option.
+function fishFallbackSharedCandidates(legalPool, slot, dayIndex, desiredE, desiredA, maxPortion, avoidBoth, dietBoth, history){
+  const out = [];
+  const fishMains = legalPool.filter(function(id){ return recipeCanBeFishMain(id, avoidBoth, dietBoth); });
+  if(!fishMains.length) return out;
+  const sides = buildSidePools(avoidBoth, ['elena', 'partner'], history, dayIndex, slot);
+  fishMains.forEach(function(mainId){
+    const isFull = RECIPES_DB[mainId] && RECIPES_DB[mainId].role === 'full';
+    legalFishCombos(mainId, avoidBoth, dietBoth, history, ['elena', 'partner']).forEach(function(opts){
+      const base = recipeNutrition(mainId, 1, opts).totals;
+      const sig = optsComboSignature(opts);
+      const hasO3base = recipeHasOmega3(mainId);
+      // A complete `full` fish recipe (e.g. a poke bowl) stands alone — no composed sides.
+      if(isFull || (!sides.carbPool.length && !sides.vegPool.length)){
+        const bpE = bestPortion(base.kcal, desiredE, PERSON_ANCHOR.elena, maxPortion);
+        const bpA = bestPortion(base.kcal, desiredA, PERSON_ANCHOR.partner, maxPortion);
+        out.push({tieId: mainId + (sig ? '|opts:' + sig : '') + '|fb', mainId: mainId, extra: null, opts: opts,
+          portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal, kcalA: bpA.kcal,
+          proteinE: base.protein * bpE.portion, proteinA: base.protein * bpA.portion,
+          totalsE: withOmega3(scaleNutrientTotals(base, bpE.portion), hasO3base),
+          totalsA: withOmega3(scaleNutrientTotals(base, bpA.portion), hasO3base)});
+        return;
+      }
+      // A role:'main' fish composes with the best-fitting carb and/or veg side available.
+      const carbId = sides.carbPool.length ? topKSideIds(base.kcal, sides.carbPool, desiredE / 2, 1)[0] : null;
+      const vegId = sides.vegPool.length ? topKSideIds(base.kcal, sides.vegPool, desiredE / 2, 1)[0] : null;
+      const extras = [];
+      if(carbId) extras.push({recipeId: carbId, portion: 1});
+      if(vegId && vegId !== carbId) extras.push({recipeId: vegId, portion: 1});
+      let extrasKcal = 0, extrasProtein = 0, hasO3 = hasO3base, et = null;
+      extras.forEach(function(e){
+        const b = dbBaseNutrition(e.recipeId);
+        extrasKcal += b.kcal * e.portion; extrasProtein += b.protein * e.portion;
+        if(recipeHasOmega3(e.recipeId)) hasO3 = true;
+        const sc = scaleNutrientTotals(b, e.portion); et = et ? addNutrientTotals(et, sc) : sc;
+      });
+      const bpE = bestPortion(base.kcal, desiredE - extrasKcal, PERSON_ANCHOR.elena, maxPortion);
+      const bpA = bestPortion(base.kcal, desiredA - extrasKcal, PERSON_ANCHOR.partner, maxPortion);
+      out.push({tieId: mainId + '|fb|' + extras.map(function(e){ return e.recipeId; }).join('+') + (sig ? '|opts:' + sig : ''),
+        mainId: mainId, extras: extras, opts: opts,
+        portionE: bpE.portion, portionA: bpA.portion, kcalE: bpE.kcal + extrasKcal, kcalA: bpA.kcal + extrasKcal,
+        proteinE: base.protein * bpE.portion + extrasProtein, proteinA: base.protein * bpA.portion + extrasProtein,
+        mainFiberE: base.fiber * bpE.portion, mainFiberA: base.fiber * bpA.portion,
+        totalsE: withOmega3(et ? addNutrientTotals(scaleNutrientTotals(base, bpE.portion), et) : scaleNutrientTotals(base, bpE.portion), hasO3),
+        totalsA: withOmega3(et ? addNutrientTotals(scaleNutrientTotals(base, bpA.portion), et) : scaleNutrientTotals(base, bpA.portion), hasO3)});
+    });
+  });
+  return out;
+}
+
+// Solo analog of fishFallbackSharedCandidates (one person, single-portion candidate shape).
+function fishFallbackSoloCandidates(legalPool, person, slot, dayIndex, desired, anchor, maxPortion, avoidP, dietP, history){
+  const out = [];
+  const fishMains = legalPool.filter(function(id){ return recipeCanBeFishMain(id, avoidP, dietP); });
+  if(!fishMains.length) return out;
+  const sides = buildSidePools(avoidP, [person], history, dayIndex, slot);
+  fishMains.forEach(function(mainId){
+    const isFull = RECIPES_DB[mainId] && RECIPES_DB[mainId].role === 'full';
+    legalFishCombos(mainId, avoidP, dietP, history, [person]).forEach(function(opts){
+      const base = recipeNutrition(mainId, 1, opts).totals;
+      const sig = optsComboSignature(opts);
+      const hasO3base = recipeHasOmega3(mainId);
+      if(isFull || (!sides.carbPool.length && !sides.vegPool.length)){
+        const bp = bestPortion(base.kcal, desired, anchor, maxPortion);
+        out.push({tieId: mainId + (sig ? '|opts:' + sig : '') + '|fb', mainId: mainId, extra: null, opts: opts,
+          portion: bp.portion, kcal: bp.kcal, protein: base.protein * bp.portion,
+          totals: withOmega3(scaleNutrientTotals(base, bp.portion), hasO3base)});
+        return;
+      }
+      const carbId = sides.carbPool.length ? topKSideIds(base.kcal, sides.carbPool, desired / 2, 1)[0] : null;
+      const vegId = sides.vegPool.length ? topKSideIds(base.kcal, sides.vegPool, desired / 2, 1)[0] : null;
+      const extras = [];
+      if(carbId) extras.push({recipeId: carbId, portion: 1});
+      if(vegId && vegId !== carbId) extras.push({recipeId: vegId, portion: 1});
+      let extrasKcal = 0, extrasProtein = 0, hasO3 = hasO3base, et = null;
+      extras.forEach(function(e){
+        const b = dbBaseNutrition(e.recipeId);
+        extrasKcal += b.kcal * e.portion; extrasProtein += b.protein * e.portion;
+        if(recipeHasOmega3(e.recipeId)) hasO3 = true;
+        const sc = scaleNutrientTotals(b, e.portion); et = et ? addNutrientTotals(et, sc) : sc;
+      });
+      const bp = bestPortion(base.kcal, desired - extrasKcal, anchor, maxPortion);
+      out.push({tieId: mainId + '|fb|' + extras.map(function(e){ return e.recipeId; }).join('+') + (sig ? '|opts:' + sig : ''),
+        mainId: mainId, extras: extras, opts: opts, portion: bp.portion, kcal: bp.kcal + extrasKcal,
+        protein: base.protein * bp.portion + extrasProtein, mainFiber: base.fiber * bp.portion,
+        totals: withOmega3(et ? addNutrientTotals(scaleNutrientTotals(base, bp.portion), et) : scaleNutrientTotals(base, bp.portion), hasO3)});
+    });
+  });
+  return out;
+}
+
 // remainingWeight is a per-person object {elena, partner} (owner 2026-08-23): the two can differ
 // on a shared breakfast/lunch/dinner when one person dropped their daily snack, so each person's
 // desired kcal/protein for this slot scales by THEIR own remaining fraction of the day. A shared
@@ -3056,6 +3239,10 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   // within-week variety filter over Elena's history — for shared slots both histories are
   // written in sync, so hers stands for both. Gap history via Elena, but the day-wide
   // exclusion must honour BOTH people — see applyVarietyFilter's doc.
+  // The legal (in-season/avoid/diet/style/book) pool BEFORE the within-week variety filter —
+  // kept for the fish fallback below, which must draw from the full legal set (the variety
+  // filter is exactly what starves the normal pool it rescues).
+  const legalPool = pool.slice();
   pool = filterMealPool(pool, excludePrevWeekId, history, 'elena', slot, dayIndex, ['elena', 'partner']);
   const maxPortion = SLOT_MAX_PORTION[slot];
   // task D1: hoisted above the slot branches below (breakfast/lunch/dinner already
@@ -3196,7 +3383,8 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
   }
 
   let best = null;
-  candidates.forEach(function(c){
+  function scoreCandidates(cands){
+    cands.forEach(function(c){
     // mealScore's rotation/favorite-boost is keyed on the real MAIN recipe id (mainId) —
     // never the composite tieId — so a composed unit's score treats "which main" exactly
     // like a full-recipe pick would (Q1: no bias for/against composing). tieId is used
@@ -3211,12 +3399,21 @@ function pickSharedMeal(pool, slot, dayIndex, slotIndex, remainingKcal, remainin
     // since a shared dish can be scaled differently for each — see dailyGramCapPenalty doc.
     const gramCapE = dailyGramCapPenalty(candidateFoodGramRows(c.mainId, c.opts, c.portionE, c.extras), history, 'elena', dayIndex);
     const gramCapA = dailyGramCapPenalty(candidateFoodGramRows(c.mainId, c.opts, c.portionA, c.extras), history, 'partner', dayIndex);
-    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex) + gramCapE + (overScaleSlot ? portionScalePenalty(c.portionE, mainFiberE) : 0);
-    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex) + gramCapA + (overScaleSlot ? portionScalePenalty(c.portionA, mainFiberA) : 0);
+    const scoreE = mealScore(c.kcalE, desiredE, c.proteinE, desiredProtE, dayIndex, slotIndex, c.mainId, weekSeed, 'elena') + tuningBonus(c.totalsE, nextWeekTuning) + goalTuningBonus(c.totalsE, 'elena') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'elena', dayIndex) + gramCapE + (overScaleSlot ? portionScalePenalty(c.portionE, mainFiberE) : 0) + fishIncentiveBonus(c.mainId, c.opts, slot, history, 'elena');
+    const scoreA = mealScore(c.kcalA, desiredA, c.proteinA, desiredProtA, dayIndex, slotIndex, c.mainId, weekSeed, 'partner') + tuningBonus(c.totalsA, nextWeekTuning) + goalTuningBonus(c.totalsA, 'partner') + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, 'partner', dayIndex) + gramCapA + (overScaleSlot ? portionScalePenalty(c.portionA, mainFiberA) : 0) + fishIncentiveBonus(c.mainId, c.opts, slot, history, 'partner');
     const total = scoreE + scoreA;
     const better = !best || total > best.total + 1e-9 || (Math.abs(total - best.total) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({total: total}, c);
-  });
+    });
+  }
+  scoreCandidates(candidates);
+  // Fish fallback (owner 2026-10-04): a would-be-empty lunch/dinner main is filled with a legal
+  // fish main (rotated, composed with whatever sides exist) BEFORE giving up — see the doc on
+  // fishFallbackSharedCandidates. Runs only when the normal pool produced nothing, so it can
+  // never alter a slot that was already fillable.
+  if(!best && (slot === 'lunch' || slot === 'dinner')){
+    scoreCandidates(fishFallbackSharedCandidates(legalPool, slot, dayIndex, desiredE, desiredA, maxPortion, avoidBoth, dietBoth, history));
+  }
   if(!best){
     console.error('pickSharedMeal: empty candidate pool for slot="' + slot + '" style="' + householdStyle + '" — check RECIPES_DB coverage for this avoid-list/diet combination.');
     emptyPoolPicks++;
@@ -3253,6 +3450,8 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   const desired = remainingKcalP * (w / remainingWeight);
   const desiredProt = remainingProteinP * (w / remainingWeight);
   const anchor = PERSON_ANCHOR[person];
+  // The legal pool BEFORE the within-week variety filter — see pickSharedMeal's legalPool doc.
+  const legalPool = pool.slice();
   // Cross-week filter first (with its own full-pool fallback), then within-week variety.
   pool = filterMealPool(pool, excludePrevWeekId, history, person, slot, dayIndex);
   const maxPortion = SLOT_MAX_PORTION[slot];
@@ -3335,7 +3534,8 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
   }
 
   let best = null;
-  candidates.forEach(function(c){
+  function scoreCandidates(cands){
+    cands.forEach(function(c){
     // Same reasoning as pickSharedMeal: score keyed on the real main id, tie-break on tieId.
     // portionScalePenalty: every lunch/dinner candidate is judged on its MAIN component's
     // OWN portion/fibre — see that function's own doc above (near ingredientDiversityPenalty)
@@ -3346,10 +3546,17 @@ function pickSoloMeal(pool, person, slot, dayIndex, slotIndex, remainingKcalP, r
     // pair food); normalize to one list for the quantity cap so both shapes are accounted.
     const gramExtras = c.extras || (c.extra ? [c.extra] : []);
     const gramCap = dailyGramCapPenalty(candidateFoodGramRows(c.mainId, c.opts, c.portion, gramExtras), history, person, dayIndex);
-    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex) + gramCap + (overScaleSlot ? portionScalePenalty(c.portion, mainFiber) : 0);
+    const score = mealScore(c.kcal, desired, c.protein, desiredProt, dayIndex, slotIndex, c.mainId, weekSeed, person) + tuningBonus(c.totals, nextWeekTuning) + goalTuningBonus(c.totals, person) + ingredientDiversityPenalty(c.mainId, c.opts, c.extras, history, person, dayIndex) + gramCap + (overScaleSlot ? portionScalePenalty(c.portion, mainFiber) : 0) + fishIncentiveBonus(c.mainId, c.opts, slot, history, person);
     const better = !best || score > best.score + 1e-9 || (Math.abs(score - best.score) <= 1e-9 && c.tieId < best.tieId);
     if(better) best = Object.assign({score: score}, c);
-  });
+    });
+  }
+  scoreCandidates(candidates);
+  // Fish fallback (owner 2026-10-04) — see pickSharedMeal's matching branch / the doc on
+  // fishFallbackSoloCandidates. Only runs when the normal pool is empty.
+  if(!best && (slot === 'lunch' || slot === 'dinner')){
+    scoreCandidates(fishFallbackSoloCandidates(legalPool, person, slot, dayIndex, desired, anchor, maxPortion, avoidP, dietP, history));
+  }
   if(!best){
     console.error('pickSoloMeal: empty candidate pool for person="' + person + '" slot="' + slot + '" style="' + householdStyle + '"');
     emptyPoolPicks++;
