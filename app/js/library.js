@@ -276,6 +276,25 @@ function replaceBuiltinRecipesFromCatalogRows(rows){
   return true;
 }
 
+// Sync-safe hard-delete check (RECIPE-MARKET undelete, 2026-10) — the single place that decides
+// whether `id` is currently hidden by deleteRecipe()'s tombstone. deletedRecipes/undeletedRecipes
+// (state.js) are a matched pair of maps, each max-merged independently across a couple
+// (js/sync.js:mergeTombstones), so a recipe is hidden only while its delete stamp is STRICTLY
+// newer than its undelete stamp — whichever action happened later on EITHER phone wins
+// consistently once both maps have merged (same principle recipeBook's include-vs-deletedFromBook
+// already uses one level up). hardDeleteStamp treats the legacy bare `true` as epoch 1, same rule
+// js/sync.js:libraryTombstoneTime() uses for the wire format — duplicated inline (not a call into
+// sync.js) so this still works even if sync.js is ever stripped out of a build (see that file's
+// own header: "keeps working standalone if sync.js is ever removed").
+function hardDeleteStamp(v){
+  if(v === true) return 1;
+  if(typeof v === 'number' && isFinite(v)) return v;
+  return 0;
+}
+function isRecipeHardDeleted(id){
+  return hardDeleteStamp(deletedRecipes[id]) > hardDeleteStamp(undeletedRecipes[id]);
+}
+
 function applyCustomRecipes(){
   Object.keys(RECIPES_DB).forEach(function(id){ delete RECIPES_DB[id]; });
   Object.keys(RECIPE_SLOT_DB).forEach(function(id){ delete RECIPE_SLOT_DB[id]; });
@@ -285,19 +304,19 @@ function applyCustomRecipes(){
   // this is inert and the full catalog is live — byte-identical to the pre-market behaviour.
   const bookActive = recipeBookInit > 0;
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
-    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    if(isRecipeHardDeleted(id) || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     if(bookActive && !recipeBook[id] && !GLOBAL_CATALOG_CUSTOM_RECIPE_IDS[id]) return;
     const src = recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
     RECIPES_DB[id] = normalizeStoredRecipe(deepClone(src));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot || BUILTIN_RECIPE_SLOT_DB[id];
   });
   Object.keys(recipeOverrides).forEach(function(id){
-    if(BUILTIN_RECIPES_DB[id] || deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    if(BUILTIN_RECIPES_DB[id] || isRecipeHardDeleted(id) || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     RECIPES_DB[id] = normalizeStoredRecipe(deepClone(recipeOverrides[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
   Object.keys(customRecipes).forEach(function(id){
-    if(deletedRecipes[id]) return;
+    if(isRecipeHardDeleted(id)) return;
     RECIPES_DB[id] = normalizeStoredRecipe(deepClone(customRecipes[id]));
     RECIPE_SLOT_DB[id] = RECIPES_DB[id].slot;
   });
@@ -2995,7 +3014,7 @@ function attachLibRecipeListHandler(){
     else if(act === 'edit') openEditRecipeForm(id);
     else if(act === 'delete') deleteRecipe(id);
     else if(act === 'duplicate') duplicateRecipe(id);
-    else if(act === 'addbook') addRecipeToBook(id);
+    else if(act === 'addbook'){ if(isRecipeHardDeleted(id)) undeleteRecipe(id); else addRecipeToBook(id); }
     else if(act === 'restore') restoreForkToOriginal(id);
     else if(act === 'removebook') removeRecipeFromBook(id);
   };
@@ -3024,9 +3043,15 @@ function libRecipeSource(id){
 
 function filteredRecipeIds(){
   // Book view: the household's live recipes (RECIPES_DB). Market view: the whole catalog minus
-  // hard-deleted/retired ids — each row then shows whether it's already in the book (Add/Remove).
+  // RETIRED ids — each row then shows whether it's already in the book (Add/Remove). A
+  // hard-deleted catalog recipe DELIBERATELY stays in this list (its data is still in
+  // BUILTIN_RECIPES_DB) so deleteRecipe() has a sync-safe way back in: the Market shows it with
+  // an "Add back" action (libRecipeRowHtml/undeleteRecipe) instead of hiding it with no UI path
+  // to return. Only RETIRED_DEFAULT_RECIPE_IDS (genuinely retired, no way back) and a hard-deleted
+  // cr- custom (data erased by deleteRecipe, never a BUILTIN_RECIPES_DB id in the first place) are
+  // actually gone from the Market.
   const sourceIds = (libRecipeView === 'market')
-    ? Object.keys(BUILTIN_RECIPES_DB).filter(function(id){ return !deletedRecipes[id] && RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) === -1; })
+    ? Object.keys(BUILTIN_RECIPES_DB).filter(function(id){ return RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) === -1; })
     : Object.keys(RECIPES_DB);
   return sourceIds.filter(function(id){
     const r = libRecipeSource(id);
@@ -3318,7 +3343,9 @@ function libRecipeRowHtml(id, isMarket){
     if(inBook){
       actions = '<span class="lib-inbook-check" aria-label="In your book">' + lucideIcon('check') + '</span>';
     } else {
-      const label = hasEditedFork ? 'Add the original back to your book' : (deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book');
+      const label = hasEditedFork ? 'Add the original back to your book'
+        : (isRecipeHardDeleted(id) ? 'Add back to your book'
+        : (deletedFromBook[id] ? 'Re-add to your book' : 'Add to your book'));
       actions = '<button class="lib-add-book" data-act="addbook" aria-label="' + label + ' — ' + htmlAttr(r.title) + '">' + lucideIcon('plus') + '</button>';
     }
   } else {
@@ -3407,15 +3434,21 @@ function deleteRecipe(id){
   const r = RECIPES_DB[id] || customRecipes[id] || recipeOverrides[id] || BUILTIN_RECIPES_DB[id];
   if(!r) return;
   const title = r.title;
+  // A catalog recipe's DATA survives a hard delete (it's still in BUILTIN_RECIPES_DB), so it's
+  // re-addable from the Market later (undeleteRecipe) — only a custom cr- recipe's delete is
+  // actually permanent (deleteRecipe erases customRecipes[id] below, and nothing keeps its data).
+  const isCatalog = !!BUILTIN_RECIPES_DB[id];
   openConfirmDialog({
     title: 'Delete recipe',
-    message: 'Delete “' + title + '”? This can’t be undone.',
+    message: isCatalog
+      ? 'Delete “' + title + '”? You can add it back later from the Market.'
+      : 'Delete “' + title + '”? This can’t be undone.',
     confirmLabel: 'Delete',
     onConfirm: function(){
       // Both branches tombstone: without it, couple-sync's per-id merge (js/sync.js:
       // mergeLibrarySection) is a plain union and would resurrect the delete from whichever
       // phone hasn't seen it yet — exactly the "clone under a freeConflictId every sync round"
-      // ratchet this fix targets. applyCustomRecipes() already treats deletedRecipes[id] as
+      // ratchet this fix targets. applyCustomRecipes() already treats isRecipeHardDeleted(id) as
       // "hide this id" for BOTH built-in-override and custom (cr-) ids (see the function above).
       if(customRecipes[id]) delete customRecipes[id];
       else if(recipeOverrides[id]) delete recipeOverrides[id];
@@ -3471,7 +3504,7 @@ const STARTER_MIN_TO_ACTIVATE = 8;
 // Is this recipe id currently in the household's book (i.e. live for the planner)?
 function recipeInBook(id){
   if(!id) return false;
-  if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
+  if(isRecipeHardDeleted(id) || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
   // Admin-created global recipes are already available in every household. Treating one as
   // "out of book" contradicted applyCustomRecipes() (which correctly makes it live), so its
   // detail view offered Add and its Remove action could not affect it.
@@ -3493,7 +3526,7 @@ function materializeRecipeBook(){
   recipeBookInit = Date.now();
   recipeBook = {};
   Object.keys(BUILTIN_RECIPES_DB).forEach(function(id){
-    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    if(isRecipeHardDeleted(id) || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     recipeBook[id] = {u: recipeBookInit};
   });
 }
@@ -3508,7 +3541,7 @@ function starterRecipeIdsForHousehold(){
   STARTER_RECIPE_IDS.forEach(function(id){
     const r = BUILTIN_RECIPES_DB[id];
     if(!r) return; // id no longer in the catalog — skip harmlessly
-    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
+    if(isRecipeHardDeleted(id) || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return;
     const okForSomeone = people.some(function(person){
       const diets = (PROF[person] && PROF[person].diets) || [];
       if(typeof recipeViolatesDiet === 'function' && recipeViolatesDiet(id, diets)) return false;
@@ -3556,6 +3589,23 @@ function addRecipeToBook(id){
   // Refresh the list IN PLACE (preserving the active search/filters + My-book/Market view) rather
   // than openMyRecipes(), which resets them — a recipe removed under a filter must not wipe it.
   if(document.getElementById('libraryRecipes') && document.getElementById('libraryRecipes').classList.contains('active')) rerenderLibRecipeFilteredView();
+}
+
+// Market "Add back": undo a HARD delete (deleteRecipe's deletedRecipes tombstone) on a catalog
+// recipe. Only ids still in BUILTIN_RECIPES_DB qualify — a hard-deleted cr- custom recipe's data
+// is gone (deleteRecipe erases customRecipes[id]), so there's nothing left to restore.
+// Sync-safe by construction: stamping undeletedRecipes[id] with a NEWER timestamp (rather than
+// clearing the deletedRecipes tombstone outright) means a peer's older, still-unsynced delete can
+// never resurrect-hide this undelete on the next sync round — deletedRecipes and undeletedRecipes
+// each max-merge independently (js/sync.js:mergeTombstones), and isRecipeHardDeleted(id) (above)
+// compares the two merged stamps, so whichever action happened later on either phone wins
+// consistently once both maps have merged. Same reasoning addRecipeToBook already uses against
+// deletedFromBook one level up — reusing it here (rather than duplicating its book-materialize/
+// persist/re-render logic) is deliberate.
+function undeleteRecipe(id){
+  if(!id || !BUILTIN_RECIPES_DB[id]) return; // only catalog recipes have data left to restore
+  undeletedRecipes[id] = Date.now();
+  addRecipeToBook(id); // clears the hidden state (via isRecipeHardDeleted) + brings it into the book
 }
 
 // Does the household's book hold a user EDIT (fork) of this built-in? Editing a built-in forks it to
@@ -3650,7 +3700,7 @@ function marketHasDietValidCandidateForSlot(slot){
   const diets = (typeof unionDiets === 'function') ? unionDiets(people) : [];
   return Object.keys(BUILTIN_RECIPES_DB).some(function(id){
     if(recipeInBook(id)) return false; // already in the book — not something the Market can add
-    if(deletedRecipes[id] || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
+    if(isRecipeHardDeleted(id) || RETIRED_DEFAULT_RECIPE_IDS.indexOf(id) !== -1) return false;
     const r = BUILTIN_RECIPES_DB[id];
     if(!r || r.occasional || r.oneTime) return false;
     const slots = (Array.isArray(r.slots) && r.slots.length) ? r.slots : [r.slot];

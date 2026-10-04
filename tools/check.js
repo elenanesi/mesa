@@ -2290,7 +2290,7 @@ function testNoLegacyRecipesCompatView(){
 /* ---------------- sync.js merge tests ---------------- */
 
 function emptyLibrarySection(){
-  return {customFoods: {}, foodOverrides: {}, customRecipes: {}, recipeOverrides: {}, deletedRecipes: {}, deletedFoods: {}, recipePrefs: {elena: {}, partner: {}}};
+  return {customFoods: {}, foodOverrides: {}, customRecipes: {}, recipeOverrides: {}, deletedRecipes: {}, undeletedRecipes: {}, deletedFoods: {}, recipePrefs: {elena: {}, partner: {}}};
 }
 
 // D1 mirror write-efficiency fix (2026-08-23, see STATUS.md/AGENT-HANDOVER.md): pure-function
@@ -2998,6 +2998,110 @@ function testMergeRecipeBook(ctx){
     JSON.stringify(m.recipeBook['pizza']));
   const again = call(ctx, 'mergeLibrarySection', [cloneJSON(m), cloneJSON(removed)]);
   assert(JSON.stringify(again) === JSON.stringify(m), 'mergeRecipeBook: re-merging the converged result is a no-op', '');
+}
+
+// RECIPE-MARKET UNDELETE (2026-10): a hard-deleted CATALOG recipe (deleteRecipe's deletedRecipes
+// tombstone) must be re-addable from the Market via undeleteRecipe/undeletedRecipes — the
+// sync-safe pair isRecipeHardDeleted(id) arbitrates (state.js doc block + js/library.js above).
+// Covers: (a) the timestamp arithmetic in isolation, (b) a hard-deleted catalog recipe is out of
+// the book but still browsable (and Add-back-able) in the Market, (c) undeleteRecipe actually
+// restores it, and (d) THE SYNC CASE — mergeLibrarySection must let whichever of delete/undelete
+// happened LATER win, on either side, exactly like recipeBook/deletedFromBook one level up.
+function testRecipeMarketUndelete(ctx){
+  // (a) isRecipeHardDeleted: pure tombstone-vs-tombstone arithmetic, no live recipe needed.
+  // Snapshot + restore the two live maps so a probe id never leaks into another test.
+  const probeSnap = get(ctx, "JSON.stringify({dr: deletedRecipes, ur: undeletedRecipes})");
+  run(ctx, "deletedRecipes = {}; undeletedRecipes = {};");
+  run(ctx, "deletedRecipes['__undelete_probe'] = 1000;");
+  assert(call(ctx, 'isRecipeHardDeleted', ['__undelete_probe']) === true,
+    'isRecipeHardDeleted: a delete with no undelete is hidden', '');
+  run(ctx, "undeletedRecipes['__undelete_probe'] = 2000;"); // newer undelete beats the older delete
+  assert(call(ctx, 'isRecipeHardDeleted', ['__undelete_probe']) === false,
+    'isRecipeHardDeleted: an undelete newer than the delete is NOT hidden', '');
+  run(ctx, "deletedRecipes['__undelete_probe'] = 3000;"); // a fresh delete, newer again, re-hides it
+  assert(call(ctx, 'isRecipeHardDeleted', ['__undelete_probe']) === true,
+    'isRecipeHardDeleted: a delete newer than the undelete IS hidden', '');
+  // Legacy bare-`true` tombstones (pre-couple-sync deletes) collapse to epoch 1 — any real
+  // timestamp undelete (even epoch 1 itself, a tie) is not strictly beaten, so it's not hidden.
+  run(ctx, "deletedRecipes['__undelete_probe'] = true; undeletedRecipes['__undelete_probe'] = 1;");
+  assert(call(ctx, 'isRecipeHardDeleted', ['__undelete_probe']) === false,
+    'isRecipeHardDeleted: a legacy `true` delete (epoch 1) does not beat a same-epoch undelete', '');
+  run(ctx, "var __pS=" + probeSnap + "; deletedRecipes=__pS.dr; undeletedRecipes=__pS.ur;");
+
+  // (b)/(c): exercise the real UI funnel against a real catalog recipe. Snapshot every global
+  // deleteRecipe/undeleteRecipe/applyCustomRecipes touch, plus the UI-callback stubs the
+  // library.js header doc says these funnels call, so nothing leaks into later tests.
+  const bookSnap = get(ctx, "JSON.stringify({dr: deletedRecipes, ur: undeletedRecipes, rb: recipeBook, rbi: recipeBookInit, dfb: deletedFromBook, cr: customRev, view: libRecipeView})");
+  run(ctx, "var __uStub = {persist: (typeof persist==='function'?persist:null), applyProf: applyProf, toast: toast, renderFoodLibraryCount: renderFoodLibraryCount}; persist = function(){}; applyProf = function(){}; toast = function(){}; renderFoodLibraryCount = function(){};");
+
+  assert(call(ctx, 'recipeInBook', ['lentil']) === true, 'undelete setup: lentil starts in the book', '');
+  call(ctx, 'deleteRecipe', ['lentil']);
+  assert(get(ctx, 'deletedRecipes').lentil > 0, 'deleteRecipe: tombstones the catalog id', String(get(ctx, 'deletedRecipes').lentil));
+  assert(call(ctx, 'recipeInBook', ['lentil']) === false,
+    'deleteRecipe: a hard-deleted catalog recipe leaves the book', '');
+  assert(!get(ctx, 'RECIPES_DB').lentil, 'deleteRecipe: a hard-deleted catalog recipe is out of RECIPES_DB', '');
+
+  run(ctx, "libRecipeView = 'book';");
+  const bookIds = call(ctx, 'filteredRecipeIds', []);
+  assert(bookIds.indexOf('lentil') === -1,
+    'filteredRecipeIds (My book): a hard-deleted catalog recipe is excluded', JSON.stringify(bookIds.slice(0, 5)));
+
+  run(ctx, "libRecipeView = 'market';");
+  const marketIds = call(ctx, 'filteredRecipeIds', []);
+  assert(marketIds.indexOf('lentil') !== -1,
+    'filteredRecipeIds (Market): a hard-deleted catalog recipe IS included (re-addable)', JSON.stringify(marketIds.slice(0, 5)));
+
+  const row = call(ctx, 'libRecipeRowHtml', ['lentil', true]);
+  assert(row.indexOf('data-act="addbook"') !== -1,
+    'Market row: a hard-deleted recipe shows an Add-back action (not just an inert "in your book" pill)', row);
+  assert(row.indexOf('in your book') === -1,
+    'Market row: a hard-deleted recipe is not shown as already in the book', row);
+
+  call(ctx, 'undeleteRecipe', ['lentil']);
+  assert(call(ctx, 'isRecipeHardDeleted', ['lentil']) === false, 'undeleteRecipe: clears the hidden state', '');
+  assert(call(ctx, 'recipeInBook', ['lentil']) === true, 'undeleteRecipe: restores the recipe to the book', '');
+  assert(!!get(ctx, 'RECIPES_DB').lentil, 'undeleteRecipe: the recipe is back in RECIPES_DB', '');
+  assert(get(ctx, 'undeletedRecipes').lentil > get(ctx, 'deletedRecipes').lentil,
+    'undeleteRecipe: the undelete stamp beats the delete stamp', '');
+
+  // undeleteRecipe only has data to restore for a catalog id — a cr- custom (or any id not in
+  // BUILTIN_RECIPES_DB) must no-op rather than fabricate an entry.
+  const beforeCrNoop = get(ctx, 'JSON.stringify(undeletedRecipes)');
+  call(ctx, 'undeleteRecipe', ['cr-not-a-real-recipe']);
+  assert(get(ctx, 'JSON.stringify(undeletedRecipes)') === beforeCrNoop,
+    'undeleteRecipe: a non-catalog id (no data left to restore) is a no-op', '');
+
+  run(ctx, "var __b=" + bookSnap + "; deletedRecipes=__b.dr; undeletedRecipes=__b.ur; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; customRev=__b.cr; libRecipeView=__b.view; applyCustomRecipes(); persist = __uStub.persist; applyProf = __uStub.applyProf; toast = __uStub.toast; renderFoodLibraryCount = __uStub.renderFoodLibraryCount; delete __uStub;");
+
+  // (d) THE SYNC CASE: device A deletes, device B undeletes LATER — after mergeLibrarySection,
+  // the newer undelete must win on BOTH sides (order-independence), and isRecipeHardDeleted must
+  // then say "not hidden" once the merged maps land in the live globals (exactly what
+  // applySyncResponse's library branch does with merged.deletedRecipes/merged.undeletedRecipes).
+  function sec(){ return emptyLibrarySection(); }
+  const A = sec(); A.deletedRecipes['lentil'] = 1000;
+  const B = sec(); B.undeletedRecipes['lentil'] = 2000;
+  const mAB = call(ctx, 'mergeLibrarySection', [cloneJSON(A), cloneJSON(B)]);
+  const mBA = call(ctx, 'mergeLibrarySection', [cloneJSON(B), cloneJSON(A)]);
+  assert(mAB.deletedRecipes.lentil === 1000 && mAB.undeletedRecipes.lentil === 2000,
+    'mergeLibrarySection: both the delete and the later undelete tombstones survive the merge', JSON.stringify(mAB.deletedRecipes) + ' / ' + JSON.stringify(mAB.undeletedRecipes));
+  assert(JSON.stringify(mAB.deletedRecipes) === JSON.stringify(mBA.deletedRecipes) &&
+    JSON.stringify(mAB.undeletedRecipes) === JSON.stringify(mBA.undeletedRecipes),
+    'mergeLibrarySection: the delete/undelete merge is order-independent (A,B) === (B,A)', '');
+
+  const liveSnap = get(ctx, "JSON.stringify({dr: deletedRecipes, ur: undeletedRecipes})");
+  run(ctx, "deletedRecipes = " + JSON.stringify(mAB.deletedRecipes) + "; undeletedRecipes = " + JSON.stringify(mAB.undeletedRecipes) + ";");
+  assert(call(ctx, 'isRecipeHardDeleted', ['lentil']) === false,
+    'SYNC CASE: device A deletes, device B undeletes LATER — after the merge, the recipe is NOT hidden (the newer undelete wins, on either phone)', '');
+
+  // Reverse: device A deletes LATER than device B's (now-stale) undelete — must stay hidden.
+  const A2 = sec(); A2.deletedRecipes['lentil'] = 3000;
+  const B2 = sec(); B2.undeletedRecipes['lentil'] = 2000;
+  const mAB2 = call(ctx, 'mergeLibrarySection', [cloneJSON(A2), cloneJSON(B2)]);
+  run(ctx, "deletedRecipes = " + JSON.stringify(mAB2.deletedRecipes) + "; undeletedRecipes = " + JSON.stringify(mAB2.undeletedRecipes) + ";");
+  assert(call(ctx, 'isRecipeHardDeleted', ['lentil']) === true,
+    'SYNC CASE (reverse): device A deletes LATER than device B\'s undelete — after the merge, the recipe stays hidden', '');
+
+  run(ctx, "var __ls=" + liveSnap + "; deletedRecipes = __ls.dr; undeletedRecipes = __ls.ur;");
 }
 
 // RECIPE-MARKET: the curated starter book (STARTER_RECIPE_IDS) must, AFTER diet filtering, still
@@ -15542,6 +15646,7 @@ function main(){
   runTest('meal: ingredient-sub candidates are like-for-like + diet/avoid gated (#6)', function(){ testIngredientSubCandidates(ctx); });
   runTest('meal: recipe sideIngredients split the list into main + Toppings (#6)', function(){ testIngredientMainSideSplit(ctx); });
   runTest('recipe market: recipeBook merge convergence', function(){ testMergeRecipeBook(ctx); });
+  runTest('recipe market: hard-delete undelete (Add back from the Market) + sync-merge', function(){ testRecipeMarketUndelete(ctx); });
   runTest('recipe market: starter book is diet-sufficient', function(){ testStarterBookSufficiency(ctx); });
   runTest('meal builder: capture a slot as a components Meal', function(){ testSaveSlotAsMeal(ctx); });
   runTest('mergePantrySection: newer-wins (PANTRY-plan.md P1)', function(){ testMergePantrySectionNewerWins(ctx); });

@@ -773,6 +773,16 @@ function inCartSetForWeek(weekStartDate){
    (js/sync.js:mergeLibrarySection) can tell a delete from one phone apart from a
    recreate-after-delete from the other by comparing timestamps, instead of a plain
    boolean that a union-by-id merge would otherwise just resurrect.
+   undeletedRecipes: the sync-safe "Add back from the Market" counterpart to deletedRecipes
+   (RECIPE-MARKET undelete, 2026-10) — recipe id -> timestamp, same shape/semantics as
+   deletedRecipes, but it ONLY ever holds ids still present in BUILTIN_RECIPES_DB (a hard-deleted
+   custom cr- recipe's DATA is gone — see deleteRecipe() — so there's nothing to undelete it back
+   to). It mirrors the recipeBook/deletedFromBook pattern one level down: deletedRecipes and
+   undeletedRecipes each max-merge independently across a couple (js/sync.js:mergeTombstones), and
+   js/library.js:isRecipeHardDeleted(id) compares the two merged stamps — whichever action (delete
+   or undelete) happened LATER on either phone wins consistently once both maps have merged, so a
+   clear-the-tombstone-outright approach (which a peer's still-pending delete could resurrect on
+   the next sync round) is never needed.
    customFoods/foodOverrides/customRecipes/recipeOverrides entries also carry a `u` (updatedAt, epoch
    ms) field stamped at save time (js/library.js: saveNewFood/saveRecipeBuilder) — the
    couple-sync per-entry newer-wins comparison sync.js:mergeEntryMap() needs, since
@@ -787,6 +797,7 @@ let foodOverrides = {};
 let customRecipes = {};
 let recipeOverrides = {};
 let deletedRecipes = {};
+let undeletedRecipes = {};
 let deletedFoods = {};
 // recipeBook (RECIPE-MARKET, 2026-08): a per-household POSITIVE include-set of BUILT-IN recipe
 // ids that are "in the book" — the recipes the planner + shopping list draw from. The full D1
@@ -1031,6 +1042,7 @@ function buildSnapshot(){
     customRecipes: customRecipes,
     recipeOverrides: recipeOverrides,
     deletedRecipes: deletedRecipes,
+    undeletedRecipes: undeletedRecipes,
     deletedFoods: deletedFoods,
     // recipeBook / deletedFromBook / recipeBookInit (RECIPE-MARKET) — see the doc block above.
     recipeBook: recipeBook,
@@ -1348,6 +1360,18 @@ function loadState(){
       const v = saved.deletedRecipes[id];
       if(v === true) deletedRecipes[id] = true;
       else if(typeof v === 'number' && isFinite(v)) deletedRecipes[id] = v;
+    });
+  }
+  // undeletedRecipes (RECIPE-MARKET undelete) — same legacy-true-or-epoch-ms shape as
+  // deletedRecipes above; see the doc block for why it needs no extra migration (additive,
+  // safe-default-to-{} on a store that predates the feature).
+  undeletedRecipes = {};
+  if(saved.undeletedRecipes && typeof saved.undeletedRecipes === 'object'){
+    Object.keys(saved.undeletedRecipes).forEach(function(id){
+      if(typeof id !== 'string') return;
+      const v = saved.undeletedRecipes[id];
+      if(v === true) undeletedRecipes[id] = true;
+      else if(typeof v === 'number' && isFinite(v)) undeletedRecipes[id] = v;
     });
   }
   deletedFoods = {};

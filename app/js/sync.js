@@ -119,6 +119,10 @@ function librarySectionData(){
     customRecipes: clone(customRecipes),
     recipeOverrides: clone(recipeOverrides),
     deletedRecipes: clone(deletedRecipes),
+    // undeletedRecipes (RECIPE-MARKET undelete, 2026-10) — the sync-safe "Add back" counterpart
+    // to deletedRecipes (state.js doc block); mergeLibrarySection max-merges it independently,
+    // same as deletedRecipes itself, and js/library.js:isRecipeHardDeleted(id) compares the two.
+    undeletedRecipes: clone(undeletedRecipes),
     deletedFoods: clone(deletedFoods),
     // recipeBook (RECIPE-MARKET) rides the couple-sync `library` section (a small KV blob), and is
     // DELIBERATELY kept out of the per-row D1 mirror (buildLibraryCatalogPayload) — the per-row
@@ -916,6 +920,11 @@ function mergePersonalPrefs(local, remote){
 // the merge — the caller compares content only, see applySyncResponse's library branch).
 function mergeLibrarySection(local, remote){
   const mergedDeletedRecipes = mergeTombstones(local.deletedRecipes, remote.deletedRecipes);
+  // undeletedRecipes (RECIPE-MARKET undelete) max-merges independently of deletedRecipes, same
+  // mechanism, so js/library.js:isRecipeHardDeleted(id) can compare the two merged stamps and let
+  // whichever action (delete or undelete) happened LATER on either phone win consistently —
+  // instead of this merge having to decide a winner itself.
+  const mergedUndeletedRecipes = mergeTombstones(local.undeletedRecipes, remote.undeletedRecipes);
   const mergedDeletedFoods = mergeTombstones(local.deletedFoods, remote.deletedFoods);
   // recipeBook (RECIPE-MARKET): the SAME (entryMap, tombstoneMap) pattern as customRecipes —
   // per-id newer-wins union, then prune ids a book-removal tombstoned unless the include entry's
@@ -928,6 +937,7 @@ function mergeLibrarySection(local, remote){
     customRecipes: pruneTombstoned(mergeEntryMap(local.customRecipes, remote.customRecipes), mergedDeletedRecipes),
     recipeOverrides: pruneTombstoned(mergeEntryMap(local.recipeOverrides, remote.recipeOverrides), mergedDeletedRecipes),
     deletedRecipes: mergedDeletedRecipes,
+    undeletedRecipes: mergedUndeletedRecipes,
     deletedFoods: mergedDeletedFoods,
     recipeBook: pruneTombstoned(mergeEntryMap(local.recipeBook, remote.recipeBook), mergedDeletedFromBook),
     deletedFromBook: mergedDeletedFromBook,
@@ -997,6 +1007,7 @@ function applySyncResponse(sent, remoteSections){
       customRecipes = merged.customRecipes;
       recipeOverrides = merged.recipeOverrides;
       deletedRecipes = merged.deletedRecipes;
+      undeletedRecipes = merged.undeletedRecipes;
       deletedFoods = merged.deletedFoods;
       recipeBook = merged.recipeBook;
       deletedFromBook = merged.deletedFromBook;
@@ -1011,7 +1022,7 @@ function applySyncResponse(sent, remoteSections){
       // checks below (applyMergedRevBookkeeping assumes mergedData's shape IS remote.data's
       // shape 1:1, which isn't true here because of that counter field, hence the inline
       // version instead of reusing it for this section).
-      const LIB_KEYS = ['customFoods', 'foodOverrides', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'deletedFoods', 'recipeBook', 'deletedFromBook', 'recipePrefs'];
+      const LIB_KEYS = ['customFoods', 'foodOverrides', 'customRecipes', 'recipeOverrides', 'deletedRecipes', 'undeletedRecipes', 'deletedFoods', 'recipeBook', 'deletedFromBook', 'recipePrefs'];
       function libContentOnly(data){
         const out = {};
         LIB_KEYS.forEach(function(k){ out[k] = data[k] || {}; });
