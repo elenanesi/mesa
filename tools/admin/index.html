@@ -857,6 +857,7 @@
     html += '<div class="field"><label>Slots (comma-separated)</label><input class="inp" id="rdSlots" value="' + escapeHtml((d.slots || []).join(', ')) + '"><div class="muted" style="font-size:11px;margin-top:4px">Every slot the planner may use this recipe in. Leave empty to use just the Slot above. The Slot above is always kept in this list.</div></div>';
     html += '<div class="field"><label>Styles (comma-separated)</label><input class="inp" id="rdStyles" value="' + escapeHtml((d.styles || []).join(', ')) + '"></div>';
     html += '<div class="field"><label>Role</label><input class="inp" id="rdRole" value="' + escapeHtml(d.role || '') + '"></div>';
+    html += '<div class="field"><label>Pairs with (sides only, comma-separated)</label><input class="inp" id="rdSideSlots" value="' + escapeHtml((d.sideSlots || []).join(', ')) + '" placeholder="e.g. dinner"><div class="muted" style="font-size:11px;margin-top:4px">Only used when Role is "side": which meals this side may accompany. Empty = both lunch &amp; dinner. Set to "dinner" for a dinner-only side. Ignored for non-side recipes.</div></div>';
     html += '<div class="field"><label>Season</label><input class="inp" id="rdSeason" value="' + escapeHtml(d.season || 'evergreen') + '"></div>';
     html += '<div class="field"><label>Recipe image key (optional)</label><input class="inp" id="rdImageKey" value="' + escapeHtml(d.imageKey || '') + '" placeholder="for example: salad"></div>';
     html += '<div class="field"><label>Time (min)</label><input class="inp" id="rdTime" type="number" value="' + (d.time || '') + '"></div>';
@@ -937,6 +938,14 @@
       var stylesVal = document.getElementById('rdStyles').value;
       d.styles = stylesVal ? stylesVal.split(',').map(function(s){ return s.trim(); }).filter(Boolean) : d.styles;
       d.role = document.getElementById('rdRole').value.trim() || d.role;
+      // sideSlots ("Pairs with") gates which meals a role:'side' recipe may accompany
+      // (planner.js:sideSlotOk). Mirror the in-app builder: a narrowed single meal is stored as a
+      // list; "both" (empty, both selected, or a non-side recipe) omits the field = the default.
+      var sideSlotsList = document.getElementById('rdSideSlots').value.split(',')
+        .map(function(s){ return s.trim().toLowerCase(); })
+        .filter(function(s){ return s === 'lunch' || s === 'dinner'; });
+      if(d.role === 'side' && sideSlotsList.length === 1) d.sideSlots = sideSlotsList;
+      else delete d.sideSlots;
       d.season = document.getElementById('rdSeason').value.trim() || 'evergreen';
       var imageKey = document.getElementById('rdImageKey').value.trim();
       if(imageKey) d.imageKey = imageKey;
@@ -955,6 +964,7 @@
       // field visibly shows what will actually be saved (no more "did my change take?" doubt).
       document.getElementById('rdSlot').value = d.slot || '';
       document.getElementById('rdSlots').value = (d.slots || []).join(', ');
+      document.getElementById('rdSideSlots').value = (d.sideSlots || []).join(', ');
       markDirty('recipe', id);
       alertInline('✓ Changes staged — click "Save changes to D1" to push.');
     });
