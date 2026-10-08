@@ -930,6 +930,90 @@ function testConsecutiveDinnerProteinVariety(ctx){
   run(ctx, "delete __cd;");
 }
 
+/* ---------------- fish floor: fallback (never-empty) + incentive (soft nudge) — owner 2026-10-04
+   Two behaviours, both in planner.js:
+   (1) FALLBACK: a would-be-empty lunch/dinner main (pickSoloMeal/pickSharedMeal reaching the
+       `!best` branch) is filled with a legal fish main — including an OPTIONS recipe whose fish
+       lives in a choice (baked-fish), which the normal main pool structurally excludes because
+       isProteinMain() reads only base ingredients — rather than returning reason:'no-candidates'.
+       Only ever runs on the empty path, and only when a fish is actually available.
+   (2) INCENTIVE: fishIncentiveBonus is a soft, per-person score nudge toward FISH_WEEK_TARGET
+       fish mains/week, tapering to 0 at the target, 0 for a non-fish main / non-lunch-dinner. */
+function testFishFloorFallbackAndIncentive(ctx){
+  // A fresh per-person history with every map the pickers read (mirrors generateWeek's init).
+  run(ctx, "function __freshHist(){ function b(){ return {breakfast:[],lunch:[],dinner:[],snack:[]," +
+    "dayUseRecipe:{},dayUseFood:{},dayUseIngredientKey:{},dayUseFoodGrams:{},weekUse:{}," +
+    "lunchDinnerMainUse:{},meatUse:{red:0,poultry:0,fish:0,total:0},dinnerProteinKind:{},dayMainSimKey:{}}; }" +
+    " return {elena:b(),partner:b()}; }");
+
+  // -------- opts-aware fish-main detection (the piece normal planning misses) --------
+  assert(call(ctx, 'recipeCanBeFishMain', ['baked-fish', [], []]) === true,
+    'recipeCanBeFishMain: baked-fish (fish in an optionGroup) is recognised as a possible fish main even though isProteinMain() reads only its base ingredients',
+    'isProteinMain=' + call(ctx, 'isProteinMain', ['baked-fish']));
+  assert(call(ctx, 'isProteinMain', ['baked-fish']) === false,
+    'setup: baked-fish is NOT a base-ingredient protein main (so it is excluded from the normal main pool — the gap the fallback fills)', '');
+  // the avoid list gates fish options: avoiding every fish choice makes it not a fish main
+  const allFish = get(ctx, 'FISH_FOOD_IDS');
+  assert(call(ctx, 'recipeCanBeFishMain', ['baked-fish', allFish, []]) === false,
+    'recipeCanBeFishMain: avoiding every fish option removes baked-fish as a fish main (legality respected)', '');
+
+  // -------- (1) FALLBACK fills a would-be-empty dinner with a fish; otherwise stays honest --------
+  // Force the normal composed path empty by stubbing the side pools to empty, so a role:'main'
+  // dinner pool produces zero normal candidates and the `!best` fallback must run.
+  run(ctx, "__origBSP = buildSidePools; buildSidePools = function(){ return {carbPool: [], vegPool: []}; };");
+  try{
+    // pick a control role:'main' auto main that is NOT a possible fish main
+    run(ctx, "(function(){ __nonFish=null; var ids=Object.keys(RECIPES_DB); for(var i=0;i<ids.length;i++){ var id=ids[i]; if(RECIPES_DB[id].role==='main' && isProteinMain(id) && !recipeCanBeFishMain(id,[],[])){ __nonFish=id; break; } } })();");
+    const nonFish = get(ctx, '__nonFish');
+    assert(!!nonFish, 'setup: found a non-fish role:main auto main as the control', String(nonFish));
+
+    run(ctx, "__h1 = __freshHist();");
+    const filled = call(ctx, 'pickSoloMeal', [['baked-fish'], 'elena', 'dinner', 1, 2, 1550, 90, 1, get(ctx, '__h1'), 123, null]);
+    assert(filled && filled.recipeId === 'baked-fish' && filled.reason !== 'no-candidates',
+      'fish fallback: a would-be-empty dinner is filled with the legal fish main (baked-fish) instead of reason:no-candidates',
+      JSON.stringify({recipeId: filled && filled.recipeId, reason: filled && filled.reason}));
+    assert(call(ctx, 'recipeProteinKind', [filled.recipeId, filled.opts]) === 'fish',
+      'fish fallback: the chosen combo actually resolves to fish', JSON.stringify(filled.opts));
+
+    // control: no fish available + empty sides -> the slot stays honestly empty (unchanged behaviour)
+    run(ctx, "__h2 = __freshHist();");
+    const empty = call(ctx, 'pickSoloMeal', [[nonFish], 'elena', 'dinner', 1, 2, 1550, 90, 1, get(ctx, '__h2'), 123, null]);
+    assert(empty && empty.reason === 'no-candidates',
+      'fish fallback: with no fish available and no composable sides, the slot is still honestly reason:no-candidates (fallback is fish-only)',
+      JSON.stringify({recipeId: empty && empty.recipeId, reason: empty && empty.reason}));
+  } finally {
+    run(ctx, "buildSidePools = __origBSP; delete __origBSP; delete __nonFish; delete __h1; delete __h2;");
+  }
+
+  // -------- (2) INCENTIVE taper + gating --------
+  const TARGET = get(ctx, 'FISH_WEEK_TARGET');
+  const BONUS = get(ctx, 'FISH_INCENTIVE_BONUS');
+  // a fish combo for baked-fish to score
+  run(ctx, "__fc = legalFishCombos('baked-fish', [], [], __freshHist(), ['elena'])[0];");
+  const fishOpts = get(ctx, '__fc');
+  run(ctx, "__hi = __freshHist();");
+  const b0 = call(ctx, 'fishIncentiveBonus', ['baked-fish', fishOpts, 'dinner', get(ctx, '__hi'), 'elena']);
+  assert(Math.abs(b0 - BONUS) < 1e-9,
+    'fish incentive: full bonus when 0 fish placed this week', 'got=' + b0 + ' expected=' + BONUS);
+  run(ctx, "__hi.elena.meatUse.fish = 1;");
+  const b1 = call(ctx, 'fishIncentiveBonus', ['baked-fish', fishOpts, 'dinner', get(ctx, '__hi'), 'elena']);
+  assert(Math.abs(b1 - BONUS * (TARGET - 1) / TARGET) < 1e-9,
+    'fish incentive: bonus tapers linearly after one fish is placed', 'got=' + b1);
+  run(ctx, "__hi.elena.meatUse.fish = " + TARGET + ";");
+  const bT = call(ctx, 'fishIncentiveBonus', ['baked-fish', fishOpts, 'dinner', get(ctx, '__hi'), 'elena']);
+  assert(bT === 0, 'fish incentive: bonus is 0 once the weekly target is reached (never over-pushes fish)', 'got=' + bT);
+  // gating: non-fish main, and non-lunch/dinner slot, get no bonus
+  run(ctx, "__hi2 = __freshHist();");
+  assert(call(ctx, 'fishIncentiveBonus', ['baked-fish', fishOpts, 'breakfast', get(ctx, '__hi2'), 'elena']) === 0,
+    'fish incentive: no bonus outside lunch/dinner', '');
+  const nonFishMain = get(ctx, "(function(){ var ids=Object.keys(RECIPES_DB); for(var i=0;i<ids.length;i++){ if(recipeProteinKind(ids[i]) && recipeProteinKind(ids[i])!=='fish' && isAutoLunchDinnerMain(ids[i])) return ids[i]; } return null; })()");
+  if(nonFishMain){
+    assert(call(ctx, 'fishIncentiveBonus', [nonFishMain, {}, 'dinner', get(ctx, '__hi2'), 'elena']) === 0,
+      'fish incentive: no bonus for a non-fish main', String(nonFishMain));
+  }
+  run(ctx, "delete __fc; delete __hi; delete __hi2;");
+}
+
 /* ---------------- Cook from what I have (#7): pantry recipe scorer ----------------
    planner.js:pantryScoreRecipe / pantryMakeableRecipes rank recipes by what's currently in
    the pantry. Staples (oil/salt/…) are free; the MAIN ingredient weighs 3x a secondary;
@@ -15615,6 +15699,7 @@ function main(){
   runTest('Pantry custom-food entry survives load validation', function(){ testPantryCustomFoodSurvivesValidation(ctx); });
   runTest('Consecutive-dinner protein/diet variety', function(){ testConsecutiveDinnerProteinVariety(ctx); });
   runTest('Same-day lunch/dinner near-duplicate rule', function(){ testSameDayMainSimilarity(ctx); });
+  runTest('fish floor: fallback fills a would-be-empty slot + soft incentive taper (2026-10-04)', function(){ testFishFloorFallbackAndIncentive(ctx); });
   runTest('Day-scoped regenerate keeps the other days', function(){ testDayScopedRegenerate(ctx); });
   runTest('Day-scoped re-balance restricts movable units', function(){ testDayScopedRebalanceUnits(ctx); });
   runTest('Sat-fat / free-sugar generation steering fires', function(){ testSatFatSteeringFires(ctx); });
