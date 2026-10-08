@@ -14985,6 +14985,29 @@ function testSnackTapAffordance(){
   assert(cardNoRecipe.onclick === null, 'snack card: onclick is cleared when the slot has no recipe', String(cardNoRecipe.onclick));
   cardNoRecipe.onclick; // (no-op; nothing to invoke — asserted above it's null, not a function)
   assert(get(ctx, '__openRecipeCalls').length === 0, 'snack card: renderTodayMeals() never calls openRecipe for a slot with nothing to open', JSON.stringify(get(ctx, '__openRecipeCalls')));
+  // Snacks ON (default) + no-candidates: the actionable "No meal fits your filters" card must
+  // STILL be shown — only a snacks-OFF household's empty snack card is hidden (Case C below).
+  assert(cardNoRecipe.style.display !== 'none', 'snack card: a snacks-ON no-candidates slot stays visible (keeps its actionable message)', cardNoRecipe.style.display);
+
+  // -------- Case C: this person has snacks OFF and the slot is empty — the whole card is
+  // hidden rather than showing an empty "Meal unavailable" row for a snack they opted out of
+  // (the keystone already counts this slot out — requiredSlots, render.js). --------
+  run(ctx, "PROF[currentProf].planSnacks = false;");
+  run(ctx, "__snackViewOverride = {recipeId: null, recipe: null, opts: undefined, components: [], extras: [], kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, portion: 1, shared: false, logged: false};");
+  call(ctx, 'renderTodayMeals', []);
+  const cardSnacksOff = get(ctx, "document.getElementById('todaySnack')");
+  assert(cardSnacksOff.style.display === 'none', 'snack card: hidden entirely when the household has snacks off and nothing is planned', cardSnacksOff.style.display);
+
+  // -------- Case D: snacks OFF but a snack was still logged/planned for today (e.g. an
+  // occasional add) — the card must reappear so the user can see and undo it. --------
+  run(ctx, "__snackViewOverride = {recipeId: " + JSON.stringify(snackRecipeId) + ", recipe: RECIPES_DB[" + JSON.stringify(snackRecipeId) + "], opts: undefined, components: [{recipeId: " + JSON.stringify(snackRecipeId) + ", portion: 1}], extras: [], kcal: 150, protein: 5, carbs: 20, fat: 4, satFat: 1, fiber: 2, sugars: 3, freeSugars: 1, portion: 1, shared: false, logged: true};");
+  call(ctx, 'renderTodayMeals', []);
+  const cardSnacksOffButLogged = get(ctx, "document.getElementById('todaySnack')");
+  assert(cardSnacksOffButLogged.style.display !== 'none', 'snack card: reappears when snacks are off but a snack is actually logged/planned today', cardSnacksOffButLogged.style.display);
+  // Restore the snacks-on + empty-snack-view state the trailing openSnackRecipe() check below
+  // expects (it reads the monkeypatched todaySlotView('snack') via displayedTodayRecipeId).
+  run(ctx, "PROF[currentProf].planSnacks = true;");
+  run(ctx, "__snackViewOverride = {recipeId: null, recipe: null, opts: undefined, components: [], extras: [], kcal: 0, protein: 0, carbs: 0, fat: 0, satFat: 0, fiber: 0, sugars: 0, freeSugars: 0, portion: 1, shared: false, logged: false, reason: 'no-candidates'};");
 
   // openSnackRecipe() itself must also refuse to open with nothing to open, even called
   // directly — belt-and-suspenders per its own doc comment in app.js.

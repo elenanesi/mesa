@@ -2863,6 +2863,15 @@ function renderTodayMeals(){
   // (e.g. isSoloHousehold/renderInsights above) rather than assuming it's always defined.
   const snackCard = document.getElementById('todaySnack');
   if(snackCard){
+    // Snacks-off households (PROF[person].planSnacks === false) have no snack in the plan, so
+    // this slot is deliberately not a required meal today (see render.js:requiredSlots — the
+    // keystone already counts it out, "2 of 3 set"). Painting an empty "Meal unavailable"
+    // card for a snack they chose not to have is just noise, so hide the whole card. We only
+    // hide when the slot is genuinely empty: a logged occasional snack (snv.recipe, even with
+    // snacks off) stays visible, and a snacks-ON slot the diet filters emptied still shows its
+    // actionable "No meal fits your filters" message rather than vanishing.
+    const snackOff = typeof snacksOnFor === 'function' && !snacksOnFor(currentProf);
+    snackCard.style.display = (snackOff && !snv.recipe) ? 'none' : '';
     if(snv.recipe && typeof openSnackRecipe === 'function'){
       snackCard.style.cursor = 'pointer';
       snackCard.onclick = openSnackRecipe;
