@@ -2341,6 +2341,71 @@ function testRecipeImagePicker(ctx){
   run(ctx, "delete customRecipes['" + savedId + "']; delete customRecipes['" + forkId + "']; var __b=" + __bookSnap + "; recipeBook=__b.rb; recipeBookInit=__b.rbi; deletedFromBook=__b.dfb; applyCustomRecipes(); toast = __recipePickerStub.toast; openMyRecipes = __recipePickerStub.openMyRecipes; applyProf = __recipePickerStub.applyProf; renderFoodLibraryCount = __recipePickerStub.renderFoodLibraryCount; delete __recipePickerStub;");
 }
 
+/* ===================================================================
+   Editing a BUILT-IN recipe forks it to a fresh cr- id and returns the original to the market
+   (testRecipeImagePicker covers that). The bug this guards: the user's PLAN and LOG still pointed
+   at the original built-in id, so when it left the book the slot became a dangling reference —
+   ensureWeekPlan regenerated it away ("I edited Ramen and it got SUBSTITUTED in my plan") and an
+   already-logged copy recomputed to zero. saveRecipeBuilder now repointRecipeReferences()s every
+   plan/log reference onto the fork first, so the edited version stays exactly where the original
+   was. Same stub-then-restore bracketing testRecipeImagePicker uses (saveRecipeBuilder forks +
+   mutates the recipe-book/plan/log globals).
+   =================================================================== */
+function testEditBuiltinRepointsPlanAndLog(ctx){
+  run(ctx, "var __repointStub = {toast: toast, openMyRecipes: openMyRecipes, applyProf: applyProf, renderFoodLibraryCount: renderFoodLibraryCount}; toast = function(){}; openMyRecipes = function(){}; applyProf = function(){}; renderFoodLibraryCount = function(){};");
+  const snap = get(ctx, "JSON.stringify({rb:(typeof recipeBook!=='undefined'&&recipeBook)||null, rbi:(typeof recipeBookInit!=='undefined'?recipeBookInit:0), dfb:(typeof deletedFromBook!=='undefined'&&deletedFromBook)||{}, wp:(typeof weekPlans!=='undefined'&&weekPlans)||{}, lh:(typeof logHistory!=='undefined'&&logHistory)||{}})");
+
+  assert(!!get(ctx, 'RECIPES_DB').ramen, 'setup: ramen built-in is live in RECIPES_DB', '');
+
+  // Build the current week, force today's (day 0) dinner to the built-in ramen as a SHARED meal,
+  // then LOG it — exactly the state the user was in (ramen planned + eaten).
+  run(ctx,
+    "var __monday = mondayOfWeek(todayISO());" +
+    "ensureWeekPlan(__monday);" +
+    "var __plan = weekPlans[__monday];" +
+    "var __cell = __plan.days[0].meals.dinner;" +
+    "__cell.shared = true; __cell.recipeId = 'ramen';" +
+    "__cell.elena = Object.assign({}, __cell.elena, {recipeId:'ramen', portion:1, components:null, extras:[]});" +
+    "__cell.partner = Object.assign({}, __cell.partner, {recipeId:'ramen', portion:1, components:null, extras:[]});" +
+    "refreshPlanNutrition(__plan);" +
+    "var __date0 = __plan.weekStartDate;" +
+    "logPlanEntry(__date0, 'elena', 'dinner', 'ramen', 1);");
+
+  // Edit the built-in and save — forks + (now) re-points.
+  call(ctx, 'openEditRecipeForm', ['ramen']);
+  run(ctx, "recipeBuilder.time = (recipeBuilder.time || 20) + 5;"); // a real tweak, so it's a genuine edit
+  call(ctx, 'saveRecipeBuilder', []);
+
+  const forkId = get(ctx, "Object.keys(customRecipes).find(function(k){ return customRecipes[k].forkedFrom === 'ramen'; })");
+  assert(!!forkId && forkId.indexOf('cr-') === 0, 'edit-builtin: the edit forked to a new cr- recipe', String(forkId));
+  assert(call(ctx, 'recipeInBook', ['ramen']) === false, 'edit-builtin: the original built-in returned to the market (out of book)', '');
+  assert(call(ctx, 'recipeInBook', [forkId]) === true, 'edit-builtin: the forked edit stays in the book (cr- recipes are always in-book)', '');
+
+  // THE FIX: the planned dinner now points at the fork, NOT substituted away to some other recipe.
+  const planE = get(ctx, "weekPlans[mondayOfWeek(todayISO())].days[0].meals.dinner.elena.recipeId");
+  const planShared = get(ctx, "weekPlans[mondayOfWeek(todayISO())].days[0].meals.dinner.recipeId");
+  const planP = get(ctx, "weekPlans[mondayOfWeek(todayISO())].days[0].meals.dinner.partner.recipeId");
+  assert(planE === forkId, 'edit-builtin: the PLANNED dinner is re-pointed to the fork (not substituted)', 'got ' + planE + ' want ' + forkId);
+  assert(planShared === forkId, 'edit-builtin: the shared-cell recipe id is re-pointed to the fork', 'got ' + planShared);
+  assert(planP === forkId, 'edit-builtin: the partner half is re-pointed to the fork', 'got ' + planP);
+
+  // THE FIX: the already-logged copy is re-pointed too (ref + components), so it still resolves.
+  const logged = get(ctx, "(function(){var d=logHistory[weekPlans[mondayOfWeek(todayISO())].weekStartDate]; var e=d&&d.elena&&d.elena.find(function(x){return x.kind==='plan'&&x.slot==='dinner';}); return e?{ref:e.ref, comp0:(e.components&&e.components[0]&&e.components[0].recipeId)||null}:null;})()");
+  assert(logged && logged.ref === forkId, 'edit-builtin: the logged dinner ref is re-pointed to the fork', JSON.stringify(logged));
+  assert(logged && logged.comp0 === forkId, 'edit-builtin: the logged dinner components are re-pointed to the fork', JSON.stringify(logged));
+  const loggedKcal = get(ctx, "(function(){var d=logHistory[weekPlans[mondayOfWeek(todayISO())].weekStartDate]; var e=d&&d.elena&&d.elena.find(function(x){return x.kind==='plan'&&x.slot==='dinner';}); return e?logEntryNutrition(e).kcal:0;})()");
+  assert(loggedKcal > 0, 'edit-builtin: the logged dinner still computes real macros (did not zero out against a missing recipe)', 'kcal=' + loggedKcal);
+
+  // End-to-end: a fresh ensureWeekPlan must NOT regenerate the slot away — no dangling reference.
+  run(ctx, "ensureWeekPlan(mondayOfWeek(todayISO()));");
+  assert(get(ctx, "planReferencesMissingRecipe(weekPlans[mondayOfWeek(todayISO())])") === false,
+    'edit-builtin: after the fork the plan has no dangling reference (ensureWeekPlan leaves it intact)', '');
+  const planEafter = get(ctx, "weekPlans[mondayOfWeek(todayISO())].days[0].meals.dinner.elena.recipeId");
+  assert(planEafter === forkId, 'edit-builtin: the edited dinner survives a subsequent ensureWeekPlan (not regenerated)', 'got ' + planEafter);
+
+  run(ctx, "delete customRecipes['" + forkId + "']; var __s=" + snap + "; recipeBook=__s.rb; recipeBookInit=__s.rbi; deletedFromBook=__s.dfb; weekPlans=__s.wp; weekPlan=null; logHistory=__s.lh; applyCustomRecipes(); toast=__repointStub.toast; openMyRecipes=__repointStub.openMyRecipes; applyProf=__repointStub.applyProf; renderFoodLibraryCount=__repointStub.renderFoodLibraryCount; delete __repointStub;");
+}
+
 function testLibraryRecipeRowsOpenDetail(){
   const src = fs.readFileSync(path.join(APP_DIR, 'js', 'library.js'), 'utf8');
   assert(src.indexOf("openRecipe(id, 'libraryRecipes')") !== -1,
@@ -15739,6 +15804,7 @@ function main(){
   runTest('replaceBuiltinRecipesFromCatalogRows: D1 catalog sanity floor + validation', function(){ testReplaceBuiltinRecipesFromCatalogRows(ctx); });
   runTest('replaceBuiltinFoodsFromCatalogRows: GLOBAL ingredient catalog', function(){ testReplaceBuiltinFoodsFromCatalogRows(ctx); });
   runTest('recipe image picker', function(){ testRecipeImagePicker(ctx); });
+  runTest('edit-builtin re-points plan + log to the fork (no substitution)', function(){ testEditBuiltinRepointsPlanAndLog(ctx); });
   runTest('library recipe rows open detail', function(){ testLibraryRecipeRowsOpenDetail(); });
   runTest('no legacy RECIPES compat view', function(){ testNoLegacyRecipesCompatView(); });
   runTest('D1 library mirror: diffLibraryCatalogPayload per-row diffing', function(){ testDiffLibraryCatalogPayload(ctx); });

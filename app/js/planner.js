@@ -3629,6 +3629,62 @@ function planSignatureMatches(planSignature, currentSignature){
   return false;
 }
 
+// Re-point every stored reference to recipe `oldId` onto `newId`, across the week plans and
+// the day log. Used when saveRecipeBuilder FORKS an edited built-in to a fresh cr- id (library.js):
+// without this, the original id the user's plan/log still pointed at becomes a dangling reference
+// the instant the built-in leaves the book — planReferencesMissingRecipe() would regenerate that
+// slot away (silently swapping the just-edited meal for an unrelated recipe — the "I edited Ramen
+// and it got substituted" bug), and an already-logged meal would recompute to zero against the
+// now-absent recipe (logEntryNutrition reads entry.components). Re-pointing keeps the edited
+// version exactly where the original was — in the plan and the log — the same way a swap persists
+// (it survives regeneration only if the slot is pinned/logged, like any swapped-in recipe).
+//
+// A pure id rewrite: nothing here recomputes nutrition. The caller runs applyCustomRecipes() (so
+// the fork is live in RECIPES_DB) and then ensureWeekPlan()/refreshPlanNutrition() refreshes the
+// macros with the fork resolved. Pins are positional (isMealPinned keys on date/slot/person, not
+// recipe id), so the re-pointed cell they protect needs no separate pin rewrite. Covers the base
+// recipe id plus every composite `components[]` and per-meal `extras[]` sub-recipe reference; a
+// kind:'food' log entry's `ref` is a foodId and is deliberately left untouched.
+function repointRecipeReferences(oldId, newId){
+  if(!oldId || !newId || oldId === newId) return;
+  function fixEntry(entry){
+    if(!entry || typeof entry !== 'object') return;
+    if(entry.recipeId === oldId) entry.recipeId = newId;
+    if(entry.kind === 'plan' && entry.ref === oldId) entry.ref = newId;
+    [entry.components, entry.extras].forEach(function(list){
+      if(Array.isArray(list)) list.forEach(function(c){ if(c && c.recipeId === oldId) c.recipeId = newId; });
+    });
+  }
+  if(typeof weekPlans === 'object' && weekPlans){
+    Object.keys(weekPlans).forEach(function(monday){
+      const plan = weekPlans[monday];
+      if(!plan || !Array.isArray(plan.days)) return;
+      plan.days.forEach(function(day){
+        const meals = day && day.meals;
+        if(!meals) return;
+        SLOT_ORDER.forEach(function(slot){
+          const meal = meals[slot];
+          if(!meal) return;
+          if(meal.recipeId === oldId) meal.recipeId = newId; // shared-cell recipe id
+          fixEntry(meal.elena);
+          fixEntry(meal.partner);
+        });
+      });
+    });
+  }
+  if(typeof logHistory === 'object' && logHistory){
+    Object.keys(logHistory).forEach(function(dateISO){
+      const day = logHistory[dateISO];
+      if(!day || typeof day !== 'object') return;
+      Object.keys(day).forEach(function(person){
+        const arr = day[person];
+        if(!Array.isArray(arr)) return; // skips day.skipped / targetSnapshot (non-array keys)
+        arr.forEach(fixEntry);
+      });
+    });
+  }
+}
+
 function planReferencesMissingRecipe(plan){
   if(!plan || !Array.isArray(plan.days)) return true;
   // Task B3 (solo households): every meal cell's partner half is INTENTIONALLY the empty

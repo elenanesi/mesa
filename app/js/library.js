@@ -4889,6 +4889,12 @@ function saveRecipeBuilder(){
   else if(rb.editingId && customRecipes[rb.editingId] && customRecipes[rb.editingId].forkedFrom) recipe.forkedFrom = customRecipes[rb.editingId].forkedFrom;
   customRecipes[id] = recipe; // always the user's own recipe now (cr- id) — no in-place built-in override
   if(editingBuiltin){
+    // Keep the user's edit where it already was: re-point any plan/log reference to the original
+    // built-in onto the fork BEFORE it leaves the book below. Otherwise removeRecipeFromBook ->
+    // applyProf -> ensureWeekPlan sees the now-dangling original and regenerates that slot, swapping
+    // the just-edited meal for an unrelated recipe (the reported "I edited Ramen and it got
+    // substituted in my plan" bug), and an already-logged copy would recompute to zero.
+    if(typeof repointRecipeReferences === 'function') repointRecipeReferences(rb.editingId, id);
     // Drop any legacy in-place override for the built-in so the ORIGINAL (not a stale prior edit)
     // is what returns to the market, then send it back to the market — re-addable beside the fork.
     if(recipeOverrides[rb.editingId]) delete recipeOverrides[rb.editingId];
